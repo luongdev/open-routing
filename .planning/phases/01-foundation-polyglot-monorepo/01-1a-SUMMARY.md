@@ -146,6 +146,15 @@ Plans 03, 04, 05 (Wave 2) consume this package as follows:
 - The forbidden-imports grep is the regression guard — any future PR that adds an `internal/*` import to this leaf will fail the cycle check.
 - Plan 03 must remove the original co-located `orgIDKey` definition (per its `<import_cycle_note>`) and switch to importing this package.
 
+## Self-Check: PASSED
+
+- File `services/api/internal/db/orgkey/orgkey.go` — FOUND
+- File `services/api/internal/db/orgkey/orgkey_test.go` — FOUND
+- File `.planning/phases/01-foundation-polyglot-monorepo/01-1a-SUMMARY.md` — FOUND
+- Commit `e9f2a52` (feat task) — FOUND in git log
+- Commit `03b6cfe` (docs summary) — FOUND in git log
+- `go test -count=1 ./internal/db/orgkey/...` — 3 passed
+
 ---
 *Phase: 01-foundation-polyglot-monorepo*
 *Plan: 1a*
