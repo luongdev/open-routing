@@ -1,0 +1,12 @@
+# CODEOWNERS for open-routing
+# https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customizations/customizing-your-repository/about-code-owners
+#
+# Every file requires review by the listed owner before merge when combined
+# with branch-protection's "Require a pull request before merging" setting
+# and the optional "Require review from Code Owners" gate. See
+# .github/branch-protection.md for the operational setup.
+#
+# Resolved GitHub handle: `mpt-luongld` (via `gh api user`). Local git config
+# user.name is `luongdev` but the active GitHub account is `mpt-luongld`.
+
+*       @mpt-luongld
