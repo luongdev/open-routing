@@ -45,6 +45,16 @@ import (
 // fresh-orgID cost only, not a fresh container.
 var sharedPool *pgxpool.Pool
 
+// containerFailureExitCode returns 1 in CI and 0 locally. This lets a
+// docker-less local run skip gracefully while making CI fail loudly when
+// container setup unexpectedly breaks.
+func containerFailureExitCode() int {
+	if os.Getenv("CI") != "" {
+		return 1
+	}
+	return 0
+}
+
 // TestMain provisions an ephemeral Postgres testcontainer, applies the Phase 1
 // migrations against it, and opens a shared pgxpool the tests reuse. Skipped
 // when `go test -short` is requested so the unit-level CI loop never blocks
@@ -74,17 +84,17 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		// Docker unavailable / image-pull denied / etc — best-effort log and
-		// exit 0 so the test binary doesn't fail the unit lane. Plan 07's
-		// suite gates the same paths in the docker-available lane.
+		// exit 0 locally so docker-less machines can run unit lanes. CI must
+		// fail loudly when the docker-available lane loses container setup.
 		os.Stderr.WriteString("scaffold_test: testcontainer postgres unavailable: " + err.Error() + "\n")
-		os.Exit(0)
+		os.Exit(containerFailureExitCode())
 	}
-	defer func() { _ = pgC.Terminate(ctx) }()
 
 	connStr, err := pgC.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		os.Stderr.WriteString("scaffold_test: connection string: " + err.Error() + "\n")
-		os.Exit(0)
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
 	}
 
 	// Apply migrations via golang-migrate against a database/sql shim
@@ -93,35 +103,42 @@ func TestMain(m *testing.M) {
 	sqlDB, err := sql.Open("pgx", connStr)
 	if err != nil {
 		os.Stderr.WriteString("scaffold_test: sql.Open: " + err.Error() + "\n")
-		os.Exit(0)
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
 	}
 	driver, err := pgmigrate.WithInstance(sqlDB, &pgmigrate.Config{})
 	if err != nil {
 		os.Stderr.WriteString("scaffold_test: pgmigrate driver: " + err.Error() + "\n")
 		_ = sqlDB.Close()
-		os.Exit(0)
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
 	}
 	m2, err := migrate.NewWithDatabaseInstance("file://../../../../migrations", "postgres", driver)
 	if err != nil {
 		os.Stderr.WriteString("scaffold_test: migrate.NewWithDatabaseInstance: " + err.Error() + "\n")
 		_ = sqlDB.Close()
-		os.Exit(0)
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
 	}
 	if err := m2.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		os.Stderr.WriteString("scaffold_test: migrate.Up: " + err.Error() + "\n")
 		_ = sqlDB.Close()
-		os.Exit(0)
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
 	}
 	_ = sqlDB.Close()
 
 	sharedPool, err = pgxpool.New(ctx, connStr)
 	if err != nil {
 		os.Stderr.WriteString("scaffold_test: pgxpool.New: " + err.Error() + "\n")
-		os.Exit(0)
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
 	}
-	defer sharedPool.Close()
 
-	os.Exit(m.Run())
+	code := m.Run()
+	sharedPool.Close()
+	_ = pgC.Terminate(ctx)
+	os.Exit(code)
 }
 
 // callWithOrg simulates the OrgContext middleware by attaching orgID to ctx

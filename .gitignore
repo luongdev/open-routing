@@ -1,6 +1,9 @@
 .codex
 .claude
 .agents
+.gemini
+GEMINI.md
+CLAUDE.md
 
 .DS_Store
 *._*

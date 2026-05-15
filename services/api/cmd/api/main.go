@@ -16,7 +16,7 @@
 //  9. otelhttp.NewHandler wraps the mux AFTER NewMux completes — Pattern S6
 //     requires the wrap is AFTER every mux.Use call so the request span
 //     exists when OrgContext sets org_id span attribute.
-// 10. http.Server.ListenAndServe in a goroutine; graceful shutdown on
+//  10. http.Server.ListenAndServe in a goroutine; graceful shutdown on
 //     ctx cancel via srv.Shutdown with a 10s timeout.
 //
 // Anti-pattern guard: this main MUST NOT call migrate.NewWithDatabaseInstance
@@ -45,6 +45,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	// (0) Signal-aware context. signal.NotifyContext cancels ctx on
 	// SIGINT/SIGTERM, which the goroutine on srv.ListenAndServe and the
 	// graceful-shutdown block both observe.
@@ -57,14 +61,14 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config load", "err", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// (2) OTel SDK BEFORE chi router setup (FOUND-07).
 	shutdownOTel, err := telemetry.InitOTel(ctx, cfg)
 	if err != nil {
 		slog.Error("otel init", "err", err)
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		// 5s budget for span flush so we don't block shutdown forever.
@@ -87,7 +91,7 @@ func main() {
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.ErrorContext(ctx, "db pool init", "err", err)
-		os.Exit(1)
+		return 1
 	}
 	defer pool.Close()
 
@@ -96,7 +100,7 @@ func main() {
 	redisOpts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
 		slog.ErrorContext(ctx, "redis url parse", "err", err)
-		os.Exit(1)
+		return 1
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer func() { _ = rdb.Close() }()
@@ -155,4 +159,5 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.ErrorContext(shutdownCtx, "http shutdown", "err", err)
 	}
+	return 0
 }

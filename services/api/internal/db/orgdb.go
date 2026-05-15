@@ -64,7 +64,7 @@ func NewOrgDB(pool *pgxpool.Pool, checker *SQLChecker, mode ValidationMode) *Org
 // args ...interface{}).
 func (o *OrgDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
 	if err := o.preflight(ctx, sql); err != nil {
-		return pgconn.CommandTag{}, err
+		return pgconn.CommandTag{}, o.handlePreflightError("Exec", err)
 	}
 	return o.pool.Exec(ctx, sql, args...)
 }
@@ -73,7 +73,7 @@ func (o *OrgDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgco
 // signature constraint as Exec.
 func (o *OrgDB) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
 	if err := o.preflight(ctx, sql); err != nil {
-		return nil, err
+		return nil, o.handlePreflightError("Query", err)
 	}
 	return o.pool.Query(ctx, sql, args...)
 }
@@ -91,12 +91,16 @@ func (r errRow) Scan(_ ...any) error { return r.err }
 // :one queries; in prod a preflight failure indicates missing org_id scoping.
 func (o *OrgDB) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
 	if err := o.preflight(ctx, sql); err != nil {
-		if o.mode == ValidationPanic {
-			panic(fmt.Errorf("orgdb.QueryRow preflight failed: %w", err))
-		}
-		return errRow{err: err}
+		return errRow{err: o.handlePreflightError("QueryRow", err)}
 	}
 	return o.pool.QueryRow(ctx, sql, args...)
+}
+
+func (o *OrgDB) handlePreflightError(op string, err error) error {
+	if o.mode == ValidationPanic {
+		panic(fmt.Errorf("orgdb.%s preflight failed: %w", op, err))
+	}
+	return err
 }
 
 // preflight is the gate every DB call passes through. Three steps:
@@ -135,9 +139,6 @@ func (o *OrgDB) preflight(ctx context.Context, sql string) error {
 	}
 
 	if err := o.checker.MustContainOrgFilter(sql); err != nil {
-		if o.mode == ValidationPanic {
-			panic(err)
-		}
 		return err
 	}
 	return nil

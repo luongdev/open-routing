@@ -68,11 +68,11 @@ func (c *SQLChecker) MustContainOrgFilter(sql string) error {
 // compiled to Go via CGO — NOT regex; per Research §"Don't Hand-Roll"
 // and Pitfall 2) and applies one of three rules per top-level statement:
 //
-//   - DML (SELECT / UPDATE / DELETE): walk the WHERE clause for a ColumnRef
-//     named "org_id"; DDL/utility rejected unless bypass is present.
-//     This catches WHERE predicates and nested subquery WHERE refs while
-//     correctly rejecting org_id appearing only in the projection list,
-//     ORDER BY, or JOIN ON condition.
+//   - DML (SELECT / UPDATE / DELETE): every top-level _scaffold range alias
+//     must have a matching top-level WHERE ColumnRef named "org_id";
+//     DDL/utility rejected unless bypass is present. This catches WHERE
+//     predicates while correctly rejecting org_id appearing only in the
+//     projection list, ORDER BY, JOIN ON condition, or nested subquery WHERE.
 //   - INSERT: the column list must contain "org_id" (target_list shape).
 //     A regex on "WHERE org_id" would miss every INSERT — INSERT has no
 //     WHERE — which is precisely why this dispatch is split.
@@ -97,24 +97,31 @@ func (c *SQLChecker) classify(sql string) error {
 		if stmt == nil {
 			return ErrSQLMissingOrgFilter
 		}
-		switch stmt.Node.(type) {
-		case *pg_query.Node_SelectStmt,
-			*pg_query.Node_UpdateStmt,
-			*pg_query.Node_DeleteStmt:
+		switch sv := stmt.Node.(type) {
+		case *pg_query.Node_SelectStmt:
 			var whereClause *pg_query.Node
-			switch sv := stmt.Node.(type) {
-			case *pg_query.Node_SelectStmt:
-				whereClause = sv.SelectStmt.WhereClause
-			case *pg_query.Node_UpdateStmt:
-				whereClause = sv.UpdateStmt.WhereClause
-			case *pg_query.Node_DeleteStmt:
-				whereClause = sv.DeleteStmt.WhereClause
+			var tenantAliases []string
+			whereClause = sv.SelectStmt.WhereClause
+			tenantAliases = tenantAliasesFromNodes(sv.SelectStmt.FromClause)
+			if !whereSatisfiesTenantAliases(whereClause, tenantAliases) {
+				return ErrSQLMissingOrgFilter
 			}
-			if !whereContainsOrgIDRef(whereClause) {
+		case *pg_query.Node_UpdateStmt:
+			whereClause := sv.UpdateStmt.WhereClause
+			tenantAliases := tenantAliasesFromRangeVar(sv.UpdateStmt.Relation)
+			tenantAliases = appendTenantAliasesFromNodes(tenantAliases, sv.UpdateStmt.FromClause)
+			if !whereSatisfiesTenantAliases(whereClause, tenantAliases) {
+				return ErrSQLMissingOrgFilter
+			}
+		case *pg_query.Node_DeleteStmt:
+			whereClause := sv.DeleteStmt.WhereClause
+			tenantAliases := tenantAliasesFromRangeVar(sv.DeleteStmt.Relation)
+			tenantAliases = appendTenantAliasesFromNodes(tenantAliases, sv.DeleteStmt.UsingClause)
+			if !whereSatisfiesTenantAliases(whereClause, tenantAliases) {
 				return ErrSQLMissingOrgFilter
 			}
 		case *pg_query.Node_InsertStmt:
-			ins := stmt.Node.(*pg_query.Node_InsertStmt).InsertStmt
+			ins := sv.InsertStmt
 			if !insertHasOrgIDColumn(ins) {
 				return ErrSQLMissingOrgFilter
 			}
@@ -127,53 +134,133 @@ func (c *SQLChecker) classify(sql string) error {
 	return nil
 }
 
-// isOrgIDColumnRef returns true when the ColumnRef's last field is "org_id".
-// ColumnRef.Fields is a []*Node where each node is typically Node_String_
-// (for simple names) or Node_A_Star (for *). Only the last field is the
-// column name; earlier fields are table qualifiers (e.g. "a" in a.org_id).
-func isOrgIDColumnRef(cr *pg_query.Node_ColumnRef) bool {
+// orgIDColumnQualifier returns the table qualifier for a ColumnRef whose final
+// field is "org_id". For "org_id" it returns ("", true); for "a.org_id" it
+// returns ("a", true). Multi-part names use the field immediately before the
+// column as the relation/alias qualifier.
+func orgIDColumnQualifier(cr *pg_query.Node_ColumnRef) (string, bool) {
 	fields := cr.ColumnRef.GetFields()
 	if len(fields) == 0 {
-		return false
+		return "", false
 	}
 	last := fields[len(fields)-1]
 	s, ok := last.Node.(*pg_query.Node_String_)
-	return ok && s.String_.GetSval() == "org_id"
+	if !ok || s.String_.GetSval() != "org_id" {
+		return "", false
+	}
+	if len(fields) == 1 {
+		return "", true
+	}
+	qualifier, ok := fields[len(fields)-2].Node.(*pg_query.Node_String_)
+	if !ok {
+		return "", true
+	}
+	return qualifier.String_.GetSval(), true
 }
 
-// whereContainsOrgIDRef recursively walks a WHERE-clause node tree and returns
-// true when any ColumnRef named "org_id" is present. Handles:
+// whereSatisfiesTenantAliases returns true when every top-level _scaffold
+// range alias has a matching org_id ColumnRef in the same statement's WHERE.
+// A single _scaffold range may use an unqualified org_id; multi-range queries
+// must qualify each alias so one scoped side of a join cannot satisfy another.
+func whereSatisfiesTenantAliases(where *pg_query.Node, tenantAliases []string) bool {
+	if len(tenantAliases) == 0 {
+		return false
+	}
+	qualified := make(map[string]struct{})
+	var hasUnqualified bool
+	collectTopLevelOrgIDRefs(where, qualified, &hasUnqualified)
+
+	if len(tenantAliases) == 1 && hasUnqualified {
+		return true
+	}
+	for _, alias := range tenantAliases {
+		if _, ok := qualified[alias]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// collectTopLevelOrgIDRefs recursively walks a WHERE-clause node tree and
+// records ColumnRefs named "org_id" without crossing into SubLink subqueries.
+// Handles:
 //   - ColumnRef  — leaf: check the field name
 //   - BoolExpr   — AND/OR/NOT: recurse into Args
 //   - A_Expr     — comparison (=, >, IN, etc.): recurse into Lexpr and Rexpr
-//   - SubLink    — correlated subquery: recurse into the subselect's WHERE
 //
 // All other node types are ignored (no org_id ColumnRef can hide inside them
 // in any well-formed SQL the application would emit).
-func whereContainsOrgIDRef(node *pg_query.Node) bool {
+func collectTopLevelOrgIDRefs(node *pg_query.Node, qualified map[string]struct{}, hasUnqualified *bool) {
 	if node == nil {
-		return false
+		return
 	}
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
-		return isOrgIDColumnRef(n)
+		qualifier, ok := orgIDColumnQualifier(n)
+		if !ok {
+			return
+		}
+		if qualifier == "" {
+			*hasUnqualified = true
+			return
+		}
+		qualified[qualifier] = struct{}{}
 	case *pg_query.Node_BoolExpr:
 		for _, arg := range n.BoolExpr.GetArgs() {
-			if whereContainsOrgIDRef(arg) {
-				return true
-			}
+			collectTopLevelOrgIDRefs(arg, qualified, hasUnqualified)
 		}
 	case *pg_query.Node_AExpr:
-		return whereContainsOrgIDRef(n.AExpr.Lexpr) ||
-			whereContainsOrgIDRef(n.AExpr.Rexpr)
-	case *pg_query.Node_SubLink:
-		if sub := n.SubLink.GetSubselect(); sub != nil {
-			if sel, ok := sub.Node.(*pg_query.Node_SelectStmt); ok {
-				return whereContainsOrgIDRef(sel.SelectStmt.WhereClause)
-			}
-		}
+		collectTopLevelOrgIDRefs(n.AExpr.Lexpr, qualified, hasUnqualified)
+		collectTopLevelOrgIDRefs(n.AExpr.Rexpr, qualified, hasUnqualified)
 	}
-	return false
+}
+
+func tenantAliasesFromNodes(nodes []*pg_query.Node) []string {
+	return appendTenantAliasesFromNodes(nil, nodes)
+}
+
+func appendTenantAliasesFromNodes(aliases []string, nodes []*pg_query.Node) []string {
+	seen := make(map[string]struct{}, len(aliases)+len(nodes))
+	for _, alias := range aliases {
+		seen[alias] = struct{}{}
+	}
+	for _, node := range nodes {
+		aliases = appendTenantAliasesFromNode(aliases, seen, node)
+	}
+	return aliases
+}
+
+func appendTenantAliasesFromNode(aliases []string, seen map[string]struct{}, node *pg_query.Node) []string {
+	if node == nil {
+		return aliases
+	}
+	switch n := node.Node.(type) {
+	case *pg_query.Node_RangeVar:
+		return appendTenantAliasFromRangeVar(aliases, seen, n.RangeVar)
+	case *pg_query.Node_JoinExpr:
+		aliases = appendTenantAliasesFromNode(aliases, seen, n.JoinExpr.Larg)
+		return appendTenantAliasesFromNode(aliases, seen, n.JoinExpr.Rarg)
+	}
+	return aliases
+}
+
+func tenantAliasesFromRangeVar(rv *pg_query.RangeVar) []string {
+	return appendTenantAliasFromRangeVar(nil, make(map[string]struct{}, 1), rv)
+}
+
+func appendTenantAliasFromRangeVar(aliases []string, seen map[string]struct{}, rv *pg_query.RangeVar) []string {
+	if rv == nil || rv.GetRelname() != "_scaffold" {
+		return aliases
+	}
+	alias := rv.GetRelname()
+	if aliasName := rv.GetAlias().GetAliasname(); aliasName != "" {
+		alias = aliasName
+	}
+	if _, ok := seen[alias]; ok {
+		return aliases
+	}
+	seen[alias] = struct{}{}
+	return append(aliases, alias)
 }
 
 // insertHasOrgIDColumn returns true when an INSERT statement's column list

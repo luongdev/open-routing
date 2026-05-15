@@ -50,10 +50,11 @@ var (
 	sharedPgC   *postgres.PostgresContainer
 )
 
-// ciExitCode returns 1 when the CI env var is non-empty (GitHub Actions always
-// sets CI=true). Used by TestMain to distinguish "Docker unavailable locally
-// — skip gracefully" from "Docker unavailable in CI — fail loudly".
-func ciExitCode() int {
+// containerFailureExitCode returns 1 when the CI env var is non-empty (GitHub
+// Actions always sets CI=true). Used by TestMain to distinguish "Docker
+// unavailable locally — skip gracefully" from "Docker unavailable in CI — fail
+// loudly".
+func containerFailureExitCode() int {
 	if os.Getenv("CI") != "" {
 		return 1
 	}
@@ -97,7 +98,7 @@ func TestMain(m *testing.M) {
 		// environment. The docker-available CI lane fails fast on the actual
 		// test cases if Docker silently disappeared.
 		os.Stderr.WriteString("isolation: testcontainer postgres unavailable: " + err.Error() + "\n")
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 	sharedPgC = pgC
 
@@ -105,7 +106,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		os.Stderr.WriteString("isolation: connection string: " + err.Error() + "\n")
 		_ = pgC.Terminate(ctx)
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 
 	// (2) Apply migrations via database/sql shim (Pitfall 7).
@@ -113,14 +114,14 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		os.Stderr.WriteString("isolation: sql.Open: " + err.Error() + "\n")
 		_ = pgC.Terminate(ctx)
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 	driver, err := pgmigrate.WithInstance(sqlDB, &pgmigrate.Config{})
 	if err != nil {
 		os.Stderr.WriteString("isolation: pgmigrate driver: " + err.Error() + "\n")
 		_ = sqlDB.Close()
 		_ = pgC.Terminate(ctx)
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 	// Path from services/api/test/isolation/ to repo-root/migrations/:
 	// ..             = services/api/test/
@@ -132,13 +133,13 @@ func TestMain(m *testing.M) {
 		os.Stderr.WriteString("isolation: migrate.NewWithDatabaseInstance: " + err.Error() + "\n")
 		_ = sqlDB.Close()
 		_ = pgC.Terminate(ctx)
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 	if err := m2.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		os.Stderr.WriteString("isolation: migrate.Up: " + err.Error() + "\n")
 		_ = sqlDB.Close()
 		_ = pgC.Terminate(ctx)
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 	_ = sqlDB.Close()
 
@@ -146,7 +147,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		os.Stderr.WriteString("isolation: pgxpool.New: " + err.Error() + "\n")
 		_ = pgC.Terminate(ctx)
-		os.Exit(ciExitCode())
+		os.Exit(containerFailureExitCode())
 	}
 
 	// (3) Optional Redis: if REDIS_URL env is set, connect; else leave nil.

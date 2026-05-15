@@ -5,11 +5,12 @@ import (
 )
 
 // TestSQLChecker_MustContainOrgFilter is a table-driven proof that the
-// hardened validator accepts only DML that binds org_id in the WHERE clause
-// (or INSERT column list) while rejecting DML with org_id in other positions
-// (projection, ORDER BY, JOIN ON, string literal) and rejecting DDL outright.
-// DDL must always flow through WithBypass (D-11); DDL reaching the inspector
-// means bypass is absent and the check fails safe.
+// hardened validator accepts only DML that binds every top-level _scaffold
+// range alias to org_id in the WHERE clause (or INSERT column list) while
+// rejecting DML with org_id in other positions (projection, ORDER BY, JOIN ON,
+// subquery WHERE, string literal) and rejecting DDL outright. DDL must always
+// flow through WithBypass (D-11); DDL reaching the inspector means bypass is
+// absent and the check fails safe.
 func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 	t.Parallel()
 	c := NewSQLChecker()
@@ -23,7 +24,9 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 		{"ListScaffolds", `SELECT id, org_id, external_id, name, created_at FROM _scaffold WHERE org_id = $1 ORDER BY created_at DESC LIMIT 100`},
 		{"UpdateScaffold", `UPDATE _scaffold SET name = $2 WHERE id = $1 AND org_id = $3`},
 		{"DeleteScaffold", `DELETE FROM _scaffold WHERE id = $1 AND org_id = $2`},
-		{"JoinWithWhereOrgID", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.org_id = b.org_id WHERE a.org_id = $1 AND a.id = $2`},
+		{"AliasedScaffold", `SELECT a.id FROM _scaffold a WHERE a.org_id = $1 AND a.id = $2`},
+		{"JoinWithAllAliasesScoped", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.id = b.id WHERE a.org_id = $1 AND b.org_id = $1`},
+		{"OuterFilterWithSubquery", `SELECT id, org_id FROM _scaffold WHERE org_id = $1 AND EXISTS (SELECT 1 FROM _scaffold s2 WHERE s2.org_id = $1)`},
 	}
 	for _, tc := range accept {
 		tc := tc
@@ -46,6 +49,10 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 		{"UpdateNoOrgFilter", `UPDATE _scaffold SET name = $1 WHERE id = $2`},
 		// org_id appears only in JOIN ON condition, not in WHERE predicate.
 		{"JoinWithoutWhereOrgID", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.org_id = b.org_id WHERE a.id = $1`},
+		// org_id scopes only one top-level _scaffold alias; b remains unscoped.
+		{"JoinWithPartialWhereOrgID", `SELECT a.id, b.id FROM _scaffold a JOIN _scaffold b ON a.org_id = b.org_id WHERE a.org_id = $1 AND a.id = $2`},
+		// org_id appears only in the SubLink WHERE, not the outer query WHERE.
+		{"SubqueryOnlyOrgID", `SELECT id, org_id FROM _scaffold WHERE EXISTS (SELECT 1 FROM _scaffold s2 WHERE s2.org_id = $1)`},
 		// org_id in SELECT projection list, not WHERE predicate — actual cross-org leak vector.
 		{"ProjectionOnlyOrgID", `SELECT id, org_id FROM _scaffold`},
 		// org_id in ORDER BY clause only, not WHERE predicate.
