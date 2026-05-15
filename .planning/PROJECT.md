@@ -2,13 +2,44 @@
 
 ## What This Is
 
-Open Routing is an embeddable, multi-channel routing platform for products that need ACD-like routing without owning media, CRM, ticketing, or channel systems. It provides flow-based routing, catalog-driven configuration, tenant-facing audit, and adapter contracts for bridging systems such as voice, chat, email, and later real channel providers.
+Open Routing is an embeddable, multi-channel routing platform for products that need ACD-like routing without owning media, CRM, ticketing, or channel systems. It provides flow-based routing, catalog-driven configuration, org-facing audit, and adapter contracts for bridging systems such as voice, chat, email, and later real channel providers.
 
 The primary users are product teams embedding routing and configuration surfaces into their own applications. Platform and solution engineering teams can also run it directly to configure flows, catalogs, adapters, and routing behavior.
 
 ## Core Value
 
 Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
+
+## Current Milestone: v0.1 Catalog Foundation
+
+**Goal:** Ship an org-scoped catalog (agents, skills, queues, channels, adapters, break-reasons) plus the agent status model with REST CRUD, JSON/CSV bulk import, a standalone admin UI, and a Web Component-embeddable Catalog config — proving the embed, multi-org isolation, and agent-state foundation before flows or runtime exist.
+
+**Target features:**
+- Normalized catalog with 6 entities: agents, skills, queues, channels, adapters, break_reasons
+- Agent status model:
+  - Agent-toggleable: Ready, NotReady (idle, no sub-reasons), Break (configurable sub-reasons; each reason has `routable: bool`)
+  - System-set: WrapUp, Engaged (channel-specific: voice/chat/email — exact sub-states TBD from research), Offline
+- Multi-org isolation: header-passed `org_id` with DB-enforced scoping (stub auth)
+- REST management API (Go + chi) for catalog CRUD with OpenAPI 3.1 contract
+- JSON/CSV bulk import endpoint for seeding catalog from external dumps
+- Standalone admin app (Vite + Lit + Shoelace SPA) for direct use by platform/solution engineers
+- Web Component embed bundle (`<open-routing-catalog>` Custom Element) for host product integration
+
+**Locked stack:**
+- Backend: Go (latest) + chi + sqlc + pgx + golang-migrate + slog
+- Database: PostgreSQL 17 + Redis (cache)
+- API contract: OpenAPI 3.1 → oapi-codegen (Go) + openapi-typescript (TS client)
+- Frontend: Vite + Lit + Shoelace + TypeScript (standalone admin + WC embed share `packages/ui`)
+- Repo: polyglot monorepo (Go module + pnpm workspaces)
+- Observability: OpenTelemetry Go SDK + slog structured logs
+
+**Key context:**
+- Project-wide rename: `tenant_id` → `org_id` and "tenant" → "org" (see Key Decisions)
+- Stub auth only — trusted host context passes `org_id` header; full standalone/SSO deferred
+- Adapter entity is a registry row only — no SDK contract, no execution in v0.1
+- Break reasons own the routable/unroutable distinction (NotReady has no sub-reasons)
+- REST polling only — no WebSocket/SSE; browser workers deferred
+- Out of v0.1 scope: flows, runtime, simulator, capabilities, strategies, templates, iframe embed, Module Federation, live external sync, real auth, real adapter execution, realtime push, browser workers
 
 ## Requirements
 
@@ -29,11 +60,11 @@ Product teams can define, simulate, debug, publish, and embed powerful routing f
 - [ ] Provide an adapter SDK contract before real adapter implementations.
 - [ ] Keep routing core focused on open routing: route decisions, queue logic, reservation lifecycle, state projections, and adapter commands.
 - [ ] Keep media holding, call control, chat execution, email execution, and channel-specific session ownership outside core.
-- [ ] Keep a normalized catalog for agents, skills, queues, channels, adapters, capabilities, routing strategies, and flow templates.
+- [ ] Keep a normalized catalog for agents, skills, queues, channels, adapters, capabilities, routing strategies, flow templates, and per-org agent-state configuration (break reasons with routable flag).
 - [ ] Allow catalog data to be managed directly in Open Routing or synced/imported from external systems.
 - [ ] Support route strategies selected by flow, with strategy-engine scoring and a future extension point for custom algorithms.
 - [ ] Support flow-defined fallback policies for routing failures.
-- [ ] Expose embedded configuration surfaces through both iframe and micro frontend integration.
+- [ ] Expose embedded configuration surfaces through Web Components in v0.1; add iframe and Module Federation later if customer demand justifies them.
 - [ ] Provide UI surfaces for flow builder/debugger, catalog config, routing monitor, trace viewer, and adapter config.
 - [ ] Support theme tokens and module hide/show controls for embedded configuration surfaces.
 - [ ] Provide REST management APIs for UI, catalog, flow, publish, adapter config, and admin operations.
@@ -41,11 +72,11 @@ Product teams can define, simulate, debug, publish, and embed powerful routing f
 - [ ] Use a canonical event envelope for runtime and adapter events.
 - [ ] Store events append-only, maintain fast projections for routing reads, and use short, clear names for tables, APIs, and concepts.
 - [ ] Use PostgreSQL outbox first, with a future bridge to Kafka or NATS.
-- [ ] Enforce tenant isolation from the start with shared database tables carrying `tenant_id` and app-layer enforcement.
+- [ ] Enforce org isolation from the start with shared database tables carrying `org_id` and app-layer enforcement.
 - [ ] Split control-plane and runtime-engine from the start without decomposing into many services.
 - [ ] Meet route-decision latency target of p95 under 50 ms.
 - [ ] Support stateless runtime scaling, horizontal scale, database/outbox foundation, Redis/cache for hot path, and no active-active multi-region requirement in v1.
-- [ ] Provide tenant-facing audit across routing, flow publish, config changes, and runtime traces.
+- [ ] Provide org-facing audit across routing, flow publish, config changes, and runtime traces.
 - [ ] Support flow publish governance: validate, simulate, publish, and rollback to the previous published version.
 - [ ] Position the project as both a deployable routing platform and a modular SDK/module set.
 
@@ -80,11 +111,11 @@ The product should feel simple despite powerful behavior. The UI should reduce c
 - **Adapter Boundary**: Adapters normalize state/capabilities and execute channel-specific commands - keeps channel systems outside core while giving routing enough state to decide.
 - **API**: REST for management, gRPC for internal runtime/adapter APIs, event envelope for events - separates UI/admin ergonomics from runtime contracts.
 - **Storage**: Append-only events, fast projections, PostgreSQL outbox first - supports replay/debug now and event-bus bridge later.
-- **Tenancy**: Shared database with `tenant_id` on all tenant-scoped tables and app-layer enforcement - tenant isolation is required from the start.
+- **Multi-org**: Shared database with `org_id` on all org-scoped tables and app-layer enforcement - org isolation is required from the start.
 - **Runtime**: Split control-plane and runtime-engine from the start - keeps hot path isolated without creating too many services.
 - **Performance**: Route decision p95 under 50 ms - routing must stay viable for ACD-style workloads.
-- **Embedding**: Support iframe and micro frontend integration - host products need flexible embed options.
-- **Audit**: Tenant-facing audit is required - product teams and tenants need visibility into routing decisions and config changes.
+- **Embedding**: Support Web Components (Custom Elements) for embedded surfaces in v0.1 - host products can mount as an HTML tag regardless of their framework; iframe and Module Federation deferred to later milestones if needed.
+- **Audit**: Org-facing audit is required - product teams and customer orgs need visibility into routing decisions and config changes.
 - **Naming**: Prefer short, concrete names - avoid long meaningless table, API, and domain names.
 
 ## Key Decisions
@@ -107,10 +138,19 @@ The product should feel simple despite powerful behavior. The UI should reduce c
 | Priority and SLA are determined by flow | Keeps prioritization flexible and explicit in customer logic | - Pending |
 | REST management API plus internal gRPC runtime API | UI/admin operations and runtime/adapter operations have different needs | - Pending |
 | PostgreSQL outbox first, Kafka/NATS bridge later | Keeps v1 operationally simpler while preserving event-driven growth path | - Pending |
-| Shared database with `tenant_id` and app-layer enforcement | Tenant isolation is needed from day one without per-tenant database overhead | - Pending |
+| Shared database with `org_id` and app-layer enforcement | Org isolation is needed from day one without per-org database overhead | - Pending |
+| Project-wide naming: `org_id` and "org" (not `tenant_id` / "tenant") | Aligns with common SaaS terminology (GitHub/Slack-style "org") and standardises a single noun across schema, APIs, UI, and docs | - Pending (locked in v0.1) |
+| Backend stack: Go + chi (router) + sqlc + pgx + golang-migrate + slog | Go's concurrency/latency profile fits the future runtime engine; chi is idiomatic net/http with OTel-friendly middleware; sqlc gives type-safe SQL without ORM magic; pgx is the fastest native Postgres driver; slog is in stdlib | - Pending (locked in v0.1) |
+| Database: PostgreSQL 17 + Redis (cache layer) | Postgres for source-of-truth with JSONB/outbox support; Redis for hot catalog reads and future agent-state push fan-out (aligns with v1 runtime p95<50ms target) | - Pending (locked in v0.1) |
+| Frontend stack: Vite + Lit + Shoelace + TypeScript (no React, no Next.js) | Lit produces real Custom Elements with ~5KB runtime; Shoelace ships accessible production-grade components; native Web Components means zero React-version-skew risk with host apps and CSS-custom-property theming maps directly to PROJECT.md's "theme tokens" requirement | - Pending (locked in v0.1) |
+| Embedding: Web Components (Custom Elements) as the v0.1 distributable; iframe deferred | Web Components are framework-agnostic by definition — host apps in any framework can mount via HTML tag; Shadow DOM provides CSS isolation; no Module Federation/single-spa orchestration needed | - Pending (locked in v0.1) |
+| API contract: OpenAPI 3.1 spec as source-of-truth → oapi-codegen (Go server stubs) + openapi-typescript (TS client) | Contract-first prevents drift between Go backend and TS frontend; spec doubles as customer-facing API documentation; gRPC contract (Buf/Connect) added alongside when v1 runtime engine arrives | - Pending (locked in v0.1) |
+| Repo structure: polyglot monorepo (Go module + pnpm workspaces side-by-side) | Single source of truth for backend + frontend + migrations + OpenAPI spec; atomic cross-cutting commits; Go uses native `go.mod`; Node side uses pnpm workspaces; Turborepo or Makefile orchestrates tasks across both | - Pending (locked in v0.1) |
+| Realtime in v0.1: REST polling only (no WebSocket/SSE) | Catalog UI does not need realtime; agent state changes are polled every ~5s; SSE/WS pushed to v0.2 when runtime engine needs broadcast | - Pending (locked in v0.1) |
+| Browser workers (service/shared/web) deferred to v0.2 | No offline, no push notifications, no SSE-deduplication needed in v0.1; Web Worker CSV preview is nice-to-have only | - Pending (locked in v0.1) |
 | Split control-plane and runtime-engine from the start | Protects routing hot path without decomposing into many services | - Pending |
 | Route decision target is p95 under 50 ms | Performance is part of the product value, not a later optimization | - Pending |
-| Embedded UI supports iframe and micro frontend | Host products need both isolation and native integration options | - Pending |
+| Embedded UI uses Web Components in v0.1 (iframe and Module Federation deferred) | Web Components are framework-agnostic by definition; host products in any framework can mount via HTML tag with Shadow DOM CSS isolation, no orchestration tooling needed | - Pending (locked in v0.1) |
 | v1 excludes media/call control, agent desktop, WFM, CRM, ticketing, and production adapters | Keeps the project inside open-routing boundaries | - Pending |
 | Auth/RBAC supports standalone and embedded SSO later | Needed long term, but full implementation can wait until a later milestone | - Pending |
 
@@ -132,4 +172,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-15 after initialization*
+*Last updated: 2026-05-15 — milestone v0.1 Catalog Foundation started*

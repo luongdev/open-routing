@@ -1,1 +1,6 @@
-.planning/
+.codex
+.claude
+.agents
+
+.DS_Store
+*._*
