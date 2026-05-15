@@ -21,7 +21,7 @@
 - [ ] **FOUND-01**: Repository is structured as a polyglot monorepo with `services/api` (Go module), `web/` (pnpm workspace containing `apps/admin`, `apps/embed`, `packages/ui`), `openapi/openapi.yaml`, and `migrations/` at the root.
 - [ ] **FOUND-02**: PostgreSQL 17 schema includes `org_id UUID NOT NULL` on every org-scoped table; golang-migrate migration files enforce this constraint.
 - [ ] **FOUND-03**: API extracts `org_id` exclusively from the `X-Org-Id` request header via chi middleware; requests missing or with malformed `org_id` return HTTP 400 and never read `org_id` from request body or query parameters.
-- [ ] **FOUND-04**: All database access flows through an `orgDB` wrapper in `services/api/internal/db` that automatically injects `WHERE org_id = $N` on every query; service handlers receive only `orgDB` instances, never raw `pgx` pools.
+- [x] **FOUND-04**: All database access flows through an `orgDB` wrapper in `services/api/internal/db` that automatically injects `WHERE org_id = $N` on every query; service handlers receive only `orgDB` instances, never raw `pgx` pools.
 - [ ] **FOUND-05**: Request `org_id` propagates through the call chain via Go `context.Context` from middleware → handler → service → repository; no global state, no struct field passing.
 - [ ] **FOUND-06**: Every catalog table enforces `UNIQUE (org_id, external_id)` as a composite constraint; no table has a global `UNIQUE (external_id)`.
 - [ ] **FOUND-07**: OpenTelemetry Go SDK initializes before chi router setup; every `slog` log line and OTel span carries an `org_id` attribute extracted from `context.Context`.
@@ -191,7 +191,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | FOUND-01 | Phase 1 | Pending |
 | FOUND-02 | Phase 1 | Pending |
 | FOUND-03 | Phase 1 | Pending |
-| FOUND-04 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Complete |
 | FOUND-05 | Phase 1 | Pending |
 | FOUND-06 | Phase 1 | Pending |
 | FOUND-07 | Phase 1 | Pending |
