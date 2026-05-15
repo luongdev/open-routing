@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
 	pg_query "github.com/pganalyze/pg_query_go/v6"
@@ -69,17 +68,18 @@ func (c *SQLChecker) MustContainOrgFilter(sql string) error {
 // compiled to Go via CGO — NOT regex; per Research §"Don't Hand-Roll"
 // and Pitfall 2) and applies one of three rules per top-level statement:
 //
-//   - DML (SELECT / UPDATE / DELETE): walk the parse tree for any
-//     ColumnRef whose name equals "org_id". This catches WHERE clauses,
-//     JOIN ... ON foo.org_id = bar.org_id, and nested subquery refs
-//     uniformly because we scan the entire stmt subtree.
+//   - DML (SELECT / UPDATE / DELETE): walk the WHERE clause for a ColumnRef
+//     named "org_id"; DDL/utility rejected unless bypass is present.
+//     This catches WHERE predicates and nested subquery WHERE refs while
+//     correctly rejecting org_id appearing only in the projection list,
+//     ORDER BY, or JOIN ON condition.
 //   - INSERT: the column list must contain "org_id" (target_list shape).
 //     A regex on "WHERE org_id" would miss every INSERT — INSERT has no
 //     WHERE — which is precisely why this dispatch is split.
-//   - DDL (CreateStmt, AlterTableStmt, DropStmt, IndexStmt, etc.):
-//     accepted unconditionally. DDL has no row scope; migrations always
-//     flow through WithBypass (D-11) so the validator never sees DDL in
-//     production code paths.
+//   - DDL (CreateStmt, AlterTableStmt, DropStmt, IndexStmt, etc.) and
+//     any other utility statement: rejected. Migrations always flow
+//     through WithBypass (D-11) so DDL reaching the checker means bypass
+//     is absent — fail safe.
 //
 // Unparseable SQL fails safe — a wrapped parse error is returned so the
 // caller surfaces the actual parse failure rather than silently passing
@@ -94,46 +94,86 @@ func (c *SQLChecker) classify(sql string) error {
 	}
 	for _, raw := range tree.Stmts {
 		stmt := raw.Stmt
-		switch n := stmt.Node.(type) {
+		if stmt == nil {
+			return ErrSQLMissingOrgFilter
+		}
+		switch stmt.Node.(type) {
 		case *pg_query.Node_SelectStmt,
 			*pg_query.Node_UpdateStmt,
 			*pg_query.Node_DeleteStmt:
-			if !containsOrgIDColumnRef(stmt) {
+			var whereClause *pg_query.Node
+			switch sv := stmt.Node.(type) {
+			case *pg_query.Node_SelectStmt:
+				whereClause = sv.SelectStmt.WhereClause
+			case *pg_query.Node_UpdateStmt:
+				whereClause = sv.UpdateStmt.WhereClause
+			case *pg_query.Node_DeleteStmt:
+				whereClause = sv.DeleteStmt.WhereClause
+			}
+			if !whereContainsOrgIDRef(whereClause) {
 				return ErrSQLMissingOrgFilter
 			}
 		case *pg_query.Node_InsertStmt:
-			if !insertHasOrgIDColumn(n.InsertStmt) {
+			ins := stmt.Node.(*pg_query.Node_InsertStmt).InsertStmt
+			if !insertHasOrgIDColumn(ins) {
 				return ErrSQLMissingOrgFilter
 			}
 		default:
-			// DDL and any other utility statement — accepted. Migrations
-			// are the only legitimate caller and they bypass anyway.
-			_ = n
+			// DDL and utility statements must go through WithBypass.
+			// If they reach the checker, bypass is absent — reject.
+			return ErrSQLMissingOrgFilter
 		}
 	}
 	return nil
 }
 
-// containsOrgIDColumnRef returns true when the statement subtree contains
-// any ColumnRef whose name equals "org_id".
-//
-// Implementation note: pg_query_go's protobuf text representation
-// renders ColumnRef fields as `column_ref:{fields:{string:{sval:"<name>"}}}`.
-// Scanning the serialized text for the literal `sval:"org_id"` is a
-// pragmatic correctness check (Pitfall 2 explicitly endorses tree-shape
-// recognition over per-Node visitors for Phase 1). Verified empirically
-// against pg_query_go v6 against all 7 accept-case SQL shapes including
-// JOIN ... ON foo.org_id = bar.org_id and nested subquery patterns.
-//
-// This intentionally does NOT match INSERT columns — those render as
-// `res_target:{name:"org_id"...}` (no string/sval wrapper) so the
-// shortcut fails closed for INSERT. INSERT statements take the dedicated
-// insertHasOrgIDColumn path via the classify type switch.
-func containsOrgIDColumnRef(n *pg_query.Node) bool {
-	if n == nil {
+// isOrgIDColumnRef returns true when the ColumnRef's last field is "org_id".
+// ColumnRef.Fields is a []*Node where each node is typically Node_String_
+// (for simple names) or Node_A_Star (for *). Only the last field is the
+// column name; earlier fields are table qualifiers (e.g. "a" in a.org_id).
+func isOrgIDColumnRef(cr *pg_query.Node_ColumnRef) bool {
+	fields := cr.ColumnRef.GetFields()
+	if len(fields) == 0 {
 		return false
 	}
-	return strings.Contains(n.String(), `sval:"org_id"`)
+	last := fields[len(fields)-1]
+	s, ok := last.Node.(*pg_query.Node_String_)
+	return ok && s.String_.GetSval() == "org_id"
+}
+
+// whereContainsOrgIDRef recursively walks a WHERE-clause node tree and returns
+// true when any ColumnRef named "org_id" is present. Handles:
+//   - ColumnRef  — leaf: check the field name
+//   - BoolExpr   — AND/OR/NOT: recurse into Args
+//   - A_Expr     — comparison (=, >, IN, etc.): recurse into Lexpr and Rexpr
+//   - SubLink    — correlated subquery: recurse into the subselect's WHERE
+//
+// All other node types are ignored (no org_id ColumnRef can hide inside them
+// in any well-formed SQL the application would emit).
+func whereContainsOrgIDRef(node *pg_query.Node) bool {
+	if node == nil {
+		return false
+	}
+	switch n := node.Node.(type) {
+	case *pg_query.Node_ColumnRef:
+		return isOrgIDColumnRef(n)
+	case *pg_query.Node_BoolExpr:
+		for _, arg := range n.BoolExpr.GetArgs() {
+			if whereContainsOrgIDRef(arg) {
+				return true
+			}
+		}
+	case *pg_query.Node_AExpr:
+		return whereContainsOrgIDRef(n.AExpr.Lexpr) ||
+			whereContainsOrgIDRef(n.AExpr.Rexpr)
+	case *pg_query.Node_SubLink:
+		if sub := n.SubLink.GetSubselect(); sub != nil {
+			if sel, ok := sub.Node.(*pg_query.Node_SelectStmt); ok {
+				return whereContainsOrgIDRef(sel.SelectStmt.WhereClause)
+			}
+		}
+	}
+	return false
 }
 
 // insertHasOrgIDColumn returns true when an INSERT statement's column list

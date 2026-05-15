@@ -5,10 +5,11 @@ import (
 )
 
 // TestSQLChecker_MustContainOrgFilter is a table-driven proof that the
-// validator accepts every Phase 1 sqlc query shape (and the joined-orgid
-// pattern from Pitfall 2) while rejecting any DML that omits org_id.
-// DDL is accepted unconditionally — migrations flow through WithBypass
-// (D-11) so the validator's DDL verdict is documentary only.
+// hardened validator accepts only DML that binds org_id in the WHERE clause
+// (or INSERT column list) while rejecting DML with org_id in other positions
+// (projection, ORDER BY, JOIN ON, string literal) and rejecting DDL outright.
+// DDL must always flow through WithBypass (D-11); DDL reaching the inspector
+// means bypass is absent and the check fails safe.
 func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 	t.Parallel()
 	c := NewSQLChecker()
@@ -22,8 +23,7 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 		{"ListScaffolds", `SELECT id, org_id, external_id, name, created_at FROM _scaffold WHERE org_id = $1 ORDER BY created_at DESC LIMIT 100`},
 		{"UpdateScaffold", `UPDATE _scaffold SET name = $2 WHERE id = $1 AND org_id = $3`},
 		{"DeleteScaffold", `DELETE FROM _scaffold WHERE id = $1 AND org_id = $2`},
-		{"JoinedOrgID", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.org_id = b.org_id WHERE a.id = $1`},
-		{"DDL_AcceptedAsBypass", `CREATE TABLE foo (id UUID PRIMARY KEY)`},
+		{"JoinWithWhereOrgID", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.org_id = b.org_id WHERE a.org_id = $1 AND a.id = $2`},
 	}
 	for _, tc := range accept {
 		tc := tc
@@ -44,6 +44,17 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 		{"InsertWithoutOrgIDColumn", `INSERT INTO _scaffold (id, external_id, name) VALUES ($1, $2, $3)`},
 		{"DeleteWithoutWhere", `DELETE FROM _scaffold`},
 		{"UpdateNoOrgFilter", `UPDATE _scaffold SET name = $1 WHERE id = $2`},
+		// org_id appears only in JOIN ON condition, not in WHERE predicate.
+		{"JoinWithoutWhereOrgID", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.org_id = b.org_id WHERE a.id = $1`},
+		// org_id in SELECT projection list, not WHERE predicate — actual cross-org leak vector.
+		{"ProjectionOnlyOrgID", `SELECT id, org_id FROM _scaffold`},
+		// org_id in ORDER BY clause only, not WHERE predicate.
+		{"OrderByOrgID", `SELECT id FROM _scaffold ORDER BY org_id`},
+		// org_id as a string literal (A_Const.sval), not a ColumnRef — must not pass.
+		{"LiteralOrgIDString", `SELECT 'org_id' AS alias FROM _scaffold`},
+		// DDL without bypass must be rejected — bypass short-circuits before inspector.
+		{"DropTable", `DROP TABLE _scaffold`},
+		{"TruncateTable", `TRUNCATE _scaffold`},
 	}
 	for _, tc := range reject {
 		tc := tc
