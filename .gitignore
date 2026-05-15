@@ -4,3 +4,33 @@
 
 .DS_Store
 *._*
+
+# ---- Planning artifacts (preserved from initial repo state) ----
+.planning/
+
+# ---- Go ----
+*.exe
+*.test
+*.out
+bin/
+services/api/bin/
+.air-tmp/
+services/api/.air-tmp/
+
+# ---- Node ----
+node_modules/
+pnpm-store/
+.turbo/
+*.log
+
+# ---- IDE ----
+.idea/
+.vscode/
+
+# ---- Env files (committed: .env.example only) ----
+.env
+.env.*
+!.env.example
+
+# ---- OS ----
+Thumbs.db
