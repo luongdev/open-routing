@@ -1,0 +1,137 @@
+name: ci
+
+# FOUND-09 (D-30 LOCKED): 6 required jobs run in parallel on every PR and push to main,
+# plus a compose-config sanity job (W-7) validating docker-compose.yml + Taskfile.yml.
+# Required-status-check enforcement lives in GitHub repo Settings > Branches (D-31 — see
+# .github/branch-protection.md). All actions pinned to specific major versions per
+# ASVS V14.3 (CI/build pipeline integrity); NEVER use @latest.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-vet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - name: go vet
+        working-directory: services/api
+        run: go vet ./...
+
+  go-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: services/api
+          version: v1.63
+
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - name: go test
+        working-directory: services/api
+        # Includes testcontainers-go isolation suite under ./test/isolation/...
+        # GitHub Actions runners ship with Docker preinstalled; testcontainers-go uses
+        # it directly. No --privileged flag or setup-docker action needed.
+        run: go test -race -timeout=10m ./...
+
+  web-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: pnpm typecheck
+        working-directory: web
+        run: pnpm -F '*' typecheck
+
+  web-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: pnpm lint
+        working-directory: web
+        run: pnpm -F '*' lint
+
+  migration-drift:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: drift
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+      - name: install migrate CLI
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: migrate up
+        env:
+          DATABASE_URL: "postgres://postgres:drift@localhost:5432/postgres?sslmode=disable"
+        run: |
+          migrate -path migrations -database "$DATABASE_URL" up
+          migrate -path migrations -database "$DATABASE_URL" version
+
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config parses
+        run: docker compose config > /dev/null
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+      - name: install task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.40.0
+      - name: Taskfile parses
+        run: "$(go env GOPATH)/bin/task --list > /dev/null"
