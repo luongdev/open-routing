@@ -59,7 +59,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-07-PLAN.md — Two-org isolation test harness (testsupport + test/isolation/ — FOUND-08 gate)
+- [x] 01-07-PLAN.md — Two-org isolation test harness (testsupport + test/isolation/ — FOUND-08 gate)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -184,7 +184,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Polyglot Monorepo | 7/9 | In Progress|  |
+| 1. Foundation & Polyglot Monorepo | 8/9 | In Progress|  |
 | 2. OpenAPI Contract & Codegen | 0/TBD | Not started | - |
 | 3. Catalog CRUD (Go) | 0/TBD | Not started | - |
 | 4. Agent State Machine (Go) | 0/TBD | Not started | - |
