@@ -17,7 +17,7 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Polyglot Monorepo** - Bootstrap the Go + pnpm polyglot monorepo with org-isolation infrastructure: `services/api` Go skeleton with chi + pgx + slog + OTel, orgDB wrapper, PostgreSQL 17 + Redis via Docker Compose, golang-migrate, pnpm workspace stub, GitHub Actions CI, and the two-org isolation integration test proving zero data leakage.
+- [x] **Phase 1: Foundation & Polyglot Monorepo** - Bootstrap the Go + pnpm polyglot monorepo with org-isolation infrastructure: `services/api` Go skeleton with chi + pgx + slog + OTel, orgDB wrapper, PostgreSQL 17 + Redis via Docker Compose, golang-migrate, pnpm workspace stub, GitHub Actions CI, and the two-org isolation integration test proving zero data leakage. (completed 2026-05-15)
 - [ ] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift.
 - [ ] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads.
 - [ ] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper.
@@ -63,7 +63,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-08-PLAN.md — GitHub Actions CI workflow (FOUND-09)
+- [x] 01-08-PLAN.md — GitHub Actions CI workflow (FOUND-09)
 
 **Branch**: `gsd/phase-01-foundation-polyglot-monorepo`
 
@@ -184,7 +184,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Polyglot Monorepo | 8/9 | In Progress|  |
+| 1. Foundation & Polyglot Monorepo | 9/9 | Complete   | 2026-05-15 |
 | 2. OpenAPI Contract & Codegen | 0/TBD | Not started | - |
 | 3. Catalog CRUD (Go) | 0/TBD | Not started | - |
 | 4. Agent State Machine (Go) | 0/TBD | Not started | - |
