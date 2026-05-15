@@ -78,15 +78,23 @@ func (o *OrgDB) Query(ctx context.Context, sql string, args ...interface{}) (pgx
 	return o.pool.Query(ctx, sql, args...)
 }
 
-// QueryRow runs preflight then delegates to pgxpool.Pool.QueryRow. pgx.Row
-// defers errors to Scan and offers no error-return path, so a preflight
-// failure here panics in both modes — there is no synthetic pgx.Row stub
-// that would carry the error forward safely. Callers reach this only via
-// sqlc-generated :one queries; a preflight panic in production indicates
-// a hardcoded missing-org_id SQL that should never have shipped.
+// errRow is returned by QueryRow when preflight fails in ValidationError mode.
+// Scan always returns the stored error, satisfying pgx.Row without panicking.
+type errRow struct{ err error }
+
+func (r errRow) Scan(_ ...any) error { return r.err }
+
+// QueryRow runs preflight then delegates to pgxpool.Pool.QueryRow.
+// On preflight failure: panics in ValidationPanic mode (dev/test), returns
+// errRow in ValidationError mode (prod) so the error surfaces at Scan
+// without crashing the process. Callers reach this only via sqlc-generated
+// :one queries; in prod a preflight failure indicates missing org_id scoping.
 func (o *OrgDB) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
 	if err := o.preflight(ctx, sql); err != nil {
-		panic(fmt.Errorf("orgdb.QueryRow preflight failed (panic in both modes): %w", err))
+		if o.mode == ValidationPanic {
+			panic(fmt.Errorf("orgdb.QueryRow preflight failed: %w", err))
+		}
+		return errRow{err: err}
 	}
 	return o.pool.QueryRow(ctx, sql, args...)
 }
