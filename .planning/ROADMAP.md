@@ -81,7 +81,30 @@ Plans:
   3. Running `pnpm gen:api` regenerates the typed TypeScript fetch client from the same spec, consumable by both `apps/admin` and `apps/embed` via `packages/ui` re-export.
   4. A CI job runs both codegen commands and fails the build if the resulting diff against committed code is non-empty — no silent drift between spec and generated artifacts.
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — UI sketches validating API shapes before spec is locked (D-33, D-34)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — Author openapi/openapi.yaml + extend middleware.WriteError to embed request_id (CONTRACT-01, D-35, D-36, D-37)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-03-PLAN.md — Go codegen pipeline: tools.go + oapi-codegen.yaml + go:generate + lint exemption + Taskfile gen (CONTRACT-02, D-41, D-42, D-43)
+- [ ] 02-05-PLAN.md — TypeScript codegen distribution: deps + gen:api + generated.ts + client/errors/task/index (CONTRACT-03, D-38, D-39, D-40)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-04-PLAN.md — Scaffold strict-server migration + /openapi.yaml + /docs runtime serving + server wiring (CONTRACT-02, D-44, D-45, D-46)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02-06-PLAN.md — CI codegen-drift job: Redocly lint + task gen + git diff --exit-code (CONTRACT-04, D-47, D-48)
+
 **Branch**: `gsd/phase-02-openapi-contract`
 
 ---
@@ -185,7 +208,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
-| 2. OpenAPI Contract & Codegen | 0/TBD | Not started | - |
+| 2. OpenAPI Contract & Codegen | 0/6 | Not started | - |
 | 3. Catalog CRUD (Go) | 0/TBD | Not started | - |
 | 4. Agent State Machine (Go) | 0/TBD | Not started | - |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
