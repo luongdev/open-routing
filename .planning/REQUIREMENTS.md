@@ -27,7 +27,7 @@
 - [ ] **FOUND-07**: OpenTelemetry Go SDK initializes before chi router setup; every `slog` log line and OTel span carries an `org_id` attribute extracted from `context.Context`.
 - [ ] **FOUND-08**: Integration test suite seeds two orgs with overlapping `external_id` values and exercises every CRUD endpoint, proving zero cross-org data leakage; tests run with `pgx` against a real Postgres 17 container.
 - [ ] **FOUND-09**: GitHub Actions CI runs `go vet`, `go test`, `golangci-lint`, frontend typecheck/lint/unit tests, and the two-org isolation suite on every pull request; merge blocked on any failure.
-- [ ] **FOUND-10**: Docker Compose brings up PostgreSQL 17, Redis, the Go API, and the Vite dev servers for local development with a single command (`docker compose up`).
+- [ ] **FOUND-10**: Docker Compose brings up PostgreSQL 17 and Redis for local development with a single command (`docker compose up`); the Go API runs natively via `task dev` (air hot-reload) per D-25; Vite dev servers are deferred to Phase 2.
 
 ### API Contract (OpenAPI)
 
