@@ -1,0 +1,74 @@
+// Command migrate applies all pending golang-migrate migrations against DATABASE_URL.
+// Per D-11 the API binary never auto-runs migrations; this is the dedicated runner.
+package main
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"log/slog"
+	"os"
+
+	"github.com/golang-migrate/migrate/v4"
+	pgmigrate "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql shim for migrate (Pitfall 7)
+
+	"github.com/luongdev/open-routing/services/api/internal/config"
+	"github.com/luongdev/open-routing/services/api/internal/db"
+)
+
+func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	cfg := config.MustLoad()
+
+	sqlDB, err := sql.Open("pgx", cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("migrate: open db", "err", err)
+		os.Exit(1)
+	}
+	defer sqlDB.Close()
+
+	if err := sqlDB.Ping(); err != nil {
+		slog.Error("migrate: ping db", "err", err)
+		os.Exit(1)
+	}
+
+	driver, err := pgmigrate.WithInstance(sqlDB, &pgmigrate.Config{})
+	if err != nil {
+		slog.Error("migrate: build driver", "err", err)
+		os.Exit(1)
+	}
+
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations", // expects working dir == repo root (Taskfile's task migrate-up runs from there)
+		"postgres",
+		driver,
+	)
+	if err != nil {
+		slog.Error("migrate: new migrate", "err", err)
+		os.Exit(1)
+	}
+
+	// D-05/D-11: emit the bypass event for audit. golang-migrate does not flow
+	// through orgDB, but the audit trail is required for forensic clarity.
+	ctx := db.WithBypass(context.Background(), "schema_migration")
+	slog.WarnContext(ctx, "orgdb bypass",
+		"event", "orgdb_bypass",
+		"reason", "schema_migration",
+		"caller", "cmd/migrate",
+	)
+
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		slog.Error("migrate: up", "err", err)
+		os.Exit(1)
+	}
+
+	ver, dirty, verr := m.Version()
+	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+		slog.Error("migrate: version", "err", verr)
+		os.Exit(1)
+	}
+	slog.Info("migrations applied", "version", ver, "dirty", dirty)
+}
