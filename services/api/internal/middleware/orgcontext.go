@@ -47,22 +47,23 @@ import (
 // BEFORE next.ServeHTTP (so it lands on the right span).
 func OrgContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		raw := r.Header.Get("X-Org-Id")
 		if raw == "" {
-			WriteError(w, http.StatusBadRequest, "invalid_org_id", "missing_header")
+			WriteError(ctx, w, http.StatusBadRequest, "invalid_org_id", "missing_header")
 			return
 		}
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			WriteError(w, http.StatusBadRequest, "invalid_org_id", "malformed_uuid")
+			WriteError(ctx, w, http.StatusBadRequest, "invalid_org_id", "malformed_uuid")
 			return
 		}
 		if id.Version() < 7 {
-			WriteError(w, http.StatusBadRequest, "invalid_org_id", "uuidv7_required")
+			WriteError(ctx, w, http.StatusBadRequest, "invalid_org_id", "uuidv7_required")
 			return
 		}
 
-		ctx := orgkey.SetOrgID(r.Context(), id)
+		ctx = orgkey.SetOrgID(r.Context(), id)
 
 		// FOUND-07: tag the active OTel span with org_id so every downstream
 		// span and log line in the request can be filtered by tenant. The

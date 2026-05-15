@@ -108,17 +108,17 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		// Defensive guard: OrgContext middleware guarantees presence inside
 		// the /v1 sub-router; this branch only fires if the route is wired
 		// outside that scope (a regression we want to surface loudly).
-		middleware.WriteError(w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
+		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
 		return
 	}
 
 	var body createRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		middleware.WriteError(w, http.StatusBadRequest, "invalid_body", "malformed_json")
+		middleware.WriteError(ctx, w, http.StatusBadRequest, "invalid_body", "malformed_json")
 		return
 	}
 	if body.ExternalID == "" || body.Name == "" {
-		middleware.WriteError(w, http.StatusBadRequest, "invalid_body", "external_id_and_name_required")
+		middleware.WriteError(ctx, w, http.StatusBadRequest, "invalid_body", "external_id_and_name_required")
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		Name:       body.Name,
 	})
 	if err != nil {
-		middleware.WriteError(w, http.StatusInternalServerError, "internal", "insert_failed")
+		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "insert_failed")
 		return
 	}
 	middleware.WriteJSON(w, http.StatusCreated, toResponse(row))
@@ -146,13 +146,13 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
-		middleware.WriteError(w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
+		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
 		return
 	}
 	q := generated.New(h.orgDB)
 	rows, err := q.ListScaffolds(ctx, toPgUUID(orgID))
 	if err != nil {
-		middleware.WriteError(w, http.StatusInternalServerError, "internal", "list_failed")
+		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "list_failed")
 		return
 	}
 	out := make([]scaffoldResponse, 0, len(rows))
@@ -175,13 +175,13 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
-		middleware.WriteError(w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
+		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
 		return
 	}
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.WriteError(w, http.StatusBadRequest, "invalid_id", "malformed_uuid")
+		middleware.WriteError(ctx, w, http.StatusBadRequest, "invalid_id", "malformed_uuid")
 		return
 	}
 	q := generated.New(h.orgDB)
@@ -191,10 +191,10 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			middleware.WriteError(w, http.StatusNotFound, "not_found", "no_such_scaffold")
+			middleware.WriteError(ctx, w, http.StatusNotFound, "not_found", "no_such_scaffold")
 			return
 		}
-		middleware.WriteError(w, http.StatusInternalServerError, "internal", "get_failed")
+		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "get_failed")
 		return
 	}
 	middleware.WriteJSON(w, http.StatusOK, toResponse(row))
