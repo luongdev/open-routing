@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -20,7 +21,7 @@ func TestOrgDB_QueryRow_ValidationError_NoOrg(t *testing.T) {
 	// preflight fails on missing ctx org_id before touching the pool.
 	o := NewOrgDB(nil, checker, ValidationError)
 	row := o.QueryRow(ctx, `SELECT id FROM _scaffold WHERE org_id = $1`, "ignored")
-	if err := row.Scan(new(string)); err == nil {
-		t.Fatal("expected error from Scan on errRow, got nil")
+	if err := row.Scan(new(string)); !errors.Is(err, ErrOrgIDMissingFromContext) {
+		t.Fatalf("expected ErrOrgIDMissingFromContext, got %v", err)
 	}
 }

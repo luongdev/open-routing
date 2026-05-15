@@ -148,3 +148,8 @@ func (o *OrgDB) preflight(ctx context.Context, sql string) error {
 // different signature this fails to compile rather than silently
 // permitting a divergent wrapper.
 var _ generated.DBTX = (*OrgDB)(nil)
+
+// Compile-time guarantee: errRow satisfies pgx.Row. pgx v5 reserves the right
+// to add methods to Row outside semver; this assertion catches any such
+// addition at build time before a runtime failure.
+var _ pgx.Row = errRow{}
