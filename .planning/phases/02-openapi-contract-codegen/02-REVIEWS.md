@@ -50,6 +50,11 @@ The overall risk of executing Phase 2 as planned is **LOW**. The plans are extra
 
 Only Gemini was invoked for this review, per user request. This section therefore summarizes Gemini's feedback rather than claiming multi-reviewer consensus.
 
+## Follow-Up Disposition
+
+- **MEDIUM reflection middleware concern**: addressed in `02-04-PLAN.md` by changing `RequestIDInjectionMiddleware` from reflect-first to exhaustive per-operation type switch. The plan now explicitly forbids importing `reflect`, requires coverage for every generated `*JSONResponse ErrorResponse` wrapper, and records the covered wrapper count in the summary.
+- **LOW toolchain coupling concern**: already mitigated by plan requirements to pin `oapi-codegen`, `openapi-typescript`, Redocly, and Scalar versions, then record resolved versions in plan summaries/lockfiles. No plan change needed beyond preserving those gates.
+
 ### Agreed Strengths
 
 - The plans are complete, traceable to decisions/requirements, and split into verifiable dependent waves.
@@ -58,8 +63,8 @@ Only Gemini was invoked for this review, per user request. This section therefor
 
 ### Agreed Concerns
 
-- `02-04`'s reflection-based request ID middleware is the main implementation risk. It needs tight tests and clear comments explaining why reflection is required.
-- Toolchain coupling is acceptable but should remain pinned and recorded in summaries.
+- `02-04`'s original reflection-based request ID middleware was the main implementation risk; follow-up changed the plan to exhaustive per-operation type switch with tests and a no-`reflect` acceptance gate.
+- Toolchain coupling is acceptable but must remain pinned and recorded in summaries.
 
 ### Divergent Views
 
