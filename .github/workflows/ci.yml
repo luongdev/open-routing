@@ -39,7 +39,6 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           working-directory: services/api
-          version: v1.63
 
   go-test:
     runs-on: ubuntu-latest
@@ -134,4 +133,5 @@ jobs:
       - name: install task
         run: go install github.com/go-task/task/v3/cmd/task@v3.40.0
       - name: Taskfile parses
-        run: "$(go env GOPATH)/bin/task --list > /dev/null"
+        run: |
+          $(go env GOPATH)/bin/task --list > /dev/null
