@@ -1,0 +1,15 @@
+run:
+  timeout: 5m
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosec
+    - gocritic
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters: [gosec, errcheck]
+    - path: internal/db/generated/
+      linters: [gosec, errcheck, gocritic, staticcheck]

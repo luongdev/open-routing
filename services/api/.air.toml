@@ -1,0 +1,9 @@
+root = "."
+tmp_dir = ".air-tmp"
+
+[build]
+  bin = ".air-tmp/api"
+  cmd = "go build -o .air-tmp/api ./cmd/api"
+  include_ext = ["go", "yml", "yaml"]
+  exclude_dir = ["internal/db/generated", ".air-tmp", "bin"]
+  delay = 500
