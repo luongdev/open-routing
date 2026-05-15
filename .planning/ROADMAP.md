@@ -49,9 +49,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-03-PLAN.md — orgDB wrapper + SQL validator + bypass + sqlc gen + cmd/migrate (FOUND-04, FOUND-05, FOUND-06)
-- [ ] 01-04-PLAN.md — OTel SDK init + slog TracingHandler (FOUND-07)
-- [ ] 01-05-PLAN.md — Middleware: OrgContext + RequestID + httputil (FOUND-03, FOUND-05)
+- [x] 01-03-PLAN.md — orgDB wrapper + SQL validator + bypass + sqlc gen + cmd/migrate (FOUND-04, FOUND-05, FOUND-06)
+- [x] 01-04-PLAN.md — OTel SDK init + slog TracingHandler (FOUND-07)
+- [x] 01-05-PLAN.md — Middleware: OrgContext + RequestID + httputil (FOUND-03, FOUND-05)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -184,7 +184,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Polyglot Monorepo | 3/9 | In Progress|  |
+| 1. Foundation & Polyglot Monorepo | 6/9 | In Progress|  |
 | 2. OpenAPI Contract & Codegen | 0/TBD | Not started | - |
 | 3. Catalog CRUD (Go) | 0/TBD | Not started | - |
 | 4. Agent State Machine (Go) | 0/TBD | Not started | - |
