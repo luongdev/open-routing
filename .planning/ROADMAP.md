@@ -55,7 +55,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-06-PLAN.md — HTTP server (chi mux + bypass routes + scaffold handlers + cmd/api) wiring all of Wave 2
+- [x] 01-06-PLAN.md — HTTP server (chi mux + bypass routes + scaffold handlers + cmd/api) wiring all of Wave 2
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -184,7 +184,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Polyglot Monorepo | 6/9 | In Progress|  |
+| 1. Foundation & Polyglot Monorepo | 7/9 | In Progress|  |
 | 2. OpenAPI Contract & Codegen | 0/TBD | Not started | - |
 | 3. Catalog CRUD (Go) | 0/TBD | Not started | - |
 | 4. Agent State Machine (Go) | 0/TBD | Not started | - |
