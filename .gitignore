@@ -5,9 +5,6 @@
 .DS_Store
 *._*
 
-# ---- Planning artifacts (preserved from initial repo state) ----
-.planning/
-
 # ---- Go ----
 *.exe
 *.test
