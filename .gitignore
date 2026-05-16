@@ -14,6 +14,7 @@ CLAUDE.md
 *.out
 bin/
 services/api/bin/
+services/api/api
 .air-tmp/
 services/api/.air-tmp/
 
