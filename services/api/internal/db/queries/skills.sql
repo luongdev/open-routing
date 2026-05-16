@@ -9,6 +9,13 @@
 --
 -- See agents.sql for the COALESCE / sparse-PATCH / D-66 / D-65 / Pitfall 3
 -- rationale that applies identically here.
+--
+-- Spec semantics: PATCH `description = null` is INDISTINGUISHABLE from
+-- omission at the oapi-codegen pointer-type layer (both produce nil). The
+-- COALESCE pattern preserves the current value when the handler passes
+-- nil — a caller CANNOT clear a previously-set description back to NULL
+-- through PATCH in v0.1. A dedicated "unset description" endpoint or a
+-- distinguishable sentinel (e.g., empty string) is deferred to v0.2.
 
 -- name: InsertSkill :one
 INSERT INTO skills (id, org_id, external_id, name, description, skill_type, enabled)

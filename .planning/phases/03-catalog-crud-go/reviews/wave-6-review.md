@@ -146,6 +146,11 @@ Wave 6 successfully replaces the `Wave0TempStubs` scaffold with the production `
 2. D-70 composite seam: introduce `api.Handlers` struct embedding catalog.Handlers + state.Handlers + (Phase 5) imports.Handlers, wire into main.go.
 3. Tighten isolation assertions: inspect 404 bodies for orgA identifiers absent; FK 422 assert ErrorCodeInvalidReference.
 4. Wave 5 deferred tests: adapter POST with no config field, channel sparse PATCH preserves default_queue_id.
+5. **Name-filter wildcard semantics (claude code-reviewer SHOULD):** `lower(name) LIKE '%' || lower($N::text) || '%'` does NOT escape `%`/`_` in user input. Not SQLi (parameterized) but admins can match all rows with `%` or any-char with `_`. Either document the wildcard pass-through in the OpenAPI `name` parameter description OR `replace($N, '\\', '\\\\').replace('%', '\\%').replace('_', '\\_')` before the bind in sqlc + `LIKE ... ESCAPE '\\'`. Applies to all 6 list queries.
+6. **pgx error PII in slog (claude code-reviewer SHOULD):** `h.deps.Logger.ErrorContext(ctx, "...", "err", err)` ships the full `pgconn.PgError.Detail/Where/InternalQuery` strings to log storage, which can include the request's `external_id`, `name`, etc. For known-categorized cases (23505/23503/23514) strip the err to `pgErr.Code` + `pgErr.ConstraintName`. Applies to every entity handler. FOUND-07 OTel pipeline downstream — verify retention/PII policy.
+
+**Already-fixed inline (claude code-reviewer SHOULD #3, addressed in this commit):**
+- `services/api/internal/db/queries/skills.sql` now documents the COALESCE preserve-on-nil null-vs-omit limitation in the same shape as `channels.sql:8-11`.
 
 **Phase 3 success criteria (ROADMAP CRIT 1-5) — empirically proven:**
 | Criterion | Proof |
