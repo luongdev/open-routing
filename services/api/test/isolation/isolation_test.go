@@ -127,6 +127,45 @@ func TestBypassPaths_NoHeaderRequired(t *testing.T) {
 	}
 }
 
+// Wave 6 review: content + content-type smoke tests for the bypass routes
+// — the previous openapi_test.go was dropped with the scaffold port and
+// these assertions had no replacement. Without them, a regression that
+// e.g. served HTML at /openapi.yaml would only surface via integration
+// smoke tests downstream.
+func TestBypass_OpenAPISpec_ServesYAML(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet, "/openapi.yaml", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "yaml",
+		"/openapi.yaml must serve YAML content-type, got %q", resp.Header.Get("Content-Type"))
+	require.Contains(t, string(body), "openapi: 3.0",
+		"/openapi.yaml body must contain the OpenAPI version header")
+	require.Contains(t, string(body), "title: Open Routing API",
+		"/openapi.yaml body must contain the spec title")
+}
+
+func TestBypass_Docs_LoadsOpenAPISpec(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet, "/docs", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Content-Type"), "html",
+		"/docs must serve HTML content-type, got %q", resp.Header.Get("Content-Type"))
+	require.Contains(t, string(body), "/openapi.yaml",
+		"/docs HTML must reference /openapi.yaml so the viewer can fetch the spec")
+}
+
+func TestBypass_Readyz_Returns200WhenHealthy(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet, "/readyz", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"/readyz must be 200 when Postgres + Redis are reachable (TestMain ensures both)")
+	require.Contains(t, string(body), `"status"`,
+		"/readyz body must declare a status field for monitoring scrape")
+}
+
 // =============================================================================
 // Case 10 — TestRequestID_IsUUIDv7 (D-28: X-Request-Id is UUIDv7).
 // =============================================================================

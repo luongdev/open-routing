@@ -301,3 +301,29 @@ func TestCatalog_AgentsListIsolation(t *testing.T) {
 		require.NotContains(t, gotB, id, "orgB list MUST NOT contain orgA id %s (FOUND-08)", id)
 	}
 }
+
+// FOUND-06 HTTP-layer proof — two consecutive POSTs with the same
+// (org_id, external_id) must collide. Wave 6 review: this test was
+// dropped with the scaffold suite but FOUND-06 still applies to every
+// catalog entity. Agents is the canonical probe; the same constraint
+// holds for skills/queues/channels/adapters.
+func TestCatalog_AgentsUniqueOrgExternalId(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+	org := freshOrg(t)
+
+	code1, _ := postEntity(t, baseURL(), "agents", org, map[string]any{
+		"external_id": "ext-dup-iso",
+		"name":        "First",
+		"email":       "first@example.com",
+	})
+	require.Equal(t, http.StatusCreated, code1, "first POST must succeed")
+
+	code2, _ := postEntity(t, baseURL(), "agents", org, map[string]any{
+		"external_id": "ext-dup-iso",
+		"name":        "Second",
+		"email":       "second@example.com",
+	})
+	require.Equal(t, http.StatusConflict, code2,
+		"second POST with same (org_id, external_id) MUST return 409 (FOUND-06)")
+}
