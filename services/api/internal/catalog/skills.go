@@ -252,20 +252,13 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 	}
 	skillID := uuid.UUID(req.Id)
 
-	// Skills has no join table — the tx wraps only the row UPDATE + the
-	// disambiguation probe. Shape stays identical to agents.go for the
-	// disambiguation contract (D-66 invariant: probe sees the rollback).
-	tx, err := h.deps.OrgDB.BeginTx(ctx)
-	if err != nil {
-		h.deps.Logger.ErrorContext(ctx, "update skill begin tx", "err", err)
-		return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-			Error: api.ErrorCodeInternal, Reason: "begin_tx_failed",
-		}}, nil
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := generated.New(tx)
-	row, err := qtx.UpdateSkill(ctx, generated.UpdateSkillParams{
+	// Single-table entity: no junction to coordinate, so no BeginTx
+	// wrapper. The atomic version-checked UPDATE + a follow-up SELECT for
+	// D-66 disambiguation are safe without an enclosing tx — MVCC at the
+	// row level is sufficient. Wave 5 review aligned this with the
+	// queues/channels/adapters template.
+	q := generated.New(h.deps.OrgDB)
+	row, err := q.UpdateSkill(ctx, generated.UpdateSkillParams{
 		ID:              pgUUID(skillID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: int32(req.Body.Version),
@@ -275,7 +268,7 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := qtx.GetSkillByIdAnyVersion(ctx, generated.GetSkillByIdAnyVersionParams{
+		cur, perr := q.GetSkillByIdAnyVersion(ctx, generated.GetSkillByIdAnyVersionParams{
 			ID:    pgUUID(skillID),
 			OrgID: pgUUID(orgID),
 		})
@@ -290,7 +283,7 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 				Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
 			}}, nil
 		}
-		// 409 — D-56 cache DEL so a stale value can't mask the conflict.
+		// D-56 — cache DEL on 409 so a stale value can't mask the conflict.
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "skills", skillID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "skills", skillID), "err", delErr)
 		}
@@ -301,26 +294,14 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "skill")
-		if status == 422 {
-			return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-				Error: code, Reason: reason,
-			}}, nil
-		}
+		_, code, reason := mapPgError(err, "skill")
 		h.deps.Logger.ErrorContext(ctx, "update skill", "err", err)
 		return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
 			Error: code, Reason: reason,
 		}}, nil
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		h.deps.Logger.ErrorContext(ctx, "update skill commit", "err", err)
-		return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-			Error: api.ErrorCodeInternal, Reason: "commit_failed",
-		}}, nil
-	}
-
-	// D-55 — DEL after commit (best-effort).
+	// D-55 — cache DEL after the UPDATE returned a row (best-effort).
 	if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "skills", skillID)); delErr != nil {
 		h.deps.Logger.WarnContext(ctx, "cache del failed", "key", cache.Key(orgID, "skills", skillID), "err", delErr)
 	}
@@ -361,8 +342,6 @@ func (h *Handlers) DeleteSkill(ctx context.Context, req api.DeleteSkillRequestOb
 	return api.DeleteSkill204Response{}, nil
 }
 
-// mapSkill — sqlc-row → api.Skill DTO. Reads the nullable `description`
-// column via textPtr (Wave 3 helper).
 func mapSkill(row generated.Skill) api.Skill {
 	var desc *string
 	if row.Description != nil {

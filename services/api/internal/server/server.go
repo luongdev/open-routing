@@ -288,6 +288,10 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)
 		return api.CreateSkill409JSONResponse(v)
+	case api.CreateBreakReason409JSONResponse:
+		v := api.ErrorResponse(r)
+		v.RequestId = setIfNil(v.RequestId, id)
+		return api.CreateBreakReason409JSONResponse(v)
 	case api.BulkImportCatalog400JSONResponse:
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)

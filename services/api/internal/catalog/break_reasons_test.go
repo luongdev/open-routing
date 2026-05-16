@@ -377,9 +377,9 @@ func TestBreakReasons_DisplayOrder(t *testing.T) {
 	require.Equal(t, br1.Id, list.Items[2].Id)
 }
 
-// TestBreakReasons_NameUniqueCollision — UNIQUE(org_id, name) violation
-// surfaces as 500-with-reason "name_collision" (no 409 response type is
-// declared on this op; clients branch on error code per D-36).
+// UNIQUE(org_id, name) collision surfaces as 409 (Wave 5 review — was
+// 500). Spec was amended to declare a 409 response so this client-
+// correctable error doesn't poison 5xx metrics.
 func TestBreakReasons_NameUniqueCollision(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
@@ -389,11 +389,11 @@ func TestBreakReasons_NameUniqueCollision(t *testing.T) {
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID),
 		makeBreakReasonBody("Lunch", true, 20))
-	require.Equalf(t, http.StatusInternalServerError, resp.StatusCode,
-		"second POST with same name must surface 500 with name_collision reason (no 409 type), body=%s", string(raw))
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"second POST with same name must surface 409 name_collision, body=%s", string(raw))
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
-	require.Equal(t, api.ErrorCodeVersionConflict, e.Error)
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
 	require.Equal(t, "name_collision", e.Reason)
 }
 

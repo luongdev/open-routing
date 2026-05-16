@@ -2762,6 +2762,15 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            /** @description UNIQUE(org_id, name) collision — the supplied name already exists in this org. Wave 5 cross-AI review: 23505 surfaced as 500 was poisoning 5xx metrics for a client-correctable error. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };

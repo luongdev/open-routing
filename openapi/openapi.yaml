@@ -2507,6 +2507,16 @@ paths:
                 $ref: "#/components/schemas/BreakReason"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: >
+            UNIQUE(org_id, name) collision — the supplied name already
+            exists in this org. Wave 5 cross-AI review: 23505 surfaced
+            as 500 was poisoning 5xx metrics for a client-correctable
+            error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 

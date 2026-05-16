@@ -391,9 +391,6 @@ func (h *Handlers) DeleteChannel(ctx context.Context, req api.DeleteChannelReque
 	return api.DeleteChannel204Response{}, nil
 }
 
-// mapChannel converts a sqlc-row Channel into the api.Channel DTO. The
-// only nullable-aware path is default_queue_id — pgtype.UUID.Valid=false
-// maps to a nil pointer in the DTO so the JSON encoder omits the field.
 func mapChannel(row generated.Channel) api.Channel {
 	var defQID *api.UUIDv7
 	if row.DefaultQueueID.Valid {
