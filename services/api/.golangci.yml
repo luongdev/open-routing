@@ -18,6 +18,8 @@ linters:
         linters: [gosec, errcheck]
       - path: internal/db/generated/
         linters: [gosec, errcheck, gocritic, staticcheck]
+      - path: internal/api/
+        linters: [gosec, errcheck, gocritic, staticcheck]
     paths:
       - third_party$
       - builtin$

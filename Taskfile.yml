@@ -16,10 +16,11 @@ tasks:
 
   # ---- Codegen ----
   gen:
-    desc: Run sqlc + (Phase 2) oapi-codegen + openapi-typescript
+    desc: Run sqlc + oapi-codegen + openapi-typescript
     cmds:
-      # Phase 2: add oapi-codegen + openapi-typescript
       - cd services/api && sqlc generate
+      - cd services/api && go generate ./internal/api/...
+      - cd web && pnpm -F @open-routing/ui gen:api
 
   # ---- Migrations (D-08 + D-11) ----
   migrate-up:

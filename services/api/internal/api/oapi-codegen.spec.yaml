@@ -1,0 +1,12 @@
+# services/api/internal/api/oapi-codegen.spec.yaml
+# D-42, D-45: embedded-spec flavor → spec.gen.go
+# Generates GetSwagger() which returns the embedded openapi.yaml bytes.
+# Used by Plan 04's GET /openapi.yaml handler to serve the spec the binary
+# was built against (D-45: always matches the running binary).
+# Run via: go generate ./internal/api/... (see gen.go)
+package: api
+output: spec.gen.go
+generate:
+  embedded-spec: true
+output-options:
+  skip-prune: false
