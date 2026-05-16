@@ -1,10 +1,8 @@
 // Package server owns the chi router factory that fronts the open-routing
-// API binary. health.go in this package provides the bypass-path handler
-// logic; wave0_temp_stubs.go provides the Wave 0 transitional
-// StrictServerInterface impl (replaces the Phase 2 compositeServer per
-// D-77 — deleted in Wave 2 Plan 03-08); openapi.go provides the
-// /openapi.yaml + /docs handler factories; server.go assembles the LOCKED
-// middleware chain and the route table.
+// API binary. The StrictServerInterface impl lives in
+// services/api/internal/catalog (D-69 — catalog.Handlers IS the strict
+// server); server.go assembles the LOCKED middleware chain and registers
+// the spec routes against that handler via api.HandlerWithOptions.
 //
 // Route wiring (D-44, Phase 2):
 //
@@ -46,19 +44,18 @@ import (
 )
 
 // Deps bundles every runtime dependency the API mux needs. cmd/api/main.go
-// constructs one of these (after wiring OTel, pool, redis, orgDB) and hands
-// it to NewMux. SpecBytes is the embedded openapi.yaml from api.GetSpec()
-// (marshaled to YAML); StrictHandlers is the StrictServerInterface impl
-// (Wave 0: Wave0TempStubs from wave0_temp_stubs.go — bypass methods real,
-// catalog methods 500 "not_implemented_yet"; Wave 2 / Plan 03-08: replaced
-// with catalog.Handlers per D-69). Tests construct StrictHandlers via
-// server.NewWave0TempStubs(pool, rdb, specBytes).
+// constructs one of these (after wiring OTel, pool, redis, orgDB, cache,
+// catalog) and hands it to NewMux. SpecBytes is the embedded openapi.yaml
+// from api.GetSpec() (marshaled to YAML); StrictHandlers is the
+// api.StrictServerInterface impl (production: catalog.Handlers from
+// internal/catalog per D-69). Tests construct fakes that satisfy the
+// interface.
 type Deps struct {
 	Pool           *pgxpool.Pool
 	Redis          *redis.Client
 	OrgDB          *db.OrgDB
 	Config         *config.Config
-	StrictHandlers api.StrictServerInterface // D-44, D-69: Wave 0 = Wave0TempStubs; Wave 2 = catalog.Handlers.
+	StrictHandlers api.StrictServerInterface // D-44, D-69 — production: catalog.Handlers.
 	SpecBytes      []byte                    // D-45: embedded openapi.yaml bytes for /openapi.yaml
 }
 

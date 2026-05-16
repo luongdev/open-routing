@@ -121,10 +121,8 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 	})
 
 	// 6. server.NewMux with catalog.Handlers as the StrictHandlers field
-	//    (Plan 03-06 wires the real impl in for testing while production
-	//    still uses Wave0TempStubs until Plan 03-10 rolls the swap into
-	//    cmd/api/main.go). Build the spec bytes the same way main.go
-	//    does — from the embedded spec.
+	//    — same wiring main.go uses in production after Plan 03-10. Build
+	//    the spec bytes the same way main.go does — from the embedded spec.
 	swagger, _ := api.GetSpec()
 	specBytes, _ := yaml.Marshal(swagger)
 	cfg := &config.Config{
