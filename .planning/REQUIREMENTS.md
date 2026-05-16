@@ -32,7 +32,7 @@
 ### API Contract (OpenAPI)
 
 - [ ] **CONTRACT-01**: `openapi/openapi.yaml` defines every v0.1 REST endpoint, request/response schema, and error shape as a single OpenAPI 3.1 document.
-- [ ] **CONTRACT-02**: Go server stubs (handler interfaces, request/response types, validators) are generated from `openapi/openapi.yaml` via `oapi-codegen` and checked into the repository under `services/api/internal/api/`.
+- [x] **CONTRACT-02**: Go server stubs (handler interfaces, request/response types, validators) are generated from `openapi/openapi.yaml` via `oapi-codegen` and checked into the repository under `services/api/internal/api/`.
 - [ ] **CONTRACT-03**: TypeScript client (typed fetch wrappers, schemas) is generated from `openapi/openapi.yaml` via `openapi-typescript` and consumed by both `apps/admin` and `apps/embed` via `packages/ui` re-export.
 - [ ] **CONTRACT-04**: A CI check fails the build if the committed generated code diverges from what the spec would produce (`go generate ./...` + `pnpm gen:api` produce no diff).
 
@@ -199,7 +199,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | FOUND-09 | Phase 1 | Pending |
 | FOUND-10 | Phase 1 | Pending |
 | CONTRACT-01 | Phase 2 | Pending |
-| CONTRACT-02 | Phase 2 | Pending |
+| CONTRACT-02 | Phase 2 | Complete |
 | CONTRACT-03 | Phase 2 | Pending |
 | CONTRACT-04 | Phase 2 | Pending |
 | CAT-01 | Phase 3 | Pending |
