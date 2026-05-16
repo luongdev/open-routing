@@ -8,10 +8,86 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Scaffold struct {
+type Adapter struct {
+	ID          pgtype.UUID        `json:"id"`
+	OrgID       pgtype.UUID        `json:"org_id"`
+	Name        string             `json:"name"`
+	AdapterType string             `json:"adapter_type"`
+	Config      []byte             `json:"config"`
+	Enabled     bool               `json:"enabled"`
+	Version     int32              `json:"version"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Agent struct {
 	ID         pgtype.UUID        `json:"id"`
 	OrgID      pgtype.UUID        `json:"org_id"`
 	ExternalID string             `json:"external_id"`
 	Name       string             `json:"name"`
+	Email      string             `json:"email"`
+	Enabled    bool               `json:"enabled"`
+	Version    int32              `json:"version"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AgentSkill struct {
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	SkillID     pgtype.UUID        `json:"skill_id"`
+	OrgID       pgtype.UUID        `json:"org_id"`
+	Proficiency int32              `json:"proficiency"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type BreakReason struct {
+	ID           pgtype.UUID        `json:"id"`
+	OrgID        pgtype.UUID        `json:"org_id"`
+	Name         string             `json:"name"`
+	Routable     bool               `json:"routable"`
+	DisplayOrder int32              `json:"display_order"`
+	Enabled      bool               `json:"enabled"`
+	Version      int32              `json:"version"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Channel struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	ExternalID     string             `json:"external_id"`
+	Name           string             `json:"name"`
+	ChannelType    string             `json:"channel_type"`
+	DefaultQueueID pgtype.UUID        `json:"default_queue_id"`
+	Enabled        bool               `json:"enabled"`
+	Version        int32              `json:"version"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Queue struct {
+	ID           pgtype.UUID        `json:"id"`
+	OrgID        pgtype.UUID        `json:"org_id"`
+	ExternalID   string             `json:"external_id"`
+	Name         string             `json:"name"`
+	ChannelTypes []string           `json:"channel_types"`
+	Priority     int32              `json:"priority"`
+	AcwSec       int32              `json:"acw_sec"`
+	Enabled      bool               `json:"enabled"`
+	Version      int32              `json:"version"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Skill struct {
+	ID          pgtype.UUID        `json:"id"`
+	OrgID       pgtype.UUID        `json:"org_id"`
+	ExternalID  string             `json:"external_id"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	SkillType   string             `json:"skill_type"`
+	Enabled     bool               `json:"enabled"`
+	Version     int32              `json:"version"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
