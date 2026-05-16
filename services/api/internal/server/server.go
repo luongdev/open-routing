@@ -95,8 +95,11 @@ func NewMux(deps *Deps) http.Handler {
 	// only for /v1/* paths, leaving bypass routes (/healthz, /readyz,
 	// /openapi.yaml, /docs) reachable without X-Org-Id (D-21).
 	api.HandlerWithOptions(strictPipeline, api.ChiServerOptions{
-		BaseRouter:  r,
-		Middlewares: []api.MiddlewareFunc{orgContextMiddleware},
+		BaseRouter: r,
+		Middlewares: []api.MiddlewareFunc{
+			orgContextMiddleware,
+			uuidv7PathParamsMiddleware,
+		},
 	})
 
 	return r
@@ -117,6 +120,30 @@ func orgContextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
 			appmw.OrgContext(next).ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// uuidv7PathParamsMiddleware is a chi MiddlewareFunc that wraps
+// appmw.UUIDv7PathParams and applies it only to /v1/* paths that have
+// matched {id} parameters in the chi route context. Bypass routes and paths
+// without {id} params are passed through untouched.
+//
+// Wired as the second entry in api.ChiServerOptions.Middlewares so it runs
+// after orgContextMiddleware (which may short-circuit on missing X-Org-Id
+// before we validate path UUIDs — correct order: auth gate first, then
+// input validation).
+//
+// REVIEWS HIGH #3: without this middleware a UUIDv4 {id} path param reaches
+// the handler, which queries the DB (no row found for a v4 id in a v7-keyed
+// table), and the response is a 404. The 404 is indistinguishable from the
+// FOUND-08 cross-org probe disposition, confusing incident response.
+func uuidv7PathParamsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/") {
+			appmw.UUIDv7PathParams(next).ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
