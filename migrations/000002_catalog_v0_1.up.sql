@@ -152,6 +152,9 @@ CREATE INDEX ix_break_reasons_org_created ON break_reasons (org_id, created_at D
 -- display_order index supports the ordered list view used by the agent-status
 -- picker; ASC ordering is intentional (lower display_order = higher in list).
 CREATE INDEX ix_break_reasons_org_display ON break_reasons (org_id, display_order, id) WHERE enabled = TRUE;
+-- Partial functional name-search index (D-64 universal application; Wave 1 codex review).
+-- Supports prefix LIKE for ILIKE name filter on the break_reasons list endpoint (CAT-10).
+CREATE INDEX ix_break_reasons_org_name ON break_reasons (org_id, lower(name) text_pattern_ops) WHERE enabled = TRUE;
 
 -- ---------------------------------------------------------------------------
 -- CAT-03: agent_skills join

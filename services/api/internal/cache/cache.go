@@ -60,6 +60,13 @@ var ErrNotFound = errors.New("cache: not found")
 // so the next request is served from a freshly populated cache.
 const refreshThreshold = 10 * time.Second
 
+// refreshTimeout bounds the background refresh goroutine so a hung
+// loader (stuck DB, network partition) cannot leak the goroutine
+// indefinitely. 10s is generous relative to typical load() latency
+// while remaining short enough to free up workers (Wave 1 gemini
+// review).
+const refreshTimeout = 10 * time.Second
+
 // Cache wraps a Redis client + a singleflight group + a slog logger.
 // Constructed once at boot via New(rdb, logger) and passed into every
 // consumer via the catalog.Deps struct (Wave 2 wiring).
@@ -90,10 +97,12 @@ func New(rdb *redis.Client, logger *slog.Logger) *Cache {
 // D-58. Helper constructor — every catalog handler calls this rather
 // than building the string manually. Accepts any-typed arguments so
 // callers can pass uuid.UUID, string, pgtype.UUID, or other Stringer
-// implementations interchangeably; fmt.Sprintf %s resolves each via
-// the standard verb rules.
+// implementations interchangeably; fmt.Sprintf %v defends against bad
+// caller usage by falling back to default value formatting when the
+// argument lacks a Stringer (avoids "%!s(...)" output — Wave 1 codex
+// review).
 func Key(orgID, entity, id any) string {
-	return fmt.Sprintf("or:%s:%s:%s", orgID, entity, id)
+	return fmt.Sprintf("or:%v:%v:%v", orgID, entity, id)
 }
 
 // GetOrSet looks up `key` in Redis; on hit, JSON-unmarshals the payload
@@ -136,8 +145,15 @@ func GetOrSet[T any](
 			// doesn't kill the refresh (Pitfall 4) — values like trace_id
 			// and org_id stay attached for log correlation.
 			if pttl, perr := c.rdb.PTTL(ctx, key).Result(); perr == nil && pttl > 0 && pttl < refreshThreshold {
-				bgCtx := context.WithoutCancel(ctx)
+				// Bound the background refresh with a hard timeout so a
+				// hung load() (e.g. stuck DB query, network partition) can
+				// never leak a goroutine indefinitely. WithoutCancel keeps
+				// trace_id + org_id attached for log correlation even when
+				// the request finishes (Pitfall 4); WithTimeout adds the
+				// upper bound (Wave 1 gemini review).
+				bgCtx, bgCancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
 				go func() {
+					defer bgCancel()
 					_, _, _ = c.sf.Do("refresh:"+key, func() (any, error) {
 						c.logger.DebugContext(bgCtx, "cache",
 							"key", key, "outcome", "refresh")

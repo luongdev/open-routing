@@ -43,7 +43,9 @@ tasks:
   db:reset:
     desc: 'Drop + recreate the dev database, then apply all migrations from scratch (D-61 editable-migration workflow).'
     cmds:
-      - docker compose exec -T postgres psql -U openrouting -d postgres -c "DROP DATABASE IF EXISTS openrouting" -c "CREATE DATABASE openrouting WITH OWNER openrouting"
+      # ON_ERROR_STOP=1 → fail fast on any psql error so the migrate step doesn't run against a half-reset DB.
+      # WITH (FORCE) → Postgres 13+ terminates active backends (e.g. `air` hot-reload + dev sessions) so DROP doesn't hang or refuse.
+      - docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U openrouting -d postgres -c "DROP DATABASE IF EXISTS openrouting WITH (FORCE)" -c "CREATE DATABASE openrouting WITH OWNER openrouting"
       - migrate -path migrations -database "$DATABASE_URL" up
 
   # ---- Dev (D-24 flow) ----
