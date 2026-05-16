@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Open Routing API — v0.1</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>body{margin:0}</style>
+</head>
+<body>
+  <!-- D-45: /docs loads the Scalar API Reference viewer from CDN.
+       The viewer fetches /openapi.yaml from the same origin (relative URL)
+       so the spec served is the exact one embedded in the running binary. -->
+  <script
+    id="api-reference"
+    data-url="/openapi.yaml"
+    data-configuration='{"theme":"default","layout":"modern"}'
+  ></script>
+  <!-- Pin to a specific Scalar release. v1.25.0 is the stable release at
+       the time of Phase 2 authoring; update via PR if a security advisory
+       lands. Per D-45 / Claude's Discretion, do NOT use @latest. -->
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.25.0/dist/browser/standalone.min.js"></script>
+</body>
+</html>
