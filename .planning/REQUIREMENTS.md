@@ -9,7 +9,7 @@
 **Locked stack (see PROJECT.md Key Decisions for rationale):**
 - Backend: Go + chi + sqlc + pgx + golang-migrate + slog
 - Database: PostgreSQL 17 + Redis
-- API contract: OpenAPI 3.1 → oapi-codegen (Go) + openapi-typescript (TS client)
+- API contract: OpenAPI 3.0 → oapi-codegen (Go) + openapi-typescript (TS client)
 - Frontend: Vite + Lit + Shoelace + TypeScript
 - Embedding: Web Components (Custom Elements + Shadow DOM)
 - Repo: polyglot monorepo (Go + pnpm workspaces)
@@ -31,7 +31,7 @@
 
 ### API Contract (OpenAPI)
 
-- [ ] **CONTRACT-01**: `openapi/openapi.yaml` defines every v0.1 REST endpoint, request/response schema, and error shape as a single OpenAPI 3.1 document.
+- [x] **CONTRACT-01**: `openapi/openapi.yaml` defines every v0.1 REST endpoint, request/response schema, and error shape as a single OpenAPI 3.0 document. *(Downgraded from 3.1 to 3.0.0 during Plan 02-03 — see 02-VERIFICATION.md.)*
 - [x] **CONTRACT-02**: Go server stubs (handler interfaces, request/response types, validators) are generated from `openapi/openapi.yaml` via `oapi-codegen` and checked into the repository under `services/api/internal/api/`.
 - [ ] **CONTRACT-03**: TypeScript client (typed fetch wrappers, schemas) is generated from `openapi/openapi.yaml` via `openapi-typescript` and consumed by both `apps/admin` and `apps/embed` via `packages/ui` re-export.
 - [ ] **CONTRACT-04**: A CI check fails the build if the committed generated code diverges from what the spec would produce (`go generate ./...` + `pnpm gen:api` produce no diff).

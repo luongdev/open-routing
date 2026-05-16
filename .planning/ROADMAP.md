@@ -71,12 +71,12 @@ Plans:
 
 ### Phase 2: OpenAPI Contract & Codegen
 
-**Goal**: A single OpenAPI 3.1 spec covers every v0.1 endpoint and drives both the Go server stubs and the TypeScript client, so neither side can drift from the contract undetected.
+**Goal**: A single OpenAPI 3.0 spec covers every v0.1 endpoint and drives both the Go server stubs and the TypeScript client, so neither side can drift from the contract undetected. *(Note: originally locked as OAS 3.1; downgraded to OAS 3.0.0 during Plan 02-03 because oapi-codegen v2 does not support OAS 3.1 nullable type arrays. See 02-VERIFICATION.md "Deviation 1" for full rationale.)*
 **Depends on**: Phase 1
 **Requirements**: CONTRACT-01, CONTRACT-02, CONTRACT-03, CONTRACT-04
 **Success Criteria** (what must be TRUE):
 
-  1. `openapi/openapi.yaml` defines every v0.1 REST endpoint, request/response schema, and error shape as a single valid OpenAPI 3.1 document that passes a spec linter in CI.
+  1. `openapi/openapi.yaml` defines every v0.1 REST endpoint, request/response schema, and error shape as a single valid OpenAPI 3.0 document that passes a spec linter in CI.
   2. Running `go generate ./...` regenerates Go handler interfaces, request/response types, and validators under `services/api/internal/api/` with no manual editing required.
   3. Running `pnpm gen:api` regenerates the typed TypeScript fetch client from the same spec, consumable by both `apps/admin` and `apps/embed` via `packages/ui` re-export.
   4. A CI job runs both codegen commands and fails the build if the resulting diff against committed code is non-empty — no silent drift between spec and generated artifacts.
@@ -238,5 +238,5 @@ Plans:
 
 *Roadmap defined: 2026-05-15*
 *Milestone: v0.1 Catalog Foundation*
-*Stack: Go + chi + sqlc + pgx + golang-migrate + PostgreSQL 17 + Redis + OpenAPI 3.1 + Vite + Lit + Shoelace + Web Components*
+*Stack: Go + chi + sqlc + pgx + golang-migrate + PostgreSQL 17 + Redis + OpenAPI 3.0 + Vite + Lit + Shoelace + Web Components*
 *Phase numbering: sequential, starting at 1*
