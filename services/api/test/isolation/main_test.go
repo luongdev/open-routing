@@ -175,7 +175,7 @@ func TestMain(m *testing.M) {
 	orgDB := db.NewOrgDB(sharedPool, db.NewSQLChecker(), db.ValidationPanic)
 
 	// Build spec bytes from the generated embedded spec (D-45).
-	swagger, _ := api.GetSwagger() // ignore error — spec.gen.go is always parseable
+	swagger, _ := api.GetSpec() // ignore error — spec.gen.go is always parseable
 	specBytes, _ := yaml.Marshal(swagger)
 
 	strictServer := server.NewCompositeServer(orgDB, sharedPool, sharedRedis, specBytes)

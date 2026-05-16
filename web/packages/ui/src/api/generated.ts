@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * OpenAPI spec
-         * @description Returns the embedded OpenAPI 3.1 spec bytes from the running binary (D-45). Always exactly the spec the binary was compiled against — no stale file risk. Bypasses `OrgContext` middleware (D-21 extended by D-45).
+         * @description Returns the embedded OpenAPI 3.0 spec bytes from the running binary (D-45). Always exactly the spec the binary was compiled against — no stale file risk. Bypasses `OrgContext` middleware (D-21 extended by D-45).
          */
         get: operations["GetOpenAPISpec"];
         put?: never;
@@ -1554,7 +1554,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OpenAPI 3.1 YAML spec. */
+            /** @description OpenAPI 3.0 YAML spec. */
             200: {
                 headers: {
                     [name: string]: unknown;

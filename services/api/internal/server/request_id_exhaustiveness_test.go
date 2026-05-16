@@ -45,8 +45,6 @@ func errResp() api.ErrorResponse {
 	return api.ErrorResponse{Error: "test_error", Reason: "test_reason"}
 }
 
-func ptrV[T any](v T) *T { return &v }
-
 // assertID checks the request_id field on a response value after injection.
 // It uses type assertions to avoid reflection — keeping compile-time safety.
 func assertID(t *testing.T, result any, typeName string) {
@@ -77,76 +75,76 @@ func assertID(t *testing.T, result any, typeName string) {
 
 	// Adapters
 	case api.ListAdapters400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
-		require.Equal(t, expectedID, *r.BadRequestJSONResponse.RequestId)
+		require.NotNil(t, r.RequestId, "%s", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
 	case api.ListAdapters500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateAdapter400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateAdapter500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteAdapter400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteAdapter404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteAdapter500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAdapter400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAdapter404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAdapter500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAdapter400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAdapter404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAdapter500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// Agents
 	case api.ListAgents400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListAgents500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateAgent400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateAgent500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteAgent400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteAgent404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteAgent500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAgent400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAgent404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAgent500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAgent400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAgent404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAgent409JSONResponse:
 		// VersionConflictErrorResponse variant — RequestId is a direct field.
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateAgent500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// AgentStatus
 	case api.GetAgentStatus400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAgentStatus404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetAgentStatus500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.PatchAgentStatus400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.PatchAgentStatus404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.PatchAgentStatus409JSONResponse:
 		// InvalidTransitionErrorResponse — has its own RequestId.
 		v := api.InvalidTransitionErrorResponse(r)
@@ -155,169 +153,169 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.PatchAgentStatus422JSONResponse:
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 	case api.PatchAgentStatus500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// BreakReasons
 	case api.ListBreakReasons400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListBreakReasons500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateBreakReason400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateBreakReason500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteBreakReason400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteBreakReason404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteBreakReason500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetBreakReason400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetBreakReason404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetBreakReason500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateBreakReason400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateBreakReason404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateBreakReason409JSONResponse:
 		// VersionConflictErrorResponse — has its own RequestId.
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateBreakReason500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// BulkImport
 	case api.BulkImportCatalog400JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.BulkImportCatalog413JSONResponse:
-		require.NotNil(t, r.RequestEntityTooLargeJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.BulkImportCatalog500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// Channels
 	case api.ListChannels400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListChannels500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateChannel400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateChannel409JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateChannel500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteChannel400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteChannel404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteChannel500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetChannel400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetChannel404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetChannel500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateChannel400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateChannel404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateChannel500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// ImportJob
 	case api.GetImportJob400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetImportJob404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetImportJob500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// Queues
 	case api.ListQueues400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListQueues500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateQueue400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateQueue409JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateQueue500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteQueue400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteQueue404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteQueue500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetQueue400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetQueue404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetQueue500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateQueue400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateQueue404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateQueue409JSONResponse:
 		// VersionConflictErrorResponse — has its own RequestId.
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateQueue500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// Scaffold
 	case api.CreateScaffold400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateScaffold500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListScaffolds400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListScaffolds500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetScaffoldById400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetScaffoldById404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetScaffoldById500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// Skills
 	case api.ListSkills400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.ListSkills500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateSkill400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateSkill409JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateSkill500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteSkill400JSONResponse:
-		require.NotNil(t, r.InvalidOrgIDJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteSkill404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteSkill500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetSkill400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetSkill404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.GetSkill500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateSkill400JSONResponse:
-		require.NotNil(t, r.BadRequestJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateSkill404JSONResponse:
-		require.NotNil(t, r.NotFoundJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateSkill409JSONResponse:
 		// VersionConflictErrorResponse — has its own RequestId.
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateSkill500JSONResponse:
-		require.NotNil(t, r.InternalServerErrorJSONResponse.RequestId, "%s", typeName)
+		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	default:
 		t.Fatalf("assertID: unhandled type %T (typeName=%s) — add a case here when adding a new JSONResponse type", result, typeName)
