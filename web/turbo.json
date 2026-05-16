@@ -7,6 +7,10 @@
     },
     "lint": {
       "outputs": []
+    },
+    "gen:api": {
+      "inputs": ["../../../openapi/openapi.yaml"],
+      "outputs": ["src/api/generated.ts"]
     }
   }
 }

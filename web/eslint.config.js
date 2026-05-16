@@ -20,6 +20,12 @@ export default [
     },
   },
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/.turbo/**'],
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.turbo/**',
+      // Pattern S1: generated code follows generator-only discipline — no lint
+      'packages/ui/src/api/generated.ts',
+    ],
   },
 ];

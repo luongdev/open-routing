@@ -3,8 +3,24 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --max-warnings 0"
+    "lint": "eslint src --max-warnings 0",
+    "test": "vitest run",
+    "gen:api": "openapi-typescript ../../../openapi/openapi.yaml -o src/api/generated.ts"
+  },
+  "dependencies": {
+    "@lit/reactive-element": "^2.1.2",
+    "@lit/task": "^1.0.0",
+    "lit": "^3.0.0",
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.0",
+    "openapi-typescript": "^7.0.0",
+    "vitest": "^3.0.0"
   }
 }
