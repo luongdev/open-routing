@@ -40,6 +40,12 @@ tasks:
     requires:
       vars: [NAME]
 
+  db:reset:
+    desc: 'Drop + recreate the dev database, then apply all migrations from scratch (D-61 editable-migration workflow).'
+    cmds:
+      - docker compose exec -T postgres psql -U openrouting -d postgres -c "DROP DATABASE IF EXISTS openrouting" -c "CREATE DATABASE openrouting WITH OWNER openrouting"
+      - migrate -path migrations -database "$DATABASE_URL" up
+
   # ---- Dev (D-24 flow) ----
   dev:
     desc: Bring up infra (postgres + redis) and run API with air hot-reload
