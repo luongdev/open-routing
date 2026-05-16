@@ -36,6 +36,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@lit/reactive-element':
+        specifier: ^2.1.2
+        version: 2.1.2
       '@lit/task':
         specifier: ^1.0.0
         version: 1.0.3

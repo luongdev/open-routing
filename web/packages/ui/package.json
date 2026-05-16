@@ -13,6 +13,7 @@
     "gen:api": "openapi-typescript ../../../openapi/openapi.yaml -o src/api/generated.ts"
   },
   "dependencies": {
+    "@lit/reactive-element": "^2.1.2",
     "@lit/task": "^1.0.0",
     "lit": "^3.0.0",
     "openapi-fetch": "^0.13.0"
