@@ -17,6 +17,29 @@ import (
 // ValidationError mode (D-02).
 var ErrSQLMissingOrgFilter = errors.New("orgdb: SQL string missing org_id filter")
 
+// tenantTables enumerates every table whose rows carry org_id and therefore
+// MUST be filtered by org_id in DML (D-02, H3). Phase 1 began with the
+// single _scaffold table; Phase 3 Wave 1 introduces the catalog v0.1 schema
+// (agents, skills, queues, channels, adapters, break_reasons + the
+// agent_skills join — D-61, D-62, D-72). Adding a row here is the canonical
+// way to extend the validator's coverage to new org-scoped tables.
+//
+// Tables NOT in this set are treated as non-tenant (lookup tables, reference
+// data, etc.). A future hardening pass may invert the policy so that any
+// unrecognized table fails closed (Pitfall: a typo in a future tenant table
+// name would silently bypass the check). For v0.1 we accept the explicit
+// allowlist semantics.
+var tenantTables = map[string]struct{}{
+	"_scaffold":     {}, // legacy Phase 1; removed once scaffold queries drop out
+	"agents":        {}, // CAT-01
+	"skills":        {}, // CAT-02
+	"queues":        {}, // CAT-04
+	"channels":      {}, // CAT-05
+	"adapters":      {}, // CAT-06
+	"break_reasons": {}, // CAT-07
+	"agent_skills":  {}, // CAT-03 (junction; carries denormalized org_id per D-72)
+}
+
 // SQLChecker memoizes the org_id-presence verdict for each unique SQL
 // string keyed by SHA-256 hash (D-02). Process-wide reuse: handlers in
 // Phase 1 share one *SQLChecker instance constructed at startup so the
@@ -68,11 +91,12 @@ func (c *SQLChecker) MustContainOrgFilter(sql string) error {
 // compiled to Go via CGO — NOT regex; per Research §"Don't Hand-Roll"
 // and Pitfall 2) and applies one of three rules per top-level statement:
 //
-//   - DML (SELECT / UPDATE / DELETE): every top-level _scaffold range alias
-//     must have a matching top-level WHERE ColumnRef named "org_id";
-//     DDL/utility rejected unless bypass is present. This catches WHERE
-//     predicates while correctly rejecting org_id appearing only in the
-//     projection list, ORDER BY, JOIN ON condition, or nested subquery WHERE.
+//   - DML (SELECT / UPDATE / DELETE): every top-level tenant-table range
+//     alias (see tenantTables) must have a matching top-level WHERE
+//     ColumnRef named "org_id"; DDL/utility rejected unless bypass is
+//     present. This catches WHERE predicates while correctly rejecting
+//     org_id appearing only in the projection list, ORDER BY, JOIN ON
+//     condition, or nested subquery WHERE.
 //   - INSERT: the column list must contain "org_id" (target_list shape).
 //     A regex on "WHERE org_id" would miss every INSERT — INSERT has no
 //     WHERE — which is precisely why this dispatch is split.
@@ -158,10 +182,19 @@ func orgIDColumnQualifier(cr *pg_query.Node_ColumnRef) (string, bool) {
 	return qualifier.String_.GetSval(), true
 }
 
-// whereSatisfiesTenantAliases returns true when every top-level _scaffold
+// whereSatisfiesTenantAliases returns true when every top-level tenant-table
 // range alias has a matching org_id ColumnRef in the same statement's WHERE.
-// A single _scaffold range may use an unqualified org_id; multi-range queries
+// A single tenant range may use an unqualified org_id; multi-range queries
 // must qualify each alias so one scoped side of a join cannot satisfy another.
+//
+// Empty tenant alias list means the statement's top-level FROM does not
+// touch any known tenant table — for example a SELECT from `unnest(...)`
+// or `SELECT 1`. Such a query is rejected here as a defense-in-depth measure
+// (the validator cannot reason about whether a non-tenant query is safe).
+// Queries that need to probe an input array against a tenant table should
+// put the tenant table in the outer FROM and use the array via `WHERE id =
+// ANY($N::uuid[])` (Phase 3 SkillsPresentInOrg in agent_skills.sql is the
+// canonical example).
 func whereSatisfiesTenantAliases(where *pg_query.Node, tenantAliases []string) bool {
 	if len(tenantAliases) == 0 {
 		return false
@@ -249,10 +282,14 @@ func tenantAliasesFromRangeVar(rv *pg_query.RangeVar) []string {
 }
 
 func appendTenantAliasFromRangeVar(aliases []string, seen map[string]struct{}, rv *pg_query.RangeVar) []string {
-	if rv == nil || rv.GetRelname() != "_scaffold" {
+	if rv == nil {
 		return aliases
 	}
-	alias := rv.GetRelname()
+	rel := rv.GetRelname()
+	if _, ok := tenantTables[rel]; !ok {
+		return aliases
+	}
+	alias := rel
 	if aliasName := rv.GetAlias().GetAliasname(); aliasName != "" {
 		alias = aliasName
 	}
