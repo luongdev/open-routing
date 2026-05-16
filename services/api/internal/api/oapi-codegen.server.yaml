@@ -1,0 +1,13 @@
+# services/api/internal/api/oapi-codegen.server.yaml
+# D-41, D-42: strict-server flavor → server.gen.go
+# Generates ServerInterface (chi binding) + StrictServerInterface (typed
+# request/response objects). chi-server is required as the transport; strict-server
+# wraps it with the typed handler contract enforced at compile time.
+# Run via: go generate ./internal/api/... (see gen.go)
+package: api
+output: server.gen.go
+generate:
+  chi-server: true
+  strict-server: true
+output-options:
+  skip-prune: false
