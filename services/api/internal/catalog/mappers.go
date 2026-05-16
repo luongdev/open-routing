@@ -12,6 +12,8 @@
 package catalog
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -80,4 +82,48 @@ func derefOr[T any](p *T, fallback T) T {
 		return fallback
 	}
 	return *p
+}
+
+// textPtr reads an sqlc-row pgtype.Text back into *string. Nullable
+// columns (e.g., skill.description, channel default fields, queue
+// acw_sec) decode to Valid=false → nil *string per the api spec
+// convention. Wave 3 codex review iter 1.
+func textPtr(p pgtype.Text) *string {
+	if !p.Valid {
+		return nil
+	}
+	s := p.String
+	return &s
+}
+
+// jsonbToMap unmarshals a sqlc-row JSONB column ([]byte) into
+// map[string]any per Pitfall 9 (Adapter.Config). NULL bytes (empty
+// slice from a nullable JSONB or pgtype.Bytes Valid=false branch) →
+// nil map. Decode errors are logged by the caller and surface to the
+// client as 500 internal — callers should NOT have non-JSON bytes in
+// JSONB columns (the migration declares JSONB, and Postgres rejects
+// invalid JSON at INSERT time). Wave 3 codex review iter 1.
+func jsonbToMap(b []byte) (map[string]any, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("jsonb decode: %w", err)
+	}
+	return m, nil
+}
+
+// mapToJSONB marshals a map[string]any to JSON bytes for an INSERT/
+// UPDATE on a JSONB column. Nil map → empty bytes (Postgres stores
+// SQL NULL). Wave 3 codex review iter 1.
+func mapToJSONB(m map[string]any) ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("jsonb encode: %w", err)
+	}
+	return b, nil
 }
