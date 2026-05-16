@@ -239,6 +239,14 @@ func GetOrSet[T any](
 	return typed, nil
 }
 
+// Ping checks Redis liveness. Used by the /readyz bypass handler to fail
+// the readiness probe when Redis is unreachable. go-redis's Ping respects
+// the supplied ctx deadline so the call cannot hang past the handler's
+// timeout budget (mitigation for T-3-43 DoS).
+func (c *Cache) Ping(ctx context.Context) error {
+	return c.rdb.Ping(ctx).Err()
+}
+
 // Del removes a cache entry. Returns the underlying Redis error so the
 // caller can log+continue per D-55. A cache deletion failure NEVER
 // converts a successful DB write into a 5xx — every catalog write
