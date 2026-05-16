@@ -84,72 +84,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/orgs/{org_id}/_scaffold": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description Organization UUIDv7. Present in the path for REST semantics. The
-                 *     authoritative `org_id` used for DB scoping is always read from the
-                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
-                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
-                 *     cannot drive cross-org behavior by editing the URL because the code
-                 *     never reads `{org_id}` from the path).
-                 */
-                org_id: components["parameters"]["OrgIdPath"];
-            };
-            cookie?: never;
-        };
-        /**
-         * List scaffold records
-         * @description Returns all scaffold records for the authenticated org. Phase 1 only.
-         */
-        get: operations["ListScaffolds"];
-        put?: never;
-        /**
-         * Create scaffold record
-         * @description Phase 1 scaffold endpoint that proves the full HTTP → OrgContext → OrgDB → sqlc chain. Deleted in Phase 3 when real catalog entities land (D-18, D-46). The `{org_id}` path parameter is present for REST semantics but the OrgDB reads `org_id` exclusively from the validated ctx value set by `OrgContext` (FOUND-05).
-         */
-        post: operations["CreateScaffold"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/orgs/{org_id}/_scaffold/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description Organization UUIDv7. Present in the path for REST semantics. The
-                 *     authoritative `org_id` used for DB scoping is always read from the
-                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
-                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
-                 *     cannot drive cross-org behavior by editing the URL because the code
-                 *     never reads `{org_id}` from the path).
-                 */
-                org_id: components["parameters"]["OrgIdPath"];
-                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
-                id: components["parameters"]["EntityIdPath"];
-            };
-            cookie?: never;
-        };
-        /**
-         * Get scaffold record by ID
-         * @description Returns a single scaffold record. Returns HTTP 404 for both missing records and cross-org probes — the query filters by both `id` AND `org_id` so a correct ID in a different org is indistinguishable from a missing ID (FOUND-08 leakage guard).
-         */
-        get: operations["GetScaffoldById"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/orgs/{org_id}/agents": {
         parameters: {
             query?: never;
@@ -460,7 +394,10 @@ export interface paths {
         delete: operations["DeleteChannel"];
         options?: never;
         head?: never;
-        /** Update a channel */
+        /**
+         * Update a channel
+         * @description Partial update of a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08, OQ-1/A4). A mismatch returns HTTP 409 with the current server-side record in the body.
+         */
         patch: operations["UpdateChannel"];
         trace?: never;
     };
@@ -522,7 +459,10 @@ export interface paths {
         delete: operations["DeleteAdapter"];
         options?: never;
         head?: never;
-        /** Update an adapter */
+        /**
+         * Update an adapter
+         * @description Partial update of an adapter. Include `version` from the last GET response for optimistic concurrency (CAT-08, OQ-1/A4). A mismatch returns HTTP 409 with the current server-side record in the body.
+         */
         patch: operations["UpdateAdapter"];
         trace?: never;
     };
@@ -704,11 +644,12 @@ export interface components {
          */
         UUIDv7: string;
         /**
-         * @description Closed enum of machine-readable error codes (D-36). Clients branch on
-         *     this value — never on `reason` or HTTP status alone.
+         * @description Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
+         *     criterion 4). Clients branch on this value — never on `reason` or HTTP
+         *     status alone.
          * @enum {string}
          */
-        ErrorCode: "invalid_body" | "invalid_id" | "not_found" | "internal" | "version_conflict" | "cross_org" | "invalid_org_id" | "invalid_transition" | "import_failed" | "rate_limited";
+        ErrorCode: "invalid_body" | "invalid_id" | "not_found" | "internal" | "version_conflict" | "cross_org" | "invalid_org_id" | "invalid_transition" | "import_failed" | "rate_limited" | "invalid_reference" | "invalid_value";
         /**
          * @description Canonical error envelope (D-35). Present on every 4xx/5xx response.
          *     `request_id` is omitted on bypass routes that run before the RequestID
@@ -784,7 +725,7 @@ export interface components {
              */
             readonly name?: string;
             /**
-             * @description Agent proficiency on this skill. Integer from 1 (beginner) to 10 (expert). Enforced server-side (CAT-03); client should also show min=1/max=10 to prevent obvious mistakes.
+             * @description Agent proficiency rating on this skill. Inclusive range 1 (beginner) to 10 (expert). The OpenAPI schema intentionally omits `minimum`/`maximum` so the oapi-codegen Layer 1 validator does NOT short-circuit out-of-range values with HTTP 400. The handler (catalog package, Plan 03-09) enforces the 1-10 range and returns HTTP 422 with `ErrorCode=invalid_value` when the value is out of range — see ROADMAP Phase 3 success criterion 4. Clients should still display min=1/max=10 in UI to prevent obvious mistakes; the wire shape distinguishes "wrong value" (422 invalid_value) from "wrong type" (400 invalid_body).
              * @example 8
              */
             proficiency: number;
@@ -1043,6 +984,11 @@ export interface components {
             /** @example true */
             enabled: boolean;
             /**
+             * @description Monotonically increasing optimistic-lock version counter (CAT-08, OQ-1/A4). Server-owned. Mismatch on update returns HTTP 409.
+             * @example 1
+             */
+            version: number;
+            /**
              * Format: date-time
              * @example 2026-05-15T00:00:00Z
              */
@@ -1063,7 +1009,13 @@ export interface components {
             /** @default true */
             enabled: boolean;
         };
+        /** @description Request body for updating a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateChannelRequest: {
+            /**
+             * @description Current optimistic-lock version. Mismatch → HTTP 409.
+             * @example 1
+             */
+            version: number;
             name?: string;
             channel_type?: components["schemas"]["ChannelType"];
             default_queue_id?: (string & components["schemas"]["UUIDv7"]) | null;
@@ -1096,6 +1048,11 @@ export interface components {
             /** @example true */
             enabled: boolean;
             /**
+             * @description Monotonically increasing optimistic-lock version counter (CAT-08, OQ-1/A4). Server-owned. Mismatch on update returns HTTP 409.
+             * @example 1
+             */
+            version: number;
+            /**
              * Format: date-time
              * @example 2026-05-15T00:00:00Z
              */
@@ -1118,7 +1075,13 @@ export interface components {
             /** @default true */
             enabled: boolean;
         };
+        /** @description Request body for updating an adapter. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateAdapterRequest: {
+            /**
+             * @description Current optimistic-lock version. Mismatch → HTTP 409.
+             * @example 1
+             */
+            version: number;
             name?: string;
             adapter_type?: string;
             /** @description Free-form JSONB configuration blob. Null to clear. */
@@ -1325,30 +1288,6 @@ export interface components {
              */
             readonly created_at: string;
         };
-        /** @description Throw-away scaffold entity used in Phase 1 to prove the full HTTP → OrgContext → OrgDB → sqlc chain. Deleted in Phase 3. */
-        Scaffold: {
-            id: components["schemas"]["UUIDv7"];
-            /** @description Organization that owns this record. Enforced by the OrgDB layer — a query with a mismatched org_id returns 404 not 403 (FOUND-08 leakage guard). This ensures cross-org probing is indistinguishable from a genuine not-found response. */
-            org_id: components["schemas"]["UUIDv7"];
-            /** @example SCAFFOLD-001 */
-            external_id: string;
-            /** @example Test Record */
-            name: string;
-            /**
-             * Format: date-time
-             * @example 2026-05-15T00:00:00Z
-             */
-            readonly created_at: string;
-        };
-        CreateScaffoldRequest: {
-            /**
-             * @description Caller-assigned stable identifier. Unique within the org.
-             * @example SCAFFOLD-001
-             */
-            external_id: string;
-            /** @example Test Record */
-            name: string;
-        };
         /** @description Liveness check response (D-17). */
         HealthResponse: {
             /**
@@ -1479,7 +1418,7 @@ export interface components {
         ImportJobIdPath: components["schemas"]["UUIDv7"];
         /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
         CursorQuery: string;
-        /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+        /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
         LimitQuery: number;
         /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
         IncludeDisabledQuery: boolean;
@@ -1585,115 +1524,12 @@ export interface operations {
             };
         };
     };
-    ListScaffolds: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description Organization UUIDv7. Present in the path for REST semantics. The
-                 *     authoritative `org_id` used for DB scoping is always read from the
-                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
-                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
-                 *     cannot drive cross-org behavior by editing the URL because the code
-                 *     never reads `{org_id}` from the path).
-                 */
-                org_id: components["parameters"]["OrgIdPath"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of scaffold records. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Scaffold"][];
-                };
-            };
-            400: components["responses"]["InvalidOrgID"];
-            500: components["responses"]["InternalServerError"];
-        };
-    };
-    CreateScaffold: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description Organization UUIDv7. Present in the path for REST semantics. The
-                 *     authoritative `org_id` used for DB scoping is always read from the
-                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
-                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
-                 *     cannot drive cross-org behavior by editing the URL because the code
-                 *     never reads `{org_id}` from the path).
-                 */
-                org_id: components["parameters"]["OrgIdPath"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateScaffoldRequest"];
-            };
-        };
-        responses: {
-            /** @description Scaffold record created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Scaffold"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            500: components["responses"]["InternalServerError"];
-        };
-    };
-    GetScaffoldById: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description Organization UUIDv7. Present in the path for REST semantics. The
-                 *     authoritative `org_id` used for DB scoping is always read from the
-                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
-                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
-                 *     cannot drive cross-org behavior by editing the URL because the code
-                 *     never reads `{org_id}` from the path).
-                 */
-                org_id: components["parameters"]["OrgIdPath"];
-                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
-                id: components["parameters"]["EntityIdPath"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Scaffold record. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Scaffold"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalServerError"];
-        };
-    };
     ListAgents: {
         parameters: {
             query?: {
                 /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
                 cursor?: components["parameters"]["CursorQuery"];
-                /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
                 limit?: components["parameters"]["LimitQuery"];
                 /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
                 include_disabled?: components["parameters"]["IncludeDisabledQuery"];
@@ -1771,6 +1607,21 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"] | components["schemas"]["VersionConflictErrorResponse"];
+                };
+            };
+            /**
+             * @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, ROADMAP Phase 3 CRIT 4, Codex C2 iter 3). Two flavors share this status: (a) `invalid_reference` — a `skills[].skill_id` references a skill
+             *         that does not exist in the caller's org (CAT-03).
+             *     (b) `invalid_value` — a `skills[].proficiency` value is outside
+             *         the inclusive range 1-10.
+             *     The `field` slot in ErrorResponse identifies which request body path failed (e.g. `skills[0].proficiency`).
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             500: components["responses"]["InternalServerError"];
@@ -1891,6 +1742,22 @@ export interface operations {
                     };
                 };
             };
+            /**
+             * @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, ROADMAP Phase 3 CRIT 4). Two flavors share this status: (a) `invalid_reference` — a `skills[].skill_id` references a skill
+             *         that does not exist in the caller's org (CAT-03, PUT-semantics
+             *         replacement).
+             *     (b) `invalid_value` — a `skills[].proficiency` value is outside
+             *         the inclusive range 1-10.
+             *     The `field` slot in ErrorResponse identifies which request body path failed (e.g. `skills[0].proficiency`).
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -1991,7 +1858,7 @@ export interface operations {
             query?: {
                 /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
                 cursor?: components["parameters"]["CursorQuery"];
-                /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
                 limit?: components["parameters"]["LimitQuery"];
                 /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
                 include_disabled?: components["parameters"]["IncludeDisabledQuery"];
@@ -2197,7 +2064,7 @@ export interface operations {
             query?: {
                 /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
                 cursor?: components["parameters"]["CursorQuery"];
-                /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
                 limit?: components["parameters"]["LimitQuery"];
                 /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
                 include_disabled?: components["parameters"]["IncludeDisabledQuery"];
@@ -2403,7 +2270,7 @@ export interface operations {
             query?: {
                 /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
                 cursor?: components["parameters"]["CursorQuery"];
-                /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
                 limit?: components["parameters"]["LimitQuery"];
                 /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
                 include_disabled?: components["parameters"]["IncludeDisabledQuery"];
@@ -2476,6 +2343,15 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             /** @description Duplicate `external_id`. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, D-76). For CreateChannel: the supplied `default_queue_id` does not exist (or is disabled) in the caller's org. Returns `ErrorCode=invalid_reference`. The `field` slot in ErrorResponse identifies which request body path failed (e.g. `default_queue_id`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2590,6 +2466,26 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+            /** @description Version mismatch. Body contains the current server-side channel record (D-37). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                        current?: components["schemas"]["Channel"];
+                    };
+                };
+            };
+            /** @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, D-76). For UpdateChannel: the supplied `default_queue_id` does not exist (or is disabled) in the caller's org. Returns `ErrorCode=invalid_reference`. The `field` slot in ErrorResponse identifies which request body path failed (e.g. `default_queue_id`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2598,7 +2494,7 @@ export interface operations {
             query?: {
                 /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
                 cursor?: components["parameters"]["CursorQuery"];
-                /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
                 limit?: components["parameters"]["LimitQuery"];
                 /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
                 include_disabled?: components["parameters"]["IncludeDisabledQuery"];
@@ -2776,6 +2672,17 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+            /** @description Version mismatch. Body contains the current server-side adapter record (D-37). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                        current?: components["schemas"]["Adapter"];
+                    };
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2784,7 +2691,7 @@ export interface operations {
             query?: {
                 /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
                 cursor?: components["parameters"]["CursorQuery"];
-                /** @description Maximum number of items to return per page. Defaults to 20. Maximum 100. */
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
                 limit?: components["parameters"]["LimitQuery"];
                 /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
                 include_disabled?: components["parameters"]["IncludeDisabledQuery"];

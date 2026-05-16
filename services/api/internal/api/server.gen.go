@@ -31,15 +31,6 @@ type ServerInterface interface {
 	// Readiness probe
 	// (GET /readyz)
 	GetReadyz(w http.ResponseWriter, r *http.Request)
-	// List scaffold records
-	// (GET /v1/orgs/{org_id}/_scaffold)
-	ListScaffolds(w http.ResponseWriter, r *http.Request, orgId OrgIdPath)
-	// Create scaffold record
-	// (POST /v1/orgs/{org_id}/_scaffold)
-	CreateScaffold(w http.ResponseWriter, r *http.Request, orgId OrgIdPath)
-	// Get scaffold record by ID
-	// (GET /v1/orgs/{org_id}/_scaffold/{id})
-	GetScaffoldById(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// List adapters
 	// (GET /v1/orgs/{org_id}/adapters)
 	ListAdapters(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListAdaptersParams)
@@ -169,24 +160,6 @@ func (_ Unimplemented) GetOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 // Readiness probe
 // (GET /readyz)
 func (_ Unimplemented) GetReadyz(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List scaffold records
-// (GET /v1/orgs/{org_id}/_scaffold)
-func (_ Unimplemented) ListScaffolds(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create scaffold record
-// (POST /v1/orgs/{org_id}/_scaffold)
-func (_ Unimplemented) CreateScaffold(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get scaffold record by ID
-// (GET /v1/orgs/{org_id}/_scaffold/{id})
-func (_ Unimplemented) GetScaffoldById(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -450,111 +423,6 @@ func (siw *ServerInterfaceWrapper) GetReadyz(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadyz(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListScaffolds operation middleware
-func (siw *ServerInterfaceWrapper) ListScaffolds(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "org_id" -------------
-	var orgId OrgIdPath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListScaffolds(w, r, orgId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateScaffold operation middleware
-func (siw *ServerInterfaceWrapper) CreateScaffold(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "org_id" -------------
-	var orgId OrgIdPath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateScaffold(w, r, orgId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetScaffoldById operation middleware
-func (siw *ServerInterfaceWrapper) GetScaffoldById(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "org_id" -------------
-	var orgId OrgIdPath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "id" -------------
-	var id EntityIdPath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetScaffoldById(w, r, orgId, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2326,15 +2194,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/readyz", wrapper.GetReadyz)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/v1/orgs/{org_id}/_scaffold", wrapper.ListScaffolds)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/v1/orgs/{org_id}/_scaffold", wrapper.CreateScaffold)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/v1/orgs/{org_id}/_scaffold/{id}", wrapper.GetScaffoldById)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/adapters", wrapper.ListAdapters)
 	})
 	r.Group(func(r chi.Router) {
@@ -2556,178 +2415,6 @@ func (response GetReadyz503JSONResponse) VisitGetReadyzResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListScaffoldsRequestObject struct {
-	OrgId OrgIdPath `json:"org_id"`
-}
-
-type ListScaffoldsResponseObject interface {
-	VisitListScaffoldsResponse(w http.ResponseWriter) error
-}
-
-type ListScaffolds200JSONResponse []Scaffold
-
-func (response ListScaffolds200JSONResponse) VisitListScaffoldsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListScaffolds400JSONResponse struct{ InvalidOrgIDJSONResponse }
-
-func (response ListScaffolds400JSONResponse) VisitListScaffoldsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListScaffolds500JSONResponse struct {
-	InternalServerErrorJSONResponse
-}
-
-func (response ListScaffolds500JSONResponse) VisitListScaffoldsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScaffoldRequestObject struct {
-	OrgId OrgIdPath `json:"org_id"`
-	Body  *CreateScaffoldJSONRequestBody
-}
-
-type CreateScaffoldResponseObject interface {
-	VisitCreateScaffoldResponse(w http.ResponseWriter) error
-}
-
-type CreateScaffold201JSONResponse Scaffold
-
-func (response CreateScaffold201JSONResponse) VisitCreateScaffoldResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScaffold400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response CreateScaffold400JSONResponse) VisitCreateScaffoldResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScaffold500JSONResponse struct {
-	InternalServerErrorJSONResponse
-}
-
-func (response CreateScaffold500JSONResponse) VisitCreateScaffoldResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetScaffoldByIdRequestObject struct {
-	OrgId OrgIdPath    `json:"org_id"`
-	Id    EntityIdPath `json:"id"`
-}
-
-type GetScaffoldByIdResponseObject interface {
-	VisitGetScaffoldByIdResponse(w http.ResponseWriter) error
-}
-
-type GetScaffoldById200JSONResponse Scaffold
-
-func (response GetScaffoldById200JSONResponse) VisitGetScaffoldByIdResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetScaffoldById400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response GetScaffoldById400JSONResponse) VisitGetScaffoldByIdResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetScaffoldById404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response GetScaffoldById404JSONResponse) VisitGetScaffoldByIdResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetScaffoldById500JSONResponse struct {
-	InternalServerErrorJSONResponse
-}
-
-func (response GetScaffoldById500JSONResponse) VisitGetScaffoldByIdResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3025,6 +2712,30 @@ func (response UpdateAdapter404JSONResponse) VisitUpdateAdapterResponse(w http.R
 	return err
 }
 
+type UpdateAdapter409JSONResponse struct {
+	// Current An adapter registry row. Adapters represent integration points (e.g. a FreeSWITCH bridge, a LiveKit gateway). In v0.1 this is a catalog row only — no SDK contract, no execution. Real adapter execution lands in a later milestone.
+	Current Adapter                               `json:"current"`
+	Error   UpdateAdapter409JSONResponseBodyError `json:"error"`
+	Reason  string                                `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+func (response UpdateAdapter409JSONResponse) VisitUpdateAdapterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateAdapter500JSONResponse struct {
 	InternalServerErrorJSONResponse
 }
@@ -3148,6 +2859,20 @@ func (response CreateAgent409JSONResponse) VisitCreateAgentResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgent422JSONResponse ErrorResponse
+
+func (response CreateAgent422JSONResponse) VisitCreateAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3368,6 +3093,20 @@ func (response UpdateAgent409JSONResponse) VisitUpdateAgentResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgent422JSONResponse ErrorResponse
+
+func (response UpdateAgent422JSONResponse) VisitUpdateAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4094,6 +3833,20 @@ func (response CreateChannel409JSONResponse) VisitCreateChannelResponse(w http.R
 	return err
 }
 
+type CreateChannel422JSONResponse ErrorResponse
+
+func (response CreateChannel422JSONResponse) VisitCreateChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateChannel500JSONResponse struct {
 	InternalServerErrorJSONResponse
 }
@@ -4286,6 +4039,44 @@ func (response UpdateChannel404JSONResponse) VisitUpdateChannelResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateChannel409JSONResponse struct {
+	// Current A channel in the catalog. Channels represent a logical communication medium (voice, chat, email). They link to a default queue for unrouted interactions.
+	Current Channel                               `json:"current"`
+	Error   UpdateChannel409JSONResponseBodyError `json:"error"`
+	Reason  string                                `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+func (response UpdateChannel409JSONResponse) VisitUpdateChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateChannel422JSONResponse ErrorResponse
+
+func (response UpdateChannel422JSONResponse) VisitUpdateChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5081,15 +4872,6 @@ type StrictServerInterface interface {
 	// Readiness probe
 	// (GET /readyz)
 	GetReadyz(ctx context.Context, request GetReadyzRequestObject) (GetReadyzResponseObject, error)
-	// List scaffold records
-	// (GET /v1/orgs/{org_id}/_scaffold)
-	ListScaffolds(ctx context.Context, request ListScaffoldsRequestObject) (ListScaffoldsResponseObject, error)
-	// Create scaffold record
-	// (POST /v1/orgs/{org_id}/_scaffold)
-	CreateScaffold(ctx context.Context, request CreateScaffoldRequestObject) (CreateScaffoldResponseObject, error)
-	// Get scaffold record by ID
-	// (GET /v1/orgs/{org_id}/_scaffold/{id})
-	GetScaffoldById(ctx context.Context, request GetScaffoldByIdRequestObject) (GetScaffoldByIdResponseObject, error)
 	// List adapters
 	// (GET /v1/orgs/{org_id}/adapters)
 	ListAdapters(ctx context.Context, request ListAdaptersRequestObject) (ListAdaptersResponseObject, error)
@@ -5312,92 +5094,6 @@ func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetReadyzResponseObject); ok {
 		if err := validResponse.VisitGetReadyzResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListScaffolds operation middleware
-func (sh *strictHandler) ListScaffolds(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
-	var request ListScaffoldsRequestObject
-
-	request.OrgId = orgId
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListScaffolds(ctx, request.(ListScaffoldsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListScaffolds")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListScaffoldsResponseObject); ok {
-		if err := validResponse.VisitListScaffoldsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateScaffold operation middleware
-func (sh *strictHandler) CreateScaffold(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
-	var request CreateScaffoldRequestObject
-
-	request.OrgId = orgId
-
-	var body CreateScaffoldJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateScaffold(ctx, request.(CreateScaffoldRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateScaffold")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(CreateScaffoldResponseObject); ok {
-		if err := validResponse.VisitCreateScaffoldResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetScaffoldById operation middleware
-func (sh *strictHandler) GetScaffoldById(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
-	var request GetScaffoldByIdRequestObject
-
-	request.OrgId = orgId
-	request.Id = id
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetScaffoldById(ctx, request.(GetScaffoldByIdRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetScaffoldById")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetScaffoldByIdResponseObject); ok {
-		if err := validResponse.VisitGetScaffoldByIdResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
