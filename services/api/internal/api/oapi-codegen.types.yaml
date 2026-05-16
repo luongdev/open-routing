@@ -1,0 +1,10 @@
+# services/api/internal/api/oapi-codegen.types.yaml
+# D-42: types-only flavor → types.gen.go
+# Generates components.schemas DTO structs.
+# Run via: go generate ./internal/api/... (see gen.go)
+package: api
+output: types.gen.go
+generate:
+  models: true
+output-options:
+  skip-prune: false

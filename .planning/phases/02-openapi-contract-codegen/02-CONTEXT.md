@@ -40,7 +40,7 @@ Before authoring the spec, Phase 2 produces **ASCII paper-sketches of 4 high-com
   - `internal` — uncaught error (also covers infrastructure failures)
   - `version_conflict` — CAT-08 optimistic concurrency miss
   - `cross_org` — orgDB preflight rejection (defensive; should never reach client in correct flow)
-  - `missing_org_id` — middleware rejection when `X-Org-Id` is absent or malformed
+  - `invalid_org_id` — middleware rejection when `X-Org-Id` is absent or malformed
   - `invalid_transition` — STATE-03 agent-state transition not in allowed matrix
   - `import_failed` — IMP-04 row-level import failure (used inside the `failed[]` array of 207)
   - `rate_limited` — reserved for v0.2; specced now so codegen doesn't need rework

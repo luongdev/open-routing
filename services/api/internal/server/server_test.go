@@ -13,20 +13,27 @@ import (
 // is the contract D-21 codifies (bypass paths skip OrgContext) and that
 // Plan 07's TestBypassPaths_NoHeaderRequired will assert against the full
 // testcontainer-backed mux. Here we run the unit-level form with a nil Pool
-// and nil Redis because LiveHandler does not touch them.
+// and nil Redis because GetHealthz (the compositeServer bypass method) does
+// not touch those dependencies.
 //
-// The test deliberately constructs a Deps with nil Pool / nil Redis to
-// prove that the bypass path /healthz literally does not depend on those
+// The test constructs a compositeServer with nil Pool / nil Redis / nil OrgDB
+// to prove that the bypass path /healthz literally does not depend on those
 // dependencies — a regression that routes /healthz through OrgContext or
 // touches the pool here would panic immediately on nil deref.
 func TestNewMux_HealthzAccessibleWithoutOrgHeader(t *testing.T) {
 	t.Parallel()
 
+	// compositeServer.GetHealthz only returns the static alive response —
+	// it does not touch pool, redis, or orgDB. Passing nil for all three
+	// proves /healthz is truly dependency-free for the live path.
+	strictHandlers := NewCompositeServer(nil, nil, nil, nil)
 	deps := &Deps{
-		Pool:   nil, // safe — LiveHandler does not touch the pool
-		Redis:  nil, // safe — LiveHandler does not touch redis
-		OrgDB:  nil, // safe — bypass paths do not reach scaffold handlers
-		Config: nil, // unused by bypass paths
+		Pool:           nil, // safe — GetHealthz does not touch the pool
+		Redis:          nil, // safe — GetHealthz does not touch redis
+		OrgDB:          nil, // safe — bypass paths do not reach scaffold handlers
+		Config:         nil, // unused by bypass paths
+		StrictHandlers: strictHandlers,
+		SpecBytes:      nil,
 	}
 	mux := NewMux(deps)
 
@@ -48,8 +55,14 @@ func TestNewMux_HealthzAccessibleWithoutOrgHeader(t *testing.T) {
 func TestNewMux_MetricsAccessibleWithoutOrgHeader(t *testing.T) {
 	t.Parallel()
 
+	strictHandlers := NewCompositeServer(nil, nil, nil, nil)
 	deps := &Deps{
-		Pool: nil, Redis: nil, OrgDB: nil, Config: nil,
+		Pool:           nil,
+		Redis:          nil,
+		OrgDB:          nil,
+		Config:         nil,
+		StrictHandlers: strictHandlers,
+		SpecBytes:      nil,
 	}
 	mux := NewMux(deps)
 
@@ -66,8 +79,14 @@ func TestNewMux_MetricsAccessibleWithoutOrgHeader(t *testing.T) {
 func TestNewMux_V1RequiresOrgHeader(t *testing.T) {
 	t.Parallel()
 
+	strictHandlers := NewCompositeServer(nil, nil, nil, nil)
 	deps := &Deps{
-		Pool: nil, Redis: nil, OrgDB: nil, Config: nil,
+		Pool:           nil,
+		Redis:          nil,
+		OrgDB:          nil,
+		Config:         nil,
+		StrictHandlers: strictHandlers,
+		SpecBytes:      nil,
 	}
 	mux := NewMux(deps)
 

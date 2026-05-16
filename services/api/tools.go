@@ -34,6 +34,15 @@ import (
 	_ "github.com/pganalyze/pg_query_go/v6"
 	_ "github.com/redis/go-redis/v9"
 
+	// Codegen tools (Phase 2 D-43)
+	// Pinning pkg/codegen keeps oapi-codegen v2.7.0 in the module graph.
+	// go.yaml.in/yaml/v3 is a transitive dep of cmd/oapi-codegen (the CLI entrypoint
+	// invoked via //go:generate). It uses a non-standard vanity domain that does not
+	// resolve via the Go checksum database; it is pinned here to keep it in go.sum
+	// after `go mod tidy`. GONOSUMDB=go.yaml.in is required when first fetching it.
+	_ "github.com/oapi-codegen/oapi-codegen/v2/pkg/codegen"
+	_ "go.yaml.in/yaml/v3"
+
 	// OTel SDK + exporters + contrib
 	_ "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	_ "go.opentelemetry.io/otel"

@@ -136,3 +136,65 @@ jobs:
       - name: Taskfile parses
         run: |
           $(go env GOPATH)/bin/task --list > /dev/null
+
+  codegen-drift:
+    # Phase 2 D-47 + D-48 + CONTRACT-04: spec lint (Redocly recommended) then
+    # full codegen (sqlc + oapi-codegen + openapi-typescript) then a
+    # git-diff-exit-code gate. Drift fails the PR with its own red check
+    # (separate from go-test / web-typecheck so cause is immediately visible).
+    #
+    # Steps order (LOCKED by D-48):
+    #   1. checkout
+    #   2. setup-go + setup-node (parallel installs, no DAG savings here but
+    #      keeps the job self-contained — D-47 explicit requirement)
+    #   3. pnpm install (frozen-lockfile)
+    #   4. Redocly lint openapi.yaml — BEFORE codegen (D-48). Spec must be
+    #      valid before regen.
+    #   5. install task CLI (same pin as compose-config)
+    #   6. task gen — runs sqlc + go generate ./... + pnpm -F @open-routing/ui gen:api
+    #   7. git diff --exit-code — any drift fails the job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Go side: oapi-codegen via `go generate ./...`
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      # Node side: openapi-typescript + Redocly CLI (npx-invoked, no
+      # package.json dep — D-48)
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      # D-48: Redocly lint BEFORE codegen. Pinned to a specific version
+      # (NEVER @latest, per ASVS V14.3 comment at top of file).
+      - name: redocly lint openapi.yaml
+        run: npx --yes @redocly/cli@1.25.0 lint openapi/openapi.yaml --extends recommended
+      - name: install task CLI
+        run: go install github.com/go-task/task/v3/cmd/task@v3.40.0
+      # REVIEWS HIGH #1: sqlc must be installed before `task gen` because
+      # Taskfile.yml:21 runs `sqlc generate` as the first codegen step.
+      # GitHub runners do not ship with sqlc; without this step the
+      # codegen-drift job fails on any runner that has not pre-cached it.
+      # Pin matches the sqlc version used locally (services/api/sqlc.yaml).
+      - name: install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+      # D-47: run codegen via the canonical entry point so the CI behavior
+      # matches local `task gen`. Sqlc is part of the chain too — sqlc on
+      # the Phase 1 surface should be a no-op, but running it keeps the
+      # full pipeline exercised.
+      - name: task gen
+        run: $(go env GOPATH)/bin/task gen
+      # D-47: any diff means the committed generated code does not match
+      # what the spec produces.
+      - name: git diff codegen output
+        run: |
+          git diff --exit-code -- services/api/internal/api/ web/packages/ui/src/api/generated.ts

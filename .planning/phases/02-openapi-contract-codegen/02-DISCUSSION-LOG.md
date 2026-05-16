@@ -64,7 +64,7 @@
 
 **User's choice:** Closed enum + request_id in body.
 
-**Notes:** Closed enum is initial v0.1 set of 10 codes (invalid_body, invalid_id, not_found, internal, version_conflict, cross_org, missing_org_id, invalid_transition, import_failed, rate_limited). `rate_limited` reserved even though v0.1 doesn't implement rate limiting — keeps the TS client stable when v0.2 adds it. Special-case shapes (CAT-08 with `current`, STATE-03 with `from`/`to`, IMP-05 multi-status) extend the base envelope rather than replacing it.
+**Notes:** Closed enum is initial v0.1 set of 10 codes (invalid_body, invalid_id, not_found, internal, version_conflict, cross_org, invalid_org_id, invalid_transition, import_failed, rate_limited). `rate_limited` reserved even though v0.1 doesn't implement rate limiting — keeps the TS client stable when v0.2 adds it. Special-case shapes (CAT-08 with `current`, STATE-03 with `from`/`to`, IMP-05 multi-status) extend the base envelope rather than replacing it.
 
 ---
 
