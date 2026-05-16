@@ -1,54 +1,41 @@
-// agents.go — CAT-01 + CAT-03 + CAT-08 + CAT-09 + CAT-10 + CAT-11 first
-// complete CRUD entity. Plan 03-06 replaces the Plan 03-05 placeholders
-// with the real handler bodies that establish the TEMPLATE every other
-// entity copies in Plans 03-07/08/09.
+// agents.go — CAT-01 + CAT-03 + CAT-08 + CAT-09 + CAT-10 + CAT-11
+// reference template for every other CRUD entity in the catalog package.
 //
-// Locked patterns codified here (Codex iter 3 amendments):
+// Invariants (WHY, not what):
 //
-//   - Codex C1 — Layer 2 proficiency validation runs BEFORE any DB call.
-//     Out-of-range → 422 invalid_value (NOT 400). Plan 03-01 deliberately
-//     OMITS minimum/maximum from AgentSkillAssignment.proficiency in the
-//     OpenAPI spec so oapi-codegen does NOT short-circuit with 400; the
-//     handler owns the wire shape. validateProficiencyRange returns the
-//     offending index so the response can include
-//     `skills[N].proficiency` in the Reason text.
+//   - Codex C1/C2 — proficiency 1..10 validated at the handler BEFORE any
+//     DB call so out-of-range surfaces as 422 invalid_value. Plan 03-01
+//     OMITS minimum/maximum from the OpenAPI proficiency field so
+//     oapi-codegen does NOT short-circuit with 400.
 //
-//   - Codex C2 — CreateAgent422JSONResponse path covers BOTH FK miss
-//     (unknown skill_id → invalid_reference) AND proficiency boundary
-//     (out-of-range → invalid_value). CreateAgent uses the same
-//     validation+tx pattern as UpdateAgent.
+//   - Codex C4 — the agent row write and skills replace share one tx
+//     (CreateAgent + UpdateAgent only). The h.replaceAgentSkills method
+//     in agent_skills.go composes inside that tx via the passed-in qtx,
+//     so a failed INSERT rolls back the agent row write too. Exactly two
+//     transactional call sites in this file are intentional — adding a
+//     third would break Pitfall 5 atomicity.
 //
-//   - Codex C4 — atomic UPDATE/INSERT + skills replace in a SINGLE
-//     OrgDB.BeginTx. Both CreateAgent and UpdateAgent open exactly one
-//     tx that wraps the agent row write AND the optional skills replace;
-//     defer Rollback ensures full atomicity. The inline replaceAgentSkills
-//     helper accepts qtx and composes inside the caller's tx — it does
-//     NOT own its own BeginTx (Plan 03-09 will lift the helper into
-//     agent_skills.go with the same shape).
+//   - D-66 — UPDATE returning 0 rows is ambiguous between 404 and 409.
+//     GetAgentByIdAnyVersion runs inside the same tx so the probe sees
+//     the rolled-back state, then D-56 flushes the cache on the 409 path
+//     to prevent a stale read masking the conflict on the client retry.
 //
-//   - D-66 — UPDATE returns 0 rows → handler issues GetAgentByIdAnyVersion
-//     (inside the same tx, so the probe observes the rollback) to
-//     disambiguate 404 (no row) vs 409 (version mismatch). Per D-56, the
-//     409 path also calls cache.Del so a stale cached value can never
-//     mask a version conflict.
+//   - D-55 — every mutation calls cache.Del AFTER commit; a Del failure
+//     logs warn but never downgrades the response (the cache TTLs out).
 //
-//   - D-55 — every mutation calls h.deps.Cache.Del AFTER tx.Commit. Cache
-//     deletion failure logs a warn but does NOT downgrade the response.
+//   - D-76 — cross-row FK probe uses SkillsPresentInOrg (subset present +
+//     enabled in caller's org). The Wave 2 inversion preserves the
+//     SQLChecker top-level FROM tenant constraint.
 //
-//   - D-76 — cross-row FK probe uses SkillsPresentInOrg (returns the
-//     subset of input that exists + enabled in caller's org) and the
-//     handler computes the set difference `missing = input − present`.
-//     The Wave 2 query is intentionally INVERTED so the SQLChecker
-//     accepts the top-level FROM tenant table.
+//   - CAT-11 — GetAgent runs through cache.GetOrSet[api.Agent] with 60s
+//     TTL. ErrNotFound from the loader maps to 404 WITHOUT caching the
+//     miss (D-54).
 //
-//   - CAT-11 — GetAgent goes through cache.GetOrSet[api.Agent] with key
-//     `or:{orgID}:agents:{id}` and 60s TTL. ErrNotFound from the loader
-//     propagates as 404 WITHOUT caching the empty value (D-54).
-//
-//   - CAT-10 — cursor pagination via DecodeCursor/EncodeCursor (D-63)
-//     with LIMIT N+1 sentinel pattern. defaultPageSize=25, maxPageSize=100
-//     (D-67). ?include_disabled=true switches to ListAgentsIncludingDisabled
-//     (D-65 two-query split, plan-cacheable).
+//   - CAT-10 — cursor pagination uses (created_at, id) + LIMIT N+1
+//     sentinel (D-63). Defaults 25 / max 100 (D-67) enforced handler-side
+//     because the spec deliberately omits min/max on LimitQuery.
+//     ?include_disabled toggles to a separate prepared statement (D-65)
+//     so the planner caches both shapes.
 package catalog
 
 import (
@@ -155,7 +142,7 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 	// Skills replace inside the SAME tx (Codex C4 — atomicity). Failure
 	// here rolls back BOTH the agent insert and the skills writes.
 	if req.Body.Skills != nil && len(*req.Body.Skills) > 0 {
-		if errResp := replaceAgentSkills(ctx, qtx, orgID, id, *req.Body.Skills); errResp != nil {
+		if errResp := h.replaceAgentSkills(ctx, qtx, orgID, id, *req.Body.Skills); errResp != nil {
 			if errResp.Error == api.ErrorCodeInternal {
 				// 500 — caller's defer Rollback handles cleanup.
 				h.deps.Logger.ErrorContext(ctx, "create agent skills replace", "reason", errResp.Reason)
@@ -358,13 +345,12 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 }
 
 // UpdateAgent — PATCH /v1/orgs/{org_id}/agents/{id} (CAT-01, CAT-03, CAT-08).
-// Codex C4: BeginTx wraps the version-checked UPDATE AND optional skills
-// replace in one tx — if the skills replace fails, the agent UPDATE rolls
-// back with it.
-// D-66: 0 rows from version-checked UPDATE = either 404 (no row) or 409
-// (version mismatch). Disambiguate via GetAgentByIdAnyVersion in the
-// same tx. 409 path also cache.Del's (D-56) so a stale cache can't mask
-// the conflict on the client's retry.
+// Codex C4: the version-checked UPDATE and optional skills replace share
+// one tx — a failed skills replace rolls the agent row write back too.
+// D-66: 0 rows from the version-checked UPDATE is ambiguous between 404
+// (no row) and 409 (version mismatch). GetAgentByIdAnyVersion runs in the
+// same tx so the probe sees the rolled-back state; the 409 path flushes
+// the cache (D-56) so a stale read can't mask the conflict on retry.
 func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestObject) (api.UpdateAgentResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -466,7 +452,7 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 	// Happy path UPDATE returned a row — skills replace inside the SAME
 	// tx (Codex C4). Failure rolls back the agent UPDATE too.
 	if req.Body.Skills != nil {
-		if errResp := replaceAgentSkills(ctx, qtx, orgID, agentID, *req.Body.Skills); errResp != nil {
+		if errResp := h.replaceAgentSkills(ctx, qtx, orgID, agentID, *req.Body.Skills); errResp != nil {
 			if errResp.Error == api.ErrorCodeInternal {
 				h.deps.Logger.ErrorContext(ctx, "update agent skills replace", "reason", errResp.Reason)
 				return api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
@@ -540,114 +526,6 @@ func (h *Handlers) DeleteAgent(ctx context.Context, req api.DeleteAgentRequestOb
 		h.deps.Logger.WarnContext(ctx, "cache del failed", "key", cache.Key(orgID, "agents", agentID), "err", delErr)
 	}
 	return api.DeleteAgent204Response{}, nil
-}
-
-// Helpers below are inlined for Plan 03-06; Plan 03-09 extracts them
-// into agent_skills.go.
-
-// validateProficiencyRange — Codex C1 iter 3. Layer 2 validation of
-// proficiency 1-10. Spec omits minimum/maximum so oapi-codegen Layer 1
-// can't short-circuit with 400; the contract requires 422 invalid_value.
-func validateProficiencyRange(assignments []api.AgentSkillAssignment) (badIdx int, ok bool) {
-	for i, a := range assignments {
-		if a.Proficiency < 1 || a.Proficiency > 10 {
-			return i, false
-		}
-	}
-	return 0, true
-}
-
-// validateNoDuplicateSkills — Wave 4 cross-AI review. Without this check
-// duplicate skill_ids fall through to InsertAgentSkill and hit a UNIQUE
-// constraint, surfacing as 409 via mapPgError — which is the WRONG code
-// (the input itself is malformed; 422 invalid_value is the right shape).
-func validateNoDuplicateSkills(assignments []api.AgentSkillAssignment) (dupIdx int, ok bool) {
-	seen := make(map[uuid.UUID]struct{}, len(assignments))
-	for i, a := range assignments {
-		id := uuid.UUID(a.SkillId)
-		if _, exists := seen[id]; exists {
-			return i, false
-		}
-		seen[id] = struct{}{}
-	}
-	return 0, true
-}
-
-// replaceAgentSkills — Codex C4 iter 3 PUT-semantics replace.
-// Does NOT open its own BeginTx: composes inside the caller's qtx so the
-// exact-2 BeginTx gate (CreateAgent + UpdateAgent only) stays satisfied.
-// nil return → success; non-nil err.Error categorizes the 422 vs 500 wire
-// shape for the caller.
-func replaceAgentSkills(
-	ctx context.Context,
-	qtx *generated.Queries,
-	orgID, agentID uuid.UUID,
-	assignments []api.AgentSkillAssignment,
-) *api.ErrorResponse {
-	// D-76 cross-row FK probe — returns the subset of input present-and-
-	// enabled in caller's org; handler then computes the set difference.
-	inputIDs := make([]uuid.UUID, 0, len(assignments))
-	pgInputIDs := make([]pgtype.UUID, 0, len(assignments))
-	for _, a := range assignments {
-		id := uuid.UUID(a.SkillId)
-		inputIDs = append(inputIDs, id)
-		pgInputIDs = append(pgInputIDs, pgUUID(id))
-	}
-
-	present, err := qtx.SkillsPresentInOrg(ctx, generated.SkillsPresentInOrgParams{
-		Column1: pgInputIDs,
-		OrgID:   pgUUID(orgID),
-	})
-	if err != nil {
-		return &api.ErrorResponse{
-			Error:  api.ErrorCodeInternal,
-			Reason: "skills_probe_failed",
-		}
-	}
-
-	presentSet := make(map[uuid.UUID]struct{}, len(present))
-	for _, p := range present {
-		presentSet[uuid.UUID(p.Bytes)] = struct{}{}
-	}
-	for _, id := range inputIDs {
-		if _, ok := presentSet[id]; !ok {
-			return &api.ErrorResponse{
-				Error:  api.ErrorCodeInvalidReference,
-				Reason: fmt.Sprintf("unknown_skill_id:%s", id),
-			}
-		}
-	}
-
-	if _, err := qtx.DeleteAgentSkills(ctx, generated.DeleteAgentSkillsParams{
-		AgentID: pgUUID(agentID),
-		OrgID:   pgUUID(orgID),
-	}); err != nil {
-		return &api.ErrorResponse{
-			Error:  api.ErrorCodeInternal,
-			Reason: "delete_agent_skills_failed",
-		}
-	}
-
-	for _, a := range assignments {
-		if _, err := qtx.InsertAgentSkill(ctx, generated.InsertAgentSkillParams{
-			AgentID:     pgUUID(agentID),
-			SkillID:     pgUUID(uuid.UUID(a.SkillId)),
-			OrgID:       pgUUID(orgID),
-			Proficiency: int32(a.Proficiency),
-		}); err != nil {
-			// FK race (skill disabled between probe and insert) and DB
-			// CHECK backstop both surface as 422; everything else → 500.
-			status, code, reason := mapPgError(err, "agent_skill")
-			if status == 422 {
-				return &api.ErrorResponse{Error: code, Reason: reason}
-			}
-			return &api.ErrorResponse{
-				Error:  api.ErrorCodeInternal,
-				Reason: "insert_agent_skill_failed",
-			}
-		}
-	}
-	return nil
 }
 
 // mapAgent converts a sqlc-row Agent + optional ListSkillsForAgentRow
