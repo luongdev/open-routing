@@ -62,7 +62,8 @@ ORDER BY s.name;
 -- in the caller's org. Handler computes the missing set in Go:
 --
 --     present, err := q.SkillsPresentInOrg(ctx, SkillsPresentInOrgParams{
---         IDs: ids, OrgID: orgID,
+--         Column1: ids,  // sqlc emits "Column1" for raw $N::uuid[] params
+--         OrgID:   orgID,
 --     })
 --     missing := setDiff(ids, present)  // ids minus present
 --     if len(missing) > 0 { return 422 invalid_reference }
