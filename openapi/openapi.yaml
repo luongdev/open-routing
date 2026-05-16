@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.0.0
 
 info:
   title: Open Routing API
@@ -215,9 +215,8 @@ components:
           description: The current page of results.
           items: {}
         next_cursor:
-          type:
-            - string
-            - "null"
+          type: string
+          nullable: true
           description: >
             Opaque base64 cursor for the next page. `null` when this is the
             last page. Pass as `?cursor=<value>` on the next request.
@@ -460,9 +459,8 @@ components:
           type: string
           example: "Billing Support"
         description:
-          type:
-            - string
-            - "null"
+          type: string
+          nullable: true
           description: Optional long-form description.
           example: "Handle billing inquiries, refunds, and payment disputes."
         skill_type:
@@ -502,9 +500,8 @@ components:
           type: string
           example: "Billing Support"
         description:
-          type:
-            - string
-            - "null"
+          type: string
+          nullable: true
           example: "Handle billing inquiries and payment disputes."
         skill_type:
           type: string
@@ -522,9 +519,8 @@ components:
           type: string
           example: "Billing Support"
         description:
-          type:
-            - string
-            - "null"
+          type: string
+          nullable: true
         skill_type:
           type: string
           example: "support"
@@ -691,9 +687,10 @@ components:
         channel_type:
           $ref: "#/components/schemas/ChannelType"
         default_queue_id:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/UUIDv7"
-            - type: "null"
+          type: string
+          nullable: true
           description: >
             Default queue for interactions arriving on this channel when no
             flow route is configured. Null means no default queue.
@@ -727,9 +724,10 @@ components:
         channel_type:
           $ref: "#/components/schemas/ChannelType"
         default_queue_id:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/UUIDv7"
-            - type: "null"
+          type: string
+          nullable: true
         enabled:
           type: boolean
           default: true
@@ -742,9 +740,10 @@ components:
         channel_type:
           $ref: "#/components/schemas/ChannelType"
         default_queue_id:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/UUIDv7"
-            - type: "null"
+          type: string
+          nullable: true
         enabled:
           type: boolean
 
@@ -815,10 +814,9 @@ components:
           type: string
           example: "freeswitch"
         config:
-          anyOf:
-            - type: object
-              additionalProperties: true
-            - type: "null"
+          type: object
+          additionalProperties: true
+          nullable: true
           description: Free-form JSONB configuration blob. Null to leave empty.
         enabled:
           type: boolean
@@ -832,10 +830,9 @@ components:
         adapter_type:
           type: string
         config:
-          anyOf:
-            - type: object
-              additionalProperties: true
-            - type: "null"
+          type: object
+          additionalProperties: true
+          nullable: true
           description: Free-form JSONB configuration blob. Null to clear.
         enabled:
           type: boolean
@@ -987,31 +984,33 @@ components:
         status:
           $ref: "#/components/schemas/AgentStatus"
         engaged_channel:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/ChannelType"
-            - type: "null"
+          type: string
+          nullable: true
           description: >
             The channel type the agent is currently engaged on (STATE-05).
             Non-null only when `status == Engaged`. Null in all other states.
         break_reason_id:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/UUIDv7"
-            - type: "null"
+          type: string
+          nullable: true
           description: >
             The break reason for the current Break state (STATE-04).
             Non-null only when `status == Break`. Null in all other states.
         post_interaction_state:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/PostInteractionState"
-            - type: "null"
+          type: string
+          nullable: true
           description: >
             The target state after WrapUp expires (STATE-06). Set while Engaged.
             Null when not in Engaged or WrapUp state.
         wrapup_until:
-          type:
-            - string
-            - "null"
+          type: string
           format: date-time
+          nullable: true
           description: >
             Server-owned TTL for the WrapUp state (STATE-07). When now() passes
             this timestamp, the background goroutine fires the WrapUp →
@@ -1059,18 +1058,20 @@ components:
           $ref: "#/components/schemas/AgentStatus"
           description: The target state for this transition.
         break_reason_id:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/UUIDv7"
-            - type: "null"
+          type: string
+          nullable: true
           description: >
             Required when `to == Break` (STATE-04). Must reference a
             `break_reason` belonging to the same org. Cross-org break reason IDs
             return HTTP 422 (not a not_found — the entity may exist, it's just
             unauthorized for this org).
         post_interaction_state:
-          anyOf:
+          allOf:
             - $ref: "#/components/schemas/PostInteractionState"
-            - type: "null"
+          type: string
+          nullable: true
           description: >
             May be set while `status == Engaged` (STATE-06). Specifies the
             target state when WrapUp expires. Ignored on other transitions.
@@ -1105,9 +1106,8 @@ components:
           description: 1-based row number of the failed record.
           example: 3
         field:
-          type:
-            - string
-            - "null"
+          type: string
+          nullable: true
           description: The field name that caused the failure, if field-level.
           example: "email"
         error:
@@ -1177,11 +1177,10 @@ components:
           type: integer
           example: 3
         errors:
-          anyOf:
-            - type: array
-              items:
-                $ref: "#/components/schemas/BulkImportFailedRow"
-            - type: "null"
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/BulkImportFailedRow"
           description: Structured errors for failed rows; same shape as BulkImportResult.failed.
         created_at:
           type: string
