@@ -14,6 +14,7 @@ package scaffold
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -61,6 +62,14 @@ func (h *Handler) CreateScaffold(ctx context.Context, req api.CreateScaffoldRequ
 			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
 				Error:  api.ErrorCodeInternal,
 				Reason: "missing_org_id_in_context",
+			},
+		}, nil
+	}
+	if strings.TrimSpace(req.Body.ExternalId) == "" || strings.TrimSpace(req.Body.Name) == "" {
+		return api.CreateScaffold400JSONResponse{
+			BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error:  api.ErrorCodeInvalidBody,
+				Reason: "external_id_and_name_required",
 			},
 		}, nil
 	}

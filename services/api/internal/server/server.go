@@ -45,7 +45,7 @@ import (
 
 // Deps bundles every runtime dependency the API mux needs. cmd/api/main.go
 // constructs one of these (after wiring OTel, pool, redis, orgDB) and hands
-// it to NewMux. SpecBytes is the embedded openapi.yaml from api.GetSwagger()
+// it to NewMux. SpecBytes is the embedded openapi.yaml from api.GetSpec()
 // (marshaled to YAML); StrictHandlers is the compositeServer. Tests supply
 // these via server.NewCompositeServer.
 type Deps struct {
@@ -249,143 +249,143 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── Scaffold: 400/404/500 ─────────────────────────────────────────
 	case api.CreateScaffold400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateScaffold500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.ListScaffolds400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.ListScaffolds500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetScaffoldById400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetScaffoldById404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetScaffoldById500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Adapter 500-stubs ─────────────────────────────────────────────
 	case api.ListAdapters500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateAdapter500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteAdapter500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAdapter500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAdapter500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Agent 500-stubs ────────────────────────────────────────────────
 	case api.ListAgents500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateAgent500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteAgent500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAgent500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAgent500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAgentStatus500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.PatchAgentStatus500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── BreakReason 500-stubs ─────────────────────────────────────────
 	case api.ListBreakReasons500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateBreakReason500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteBreakReason500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetBreakReason500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateBreakReason500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── BulkImport 500-stub ───────────────────────────────────────────
 	case api.BulkImportCatalog500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Channel 500-stubs ─────────────────────────────────────────────
 	case api.ListChannels500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateChannel500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteChannel500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetChannel500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateChannel500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── ImportJob 500-stub ────────────────────────────────────────────
 	case api.GetImportJob500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Queue 500-stubs ───────────────────────────────────────────────
 	case api.ListQueues500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateQueue500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteQueue500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetQueue500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateQueue500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Skill 500-stubs ───────────────────────────────────────────────
 	case api.ListSkills500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateSkill500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteSkill500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetSkill500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateSkill500JSONResponse:
-		r.InternalServerErrorJSONResponse.RequestId = setIfNil(r.InternalServerErrorJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -397,54 +397,54 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── Adapter 400/404 ───────────────────────────────────────────────────
 	case api.ListAdapters400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateAdapter400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteAdapter400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteAdapter404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAdapter400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAdapter404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAdapter400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAdapter404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Agent 400/404/409 ─────────────────────────────────────────────────
 	case api.ListAgents400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateAgent400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteAgent400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteAgent404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAgent400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAgent404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAgent400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAgent404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAgent409JSONResponse:
 		// VersionConflictErrorResponse variant — has its own RequestId field.
@@ -453,16 +453,16 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── AgentStatus 400/404/409 ───────────────────────────────────────────
 	case api.GetAgentStatus400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetAgentStatus404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.PatchAgentStatus400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.PatchAgentStatus404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.PatchAgentStatus409JSONResponse:
 		// InvalidTransitionErrorResponse — has its own RequestId field.
@@ -472,28 +472,28 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── BreakReason 400/404/409 ───────────────────────────────────────────
 	case api.ListBreakReasons400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateBreakReason400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteBreakReason400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteBreakReason404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetBreakReason400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetBreakReason404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateBreakReason400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateBreakReason404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateBreakReason409JSONResponse:
 		// VersionConflictErrorResponse variant — has its own RequestId field.
@@ -502,7 +502,7 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── BulkImport 413 ────────────────────────────────────────────────────
 	case api.BulkImportCatalog413JSONResponse:
-		r.RequestEntityTooLargeJSONResponse.RequestId = setIfNil(r.RequestEntityTooLargeJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	// BulkImportCatalog422JSONResponse is BulkImportResult (no ErrorResponse/RequestId) — pass through.
 	// CreateAgent409JSONResponse is a union alias (unmarshal required) — pass through.
@@ -510,62 +510,62 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── Channel 400/404 ───────────────────────────────────────────────────
 	case api.ListChannels400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateChannel400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteChannel400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteChannel404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetChannel400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetChannel404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateChannel400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateChannel404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── ImportJob 400/404 ─────────────────────────────────────────────────
 	case api.GetImportJob400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetImportJob404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 
 	// ── Queue 400/404/409 ─────────────────────────────────────────────────
 	case api.ListQueues400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateQueue400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteQueue400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteQueue404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetQueue400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetQueue404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateQueue400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateQueue404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateQueue409JSONResponse:
 		// VersionConflictErrorResponse variant — has its own RequestId field.
@@ -574,28 +574,28 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 
 	// ── Skill 400/404/409 ─────────────────────────────────────────────────
 	case api.ListSkills400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.CreateSkill400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteSkill400JSONResponse:
-		r.InvalidOrgIDJSONResponse.RequestId = setIfNil(r.InvalidOrgIDJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.DeleteSkill404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetSkill400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.GetSkill404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateSkill400JSONResponse:
-		r.BadRequestJSONResponse.RequestId = setIfNil(r.BadRequestJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateSkill404JSONResponse:
-		r.NotFoundJSONResponse.RequestId = setIfNil(r.NotFoundJSONResponse.RequestId, id)
+		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateSkill409JSONResponse:
 		// VersionConflictErrorResponse variant — has its own RequestId field.

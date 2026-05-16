@@ -118,7 +118,7 @@ func run() int {
 
 	// (7) Spec bytes from the embedded generated package (D-45). The binary
 	// always serves the spec it was built against — no stale-file risk.
-	swagger, err := api.GetSwagger()
+	swagger, err := api.GetSpec()
 	if err != nil {
 		slog.ErrorContext(ctx, "spec load", "err", err)
 		return 1
