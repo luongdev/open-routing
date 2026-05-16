@@ -599,6 +599,29 @@ func TestAgents_Create_UnknownSkillId_422(t *testing.T) {
 	}
 }
 
+// Wave 4 review: duplicate skill_id in the request body must surface as
+// 422 invalid_value, not the 409 the DB UNIQUE constraint would yield
+// if the request reached InsertAgentSkill.
+func TestAgents_Create_DuplicateSkillId_422(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+	s1 := seedSkill(t, th, ctx, "SKILL-DUP")
+
+	dup := []api.AgentSkillAssignment{
+		{SkillId: api.UUIDv7(s1), Proficiency: 5},
+		{SkillId: api.UUIDv7(s1), Proficiency: 7},
+	}
+	body := makeAgentBody("ext-create-dup", "Mia", &dup)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"want 422 invalid_value, body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidValue, e.Error)
+	require.Contains(t, e.Reason, "duplicate")
+}
+
 // TestAgents_LimitOutOfRange — ?limit=0 → 400 invalid_body;
 // ?limit=101 → 400 invalid_body. Layer 1 in the OpenAPI spec does NOT
 // enforce min/max on LimitQuery (the spec says "Defaults to 25.

@@ -80,29 +80,7 @@ const (
 	maxPageSize = 100
 )
 
-// ---------------------------------------------------------------------------
-// CreateAgent (POST /v1/orgs/{org_id}/agents)  CAT-01, CAT-03
-// ---------------------------------------------------------------------------
-//
-// Flow:
-//
-//  1. Resolve orgID from ctx (never from URL path — FOUND-05).
-//  2. Codex C1: validate any skills[].proficiency in 1-10 BEFORE any DB
-//     call. Out-of-range → 422 invalid_value.
-//  3. Mint UUIDv7 server-side (D-19 — IDs originate at the write boundary).
-//  4. Codex C4: BeginTx wrapping BOTH the agent INSERT AND the optional
-//     skills replace. Defer Rollback covers every error branch.
-//  5. InsertAgent via qtx. 23505 (unique violation) → 409 with the
-//     CreateAgent409JSONResponseBody.FromErrorResponse union builder
-//     (Pitfall 2). Other pgx errors → 500.
-//  6. If skills[] non-empty: D-76 probe via SkillsPresentInOrg + set
-//     difference. Missing IDs → 422 invalid_reference (CreateAgent422,
-//     Codex C2). DELETE + N INSERT via qtx (composes inside caller tx).
-//  7. tx.Commit then cache.Del (best-effort per D-55) — the cache may
-//     be empty at this point, but DEL is idempotent and the consistent
-//     pattern keeps the contract identical across create/update/delete.
-//  8. Return 201 with the mapped Agent DTO (skills omitted in 201
-//     response per the spec — list responses are flat).
+// CreateAgent — POST /v1/orgs/{org_id}/agents (CAT-01, CAT-03).
 func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestObject) (api.CreateAgentResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -122,6 +100,12 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 			return api.CreateAgent422JSONResponse(api.ErrorResponse{
 				Error:  api.ErrorCodeInvalidValue,
 				Reason: fmt.Sprintf("skills[%d].proficiency must be 1-10", badIdx),
+			}), nil
+		}
+		if dupIdx, ok := validateNoDuplicateSkills(*req.Body.Skills); !ok {
+			return api.CreateAgent422JSONResponse(api.ErrorResponse{
+				Error:  api.ErrorCodeInvalidValue,
+				Reason: fmt.Sprintf("skills[%d].skill_id is a duplicate", dupIdx),
 			}), nil
 		}
 	}
@@ -201,15 +185,10 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 	return api.CreateAgent201JSONResponse(mapAgent(row, nil)), nil
 }
 
-// ---------------------------------------------------------------------------
-// GetAgent (GET /v1/orgs/{org_id}/agents/{id})  CAT-01, CAT-11
-// ---------------------------------------------------------------------------
-//
-// CAT-11 — wraps the loader in cache.GetOrSet[api.Agent] with a 60s TTL.
-// The loader fetches the agent row + embedded skills (OQ-1A — detail
-// GETs include skills, list responses do not). ErrNoRows from sqlc
-// becomes cache.ErrNotFound so the cache does NOT write an empty entry
-// (D-54).
+// GetAgent — GET /v1/orgs/{org_id}/agents/{id} (CAT-01, CAT-11).
+// Wraps the loader in cache.GetOrSet[api.Agent] (60s TTL). Loader maps
+// pgx.ErrNoRows → cache.ErrNotFound so the cache never writes an empty
+// entry (D-54).
 func (h *Handlers) GetAgent(ctx context.Context, req api.GetAgentRequestObject) (api.GetAgentResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -267,19 +246,12 @@ func (h *Handlers) GetAgent(ctx context.Context, req api.GetAgentRequestObject) 
 	return api.GetAgent200JSONResponse(agent), nil
 }
 
-// ---------------------------------------------------------------------------
-// ListAgents (GET /v1/orgs/{org_id}/agents)  CAT-01, CAT-09, CAT-10
-// ---------------------------------------------------------------------------
-//
-// Cursor pagination (CAT-10, D-63): cursor encodes (created_at, id).
-// LIMIT N+1 sentinel signals has_more without a separate COUNT query.
-// Default page size 25; max 100 (D-67) — handler validates because the
-// OpenAPI spec intentionally lets the handler own the 400 wire shape.
-//
-// ?include_disabled=true (CAT-09): D-65 split — different prepared
-// statement so PostgreSQL plans each path optimally.
-//
-// Name filter (OQ-4B): case-insensitive ILIKE %name%. Optional.
+// ListAgents — GET /v1/orgs/{org_id}/agents (CAT-09, CAT-10).
+// Cursor (created_at, id) + LIMIT N+1 sentinel for has_more (D-63).
+// ?include_disabled=true → ListAgentsIncludingDisabled prepared statement
+// (D-65 — two queries, not one with conditional WHERE).
+// Default limit 25 / max 100 (D-67) validated handler-side because the
+// spec intentionally lets the handler own the 400 wire shape.
 func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObject) (api.ListAgentsResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -288,7 +260,6 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 		}}, nil
 	}
 
-	// (a) Resolve page size (D-67).
 	pageSize := defaultPageSize
 	if req.Params.Limit != nil {
 		pageSize = int(*req.Params.Limit)
@@ -300,8 +271,6 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 		}
 	}
 
-	// (b) Decode cursor — empty string = first page (DecodeCursor returns
-	//     nil, nil).
 	var cursorStr string
 	if req.Params.Cursor != nil {
 		cursorStr = *req.Params.Cursor
@@ -313,17 +282,15 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 		}}, nil
 	}
 
-	// (c) Optional name filter.
 	var nameFilter *string
 	if req.Params.Name != nil {
 		s := string(*req.Params.Name)
 		nameFilter = &s
 	}
 
-	// (d) Dispatch to the appropriate sqlc query (D-65 two-query split).
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1) // N+1 sentinel.
+	limit := int32(pageSize + 1) // N+1 sentinel
 
 	var rows []generated.Agent
 	if includeDisabled {
@@ -358,27 +325,30 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 		rows = rs
 	}
 
-	// (e) N+1 sentinel pagination.
 	hasMore := len(rows) > pageSize
 	if hasMore {
 		rows = rows[:pageSize]
 	}
 
-	// (f) Map rows → AgentListItem (OQ-1A — list items are FLAT, no
-	//     embedded skills).
+	// OQ-1A — list items are FLAT, no embedded skills.
 	items := make([]api.AgentListItem, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, mapAgentListItem(r))
 	}
 
-	// (g) Build next_cursor from the last returned row.
 	var nextCursor *string
 	if hasMore && len(rows) > 0 {
 		last := rows[len(rows)-1]
 		enc, encErr := EncodeCursor(last.CreatedAt.Time, apiUUID(last.ID))
-		if encErr == nil {
-			nextCursor = &enc
+		if encErr != nil {
+			// Surface as 500: hasMore=true + missing next_cursor would
+			// be an inconsistent wire shape clients can't recover from.
+			h.deps.Logger.ErrorContext(ctx, "list agents encode cursor", "err", encErr)
+			return api.ListAgents500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error: api.ErrorCodeInternal, Reason: "cursor_encode_failed",
+			}}, nil
 		}
+		nextCursor = &enc
 	}
 	return api.ListAgents200JSONResponse{
 		Items:      items,
@@ -387,23 +357,14 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 	}, nil
 }
 
-// ---------------------------------------------------------------------------
-// UpdateAgent (PATCH /v1/orgs/{org_id}/agents/{id})  CAT-01, CAT-03, CAT-08
-// ---------------------------------------------------------------------------
-//
-// Codex C4 iter 3 — BeginTx wraps the version-checked UPDATE AND the
-// optional skills replace in a SINGLE tx. If the skills replace fails,
-// the agent row UPDATE rolls back along with it.
-//
-// D-66 — UPDATE returns 0 rows means EITHER the row doesn't exist (404)
-// OR the version mismatched (409). Disambiguate via
-// GetAgentByIdAnyVersion run inside the same tx (so the probe observes
-// the rollback state). 409 path also cache.Del's per D-56 to avoid a
-// stale cached value masking the conflict.
-//
-// Codex C1 — proficiency 1-10 check before any DB call.
-// Codex C3 — sqlc UpdateAgentParams uses COALESCE for sparse-PATCH so
-// the handler passes nil for omitted fields and the column is preserved.
+// UpdateAgent — PATCH /v1/orgs/{org_id}/agents/{id} (CAT-01, CAT-03, CAT-08).
+// Codex C4: BeginTx wraps the version-checked UPDATE AND optional skills
+// replace in one tx — if the skills replace fails, the agent UPDATE rolls
+// back with it.
+// D-66: 0 rows from version-checked UPDATE = either 404 (no row) or 409
+// (version mismatch). Disambiguate via GetAgentByIdAnyVersion in the
+// same tx. 409 path also cache.Del's (D-56) so a stale cache can't mask
+// the conflict on the client's retry.
 func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestObject) (api.UpdateAgentResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -424,6 +385,12 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 			return api.UpdateAgent422JSONResponse(api.ErrorResponse{
 				Error:  api.ErrorCodeInvalidValue,
 				Reason: fmt.Sprintf("skills[%d].proficiency must be 1-10", badIdx),
+			}), nil
+		}
+		if dupIdx, ok := validateNoDuplicateSkills(*req.Body.Skills); !ok {
+			return api.UpdateAgent422JSONResponse(api.ErrorResponse{
+				Error:  api.ErrorCodeInvalidValue,
+				Reason: fmt.Sprintf("skills[%d].skill_id is a duplicate", dupIdx),
 			}), nil
 		}
 	}
@@ -522,26 +489,26 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 		h.deps.Logger.WarnContext(ctx, "cache del failed", "key", cache.Key(orgID, "agents", agentID), "err", delErr)
 	}
 
-	// Load fresh skills for the response so the PATCH echo includes the
-	// post-state (separate query — the tx has committed, so a new pool
-	// connection sees the new state via MVCC).
 	freshQ := generated.New(h.deps.OrgDB)
-	skills, _ := freshQ.ListSkillsForAgent(ctx, generated.ListSkillsForAgentParams{
+	skills, listErr := freshQ.ListSkillsForAgent(ctx, generated.ListSkillsForAgentParams{
 		AgentID: pgUUID(agentID),
 		OrgID:   pgUUID(orgID),
 	})
+	if listErr != nil {
+		// Tx is already committed — the agent + its skills are in their
+		// new state. Returning 500 here would mislead the client into
+		// thinking the write failed. Log + return the agent row with
+		// the skills slice we have (possibly empty); the next GET will
+		// fetch the truth.
+		h.deps.Logger.WarnContext(ctx, "update agent: reload skills failed (write committed)",
+			"agent_id", agentID, "err", listErr)
+	}
 	return api.UpdateAgent200JSONResponse(mapAgent(row, skills)), nil
 }
 
-// ---------------------------------------------------------------------------
-// DeleteAgent (DELETE /v1/orgs/{org_id}/agents/{id})  CAT-01, CAT-09
-// ---------------------------------------------------------------------------
-//
-// Soft delete (CAT-09): SoftDeleteAgent flips enabled=false WHERE
-// enabled=TRUE. Re-deleting an already-disabled row returns 0 rows →
-// 404 (the documented idempotent-disabled contract from D-65).
-//
-// Cache DEL after the row is gone (D-55).
+// DeleteAgent — DELETE /v1/orgs/{org_id}/agents/{id} (CAT-01, CAT-09).
+// Soft delete: WHERE enabled=TRUE so re-delete returns 0 rows → 404
+// (per D-65). Cache DEL after the row flip (D-55).
 func (h *Handlers) DeleteAgent(ctx context.Context, req api.DeleteAgentRequestObject) (api.DeleteAgentResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -575,21 +542,12 @@ func (h *Handlers) DeleteAgent(ctx context.Context, req api.DeleteAgentRequestOb
 	return api.DeleteAgent204Response{}, nil
 }
 
-// ---------------------------------------------------------------------------
-// Helpers — inlined here for Plan 03-06. Plan 03-09 will extract
-// replaceAgentSkills + validateProficiencyRange into agent_skills.go.
-// ---------------------------------------------------------------------------
+// Helpers below are inlined for Plan 03-06; Plan 03-09 extracts them
+// into agent_skills.go.
 
 // validateProficiencyRange — Codex C1 iter 3. Layer 2 validation of
-// proficiency 1-10. Returns the index of the first out-of-range entry
-// (badIdx) and ok=false; otherwise (0, true).
-//
-// The OpenAPI spec for AgentSkillAssignment.proficiency intentionally
-// OMITS minimum/maximum so the oapi-codegen Layer 1 validator does NOT
-// short-circuit out-of-range values with HTTP 400. This handler-level
-// check fires the 422 invalid_value response the contract requires.
-// Caller embeds the index in the Reason string: `skills[N].proficiency
-// must be 1-10`.
+// proficiency 1-10. Spec omits minimum/maximum so oapi-codegen Layer 1
+// can't short-circuit with 400; the contract requires 422 invalid_value.
 func validateProficiencyRange(assignments []api.AgentSkillAssignment) (badIdx int, ok bool) {
 	for i, a := range assignments {
 		if a.Proficiency < 1 || a.Proficiency > 10 {
@@ -599,49 +557,35 @@ func validateProficiencyRange(assignments []api.AgentSkillAssignment) (badIdx in
 	return 0, true
 }
 
-// replaceAgentSkills — Codex C4 iter 3. PUT-semantics full-replace of
-// the agent_skills join rows for one (agentID, orgID) pair.
-//
-// CRITICAL: this helper does NOT open its own BeginTx. It accepts the
-// caller's *generated.Queries (from generated.New(tx)) and composes
-// inside the enclosing tx. The exact-2 BeginTx gate in Plan 03-06's
-// acceptance criteria depends on this — see the awk gate that scans
-// for "BeginTx" inside this function's body.
-//
-// Returns:
-//
-//   - nil → success; caller proceeds to commit.
-//   - *api.ErrorResponse with Error==ErrorCodeInternal → internal
-//     failure; caller maps to 500 + tx auto-rollback.
-//   - *api.ErrorResponse with Error==ErrorCodeInvalidReference (D-76
-//     unknown skill_id) or ErrorCodeInvalidValue (DB CHECK backstop
-//     via 23514) → 422 response; caller wraps in CreateAgent422 or
-//     UpdateAgent422.
-//
-// Steps:
-//
-//  1. D-76 cross-row FK probe via SkillsPresentInOrg (returns the
-//     subset of input that exists + enabled in caller's org). Handler
-//     computes the SET DIFFERENCE: `missing = input − present`.
-//
-//  2. DELETE every existing agent_skills row for (agentID, orgID).
-//     Idempotent — :execrows return is unused.
-//
-//  3. INSERT one row per assignment via qtx.InsertAgentSkill. Failures
-//     pass through mapPgError; the caller's defer Rollback covers any
-//     partial state.
-//
-// Plan 03-09 will lift this helper into agent_skills.go with the SAME
-// signature so the awk gate stays satisfied and the test surface
-// doesn't drift.
+// validateNoDuplicateSkills — Wave 4 cross-AI review. Without this check
+// duplicate skill_ids fall through to InsertAgentSkill and hit a UNIQUE
+// constraint, surfacing as 409 via mapPgError — which is the WRONG code
+// (the input itself is malformed; 422 invalid_value is the right shape).
+func validateNoDuplicateSkills(assignments []api.AgentSkillAssignment) (dupIdx int, ok bool) {
+	seen := make(map[uuid.UUID]struct{}, len(assignments))
+	for i, a := range assignments {
+		id := uuid.UUID(a.SkillId)
+		if _, exists := seen[id]; exists {
+			return i, false
+		}
+		seen[id] = struct{}{}
+	}
+	return 0, true
+}
+
+// replaceAgentSkills — Codex C4 iter 3 PUT-semantics replace.
+// Does NOT open its own BeginTx: composes inside the caller's qtx so the
+// exact-2 BeginTx gate (CreateAgent + UpdateAgent only) stays satisfied.
+// nil return → success; non-nil err.Error categorizes the 422 vs 500 wire
+// shape for the caller.
 func replaceAgentSkills(
 	ctx context.Context,
 	qtx *generated.Queries,
 	orgID, agentID uuid.UUID,
 	assignments []api.AgentSkillAssignment,
 ) *api.ErrorResponse {
-	// 1. Cross-row FK probe (D-76). Build the []pgtype.UUID slice the
-	//    sqlc-generated param expects.
+	// D-76 cross-row FK probe — returns the subset of input present-and-
+	// enabled in caller's org; handler then computes the set difference.
 	inputIDs := make([]uuid.UUID, 0, len(assignments))
 	pgInputIDs := make([]pgtype.UUID, 0, len(assignments))
 	for _, a := range assignments {
@@ -661,9 +605,6 @@ func replaceAgentSkills(
 		}
 	}
 
-	// Set difference: missing = inputIDs − present. Build a map of the
-	// present IDs (the SkillsPresentInOrg query returns a slice of
-	// pgtype.UUID — each Bytes is the 16-byte UUID).
 	presentSet := make(map[uuid.UUID]struct{}, len(present))
 	for _, p := range present {
 		presentSet[uuid.UUID(p.Bytes)] = struct{}{}
@@ -677,7 +618,6 @@ func replaceAgentSkills(
 		}
 	}
 
-	// 2. DELETE existing rows for (agentID, orgID). Idempotent.
 	if _, err := qtx.DeleteAgentSkills(ctx, generated.DeleteAgentSkillsParams{
 		AgentID: pgUUID(agentID),
 		OrgID:   pgUUID(orgID),
@@ -688,8 +628,6 @@ func replaceAgentSkills(
 		}
 	}
 
-	// 3. INSERT each assignment. Any failure rolls the tx back via the
-	//    caller's defer.
 	for _, a := range assignments {
 		if _, err := qtx.InsertAgentSkill(ctx, generated.InsertAgentSkillParams{
 			AgentID:     pgUUID(agentID),
@@ -697,9 +635,8 @@ func replaceAgentSkills(
 			OrgID:       pgUUID(orgID),
 			Proficiency: int32(a.Proficiency),
 		}); err != nil {
-			// 23503 FK race (skill disabled between probe and insert) →
-			// 422 invalid_reference. 23514 CHECK (DB-level proficiency
-			// 1-10 backstop) → 422 invalid_value. Other errors → 500.
+			// FK race (skill disabled between probe and insert) and DB
+			// CHECK backstop both surface as 422; everything else → 500.
 			status, code, reason := mapPgError(err, "agent_skill")
 			if status == 422 {
 				return &api.ErrorResponse{Error: code, Reason: reason}
