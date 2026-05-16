@@ -224,9 +224,10 @@ func TestRequestID_IsUUIDv7(t *testing.T) {
 // for a fresh UUIDv7). The 200 path for /healthz would not exercise the
 // ErrorResponse path (GetHealthz returns a non-error response type).
 // Phase 3 Wave 0 swap: /_scaffold/{id} (404 from missing row) -> /agents/{id}
-// (500 "not_implemented_yet" from Wave0TempStubs). The contract being tested
-// (D-35 / B-1: request_id present in error body) is identical on any
-// ErrorResponse-shaped status — it does not depend on the specific code.
+// (404 from the real catalog GetAgent against a missing row). The contract
+// being tested (D-35 / B-1: request_id present in error body) is identical
+// on any ErrorResponse-shaped status — it does not depend on the specific
+// code.
 func TestRequestID_PresentInErrorBody(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()

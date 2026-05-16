@@ -14,7 +14,7 @@
 //     functional Options.
 //
 // Plans 03-06..03-09 fill in per-entity handlers; Plan 03-10 wires
-// catalog.New(deps) into main.go in place of Wave0TempStubs.
+// catalog.New(deps) into main.go as the production StrictServerInterface.
 //
 // Phase 4 (agent state-machine) and Phase 5 (bulk import) endpoints are
 // 501-stubbed via notimpl.go and remain stubbed until those phases land —

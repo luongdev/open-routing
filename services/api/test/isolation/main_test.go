@@ -20,11 +20,14 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"io"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-migrate/migrate/v4"
 	pgmigrate "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -37,6 +40,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
+	"github.com/luongdev/open-routing/services/api/internal/cache"
+	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/server"
@@ -152,14 +157,24 @@ func TestMain(m *testing.M) {
 		os.Exit(containerFailureExitCode())
 	}
 
-	// (3) Optional Redis: if REDIS_URL env is set, connect; else leave nil.
-	// /readyz will then return 500 (via chi.Recoverer catching a nil-Ping
-	// panic) rather than 200 — that is acceptable for the bypass-path test
-	// which only asserts no X-Org-Id 400.
+	// (3) Redis: prefer REDIS_URL env when set; otherwise spin up miniredis
+	// so catalog.Handlers always has a working Cache dep (CAT-11). miniredis.Run
+	// (not RunT) because TestMain has no testing.TB; the in-process server is
+	// process-lifetime — no Terminate needed.
 	if dsn := os.Getenv("REDIS_URL"); dsn != "" {
 		if opts, perr := redis.ParseURL(dsn); perr == nil {
 			sharedRedis = redis.NewClient(opts)
 		}
+	}
+	if sharedRedis == nil {
+		mr, mrErr := miniredis.Run()
+		if mrErr != nil {
+			os.Stderr.WriteString("isolation: miniredis run: " + mrErr.Error() + "\n")
+			sharedPool.Close()
+			_ = pgC.Terminate(ctx)
+			os.Exit(containerFailureExitCode())
+		}
+		sharedRedis = redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	}
 
 	// (4) Build the production mux. ValidationMode=panic mirrors the
@@ -174,23 +189,26 @@ func TestMain(m *testing.M) {
 	}
 	orgDB := db.NewOrgDB(sharedPool, db.NewSQLChecker(), db.ValidationPanic)
 
-	// Build spec bytes from the generated embedded spec (D-45).
-	swagger, _ := api.GetSpec() // ignore error — spec.gen.go is always parseable
+	swagger, _ := api.GetSpec()
 	specBytes, _ := yaml.Marshal(swagger)
 
-	// Phase 3 Wave 0 (Plan 03-01 D-77): NewCompositeServer was deleted
-	// along with the Phase 2 scaffold. Wave0TempStubs implements the
-	// bypass methods (Healthz/Readyz/OpenAPISpec/Docs) for real and
-	// returns 500 "not_implemented_yet" for every catalog method.
-	// Wave 2 / Plan 03-08 wires catalog.Handlers and this suite gains
-	// catalog cross-org probe tests.
-	strictServer := server.NewWave0TempStubs(sharedPool, sharedRedis, specBytes)
+	// Catalog handlers are the production StrictServerInterface impl (D-69).
+	// Discard-logger keeps test output clean; the suite asserts response
+	// shapes, not log lines.
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	catalogCache := cache.New(sharedRedis, logger)
+	catalogHandlers := catalog.New(catalog.Deps{
+		OrgDB:  orgDB,
+		Pool:   sharedPool,
+		Cache:  catalogCache,
+		Logger: logger,
+	})
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,
 		Redis:          sharedRedis,
 		OrgDB:          orgDB,
 		Config:         cfg,
-		StrictHandlers: strictServer,
+		StrictHandlers: catalogHandlers,
 		SpecBytes:      specBytes,
 	})
 
