@@ -836,7 +836,7 @@ export const ErrorCodes = {
   INTERNAL: 'internal',
   VERSION_CONFLICT: 'version_conflict',
   CROSS_ORG: 'cross_org',
-  MISSING_ORG_ID: 'missing_org_id',
+  INVALID_ORG_ID: 'invalid_org_id',
   INVALID_TRANSITION: 'invalid_transition',
   IMPORT_FAILED: 'import_failed',
   RATE_LIMITED: 'rate_limited',

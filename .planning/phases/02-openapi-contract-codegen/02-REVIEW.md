@@ -30,6 +30,11 @@ status: issues_found
 
 Reviewed the Phase 02 source scope resolved from SUMMARY artifacts. The Go middleware changes are internally consistent and pass tests, and the OpenAPI file passes Redocly structural lint. The blocking issue is contract drift: the spec's error enum and auth-failure responses do not match the already-tested OrgContext runtime behavior.
 
+## Fix Disposition
+
+- **CR-01 fixed**: `openapi/openapi.yaml` now uses `invalid_org_id`, removes v0.1 `401 Unauthorized` org-header responses, documents org-header rejection as HTTP 400, and keeps future real auth separate.
+- **WR-01 fixed**: `_scaffold/{id}` now uses `operationId: GetScaffoldById`, matching the strict-server migration plan.
+
 Verification run during review:
 - `cd services/api && go test -race -count=1 ./internal/middleware/...`: passed.
 - `cd services/api && go test -race -count=1 -short ./internal/scaffold/...`: passed.

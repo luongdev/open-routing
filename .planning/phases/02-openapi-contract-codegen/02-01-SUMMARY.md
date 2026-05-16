@@ -130,7 +130,7 @@ All 12 open questions across the 4 sketches were resolved inline. Summary of Pla
 The Spec Author Checklist in `02-UI-SKETCHES.md` enumerates:
 
 1. **Canonical ErrorResponse schema** — `{error: ErrorCode, reason: string, request_id: uuid}` per D-35
-2. **Closed ErrorCode enum** — exactly 10 values per D-36 (`invalid_body`, `invalid_id`, `not_found`, `internal`, `version_conflict`, `cross_org`, `missing_org_id`, `invalid_transition`, `import_failed`, `rate_limited`)
+2. **Closed ErrorCode enum** — exactly 10 values per D-36 (`invalid_body`, `invalid_id`, `not_found`, `internal`, `version_conflict`, `cross_org`, `invalid_org_id`, `invalid_transition`, `import_failed`, `rate_limited`)
 3. **Three D-37 special-case shapes** — CAT-08 with `current`, STATE-03 with `from`/`to`, IMP-05 with `BulkImportResult`
 4. **Pagination envelope** — `PaginatedList` with `items`, `next_cursor`, `has_more` reused across all 6 entity list endpoints
 5. **`proficiency` integer constraints** — `minimum: 1, maximum: 10` in every AgentSkillAssignment schema

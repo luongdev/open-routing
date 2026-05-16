@@ -107,7 +107,7 @@ components:
         - internal
         - version_conflict
         - cross_org
-        - missing_org_id
+        - invalid_org_id
         - invalid_transition
         - import_failed
         - rate_limited
@@ -1398,7 +1398,7 @@ components:
   responses:
 
     BadRequest:
-      description: Invalid request body, missing required fields, or type mismatch.
+      description: Invalid request body, missing required fields, type mismatch, malformed IDs, or invalid `X-Org-Id` header.
       content:
         application/json:
           schema:
@@ -1408,14 +1408,14 @@ components:
             reason: malformed_json
             request_id: "01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e"
 
-    Unauthorized:
-      description: Missing or malformed `X-Org-Id` header.
+    InvalidOrgID:
+      description: Missing, malformed, or non-UUIDv7 `X-Org-Id` header.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
           example:
-            error: missing_org_id
+            error: invalid_org_id
             reason: missing_header
 
     NotFound:
@@ -1578,8 +1578,6 @@ paths:
                 $ref: "#/components/schemas/Scaffold"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1601,8 +1599,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Scaffold"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1614,7 +1612,7 @@ paths:
     get:
       tags:
         - Scaffold
-      operationId: GetScaffold
+      operationId: GetScaffoldById
       summary: Get scaffold record by ID
       description: >
         Returns a single scaffold record. Returns HTTP 404 for both missing
@@ -1632,8 +1630,6 @@ paths:
                 $ref: "#/components/schemas/Scaffold"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -1671,8 +1667,6 @@ paths:
                 $ref: "#/components/schemas/Agent"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "409":
           description: >
             Duplicate `external_id` within the org, or optimistic concurrency
@@ -1720,8 +1714,6 @@ paths:
                           $ref: "#/components/schemas/AgentListItem"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1750,8 +1742,6 @@ paths:
                 $ref: "#/components/schemas/Agent"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -1787,8 +1777,6 @@ paths:
                 $ref: "#/components/schemas/Agent"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1819,8 +1807,8 @@ paths:
       responses:
         "204":
           description: Agent disabled.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -1851,8 +1839,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentState"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -1902,8 +1890,6 @@ paths:
                 $ref: "#/components/schemas/AgentState"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1954,8 +1940,6 @@ paths:
                 $ref: "#/components/schemas/Skill"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "409":
           description: Duplicate `external_id` within the org.
           content:
@@ -1997,8 +1981,6 @@ paths:
                           $ref: "#/components/schemas/Skill"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2023,8 +2005,6 @@ paths:
                 $ref: "#/components/schemas/Skill"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2055,8 +2035,6 @@ paths:
                 $ref: "#/components/schemas/Skill"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -2083,8 +2061,8 @@ paths:
       responses:
         "204":
           description: Skill disabled.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2118,8 +2096,6 @@ paths:
                 $ref: "#/components/schemas/Queue"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "409":
           description: Duplicate `external_id`.
           content:
@@ -2157,8 +2133,6 @@ paths:
                           $ref: "#/components/schemas/Queue"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2183,8 +2157,6 @@ paths:
                 $ref: "#/components/schemas/Queue"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2212,8 +2184,6 @@ paths:
                 $ref: "#/components/schemas/Queue"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -2240,8 +2210,8 @@ paths:
       responses:
         "204":
           description: Queue disabled.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2275,8 +2245,6 @@ paths:
                 $ref: "#/components/schemas/Channel"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "409":
           description: Duplicate `external_id`.
           content:
@@ -2314,8 +2282,6 @@ paths:
                           $ref: "#/components/schemas/Channel"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2340,8 +2306,6 @@ paths:
                 $ref: "#/components/schemas/Channel"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2369,8 +2333,6 @@ paths:
                 $ref: "#/components/schemas/Channel"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2386,8 +2348,8 @@ paths:
       responses:
         "204":
           description: Channel disabled.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2425,8 +2387,6 @@ paths:
                 $ref: "#/components/schemas/Adapter"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2458,8 +2418,6 @@ paths:
                           $ref: "#/components/schemas/Adapter"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2484,8 +2442,6 @@ paths:
                 $ref: "#/components/schemas/Adapter"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2513,8 +2469,6 @@ paths:
                 $ref: "#/components/schemas/Adapter"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2530,8 +2484,8 @@ paths:
       responses:
         "204":
           description: Adapter disabled.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2565,8 +2519,6 @@ paths:
                 $ref: "#/components/schemas/BreakReason"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2602,8 +2554,6 @@ paths:
                           $ref: "#/components/schemas/BreakReason"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2628,8 +2578,6 @@ paths:
                 $ref: "#/components/schemas/BreakReason"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2662,8 +2610,6 @@ paths:
                 $ref: "#/components/schemas/BreakReason"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -2694,8 +2640,8 @@ paths:
       responses:
         "204":
           description: Break reason disabled.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -2788,8 +2734,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "413":
           $ref: "#/components/responses/RequestEntityTooLarge"
         "422":
@@ -2825,8 +2769,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportJob"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/InvalidOrgID"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":

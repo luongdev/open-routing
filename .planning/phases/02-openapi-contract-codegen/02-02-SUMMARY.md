@@ -100,7 +100,7 @@ Build verification: `go build ./...` and `go vet ./...` pass. All 71 tests in 12
 | Import schemas | ImportEntityType, BulkImportFailedRow, BulkImportResult, ImportJob |
 | Pagination | PaginatedList with allOf per-entity override |
 | Parameters | OrgIdPath, EntityIdPath, CursorQuery, LimitQuery, IncludeDisabledQuery, NameSearchQuery, EntityTypeQuery, SchemaVersionQuery, ImportJobIdPath |
-| Reusable responses | BadRequest, Unauthorized, NotFound, RequestEntityTooLarge, InternalServerError |
+| Reusable responses | BadRequest, InvalidOrgID, NotFound, RequestEntityTooLarge, InternalServerError |
 | Infrastructure paths | /healthz, /readyz, /openapi.yaml, /docs |
 | Scaffold paths | POST /v1/orgs/{org_id}/_scaffold, GET /v1/orgs/{org_id}/_scaffold, GET /v1/orgs/{org_id}/_scaffold/{id} |
 | Catalog CRUD paths | 5 paths × ~4 operations each = ~20 operations (agents, skills, queues, channels, adapters, break-reasons) |
@@ -114,7 +114,7 @@ Build verification: `go build ./...` and `go vet ./...` pass. All 71 tests in 12
 - `internal`
 - `version_conflict`
 - `cross_org`
-- `missing_org_id`
+- `invalid_org_id`
 - `invalid_transition`
 - `import_failed`
 - `rate_limited`

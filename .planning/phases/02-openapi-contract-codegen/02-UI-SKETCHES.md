@@ -413,7 +413,7 @@ ErrorCode:
     - internal
     - version_conflict
     - cross_org
-    - missing_org_id
+    - invalid_org_id
     - invalid_transition
     - import_failed
     - rate_limited
