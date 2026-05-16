@@ -8,7 +8,7 @@
 
 Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters, break_reasons) + the agent_skills join (CAT-03) against the strict-server stubs generated in Phase 2. Add the Redis cache layer for hot-path single-entity GETs (CAT-11). Add a single editable v0.1 migration carrying every catalog table and index. Delete the Phase 1 scaffold + Phase 2 501-stubs in the first commit of this phase.
 
-**In scope:** Real handler bodies for all 41 `StrictServerInterface` methods in `services/api/internal/api/server.gen.go` (everything except agent state-machine endpoints owned by Phase 4 + bulk import owned by Phase 5 — these stay 501-stubs until their phase lands); sqlc query files at `services/api/internal/db/queries/{agents,skills,queues,channels,adapters,break_reasons,agent_skills}.sql`; one editable migration `services/api/internal/db/migrations/002_catalog_v0_1.{up,down}.sql` covering every catalog table + indexes + constraints; new `services/api/internal/cache/` package shipping `cache.Cache` + `cache.GetOrSet[T any]` + `cache.Del`; new `services/api/internal/catalog/` package shipping `catalog.Handlers` with one .go file per entity; small spec amendment to add `invalid_reference` ErrorCode + 422 responses to CREATE/UPDATE endpoints (regenerated via codegen-drift); per-entity `_test.go` beside source + cross-org probe extensions in `services/api/test/isolation/`.
+**In scope:** Real handler bodies for all 41 `StrictServerInterface` methods in `services/api/internal/api/server.gen.go` (everything except agent state-machine endpoints owned by Phase 4 + bulk import owned by Phase 5 — these stay 501-stubs until their phase lands); sqlc query files at `services/api/internal/db/queries/{agents,skills,queues,channels,adapters,break_reasons,agent_skills}.sql`; one editable migration `migrations/000002_catalog_v0_1.{up,down}.sql` (project root, matches Phase 1 layout — see A6) covering every catalog table + indexes + constraints; new `services/api/internal/cache/` package shipping `cache.Cache` + `cache.GetOrSet[T any]` + `cache.Del`; new `services/api/internal/catalog/` package shipping `catalog.Handlers` with one .go file per entity; small spec amendment to add `invalid_reference` ErrorCode + 422 responses to CREATE/UPDATE endpoints (regenerated via codegen-drift); per-entity `_test.go` beside source + cross-org probe extensions in `services/api/test/isolation/`.
 
 **Out of scope:** Phase 4 — agent state machine (`PATCH /agents/{id}/status`, `IsRoutable`, state-machine validation rules, `agent_states` table); Phase 5 — bulk import (`POST /v1/orgs/{org_id}/catalog/import`, CSV parsing, `import_jobs` table); Phase 6 — admin SPA UI consuming these endpoints; Phase 7 — Web Component embed; rate limiting; cache for list endpoints (CAT-11 specs single-entity only); cache for negative results (404s) — deferred to v0.2 with metrics-driven decision; bloom filter; OTel cache metrics export (slog attrs only in v0.1); auth beyond Phase 1 stub `X-Org-Id` header.
 
@@ -44,7 +44,7 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
 
 ### Schema + sqlc Layout
 
-- **D-61:** **Single editable migration for the entire v0.1 milestone.** File: `services/api/internal/db/migrations/002_catalog_v0_1.up.sql` + matching `.down.sql`. Phase 3 introduces all 6 catalog tables + `agent_skills` + indexes + constraints. Phases 4 and 5 EDIT this migration in-place during v0.1 development (Phase 4 adds `agent_states` columns + state transition CHECK; Phase 5 adds `import_jobs`). Once v0.1 ships to a real environment, freeze 002 and ratchet forward with 003+. Dev workflow: `task db:reset` drops the database, then `migrate up` re-runs all migrations from scratch. Testcontainers run `migrate up` on each container boot — this works unchanged.
+- **D-61:** **Single editable migration for the entire v0.1 milestone.** File: `migrations/000002_catalog_v0_1.up.sql` (project root, matches Phase 1 layout from `migrations/000001_create_scaffold.up.sql` — see A6) + matching `.down.sql`. Phase 3 introduces all 6 catalog tables + `agent_skills` + indexes + constraints. Phases 4 and 5 EDIT this migration in-place during v0.1 development (Phase 4 adds `agent_states` columns + state transition CHECK; Phase 5 adds `import_jobs`). Once v0.1 ships to a real environment, freeze 002 and ratchet forward with 003+. Dev workflow: `task db:reset` drops the database, then `migrate up` re-runs all migrations from scratch. Testcontainers run `migrate up` on each container boot — this works unchanged.
 - **D-62:** **Per-entity sqlc query files** at `services/api/internal/db/queries/`: `agents.sql`, `skills.sql`, `queues.sql`, `channels.sql`, `adapters.sql`, `break_reasons.sql`, `agent_skills.sql`. Each ~80 LOC containing the CRUD set for one entity. sqlc emits one `*.sql.go` per `*.sql` so generated code mirrors the layout.
 - **D-63:** **Cursor pagination format: `base64(JSON {created_at: RFC3339Nano, id: UUIDv7})`.** Client opaque, server-decodable. SQL: `WHERE (created_at, id) < ($cursor_ts, $cursor_id) ORDER BY created_at DESC, id DESC LIMIT $page_size + 1`. The `+1` row tells us whether to emit a `next_cursor` in the response. The composite key (`created_at, id`) is stable under inserts (UUIDv7 carries time, so cursor ordering aligns with insertion order).
 - **D-64:** **Name search uses `ILIKE '%' || $name || '%'`** with a functional index `CREATE INDEX ix_{entity}_org_name ON {entity}(org_id, lower(name) text_pattern_ops) WHERE enabled = true`. Substring search with leading `%` won't use the index, but at v0.1 scale (≤1K rows per entity per org) the table scan is fine. Trigram (`pg_trgm`) deferred to v0.2 — see deferred ideas.
@@ -86,7 +86,7 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
   ```
   In v0.1 only `WithClock` is exposed (for deterministic tests of UUIDv7 minting + created_at timestamps).
 - **D-72:** **Per-entity `_test.go` beside source.** `catalog/agents_test.go` covers happy-path + edge cases for agents (CRUD, version mismatch, soft-delete filtering, cursor pagination, name search, cache hit/miss); same for each other entity. Tests use `httptest.NewRecorder` + miniredis + Postgres testcontainers (extends Phase 1 FOUND-08 setup). Cross-org probe coverage lives in `services/api/test/isolation/catalog_test.go` (extends the existing isolation suite — every new entity gets a cross-org probe test enforcing 404, never 200).
-- **D-73:** **Shared test setup** in `services/api/internal/catalog/testutil.go` (package-local, only compiled into tests via `//go:build test` if needed, otherwise unexported `func testutilHandlers(t testing.TB) *Handlers`). Avoids re-writing miniredis + pgxpool boilerplate in every _test.go.
+- **D-73:** **Shared test setup** in `services/api/internal/catalog/testutil_test.go` (package-local `_test.go` so miniredis/testify do NOT leak into the production build — see A6). Unexported helpers compile only for `go test` runs. Avoids re-writing miniredis + pgxpool boilerplate in every _test.go.
 
 ### Concurrency + Validation
 
@@ -108,7 +108,7 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
 
 ### Phase 1/2 Carry-Forward
 
-- **D-77:** **Scaffold + 501-stubs deleted in Phase 3 commit 1.** Plan order: (1) delete `services/api/internal/scaffold/`, `services/api/internal/server/stubs.go`, scaffold sqlc queries, scaffold paths from `openapi.yaml`; (2) regenerate `services/api/internal/api/*.gen.go` (drift CI passes); (3) introduce migration 002 + sqlc files; (4) introduce `internal/cache/` package; (5) introduce `internal/catalog/` package with first entity (agents) end-to-end; (6) replicate for skills/queues/channels/adapters/break_reasons; (7) add agent_skills join. Planner sequences these as waves.
+- **D-77:** **Scaffold + 501-stubs deleted in Phase 3 commit 1.** Plan order: (1) delete `services/api/internal/scaffold/`, `services/api/internal/server/stubs.go`, scaffold sqlc queries, scaffold paths from `openapi.yaml`; (2) regenerate `services/api/internal/api/*.gen.go` (drift CI passes); (3) introduce migration `migrations/000002_catalog_v0_1.up.sql` (project root per A6) + sqlc files; (4) introduce `internal/cache/` package; (5) introduce `internal/catalog/` package with first entity (agents) end-to-end; (6) replicate for skills/queues/channels/adapters/break_reasons; (7) add agent_skills join. Planner sequences these as waves.
 
 ### Claude's Discretion
 
@@ -136,8 +136,8 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
 - `.planning/phases/01-foundation-polyglot-monorepo/01-CONTEXT.md` — All D-01 through D-31 are LOCKED. Especially:
   - **D-17, D-21:** Bypass list `{/healthz, /readyz, /metrics, /openapi.yaml, /docs}` (Phase 2 extended). Org middleware applies to everything under `/v1/`.
   - **D-19, D-20:** UUIDv7 server-minted at write boundary. `org_id` parsed as `uuid.UUID` from `X-Org-Id` header.
-  - **D-22:** golang-migrate is the locked migration tool. Phase 3 uses ONE editable migration `002_catalog_v0_1` per D-61.
-  - **D-23:** Internal package layout — `internal/api/` is generated, `internal/db/queries/` is sqlc source, `internal/db/generated/` is sqlc output, `internal/db/migrations/` is golang-migrate.
+  - **D-22:** golang-migrate is the locked migration tool. Phase 3 uses ONE editable migration `000002_catalog_v0_1` per D-61.
+  - **D-23:** Internal package layout — `internal/api/` is generated, `internal/db/queries/` is sqlc source, `internal/db/generated/` is sqlc output, **migrations live at project root `./migrations/`** (matches Phase 1 layout — `migrations/000001_create_scaffold.up.sql`; see A6 for the alignment with Phase 1 codebase reality).
   - **D-25:** `internal/db/orgdb.go` per-request `*db.OrgDB` pattern — every catalog handler builds an `orgDB` from ctx and constructs `generated.New(orgDB)`. FOUND-08 enforces this via cross-org probe tests.
   - **D-28, D-29:** RequestID middleware mints UUIDv7 and writes `X-Request-Id` header; slog handler injects `trace_id`/`span_id`. Phase 2's D-35 + `WriteError` embed `request_id` in error body.
   - **D-30:** GitHub Actions CI shape — Phase 3 plugs into `go-test` job (no new CI job needed; cache tests run under the existing test matrix).
@@ -167,7 +167,7 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
 - `services/api/test/isolation/isolation_test.go` — Phase 3 extends with cross-org probe tests for each new entity (6 new test cases + 1 for agent_skills).
 - `services/api/test/isolation/main_test.go` — Phase 3 may add a Redis testcontainer alongside the Postgres one (if isolation tests need cache assertions) — though most cache testing can live in catalog/_test.go with miniredis.
 - `services/api/go.mod` — Phase 3 adds `golang.org/x/sync` (for `singleflight`) + `github.com/alicebob/miniredis/v2` (test-only).
-- `services/api/internal/db/migrations/001_init.up.sql` — Phase 1 scaffold migration. Phase 3 does NOT edit; Phase 3 adds `002_catalog_v0_1.up.sql` next to it.
+- `migrations/000001_create_scaffold.up.sql` — Phase 1 scaffold migration at project root (verified existing layout). Phase 3 does NOT edit; Phase 3 adds `migrations/000002_catalog_v0_1.up.sql` next to it (per A6).
 - `Taskfile.yml` — Phase 3 may add `task db:reset` (drop + create + migrate up) for the dev workflow per D-61. `task gen` already covers sqlc + go-generate + openapi-typescript regeneration.
 - `web/packages/ui/src/api/generated.ts` — REGENERATED in Phase 3 when openapi.yaml gains `invalid_reference` (D-75). TypeScript consumers get autocomplete on the new error code via `ErrorCodes.INVALID_REFERENCE`. No Phase 3 hand-edits to web/.
 
@@ -207,7 +207,7 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
 ### Integration Points
 - **Phase 2 codegen-drift CI** — Phase 3 spec amendments (`invalid_reference` + 422 responses) re-trigger codegen on PR. Drift gate enforces regeneration of all `*.gen.go` + `generated.ts`.
 - **Phase 4 (Agent State Machine)** — Will introduce `services/api/internal/state/` with `state.Handlers` for `PATCH /agents/{id}/status` etc. Will EMBED catalog handlers via the `ApiHandlers` composition struct (D-70). Will use `cache.GetOrSet[T any]` for status lookups with key `or:{orgId}:agent_state:{agent_id}`.
-- **Phase 5 (Bulk Import)** — Will introduce `services/api/internal/imports/` with `imports.Handlers` for `POST /catalog/import` + `GET /imports/{id}`. Will append `import_jobs` table to the same `002_catalog_v0_1.up.sql` migration (per D-61).
+- **Phase 5 (Bulk Import)** — Will introduce `services/api/internal/imports/` with `imports.Handlers` for `POST /catalog/import` + `GET /imports/{id}`. Will append `import_jobs` table to the same `migrations/000002_catalog_v0_1.up.sql` migration (per D-61 + A6).
 - **Phase 6 (Shared UI Library & Standalone Admin)** — Will consume Phase 3's expanded ErrorCodes record (now includes `INVALID_REFERENCE`). No Phase 3 frontend code; Phase 3 only triggers regeneration of `web/packages/ui/src/api/generated.ts` via the spec amendment.
 - **Phase 7 (Web Component Embed)** — Same as Phase 6 — consumes the regenerated types only.
 
@@ -244,7 +244,17 @@ Implement the 6 catalog entity CRUDs (agents, skills, queues, channels, adapters
 
 </deferred>
 
+<amendments>
+## Amendments (post-context, post-planning iterations)
+
+- **A1..A5:** (placeholders if any prior iteration captured amendments inline in earlier revision passes — none recorded in this CONTEXT.md.)
+- **A6 (revision iter 3, 2026-05-16):** **Reconciled migration path with Phase 1 codebase reality.** Migrations live at project-root `./migrations/`, not `services/api/internal/db/migrations/`. The aspirational path in the original D-22/D-23/D-61/D-77 wording was a misalignment with already-existing Phase 1 code (`migrations/000001_create_scaffold.up.sql`). golang-migrate's six-digit zero-padding convention is preserved (`000001`, `000002`, ...). All four mentions above (Phase Boundary "In scope", D-23 internal package layout, D-61 migration filename, D-77 Plan order step 3, plus the "Existing code" entry for the Phase 1 migration) updated. **Plan 03-02 already uses the correct project-root path** so no plan-level change required; this amendment closes the doc-vs-code gap surfaced by Codex review.
+- **A7 (revision iter 3, 2026-05-16):** **testutil moved to `_test.go` to keep miniredis/testify out of production builds.** D-73 originally referenced `services/api/internal/catalog/testutil.go` (with a `//go:build test` fallback). Renamed to `testutil_test.go` per Codex review (Concern C7) — Go's standard `_test.go` suffix is the idiomatic way to make a file test-only without a build tag. Plans 03-05 + 03-06 updated to match; agents_test.go etc. stay `package catalog` so they can call unexported helpers in testutil_test.go.
+
+</amendments>
+
 ---
 
 *Phase: 3-Catalog CRUD (Go)*
 *Context gathered: 2026-05-16*
+*Last revised: 2026-05-16 (iter 3, codex BLOCKER fixes)*

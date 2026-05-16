@@ -1028,29 +1028,34 @@ COMMIT;
 
 **If user wants to override any A* item, they should raise it in discuss-phase before Wave 0 plans land.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should Channel and Adapter gain a `version` field for CAT-08 parity (Pitfall 8 / A4)?**
+   - **RESOLVED:** universal version — D-75 + A4. Plan 03-01 spec amendment adds `version` to Channel + Adapter schemas + required field on UpdateChannelRequest/UpdateAdapterRequest. Plan 03-02 migration includes `version INT NOT NULL DEFAULT 1` column on all 7 catalog tables (universal).
    - What we know: REQ-CAT-08 says "all update endpoints require a `version` field" but the spec authored in Phase 2 omits `version` from Channel and Adapter schemas.
    - What's unclear: Was that an intentional v0.1 exception or a Phase 2 oversight?
    - Recommendation: Spec-amend to ADD `version` field to Channel and Adapter for consistency. Surface in plan-check.
 
 2. **Page-size parameter naming: keep `limit` or rename to `page_size`?**
+   - **RESOLVED:** A5 — keep param name `limit`, default 25, max 100. Plan 03-01 spec amendment updates the `LimitQuery` parameter (default: 20 → 25) without renaming. Minimum-churn choice.
    - What we know: Generated `ListXParams` uses `Limit *LimitQuery`. D-67 mandates "default 25, max 100" but doesn't name the param.
    - What's unclear: Is the name a contract concern? Phase 6 admin SPA might expect `page_size` based on D-58 cache-key wording style.
    - Recommendation: Edit `default: 20 → 25` only; keep param name `limit` (minimum churn).
 
 3. **adapter_type, channel_type, skill_type free-text or constrained?**
+   - **RESOLVED:** leave as free-text string in v0.1. No spec `pattern:` constraint added in Plan 03-01. Phase 6 admin SPA may add a UI-level allow-list for adapter_type/skill_type if a real consumer complains; `channel_type` stays constrained to its `ChannelType` enum.
    - What we know: Spec says `adapter_type` is "Free text — the platform does not restrict values in v0.1." Same for `skill_type`. `channel_type` IS constrained to `ChannelType` enum {voice, chat, email}.
    - What's unclear: Should the spec amendment in Wave 0 add `pattern: '^[a-z][a-z0-9_]*$'` for adapter_type/skill_type to prevent UI breakage from arbitrary strings?
    - Recommendation: Leave free-text in v0.1. Add a validator at the handler level only if a real consumer complains.
 
 4. **Should the catalog handler's `orgDB` come from a factory per-request, or a shared singleton?**
+   - **RESOLVED:** D-55 — invalidate cache AFTER commit. Plan 03-06 `agents.go` (and all per-entity handlers in Plans 03-07/08/09) call `h.deps.Cache.Del(...)` AFTER the DB write returns success, not before. (The original question framing was about orgDB factory vs singleton — resolved as shared singleton `*db.OrgDB` field on `catalog.Deps`, matching the existing scaffold handler pattern per Plan 03-05. The cache-invalidation order is the orthogonal D-55 decision included here for completeness because the orgDB shared instance is the same instance through which the cache.Del fires after commit.)
    - What we know: Phase 1 D-25 establishes `db.OrgDBFromContext(ctx)` per-request pattern. Existing scaffold handler uses a shared `*db.OrgDB` constructed in main.go and passed via constructor.
    - What's unclear: D-71 says `Deps.OrgDBFactory db.Factory` (a factory) — but there's no `db.Factory` type yet; current code uses a shared `*db.OrgDB`. Is this a rename of the existing pattern or a new abstraction?
    - Recommendation: Use the existing shared `*db.OrgDB` field (matches scaffold handler). The "factory" wording in D-71 is from CONTEXT.md and likely refers to the shared instance that emits per-request `generated.New(orgDB)`. Plan-check should align.
 
 5. **Where does the agent UPDATE + skills replace transaction get its `pgx.Tx`?**
+   - **RESOLVED:** Plan 03-03 Task 2 adds `(*OrgDB).BeginTx` + `OrgTx` type that satisfies `generated.DBTX`, preserving the SQLChecker across the tx scope. Plan 03-09 Task 2 (agent_skills.replaceAgentSkillsTx) uses it to wrap the DELETE + N INSERT statements for the CAT-03 skills full-replace.
    - What we know: `orgDB` wraps `*pgxpool.Pool` and implements `DBTX`. `pgx.Tx` also implements `DBTX`. sqlc `generated.New(dbtx DBTX)` accepts either.
    - What's unclear: To preserve the orgDB SQLChecker, we'd need an `orgDB.BeginTx(ctx) (*orgTx, error)` method that wraps `pool.Begin` and returns an orgDB-flavored tx (validating SQL on each Exec). Phase 1 didn't add this.
    - Recommendation: Either (a) add `orgDB.BeginTx` in Wave 1 alongside cache pkg, or (b) bypass orgDB for the tx and rely on test-time SQL review. **Strongly recommend (a)** — preserves the FOUND-04 enforcement guarantee.
