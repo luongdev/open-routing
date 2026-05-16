@@ -47,6 +47,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 )
 
@@ -219,6 +220,28 @@ func httpDELETE(t testing.TB, srv *httptest.Server, orgID uuid.UUID, path string
 // is wired to dial the test server directly; net/http and DNS are
 // bypassed. The response body is fully read + closed so callers can
 // inspect body bytes without leaking the connection.
+// seedQueueForOrg inserts an enabled queue directly via the bare pool
+// so channels tests can target the D-76 probe without going through the
+// queues HTTP handler. The orgID arg lets cross-org tests seed a queue
+// in an org different from th.OrgID.
+func seedQueueForOrg(t testing.TB, th *TestHandlers, ctx context.Context, orgID uuid.UUID, name string) uuid.UUID {
+	t.Helper()
+	q := generated.New(th.Pool)
+	id := uuid.Must(uuid.NewV7())
+	_, err := q.InsertQueue(ctx, generated.InsertQueueParams{
+		ID:           pgUUID(id),
+		OrgID:        pgUUID(orgID),
+		ExternalID:   "ext-q-" + name,
+		Name:         name,
+		ChannelTypes: []string{"voice"},
+		Priority:     0,
+		AcwSec:       0,
+		Enabled:      true,
+	})
+	require.NoError(t, err, "seedQueueForOrg: InsertQueue")
+	return id
+}
+
 func doJSON(t testing.TB, srv *httptest.Server, method string, orgID uuid.UUID, path string, q url.Values, body any) (*http.Response, []byte) {
 	t.Helper()
 
