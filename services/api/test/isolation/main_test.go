@@ -34,7 +34,9 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"gopkg.in/yaml.v3"
 
+	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/server"
@@ -171,11 +173,19 @@ func TestMain(m *testing.M) {
 		ValidationMode: "panic",
 	}
 	orgDB := db.NewOrgDB(sharedPool, db.NewSQLChecker(), db.ValidationPanic)
+
+	// Build spec bytes from the generated embedded spec (D-45).
+	swagger, _ := api.GetSwagger() // ignore error — spec.gen.go is always parseable
+	specBytes, _ := yaml.Marshal(swagger)
+
+	strictServer := server.NewCompositeServer(orgDB, sharedPool, sharedRedis, specBytes)
 	mux := server.NewMux(&server.Deps{
-		Pool:   sharedPool,
-		Redis:  sharedRedis,
-		OrgDB:  orgDB,
-		Config: cfg,
+		Pool:           sharedPool,
+		Redis:          sharedRedis,
+		OrgDB:          orgDB,
+		Config:         cfg,
+		StrictHandlers: strictServer,
+		SpecBytes:      specBytes,
 	})
 
 	// (5) httptest server. Use the production mux directly — no otelhttp wrap

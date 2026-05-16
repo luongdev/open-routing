@@ -1,92 +1,155 @@
-// Package scaffold owns the throw-away _scaffold CRUD surface that exercises
-// the full HTTP -> OrgContext -> OrgDB -> sqlc chain in Phase 1 (D-17, D-18,
-// FOUND-02, FOUND-05). Phase 3 deletes this package and table when real
-// catalog entities replace it.
+// Package scaffold implements api.StrictServerInterface for the throwaway
+// _scaffold routes (D-46). Phase 1's hand-written (w,r) handlers are
+// migrated to typed strict-server handlers; Phase 3 deletes both the
+// package and the corresponding openapi.yaml paths when real catalog
+// entities replace _scaffold.
 //
-// The package contract is one exported constructor: Routes(orgDB) returns a
-// chi.Router that the server.NewMux mounts at /v1/orgs/{org_id}/_scaffold.
-// The URL parameter {org_id} is intentionally unread by code paths — the
-// authoritative org_id is read from ctx (FOUND-05) so a hostile client cannot
-// drive cross-org behavior by editing the URL.
+// Invariants carried forward from Phase 1 (MUST NOT regress — FOUND-08
+// integration suite proves them):
+//   - Authoritative org_id from ctx (FOUND-05, never URL/body)
+//   - UUIDv7 minted server-side at write boundary (D-19)
+//   - pgx.ErrNoRows → 404 with "not_found" code (FOUND-08 leakage guard)
 package scaffold
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
-	"net/http"
-	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
-	"github.com/luongdev/open-routing/services/api/internal/middleware"
 )
 
-// Routes returns a chi.Router carrying the three Phase 1 _scaffold routes
-// (D-17). The shared *db.OrgDB is constructed once in cmd/api/main.go; each
-// request's org_id is read from ctx by orgDB.preflight before any SQL runs,
-// so a missing org_id in the request context guarantees orgDB.preflight
-// emits ErrOrgIDMissingFromContext rather than falling through to a
-// cross-org query.
+// Handler implements the Scaffold portion of api.StrictServerInterface
+// (D-46). The compositeServer in server.go embeds this and provides 501
+// stubs for Agents/Skills/Queues/Channels/Adapters/BreakReasons/AgentStates/
+// Imports — see server/stubs.go.
 //
-// chi mount pattern: Routes returns a Router (not http.Handler) so the
-// caller in server.NewMux can use chi.Router.Mount semantics — preserving
-// path stripping and middleware inheritance the way chi expects.
-func Routes(orgDB *db.OrgDB) chi.Router {
-	h := &handler{orgDB: orgDB}
-	r := chi.NewRouter()
-	r.Post("/", h.create)
-	r.Get("/", h.list)
-	r.Get("/{id}", h.get)
-	return r
-}
-
-// handler holds the shared OrgDB so each HTTP method receiver can construct
-// a fresh sqlc *Queries via generated.New(orgDB) per request. Constructing
-// Queries is cheap (one struct copy), so we don't memoize at the handler.
-type handler struct {
+// NOTE: handlers do NOT populate the ErrorResponse.RequestId field — that
+// concern is centralized in server.RequestIDInjectionMiddleware (B-1, D-35),
+// a StrictMiddlewareFunc that wraps every operation and injects request_id
+// from ctx into any returned ErrorResponse-shaped body. Handlers focus on
+// business logic only.
+type Handler struct {
 	orgDB *db.OrgDB
 }
 
-// createRequest is the POST /v1/orgs/{org_id}/_scaffold body shape (D-17).
-// External clients send {"external_id":"...","name":"..."} — these are the
-// only writable fields; id, org_id, and created_at are server-controlled.
-type createRequest struct {
-	ExternalID string `json:"external_id"`
-	Name       string `json:"name"`
+// NewHandler returns a scaffold.Handler backed by the given OrgDB.
+func NewHandler(orgDB *db.OrgDB) *Handler {
+	return &Handler{orgDB: orgDB}
 }
 
-// scaffoldResponse is the JSON-stable shape returned by every handler.
+// CreateScaffold implements api.StrictServerInterface.CreateScaffold.
+// Spec contract: POST /v1/orgs/{org_id}/_scaffold with {external_id, name}
+// returns 201 Scaffold (CAT-like — but _scaffold is throwaway).
 //
-// We cannot return generated.Scaffold directly because sqlc emitted
-// pgtype.UUID / pgtype.Timestamptz fields, which encode as
-// {"Bytes":[...],"Valid":true} — useless to API clients. scaffoldResponse
-// is the public shape; conversion happens in toResponse below.
-type scaffoldResponse struct {
-	ID         uuid.UUID `json:"id"`
-	OrgID      uuid.UUID `json:"org_id"`
-	ExternalID string    `json:"external_id"`
-	Name       string    `json:"name"`
-	CreatedAt  time.Time `json:"created_at"`
+// oapi-codegen has already JSON-decoded the body into req.Body and
+// rejected missing required fields per openapi.yaml. The handler focuses
+// on org_id resolution + UUIDv7 mint + DB insert.
+func (h *Handler) CreateScaffold(ctx context.Context, req api.CreateScaffoldRequestObject) (api.CreateScaffoldResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		// Defensive guard: OrgContext middleware guarantees presence inside
+		// /v1; this branch only fires on a wiring regression. RequestId
+		// stays empty here; server.RequestIDInjectionMiddleware fills it.
+		return api.CreateScaffold500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "missing_org_id_in_context",
+			},
+		}, nil
+	}
+
+	q := generated.New(h.orgDB)
+	id := uuid.Must(uuid.NewV7()) // D-19 UUIDv7 everywhere
+	row, err := q.InsertScaffold(ctx, generated.InsertScaffoldParams{
+		ID:         toPgUUID(id),
+		OrgID:      toPgUUID(orgID),
+		ExternalID: req.Body.ExternalId,
+		Name:       req.Body.Name,
+	})
+	if err != nil {
+		return api.CreateScaffold500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "insert_failed",
+			},
+		}, nil
+	}
+	return api.CreateScaffold201JSONResponse(toAPIScaffold(row)), nil
 }
 
-// toResponse converts the sqlc-generated row into the public JSON shape.
-// pgtype.UUID.Bytes is the raw 16-byte UUID and Valid is the SQL non-null
-// flag; sqlc always returns Valid=true for NOT NULL columns so we trust the
-// bytes directly. Same for pgtype.Timestamptz.
-func toResponse(s generated.Scaffold) scaffoldResponse {
-	return scaffoldResponse{
-		ID:         uuid.UUID(s.ID.Bytes),
-		OrgID:      uuid.UUID(s.OrgID.Bytes),
-		ExternalID: s.ExternalID,
-		Name:       s.Name,
-		CreatedAt:  s.CreatedAt.Time,
+// ListScaffolds implements api.StrictServerInterface.ListScaffolds.
+func (h *Handler) ListScaffolds(ctx context.Context, req api.ListScaffoldsRequestObject) (api.ListScaffoldsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.ListScaffolds500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "missing_org_id_in_context",
+			},
+		}, nil
 	}
+	q := generated.New(h.orgDB)
+	rows, err := q.ListScaffolds(ctx, toPgUUID(orgID))
+	if err != nil {
+		return api.ListScaffolds500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "list_failed",
+			},
+		}, nil
+	}
+	out := make([]api.Scaffold, 0, len(rows))
+	for _, s := range rows {
+		out = append(out, toAPIScaffold(s))
+	}
+	return api.ListScaffolds200JSONResponse(out), nil
+}
+
+// GetScaffoldById implements api.StrictServerInterface.GetScaffoldById.
+// FOUND-08 cross-org probe: a row in another org returns pgx.ErrNoRows
+// because the sqlc query body filters by (id, org_id); the handler maps
+// that to 404 — identical to a genuinely-missing row.
+func (h *Handler) GetScaffoldById(ctx context.Context, req api.GetScaffoldByIdRequestObject) (api.GetScaffoldByIdResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.GetScaffoldById500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "missing_org_id_in_context",
+			},
+		}, nil
+	}
+	// oapi-codegen has already parsed {id} path parameter as uuid.UUID
+	// into req.Id (EntityIdPath = UUIDv7 = openapi_types.UUID).
+	q := generated.New(h.orgDB)
+	row, err := q.GetScaffoldByID(ctx, generated.GetScaffoldByIDParams{
+		ID:    toPgUUID(uuid.UUID(req.Id)),
+		OrgID: toPgUUID(orgID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return api.GetScaffoldById404JSONResponse{
+				NotFoundJSONResponse: api.NotFoundJSONResponse{
+					Error:  api.ErrorCodeNotFound,
+					Reason: "no_such_scaffold",
+				},
+			}, nil
+		}
+		return api.GetScaffoldById500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "get_failed",
+			},
+		}, nil
+	}
+	return api.GetScaffoldById200JSONResponse(toAPIScaffold(row)), nil
 }
 
 // toPgUUID wraps a google/uuid value into pgtype.UUID for sqlc parameter
@@ -96,106 +159,20 @@ func toPgUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
-// create handles POST /v1/orgs/{org_id}/_scaffold (D-17).
-//
-// Authoritative org_id comes from ctx (FOUND-05, never from the URL). The
-// id field is server-minted as UUIDv7 (D-19, project-wide UUIDv7+ rule).
-// Request body validation is minimal — Phase 1 ships no validation library.
-func (h *handler) create(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	orgID, ok := orgkey.OrgIDFromContext(ctx)
-	if !ok {
-		// Defensive guard: OrgContext middleware guarantees presence inside
-		// the /v1 sub-router; this branch only fires if the route is wired
-		// outside that scope (a regression we want to surface loudly).
-		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
-		return
+// toAPIScaffold converts the sqlc-generated row into the api.Scaffold type.
+// pgtype.UUID.Bytes is the raw 16-byte UUID; Valid is always true for NOT
+// NULL columns. pgtype.Timestamptz.Time is the Go time.Time value.
+// api.Scaffold.CreatedAt is *time.Time (omitempty); we set it only when valid.
+func toAPIScaffold(s generated.Scaffold) api.Scaffold {
+	out := api.Scaffold{
+		Id:         uuid.UUID(s.ID.Bytes),
+		OrgId:      uuid.UUID(s.OrgID.Bytes),
+		ExternalId: s.ExternalID,
+		Name:       s.Name,
 	}
-
-	var body createRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		middleware.WriteError(ctx, w, http.StatusBadRequest, "invalid_body", "malformed_json")
-		return
+	if s.CreatedAt.Valid {
+		t := s.CreatedAt.Time
+		out.CreatedAt = &t
 	}
-	if body.ExternalID == "" || body.Name == "" {
-		middleware.WriteError(ctx, w, http.StatusBadRequest, "invalid_body", "external_id_and_name_required")
-		return
-	}
-
-	q := generated.New(h.orgDB)
-	id := uuid.Must(uuid.NewV7()) // D-19 UUIDv7+ everywhere; entropy-exhaustion panic caught by chi.Recoverer
-	row, err := q.InsertScaffold(ctx, generated.InsertScaffoldParams{
-		ID:         toPgUUID(id),
-		OrgID:      toPgUUID(orgID),
-		ExternalID: body.ExternalID,
-		Name:       body.Name,
-	})
-	if err != nil {
-		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "insert_failed")
-		return
-	}
-	middleware.WriteJSON(w, http.StatusCreated, toResponse(row))
-}
-
-// list handles GET /v1/orgs/{org_id}/_scaffold (D-17).
-//
-// Sqlc's ListScaffolds returns []Scaffold (non-nil empty slice when no
-// rows match) so the JSON encoder produces "[]" rather than "null" — no
-// special-case needed at the handler.
-func (h *handler) list(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	orgID, ok := orgkey.OrgIDFromContext(ctx)
-	if !ok {
-		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
-		return
-	}
-	q := generated.New(h.orgDB)
-	rows, err := q.ListScaffolds(ctx, toPgUUID(orgID))
-	if err != nil {
-		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "list_failed")
-		return
-	}
-	out := make([]scaffoldResponse, 0, len(rows))
-	for _, s := range rows {
-		out = append(out, toResponse(s))
-	}
-	middleware.WriteJSON(w, http.StatusOK, out)
-}
-
-// get handles GET /v1/orgs/{org_id}/_scaffold/{id} (D-17).
-//
-// 404 vs 500 split: pgx.ErrNoRows is the sqlc-returned error for :one
-// queries with no match — we map that to 404. Any other error is a real
-// DB failure and maps to 500. The query body in sqlc filters by both
-// id AND org_id so a cross-org probe (correct id, wrong org) returns
-// the same 404 as a genuinely-missing id (FOUND-08 leakage proof relies
-// on this — Plan 07's testcontainer suite asserts the cross-org GET-by-id
-// case returns 404 not 200).
-func (h *handler) get(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	orgID, ok := orgkey.OrgIDFromContext(ctx)
-	if !ok {
-		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "missing_org_id_in_context")
-		return
-	}
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.WriteError(ctx, w, http.StatusBadRequest, "invalid_id", "malformed_uuid")
-		return
-	}
-	q := generated.New(h.orgDB)
-	row, err := q.GetScaffoldByID(ctx, generated.GetScaffoldByIDParams{
-		ID:    toPgUUID(id),
-		OrgID: toPgUUID(orgID),
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			middleware.WriteError(ctx, w, http.StatusNotFound, "not_found", "no_such_scaffold")
-			return
-		}
-		middleware.WriteError(ctx, w, http.StatusInternalServerError, "internal", "get_failed")
-		return
-	}
-	middleware.WriteJSON(w, http.StatusOK, toResponse(row))
+	return out
 }

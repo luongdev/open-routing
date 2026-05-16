@@ -35,9 +35,11 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"gopkg.in/yaml.v3"
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/server"
@@ -114,12 +116,30 @@ func run() int {
 	}
 	orgDB := db.NewOrgDB(pool, db.NewSQLChecker(), validationMode)
 
-	// (7) chi mux with locked chain.
+	// (7) Spec bytes from the embedded generated package (D-45). The binary
+	// always serves the spec it was built against — no stale-file risk.
+	swagger, err := api.GetSwagger()
+	if err != nil {
+		slog.ErrorContext(ctx, "spec load", "err", err)
+		return 1
+	}
+	specBytes, err := yaml.Marshal(swagger)
+	if err != nil {
+		slog.ErrorContext(ctx, "spec marshal", "err", err)
+		return 1
+	}
+
+	// (8) Composite server: scaffold impl + bypass-path handlers + 501 stubs.
+	strictServer := server.NewCompositeServer(orgDB, pool, rdb, specBytes)
+
+	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{
-		Pool:   pool,
-		Redis:  rdb,
-		OrgDB:  orgDB,
-		Config: cfg,
+		Pool:           pool,
+		Redis:          rdb,
+		OrgDB:          orgDB,
+		Config:         cfg,
+		StrictHandlers: strictServer,
+		SpecBytes:      specBytes,
 	})
 
 	// (8) OTel HTTP wrap AFTER NewMux returns (Pattern S6 — wrap is after
