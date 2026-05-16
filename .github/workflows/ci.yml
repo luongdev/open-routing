@@ -180,6 +180,13 @@ jobs:
         run: npx --yes @redocly/cli@1.25.0 lint openapi/openapi.yaml --extends recommended
       - name: install task CLI
         run: go install github.com/go-task/task/v3/cmd/task@v3.40.0
+      # REVIEWS HIGH #1: sqlc must be installed before `task gen` because
+      # Taskfile.yml:21 runs `sqlc generate` as the first codegen step.
+      # GitHub runners do not ship with sqlc; without this step the
+      # codegen-drift job fails on any runner that has not pre-cached it.
+      # Pin matches the sqlc version used locally (services/api/sqlc.yaml).
+      - name: install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
       # D-47: run codegen via the canonical entry point so the CI behavior
       # matches local `task gen`. Sqlc is part of the chain too — sqlc on
       # the Phase 1 surface should be a no-op, but running it keeps the
