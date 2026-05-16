@@ -1,17 +1,15 @@
 // Package testsupport bundles reusable test infrastructure: a testcontainers
-// Postgres 17 helper, programmatic golang-migrate application, fresh UUIDv7
-// mint utilities, and HTTP helpers for exercising the API via httptest.
+// Postgres 17 helper (postgres.go), programmatic golang-migrate application
+// (migrate.go), fresh UUIDv7 mint utilities (uuid.go), and the minimal
+// HTTP helper (httpclient.go::DoBare) used by FOUND-08 isolation tests
+// when they need to drive a request with hand-crafted headers (e.g.
+// no X-Org-Id, malformed X-Org-Id, header-vs-URL divergence).
 //
 // Per D-06 every Go test package that touches Postgres should spin up its
-// own container via StartPostgres (TestMain). This file is the single home
-// for that bootstrap so internal/db, internal/scaffold, and test/isolation
-// all share one implementation.
+// own container via StartPostgres (TestMain). This package is the single
+// home for that bootstrap so internal/db and test/isolation share one
+// implementation.
 //
 // Per Pitfall 6 / S8 every test mints fresh UUIDv7 org_ids — never reuse a
 // package-level constant. FreshOrgID(t) is the only legitimate ID source.
-//
-// The HTTP helpers (PostScaffold, ListScaffolds, GetScaffoldStatus, DoBare,
-// SeedScaffold) drive requests through net/http against an httptest.Server
-// wrapping the production chi mux — per D-07 the FOUND-08 isolation proof
-// MUST exercise the full HTTP chain, not just direct DB writes.
 package testsupport
