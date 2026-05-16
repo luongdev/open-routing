@@ -284,6 +284,52 @@ func TestRequestID_IsUUIDv7(t *testing.T) {
 }
 
 // =============================================================================
+// B-1 case — TestRequestID_PresentInErrorBody (D-35: request_id in error body).
+// =============================================================================
+//
+// D-35 contracts that every ErrorResponse body carries a non-empty request_id
+// whose value equals the X-Request-Id response header. The strict-server
+// pipeline bypasses middleware.WriteError, so RequestIDInjectionMiddleware
+// (a StrictMiddlewareFunc) must inject the field. This test proves the full
+// end-to-end chain works: appmw.RequestID mints the UUIDv7 into ctx →
+// RequestIDInjectionMiddleware reads it → the scaffold GetById handler
+// returns a 404 ErrorResponse → the middleware sets its RequestId field →
+// the generated response encoder writes it → the integration test observes it.
+//
+// We hit a GET /_scaffold/{nonexistent_id} which always returns 404 (no row
+// for a fresh UUIDv7). The 200 path for /healthz would not exercise the
+// ErrorResponse path (GetHealthz returns a non-error response type).
+func TestRequestID_PresentInErrorBody(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+
+	orgA := freshOrg(t)
+	missingID := uuid.Must(uuid.NewV7())
+
+	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet,
+		"/v1/orgs/"+orgA.String()+"/_scaffold/"+missingID.String(),
+		map[string]string{"X-Org-Id": orgA.String()})
+
+	require.Equal(t, http.StatusNotFound, resp.StatusCode,
+		"GET with missing scaffold id must return 404; body=%s", body)
+
+	headerID := resp.Header.Get("X-Request-Id")
+	require.NotEmpty(t, headerID, "X-Request-Id must be set on every response (D-28)")
+
+	var errBody struct {
+		Error     string `json:"error"`
+		Reason    string `json:"reason"`
+		RequestID string `json:"request_id"`
+	}
+	require.NoError(t, json.Unmarshal(body, &errBody),
+		"404 body must be valid JSON; raw=%s", body)
+	require.NotEmpty(t, errBody.RequestID,
+		"B-1: request_id must be present in 404 error body; raw=%s", body)
+	require.Equal(t, headerID, errBody.RequestID,
+		"B-1: body.request_id must equal X-Request-Id header (D-35 end-to-end)")
+}
+
+// =============================================================================
 // Additional case — TestUniqueOrgExternalIdConstraint_DoublePost (FOUND-06 HTTP).
 // =============================================================================
 //
