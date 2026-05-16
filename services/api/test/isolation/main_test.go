@@ -178,7 +178,13 @@ func TestMain(m *testing.M) {
 	swagger, _ := api.GetSpec() // ignore error — spec.gen.go is always parseable
 	specBytes, _ := yaml.Marshal(swagger)
 
-	strictServer := server.NewCompositeServer(orgDB, sharedPool, sharedRedis, specBytes)
+	// Phase 3 Wave 0 (Plan 03-01 D-77): NewCompositeServer was deleted
+	// along with the Phase 2 scaffold. Wave0TempStubs implements the
+	// bypass methods (Healthz/Readyz/OpenAPISpec/Docs) for real and
+	// returns 500 "not_implemented_yet" for every catalog method.
+	// Wave 2 / Plan 03-08 wires catalog.Handlers and this suite gains
+	// catalog cross-org probe tests.
+	strictServer := server.NewWave0TempStubs(sharedPool, sharedRedis, specBytes)
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,
 		Redis:          sharedRedis,

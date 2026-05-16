@@ -1,6 +1,8 @@
 // Package server owns the chi router factory that fronts the open-routing
 // API binary. health.go in this package provides the bypass-path handler
-// logic; stubs.go provides the compositeServer; openapi.go provides the
+// logic; wave0_temp_stubs.go provides the Wave 0 transitional
+// StrictServerInterface impl (replaces the Phase 2 compositeServer per
+// D-77 — deleted in Wave 2 Plan 03-08); openapi.go provides the
 // /openapi.yaml + /docs handler factories; server.go assembles the LOCKED
 // middleware chain and the route table.
 //
@@ -46,14 +48,17 @@ import (
 // Deps bundles every runtime dependency the API mux needs. cmd/api/main.go
 // constructs one of these (after wiring OTel, pool, redis, orgDB) and hands
 // it to NewMux. SpecBytes is the embedded openapi.yaml from api.GetSpec()
-// (marshaled to YAML); StrictHandlers is the compositeServer. Tests supply
-// these via server.NewCompositeServer.
+// (marshaled to YAML); StrictHandlers is the StrictServerInterface impl
+// (Wave 0: Wave0TempStubs from wave0_temp_stubs.go — bypass methods real,
+// catalog methods 500 "not_implemented_yet"; Wave 2 / Plan 03-08: replaced
+// with catalog.Handlers per D-69). Tests construct StrictHandlers via
+// server.NewWave0TempStubs(pool, rdb, specBytes).
 type Deps struct {
 	Pool           *pgxpool.Pool
 	Redis          *redis.Client
 	OrgDB          *db.OrgDB
 	Config         *config.Config
-	StrictHandlers api.StrictServerInterface // D-44: scaffold impl + 501 stubs + bypass handlers
+	StrictHandlers api.StrictServerInterface // D-44, D-69: Wave 0 = Wave0TempStubs; Wave 2 = catalog.Handlers.
 	SpecBytes      []byte                    // D-45: embedded openapi.yaml bytes for /openapi.yaml
 }
 
@@ -188,19 +193,21 @@ func RequestIDInjectionMiddleware() api.StrictMiddlewareFunc {
 
 // injectRequestIDIntoErrorResponse sets the RequestId field on any
 // generated *JSONResponse type whose underlying schema is api.ErrorResponse.
-// The type switch is exhaustive for the scaffold-implemented and 501-stub
-// operations in Phase 2. Phase 3 extends this switch as real catalog
-// handlers are implemented and new error response types become reachable.
+// Phase 3 Wave 0 (Plan 03-01) deleted the Scaffold operation types when
+// the openapi.yaml /v1/orgs/{org_id}/_scaffold paths were removed (D-77)
+// and added new 409/422 wrappers for CreateChannel/UpdateChannel,
+// UpdateAdapter, CreateAgent/UpdateAgent for invalid_reference +
+// invalid_value (D-75 + ROADMAP CRIT 4 + Codex C2 iter 3).
 //
 // The 5 base error response types (BadRequestJSONResponse,
 // InternalServerErrorJSONResponse, InvalidOrgIDJSONResponse,
 // NotFoundJSONResponse, RequestEntityTooLargeJSONResponse) are direct
 // aliases for api.ErrorResponse — their RequestId field can be set
-// directly. The operation-specific types (e.g. CreateScaffold500JSONResponse)
-// embed one of these base types and are handled via field access.
+// directly. The operation-specific types embed one of these base types
+// or are flat aliases / structs with their own RequestId field.
 //
 // Implementation note: setting RequestId only when it is nil preserves any
-// handler-set value (defensive — Phase 2 handlers intentionally leave
+// handler-set value (defensive — Wave 0 stubs intentionally leave
 // RequestId nil; the middleware is the single injection point).
 func injectRequestIDIntoErrorResponse(response any, id string) any {
 	switch r := response.(type) {
@@ -234,6 +241,45 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)
 		return api.CreateChannel409JSONResponse(v)
+	case api.CreateChannel422JSONResponse:
+		// Phase 3 D-75 + Codex C2 iter 3: flat ErrorResponse alias for
+		// invalid_reference (default_queue_id FK miss).
+		v := api.ErrorResponse(r)
+		v.RequestId = setIfNil(v.RequestId, id)
+		return api.CreateChannel422JSONResponse(v)
+	case api.UpdateChannel422JSONResponse:
+		// Phase 3 D-75: flat ErrorResponse alias for invalid_reference
+		// (default_queue_id FK miss).
+		v := api.ErrorResponse(r)
+		v.RequestId = setIfNil(v.RequestId, id)
+		return api.UpdateChannel422JSONResponse(v)
+	case api.CreateAgent422JSONResponse:
+		// Phase 3 Codex C2 iter 3: flat ErrorResponse alias covering BOTH
+		// invalid_reference (skills[].skill_id FK miss) AND invalid_value
+		// (skills[].proficiency outside 1-10) — the handler picks the
+		// ErrorCode on the wrapped body; the wrapper TYPE is the same.
+		v := api.ErrorResponse(r)
+		v.RequestId = setIfNil(v.RequestId, id)
+		return api.CreateAgent422JSONResponse(v)
+	case api.UpdateAgent422JSONResponse:
+		// Phase 3 D-75 + ROADMAP CRIT 4: flat ErrorResponse alias covering
+		// BOTH invalid_reference (skills[].skill_id FK miss) AND invalid_value
+		// (skills[].proficiency outside 1-10) — same union semantics as
+		// CreateAgent422JSONResponse. Wave 3 (Plan 03-09) implements both
+		// error paths in the catalog package.
+		v := api.ErrorResponse(r)
+		v.RequestId = setIfNil(v.RequestId, id)
+		return api.UpdateAgent422JSONResponse(v)
+	case api.UpdateChannel409JSONResponse:
+		// Phase 3 OQ-1/A4: VersionConflict variant — has its own RequestId
+		// field. Pattern matches UpdateAgent409 / UpdateQueue409.
+		r.RequestId = setIfNil(r.RequestId, id)
+		return r
+	case api.UpdateAdapter409JSONResponse:
+		// Phase 3 OQ-1/A4: VersionConflict variant — has its own RequestId
+		// field. Pattern matches UpdateChannel409 / UpdateAgent409.
+		r.RequestId = setIfNil(r.RequestId, id)
+		return r
 	case api.CreateQueue409JSONResponse:
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)
@@ -246,29 +292,6 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)
 		return api.BulkImportCatalog400JSONResponse(v)
-
-	// ── Scaffold: 400/404/500 ─────────────────────────────────────────
-	case api.CreateScaffold400JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
-	case api.CreateScaffold500JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
-	case api.ListScaffolds400JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
-	case api.ListScaffolds500JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
-	case api.GetScaffoldById400JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
-	case api.GetScaffoldById404JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
-	case api.GetScaffoldById500JSONResponse:
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
 
 	// ── Adapter 500-stubs ─────────────────────────────────────────────
 	case api.ListAdapters500JSONResponse:

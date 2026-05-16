@@ -17,7 +17,6 @@
 package isolation_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -45,11 +44,6 @@ func freshOrg(t *testing.T) uuid.UUID {
 	return uuid.Must(uuid.NewV7())
 }
 
-// mustReader is a small body-reader helper used by the few tests that
-// build requests manually (rather than through testsupport.PostScaffold)
-// to exercise header-vs-URL divergence.
-func mustReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
-
 // requireContainer is a single guard the docker-less unit lane uses to
 // skip every isolation test in one consistent way. -short is the canonical
 // signal; sharedPool/sharedSrv being nil is the docker-unavailable signal.
@@ -68,39 +62,14 @@ func requireContainer(t *testing.T) {
 // =============================================================================
 //
 // Two orgs seeded with overlapping external_ids; each org's list MUST contain
-// only its own rows. This is the canonical FOUND-08 proof — the entire
-// purpose of the org_id isolation infrastructure exists to make this case
-// pass.
+// only its own rows. This is the canonical FOUND-08 proof.
+//
+// Phase 3 Wave 0 (Plan 03-01 D-77): the scaffold endpoints this test
+// exercised have been deleted. Wave 2 (Plan 03-08) re-runs the same
+// FOUND-08 acceptance against the catalog endpoints (agents/skills/queues/
+// channels/adapters/break_reasons). Skipped until then.
 func TestTwoOrgsIsolation_ListsExcludeOtherOrg(t *testing.T) {
-	requireContainer(t)
-	t.Parallel()
-	orgA := freshOrg(t)
-	orgB := freshOrg(t)
-
-	// Seed: orgA gets 3 rows, orgB gets 2 rows. Use overlapping external_ids
-	// to prove the UNIQUE(org_id, external_id) constraint allows different
-	// orgs to share external_id values (FOUND-06 nuance).
-	testsupport.SeedScaffold(t, baseURL(), orgA, []testsupport.ScaffoldSeed{
-		{ExternalID: "ext-1", Name: "A-1"},
-		{ExternalID: "ext-2", Name: "A-2"},
-		{ExternalID: "ext-3", Name: "A-3"},
-	})
-	testsupport.SeedScaffold(t, baseURL(), orgB, []testsupport.ScaffoldSeed{
-		{ExternalID: "ext-1", Name: "B-1"},
-		{ExternalID: "ext-2", Name: "B-2"},
-	})
-
-	rowsA := testsupport.ListScaffolds(t, baseURL(), orgA)
-	require.Len(t, rowsA, 3, "orgA must see exactly its 3 rows")
-	for _, r := range rowsA {
-		require.Equal(t, orgA, r.OrgID, "orgA's list contains a foreign org_id — isolation breach")
-	}
-
-	rowsB := testsupport.ListScaffolds(t, baseURL(), orgB)
-	require.Len(t, rowsB, 2, "orgB must see exactly its 2 rows")
-	for _, r := range rowsB {
-		require.Equal(t, orgB, r.OrgID, "orgB's list contains a foreign org_id — isolation breach")
-	}
+	t.Skip("Wave 0 transitional: scaffold endpoints deleted (D-77). Wave 2 / Plan 03-08 re-runs against catalog routes.")
 }
 
 // =============================================================================
@@ -108,32 +77,13 @@ func TestTwoOrgsIsolation_ListsExcludeOtherOrg(t *testing.T) {
 // =============================================================================
 //
 // Two orgs each create one row with the same external_id. Each org CAN see
-// its own row; each org CANNOT see the other's row (must return 404, not 200
-// — would expose existence-of-id signal otherwise). The sqlc query body
-// filters by (id, org_id) so a cross-org probe returns pgx.ErrNoRows which
-// the handler maps to 404.
+// its own row; each org CANNOT see the other's row (must return 404).
+//
+// Phase 3 Wave 0 (Plan 03-01 D-77): the scaffold endpoints have been
+// deleted. Wave 2 (Plan 03-08) re-runs this case against the catalog
+// GET endpoints with FOUND-08 cross-org probes. Skipped until then.
 func TestTwoOrgsIsolation_GetByIDIsScoped(t *testing.T) {
-	requireContainer(t)
-	t.Parallel()
-	orgA := freshOrg(t)
-	orgB := freshOrg(t)
-	rowA := testsupport.PostScaffold(t, baseURL(), orgA, "ext-shared", "A")
-	rowB := testsupport.PostScaffold(t, baseURL(), orgB, "ext-shared", "B")
-
-	// orgA cannot see orgB's row by ID; orgB cannot see orgA's.
-	require.Equal(t, http.StatusNotFound,
-		testsupport.GetScaffoldStatus(t, baseURL(), orgA, rowB.ID),
-		"orgA must not be able to GET orgB's row by id")
-	require.Equal(t, http.StatusNotFound,
-		testsupport.GetScaffoldStatus(t, baseURL(), orgB, rowA.ID),
-		"orgB must not be able to GET orgA's row by id")
-
-	// Each org CAN see its own row (proves the 404 above is not a blanket
-	// reject — the row exists, just not for that org).
-	require.Equal(t, http.StatusOK,
-		testsupport.GetScaffoldStatus(t, baseURL(), orgA, rowA.ID))
-	require.Equal(t, http.StatusOK,
-		testsupport.GetScaffoldStatus(t, baseURL(), orgB, rowB.ID))
+	t.Skip("Wave 0 transitional: scaffold endpoints deleted (D-77). Wave 2 / Plan 03-08 re-runs against catalog GET routes.")
 }
 
 // =============================================================================
@@ -141,45 +91,13 @@ func TestTwoOrgsIsolation_GetByIDIsScoped(t *testing.T) {
 // =============================================================================
 //
 // POST with X-Org-Id = orgA; URL path contains orgB. The header is the
-// authoritative org_id (FOUND-05); the URL is decoration. The row written
-// MUST have org_id = orgA, not orgB. Without this proof a hostile client
-// could drive cross-org writes by manipulating the URL.
+// authoritative org_id (FOUND-05); the URL is decoration.
+//
+// Phase 3 Wave 0 (Plan 03-01 D-77): the scaffold POST endpoint has been
+// deleted. Wave 2 (Plan 03-08) re-runs FOUND-05 against the catalog
+// POST endpoints. Skipped until then.
 func TestTwoOrgsIsolation_PostRespectsHeaderOrg(t *testing.T) {
-	requireContainer(t)
-	t.Parallel()
-	orgA := freshOrg(t)
-	orgB := freshOrg(t)
-
-	body := []byte(`{"external_id":"ext-header-vs-url","name":"hdr"}`)
-	req, err := http.NewRequest(http.MethodPost,
-		baseURL()+"/v1/orgs/"+orgB.String()+"/_scaffold",
-		mustReader(body))
-	require.NoError(t, err)
-	req.Header.Set("X-Org-Id", orgA.String())
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
-
-	var row testsupport.ScaffoldRow
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&row))
-	require.Equal(t, orgA, row.OrgID, "header is the source of truth, not URL path (FOUND-05)")
-
-	// Belt-and-braces: orgA SHOULD see the row in its list; orgB MUST NOT.
-	rowsA := testsupport.ListScaffolds(t, baseURL(), orgA)
-	foundInA := false
-	for _, r := range rowsA {
-		if r.ID == row.ID {
-			foundInA = true
-			break
-		}
-	}
-	require.True(t, foundInA, "row written with header=orgA must appear in orgA's list")
-
-	require.Equal(t, http.StatusNotFound,
-		testsupport.GetScaffoldStatus(t, baseURL(), orgB, row.ID),
-		"orgB must not see the row that was written via its URL but with header=orgA")
+	t.Skip("Wave 0 transitional: scaffold endpoints deleted (D-77). Wave 2 / Plan 03-08 re-runs FOUND-05 against catalog POST routes.")
 }
 
 // =============================================================================
@@ -193,9 +111,11 @@ func TestOrgContext_MissingHeader400(t *testing.T) {
 	t.Parallel()
 	// Use a syntactically-valid org_id in the URL path so chi resolves the
 	// route; the OrgContext middleware then rejects on missing header BEFORE
-	// the handler runs.
+	// the handler runs. Phase 3 Wave 0 swapped /_scaffold for /agents
+	// because the scaffold path was deleted (D-77); the middleware behavior
+	// being tested (D-20 reject path 1) is identical on any /v1/ path.
 	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet,
-		"/v1/orgs/"+uuid.Must(uuid.NewV7()).String()+"/_scaffold", nil)
+		"/v1/orgs/"+uuid.Must(uuid.NewV7()).String()+"/agents", nil)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.Contains(t, string(body), `"reason":"missing_header"`)
 }
@@ -208,8 +128,10 @@ func TestOrgContext_MissingHeader400(t *testing.T) {
 func TestOrgContext_MalformedHeader400(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
+	// Phase 3 Wave 0 swapped /_scaffold for /agents (D-77 scaffold delete);
+	// the middleware D-20 reject path 2 is path-agnostic.
 	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet,
-		"/v1/orgs/"+uuid.Must(uuid.NewV7()).String()+"/_scaffold",
+		"/v1/orgs/"+uuid.Must(uuid.NewV7()).String()+"/agents",
 		map[string]string{"X-Org-Id": "not-a-uuid"})
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.Contains(t, string(body), `"reason":"malformed_uuid"`)
@@ -229,8 +151,10 @@ func TestOrgContext_UUIDv4Rejected400(t *testing.T) {
 	v4 := uuid.New()
 	require.Equal(t, uuid.Version(4), v4.Version(), "uuid.New() must return v4 deterministically")
 
+	// Phase 3 Wave 0 swapped /_scaffold for /agents (D-77 scaffold delete);
+	// the middleware D-19/D-20 reject path 3 is path-agnostic.
 	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet,
-		"/v1/orgs/"+uuid.Must(uuid.NewV7()).String()+"/_scaffold",
+		"/v1/orgs/"+uuid.Must(uuid.NewV7()).String()+"/agents",
 		map[string]string{"X-Org-Id": v4.String()})
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.Contains(t, string(body), `"reason":"uuidv7_required"`)
@@ -299,6 +223,10 @@ func TestRequestID_IsUUIDv7(t *testing.T) {
 // We hit a GET /_scaffold/{nonexistent_id} which always returns 404 (no row
 // for a fresh UUIDv7). The 200 path for /healthz would not exercise the
 // ErrorResponse path (GetHealthz returns a non-error response type).
+// Phase 3 Wave 0 swap: /_scaffold/{id} (404 from missing row) -> /agents/{id}
+// (500 "not_implemented_yet" from Wave0TempStubs). The contract being tested
+// (D-35 / B-1: request_id present in error body) is identical on any
+// ErrorResponse-shaped status — it does not depend on the specific code.
 func TestRequestID_PresentInErrorBody(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
@@ -307,11 +235,11 @@ func TestRequestID_PresentInErrorBody(t *testing.T) {
 	missingID := uuid.Must(uuid.NewV7())
 
 	resp, body := testsupport.DoBare(t, baseURL(), http.MethodGet,
-		"/v1/orgs/"+orgA.String()+"/_scaffold/"+missingID.String(),
+		"/v1/orgs/"+orgA.String()+"/agents/"+missingID.String(),
 		map[string]string{"X-Org-Id": orgA.String()})
 
-	require.Equal(t, http.StatusNotFound, resp.StatusCode,
-		"GET with missing scaffold id must return 404; body=%s", body)
+	require.Equal(t, http.StatusInternalServerError, resp.StatusCode,
+		"GET agent during Wave 0 must return 500 not_implemented_yet; body=%s", body)
 
 	headerID := resp.Header.Get("X-Request-Id")
 	require.NotEmpty(t, headerID, "X-Request-Id must be set on every response (D-28)")
@@ -322,9 +250,9 @@ func TestRequestID_PresentInErrorBody(t *testing.T) {
 		RequestID string `json:"request_id"`
 	}
 	require.NoError(t, json.Unmarshal(body, &errBody),
-		"404 body must be valid JSON; raw=%s", body)
+		"500 body must be valid JSON; raw=%s", body)
 	require.NotEmpty(t, errBody.RequestID,
-		"B-1: request_id must be present in 404 error body; raw=%s", body)
+		"B-1: request_id must be present in error body; raw=%s", body)
 	require.Equal(t, headerID, errBody.RequestID,
 		"B-1: body.request_id must equal X-Request-Id header (D-35 end-to-end)")
 }
@@ -338,25 +266,11 @@ func TestRequestID_PresentInErrorBody(t *testing.T) {
 // (org_id, external_id) MUST fail. Phase 1 has no dedicated 409 mapping, so
 // the handler returns 500 — we accept either 409 (future) or 500 (Phase 1).
 // The point is that the duplicate is NOT silently accepted.
+// Phase 3 Wave 0 (Plan 03-01 D-77): the scaffold POST endpoint has been
+// deleted. The FOUND-06 constraint is still proven at the schema layer
+// by TestScaffold_UniqueOrgExternalId in schema_test.go (until Plan 03-02
+// replaces the migration). Wave 2 / Plan 03-08 re-runs the HTTP-layer
+// FOUND-06 against catalog POST routes (agents/skills/queues/etc.).
 func TestUniqueOrgExternalIdConstraint_DoublePost(t *testing.T) {
-	requireContainer(t)
-	t.Parallel()
-	orgA := freshOrg(t)
-	// First insert succeeds.
-	testsupport.PostScaffold(t, baseURL(), orgA, "ext-dup", "first")
-
-	// Second insert with same (orgA, ext-dup) must fail.
-	body := []byte(`{"external_id":"ext-dup","name":"second"}`)
-	req, err := http.NewRequest(http.MethodPost,
-		baseURL()+"/v1/orgs/"+orgA.String()+"/_scaffold",
-		mustReader(body))
-	require.NoError(t, err)
-	req.Header.Set("X-Org-Id", orgA.String())
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.True(t,
-		resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusInternalServerError,
-		"duplicate (org_id, external_id) must fail at the HTTP layer; got %d", resp.StatusCode)
+	t.Skip("Wave 0 transitional: scaffold POST deleted (D-77). FOUND-06 HTTP layer proof migrates to catalog POSTs in Wave 2.")
 }

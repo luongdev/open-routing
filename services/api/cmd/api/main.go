@@ -129,8 +129,14 @@ func run() int {
 		return 1
 	}
 
-	// (8) Composite server: scaffold impl + bypass-path handlers + 501 stubs.
-	strictServer := server.NewCompositeServer(orgDB, pool, rdb, specBytes)
+	// (8) Wave 0 transitional StrictServerInterface impl (Plan 03-01 D-77 +
+	// D-69). Bypass methods (GetHealthz, GetReadyz, GetOpenAPISpec, GetDocs)
+	// are real; every other StrictServerInterface method returns HTTP 500
+	// "not_implemented_yet". Replaced by catalog.New(deps) in Wave 2 / Plan
+	// 03-08, which will take orgDB via Deps and use it inside the catalog
+	// CRUD handlers. orgDB is constructed above and passed into NewMux via
+	// Deps.OrgDB so it stays available for Wave 2 wiring.
+	strictServer := server.NewWave0TempStubs(pool, rdb, specBytes)
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{

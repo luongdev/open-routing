@@ -26,7 +26,13 @@ func TestNewMux_HealthzAccessibleWithoutOrgHeader(t *testing.T) {
 	// compositeServer.GetHealthz only returns the static alive response —
 	// it does not touch pool, redis, or orgDB. Passing nil for all three
 	// proves /healthz is truly dependency-free for the live path.
-	strictHandlers := NewCompositeServer(nil, nil, nil, nil)
+	// Phase 3 Wave 0 (Plan 03-01 D-77): NewCompositeServer was deleted with
+	// the Phase 2 scaffold. Wave0TempStubs replaces it as the
+	// StrictServerInterface implementation; nil pool/redis is safe for these
+	// bypass-path tests because GetHealthz / GetReadyz / metrics handler do
+	// not touch the deps when the test only exercises /healthz or /metrics
+	// (each test that uses /readyz must supply non-nil pool + redis).
+	strictHandlers := NewWave0TempStubs(nil, nil, nil)
 	deps := &Deps{
 		Pool:           nil, // safe — GetHealthz does not touch the pool
 		Redis:          nil, // safe — GetHealthz does not touch redis
@@ -55,7 +61,13 @@ func TestNewMux_HealthzAccessibleWithoutOrgHeader(t *testing.T) {
 func TestNewMux_MetricsAccessibleWithoutOrgHeader(t *testing.T) {
 	t.Parallel()
 
-	strictHandlers := NewCompositeServer(nil, nil, nil, nil)
+	// Phase 3 Wave 0 (Plan 03-01 D-77): NewCompositeServer was deleted with
+	// the Phase 2 scaffold. Wave0TempStubs replaces it as the
+	// StrictServerInterface implementation; nil pool/redis is safe for these
+	// bypass-path tests because GetHealthz / GetReadyz / metrics handler do
+	// not touch the deps when the test only exercises /healthz or /metrics
+	// (each test that uses /readyz must supply non-nil pool + redis).
+	strictHandlers := NewWave0TempStubs(nil, nil, nil)
 	deps := &Deps{
 		Pool:           nil,
 		Redis:          nil,
@@ -73,13 +85,22 @@ func TestNewMux_MetricsAccessibleWithoutOrgHeader(t *testing.T) {
 }
 
 // TestNewMux_V1RequiresOrgHeader proves the /v1 sub-router gate works:
-// hitting /v1/orgs/{anything}/_scaffold without X-Org-Id returns 400
+// hitting /v1/orgs/{anything}/agents without X-Org-Id returns 400
 // invalid_org_id/missing_header per the OrgContext middleware contract
 // (Plan 05 Task 2). This is the spoofing mitigation T-1-01.
+//
+// Phase 3 Wave 0 swap: /_scaffold -> /agents (D-77 scaffold deletion);
+// the middleware behavior under test is path-agnostic.
 func TestNewMux_V1RequiresOrgHeader(t *testing.T) {
 	t.Parallel()
 
-	strictHandlers := NewCompositeServer(nil, nil, nil, nil)
+	// Phase 3 Wave 0 (Plan 03-01 D-77): NewCompositeServer was deleted with
+	// the Phase 2 scaffold. Wave0TempStubs replaces it as the
+	// StrictServerInterface implementation; nil pool/redis is safe for these
+	// bypass-path tests because GetHealthz / GetReadyz / metrics handler do
+	// not touch the deps when the test only exercises /healthz or /metrics
+	// (each test that uses /readyz must supply non-nil pool + redis).
+	strictHandlers := NewWave0TempStubs(nil, nil, nil)
 	deps := &Deps{
 		Pool:           nil,
 		Redis:          nil,
@@ -91,7 +112,8 @@ func TestNewMux_V1RequiresOrgHeader(t *testing.T) {
 	mux := NewMux(deps)
 
 	// No X-Org-Id header — OrgContext should reject with 400.
-	req := httptest.NewRequest(http.MethodGet, "/v1/orgs/01234567-89ab-cdef-0123-456789abcdef/_scaffold", nil)
+	// Use a UUIDv7 path so the v7 middleware doesn't reject before OrgContext.
+	req := httptest.NewRequest(http.MethodGet, "/v1/orgs/01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e/agents", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code, "v1 routes must require X-Org-Id")

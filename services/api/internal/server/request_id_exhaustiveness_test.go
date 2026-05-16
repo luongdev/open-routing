@@ -77,6 +77,10 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.ListAdapters400JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
+	case api.UpdateAdapter409JSONResponse:
+		// Phase 3 OQ-1/A4 — VersionConflict variant; RequestId is a direct field.
+		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
 	case api.ListAdapters500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateAdapter400JSONResponse:
@@ -129,6 +133,18 @@ func assertID(t *testing.T, result any, typeName string) {
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAgent409JSONResponse:
 		// VersionConflictErrorResponse variant — RequestId is a direct field.
+		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
+	case api.UpdateAgent422JSONResponse:
+		// Phase 3 D-75 + ROADMAP CRIT 4 — flat ErrorResponse alias covering
+		// both invalid_reference (skills[].skill_id FK) and invalid_value
+		// (skills[].proficiency 1-10) error paths.
+		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
+	case api.CreateAgent422JSONResponse:
+		// Phase 3 Codex C2 iter 3 — flat ErrorResponse alias covering
+		// both invalid_reference (skills[].skill_id FK) and invalid_value
+		// (skills[].proficiency 1-10) error paths for the create path.
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateAgent500JSONResponse:
@@ -204,6 +220,11 @@ func assertID(t *testing.T, result any, typeName string) {
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateChannel409JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
+	case api.CreateChannel422JSONResponse:
+		// Phase 3 D-75 — flat ErrorResponse alias for invalid_reference
+		// (default_queue_id FK miss).
+		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
 	case api.CreateChannel500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.DeleteChannel400JSONResponse:
@@ -222,6 +243,15 @@ func assertID(t *testing.T, result any, typeName string) {
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateChannel404JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
+	case api.UpdateChannel409JSONResponse:
+		// Phase 3 OQ-1/A4 — VersionConflict variant; RequestId is a direct field.
+		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
+	case api.UpdateChannel422JSONResponse:
+		// Phase 3 D-75 — flat ErrorResponse alias for invalid_reference
+		// (default_queue_id FK miss).
+		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateChannel500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 
@@ -265,22 +295,6 @@ func assertID(t *testing.T, result any, typeName string) {
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateQueue500JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-
-	// Scaffold
-	case api.CreateScaffold400JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-	case api.CreateScaffold500JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-	case api.ListScaffolds400JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-	case api.ListScaffolds500JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-	case api.GetScaffoldById400JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-	case api.GetScaffoldById404JSONResponse:
-		require.NotNil(t, r.RequestId, "%s", typeName)
-	case api.GetScaffoldById500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 
 	// Skills
@@ -372,12 +386,17 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetAdapter500JSONResponse", api.GetAdapter500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateAdapter400JSONResponse", api.UpdateAdapter400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateAdapter404JSONResponse", api.UpdateAdapter404JSONResponse{NotFoundJSONResponse: nfResp}},
+		// Phase 3 OQ-1/A4: VersionConflict variant — struct with Current Adapter.
+		{"UpdateAdapter409JSONResponse", api.UpdateAdapter409JSONResponse{Error: "version_conflict", Reason: "stale"}},
 		{"UpdateAdapter500JSONResponse", api.UpdateAdapter500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// Agents
 		{"ListAgents400JSONResponse", api.ListAgents400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"ListAgents500JSONResponse", api.ListAgents500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"CreateAgent400JSONResponse", api.CreateAgent400JSONResponse{BadRequestJSONResponse: bResp}},
+		// Phase 3 Codex C2 iter 3: flat ErrorResponse alias covering both
+		// invalid_reference and invalid_value paths for skills[].
+		{"CreateAgent422JSONResponse", api.CreateAgent422JSONResponse(e)},
 		{"CreateAgent500JSONResponse", api.CreateAgent500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"DeleteAgent400JSONResponse", api.DeleteAgent400JSONResponse{InvalidOrgIDJSONResponse: invResp}},
 		{"DeleteAgent404JSONResponse", api.DeleteAgent404JSONResponse{NotFoundJSONResponse: nfResp}},
@@ -388,6 +407,9 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"UpdateAgent400JSONResponse", api.UpdateAgent400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateAgent404JSONResponse", api.UpdateAgent404JSONResponse{NotFoundJSONResponse: nfResp}},
 		{"UpdateAgent409JSONResponse", api.UpdateAgent409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 3 D-75 + ROADMAP CRIT 4: flat ErrorResponse alias covering both
+		// invalid_reference and invalid_value paths for skills[].
+		{"UpdateAgent422JSONResponse", api.UpdateAgent422JSONResponse(e)},
 		{"UpdateAgent500JSONResponse", api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// AgentStatus
@@ -426,6 +448,9 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"ListChannels500JSONResponse", api.ListChannels500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"CreateChannel400JSONResponse", api.CreateChannel400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"CreateChannel409JSONResponse", api.CreateChannel409JSONResponse(e)},
+		// Phase 3 D-75: flat ErrorResponse alias for invalid_reference
+		// (default_queue_id FK miss).
+		{"CreateChannel422JSONResponse", api.CreateChannel422JSONResponse(e)},
 		{"CreateChannel500JSONResponse", api.CreateChannel500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"DeleteChannel400JSONResponse", api.DeleteChannel400JSONResponse{InvalidOrgIDJSONResponse: invResp}},
 		{"DeleteChannel404JSONResponse", api.DeleteChannel404JSONResponse{NotFoundJSONResponse: nfResp}},
@@ -435,6 +460,11 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetChannel500JSONResponse", api.GetChannel500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateChannel400JSONResponse", api.UpdateChannel400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateChannel404JSONResponse", api.UpdateChannel404JSONResponse{NotFoundJSONResponse: nfResp}},
+		// Phase 3 OQ-1/A4: VersionConflict variant — struct with Current Channel.
+		{"UpdateChannel409JSONResponse", api.UpdateChannel409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 3 D-75: flat ErrorResponse alias for invalid_reference
+		// (default_queue_id FK miss).
+		{"UpdateChannel422JSONResponse", api.UpdateChannel422JSONResponse(e)},
 		{"UpdateChannel500JSONResponse", api.UpdateChannel500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// ImportJob
@@ -458,15 +488,6 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"UpdateQueue404JSONResponse", api.UpdateQueue404JSONResponse{NotFoundJSONResponse: nfResp}},
 		{"UpdateQueue409JSONResponse", api.UpdateQueue409JSONResponse{Error: "version_conflict", Reason: "stale"}},
 		{"UpdateQueue500JSONResponse", api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: iResp}},
-
-		// Scaffold
-		{"CreateScaffold400JSONResponse", api.CreateScaffold400JSONResponse{BadRequestJSONResponse: bResp}},
-		{"CreateScaffold500JSONResponse", api.CreateScaffold500JSONResponse{InternalServerErrorJSONResponse: iResp}},
-		{"ListScaffolds400JSONResponse", api.ListScaffolds400JSONResponse{InvalidOrgIDJSONResponse: invResp}},
-		{"ListScaffolds500JSONResponse", api.ListScaffolds500JSONResponse{InternalServerErrorJSONResponse: iResp}},
-		{"GetScaffoldById400JSONResponse", api.GetScaffoldById400JSONResponse{BadRequestJSONResponse: bResp}},
-		{"GetScaffoldById404JSONResponse", api.GetScaffoldById404JSONResponse{NotFoundJSONResponse: nfResp}},
-		{"GetScaffoldById500JSONResponse", api.GetScaffoldById500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// Skills
 		{"ListSkills400JSONResponse", api.ListSkills400JSONResponse{BadRequestJSONResponse: bResp}},
