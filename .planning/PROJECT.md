@@ -20,7 +20,7 @@ Product teams can define, simulate, debug, publish, and embed powerful routing f
   - Agent-toggleable: Ready, NotReady (idle, no sub-reasons), Break (configurable sub-reasons; each reason has `routable: bool`)
   - System-set: WrapUp, Engaged (channel-specific: voice/chat/email — exact sub-states TBD from research), Offline
 - Multi-org isolation: header-passed `org_id` with DB-enforced scoping (stub auth)
-- REST management API (Go + chi) for catalog CRUD with OpenAPI 3.1 contract
+- REST management API (Go + chi) for catalog CRUD with OpenAPI 3.0 contract
 - JSON/CSV bulk import endpoint for seeding catalog from external dumps
 - Standalone admin app (Vite + Lit + Shoelace SPA) for direct use by platform/solution engineers
 - Web Component embed bundle (`<open-routing-catalog>` Custom Element) for host product integration
@@ -28,7 +28,7 @@ Product teams can define, simulate, debug, publish, and embed powerful routing f
 **Locked stack:**
 - Backend: Go (latest) + chi + sqlc + pgx + golang-migrate + slog
 - Database: PostgreSQL 17 + Redis (cache)
-- API contract: OpenAPI 3.1 → oapi-codegen (Go) + openapi-typescript (TS client)
+- API contract: OpenAPI 3.0 → oapi-codegen (Go) + openapi-typescript (TS client)
 - Frontend: Vite + Lit + Shoelace + TypeScript (standalone admin + WC embed share `packages/ui`)
 - Repo: polyglot monorepo (Go module + pnpm workspaces)
 - Observability: OpenTelemetry Go SDK + slog structured logs
@@ -144,7 +144,7 @@ The product should feel simple despite powerful behavior. The UI should reduce c
 | Database: PostgreSQL 17 + Redis (cache layer) | Postgres for source-of-truth with JSONB/outbox support; Redis for hot catalog reads and future agent-state push fan-out (aligns with v1 runtime p95<50ms target) | - Pending (locked in v0.1) |
 | Frontend stack: Vite + Lit + Shoelace + TypeScript (no React, no Next.js) | Lit produces real Custom Elements with ~5KB runtime; Shoelace ships accessible production-grade components; native Web Components means zero React-version-skew risk with host apps and CSS-custom-property theming maps directly to PROJECT.md's "theme tokens" requirement | - Pending (locked in v0.1) |
 | Embedding: Web Components (Custom Elements) as the v0.1 distributable; iframe deferred | Web Components are framework-agnostic by definition — host apps in any framework can mount via HTML tag; Shadow DOM provides CSS isolation; no Module Federation/single-spa orchestration needed | - Pending (locked in v0.1) |
-| API contract: OpenAPI 3.1 spec as source-of-truth → oapi-codegen (Go server stubs) + openapi-typescript (TS client) | Contract-first prevents drift between Go backend and TS frontend; spec doubles as customer-facing API documentation; gRPC contract (Buf/Connect) added alongside when v1 runtime engine arrives | - Pending (locked in v0.1) |
+| API contract: OpenAPI 3.0 spec as source-of-truth → oapi-codegen (Go server stubs) + openapi-typescript (TS client) | Contract-first prevents drift between Go backend and TS frontend; spec doubles as customer-facing API documentation; gRPC contract (Buf/Connect) added alongside when v1 runtime engine arrives. Originally scoped as OpenAPI 3.1, downgraded to 3.0 for oapi-codegen v2 compatibility. | Complete in Phase 2 |
 | Repo structure: polyglot monorepo (Go module + pnpm workspaces side-by-side) | Single source of truth for backend + frontend + migrations + OpenAPI spec; atomic cross-cutting commits; Go uses native `go.mod`; Node side uses pnpm workspaces; Turborepo or Makefile orchestrates tasks across both | - Pending (locked in v0.1) |
 | Realtime in v0.1: REST polling only (no WebSocket/SSE) | Catalog UI does not need realtime; agent state changes are polled every ~5s; SSE/WS pushed to v0.2 when runtime engine needs broadcast | - Pending (locked in v0.1) |
 | Browser workers (service/shared/web) deferred to v0.2 | No offline, no push notifications, no SSE-deduplication needed in v0.1; Web Worker CSV preview is nice-to-have only | - Pending (locked in v0.1) |
@@ -172,4 +172,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-15 — milestone v0.1 Catalog Foundation started*
+*Last updated: 2026-05-16 — Phase 2 complete; Phase 3 context/research ready*
