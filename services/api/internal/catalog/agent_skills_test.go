@@ -32,10 +32,12 @@ func withHelperTx(t *testing.T, th *TestHandlers) (ctx context.Context, qtx *gen
 
 	qtx = generated.New(tx)
 	agentID = uuid.Must(uuid.NewV7())
+	ext := "ext-helper-anchor-" + agentID.String()[:8]
 	_, err = qtx.InsertAgent(ctx, generated.InsertAgentParams{
 		ID:         pgUUID(agentID),
 		OrgID:      pgUUID(th.OrgID),
-		ExternalID: "ext-helper-anchor-" + agentID.String()[:8],
+		Code:       "emp_helper_" + sanitizeForCode(agentID.String()[:8]),
+		ExternalID: &ext, // *string post-04.1.
 		Name:       "Helper Anchor",
 		Email:      "anchor+" + agentID.String()[:8] + "@example.test",
 		Enabled:    true,
@@ -157,10 +159,12 @@ func TestAgentSkills_CrossOrgSkillId(t *testing.T) {
 	orgB := uuid.Must(uuid.NewV7())
 	q := generated.New(th.Pool)
 	skillB := uuid.Must(uuid.NewV7())
+	extB := "ext-cross-org-skill"
 	_, err := q.InsertSkill(ctx, generated.InsertSkillParams{
 		ID:         pgUUID(skillB),
 		OrgID:      pgUUID(orgB),
-		ExternalID: "ext-cross-org-skill",
+		Code:       "skill_cross_org",
+		ExternalID: &extB, // *string post-04.1.
 		Name:       "cross-org-skill",
 		SkillType:  "language",
 		Enabled:    true,
@@ -231,7 +235,7 @@ func TestAgentSkills_OutOfRangeProficiency_422(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	s1 := seedSkill(t, th, ctx, "proficiency-skill")
-	a := postAgent(t, th, makeAgentBody("ext-proficiency-help", "Boundary", nil))
+	a := postAgent(t, th, makeAgentBody("emp_proficiency_help", "ext-proficiency-help", "Boundary", nil))
 
 	low := []api.AgentSkillAssignment{{SkillId: api.UUIDv7(s1), Proficiency: 1}}
 	body := api.UpdateAgentRequest{Version: 1, Skills: &low}
@@ -274,7 +278,7 @@ func TestAgentSkills_DuplicateSkillId_422(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	s1 := seedSkill(t, th, ctx, "dup-skill")
-	a := postAgent(t, th, makeAgentBody("ext-dup-help", "Dup", nil))
+	a := postAgent(t, th, makeAgentBody("emp_dup_help", "ext-dup-help", "Dup", nil))
 
 	dup := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 5},

@@ -42,14 +42,20 @@ func postQueue(t testing.TB, th *TestHandlers, body api.CreateQueueRequest) api.
 
 // makeQueueBody — sensible default body. Single channel_type voice for
 // the cases that don't care; the channel_types round-trip test overrides.
-func makeQueueBody(externalID, name string) api.CreateQueueRequest {
-	return api.CreateQueueRequest{
-		ExternalId:   externalID,
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 required).
+// externalID is now stored as *string (column nullable post-04.1).
+func makeQueueBody(code, externalID, name string) api.CreateQueueRequest {
+	body := api.CreateQueueRequest{
+		Code:         code,
 		Name:         name,
 		ChannelTypes: []api.ChannelType{"voice"},
 		Priority:     1,
 		AcwSec:       0,
 	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
 }
 
 // TestQueues_CreateThenGet — POST returns 201 + Queue with version=1,
@@ -59,7 +65,7 @@ func TestQueues_CreateThenGet(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeQueueBody("ext-001", "Support")
+	body := makeQueueBody("queue_001", "ext-001", "Support")
 	q := postQueue(t, th, body)
 	require.Equal(t, 1, q.Version, "fresh queue version must be 1")
 	require.True(t, q.Enabled)
@@ -102,7 +108,7 @@ func TestQueues_VersionConflict(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	q := postQueue(t, th, makeQueueBody("ext-vc", "Sales"))
+	q := postQueue(t, th, makeQueueBody("queue_vc", "ext-vc", "Sales"))
 	newName := "Sales v2"
 
 	bad := api.UpdateQueueRequest{Version: 99, Name: &newName}
@@ -136,7 +142,7 @@ func TestQueues_SoftDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	q := postQueue(t, th, makeQueueBody("ext-del", "Closed"))
+	q := postQueue(t, th, makeQueueBody("queue_del", "ext-del", "Closed"))
 
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(q.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -163,7 +169,7 @@ func TestQueues_SoftDelete_IncludeDisabled(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	q := postQueue(t, th, makeQueueBody("ext-del2", "Old"))
+	q := postQueue(t, th, makeQueueBody("queue_del2", "ext-del2", "Old"))
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(q.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
@@ -192,7 +198,7 @@ func TestQueues_Cursor(t *testing.T) {
 	const total = 60
 	ids := make(map[uuid.UUID]struct{}, total)
 	for i := 0; i < total; i++ {
-		body := makeQueueBody(fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Queue%03d", i))
+		body := makeQueueBody(fmt.Sprintf("queue_%03d", i), fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Queue%03d", i))
 		q := postQueue(t, th, body)
 		ids[uuid.UUID(q.Id)] = struct{}{}
 		// UUIDv7 monotonicity hint — keeps the cursor strictly ordered.
@@ -249,9 +255,9 @@ func TestQueues_NameSearch(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	postQueue(t, th, makeQueueBody("ext-1", "Alpha"))
-	postQueue(t, th, makeQueueBody("ext-2", "Alphabet"))
-	postQueue(t, th, makeQueueBody("ext-3", "Beta"))
+	postQueue(t, th, makeQueueBody("queue_1", "ext-1", "Alpha"))
+	postQueue(t, th, makeQueueBody("queue_2", "ext-2", "Alphabet"))
+	postQueue(t, th, makeQueueBody("queue_3", "ext-3", "Beta"))
 
 	q := url.Values{"name": {"al"}}
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, queuePath(th.OrgID), q)
@@ -272,7 +278,7 @@ func TestQueues_CacheInvalidationOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	q := postQueue(t, th, makeQueueBody("ext-cache", "QC"))
+	q := postQueue(t, th, makeQueueBody("queue_cache", "ext-cache", "QC"))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(q.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "queues", uuid.UUID(q.Id))
@@ -300,7 +306,7 @@ func TestQueues_CacheInvalidationOnDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	q := postQueue(t, th, makeQueueBody("ext-cache-del", "QD"))
+	q := postQueue(t, th, makeQueueBody("queue_cache_del", "ext-cache-del", "QD"))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(q.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "queues", uuid.UUID(q.Id))
@@ -323,7 +329,8 @@ func TestQueues_ChannelTypesRoundTrip(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	body := api.CreateQueueRequest{
-		ExternalId:   "ext-ct",
+		Code:         "queue_ct",
+		ExternalId:   strPtr("ext-ct"),
 		Name:         "Multi",
 		ChannelTypes: []api.ChannelType{"voice", "chat"},
 		Priority:     5,
@@ -358,7 +365,8 @@ func TestQueues_PriorityAcwSec(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	body := api.CreateQueueRequest{
-		ExternalId:   "ext-pri",
+		Code:         "queue_pri",
+		ExternalId:   strPtr("ext-pri"),
 		Name:         "Priority",
 		ChannelTypes: []api.ChannelType{"voice"},
 		Priority:     7,
@@ -386,7 +394,7 @@ func TestQueues_CrossOrgGet404(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	q := postQueue(t, th, makeQueueBody("ext-cross", "Across"))
+	q := postQueue(t, th, makeQueueBody("queue_cross", "ext-cross", "Across"))
 
 	orgB := uuid.Must(uuid.NewV7())
 	resp, raw := httpGET(t, th.HTTP, orgB, queueDetailPath(orgB, uuid.UUID(q.Id)), nil)

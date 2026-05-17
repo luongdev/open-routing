@@ -48,6 +48,15 @@ func (h *Handlers) CreateChannel(ctx context.Context, req api.CreateChannelReque
 		}}, nil
 	}
 
+	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
+	// BEFORE the D-76 FK probe so a malformed code never wastes a DB round-trip.
+	if !validateCodeFormat(req.Body.Code) {
+		return api.CreateChannel400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error:  api.ErrorCodeInvalidBody,
+			Reason: "invalid_code_format",
+		}}, nil
+	}
+
 	q := generated.New(h.deps.OrgDB)
 
 	// D-76 cross-row FK probe. Missing/disabled/cross-org queue all
@@ -81,7 +90,8 @@ func (h *Handlers) CreateChannel(ctx context.Context, req api.CreateChannelReque
 	row, err := q.InsertChannel(ctx, generated.InsertChannelParams{
 		ID:             pgUUID(id),
 		OrgID:          pgUUID(orgID),
-		ExternalID:     req.Body.ExternalId,
+		Code:           req.Body.Code,
+		ExternalID:     req.Body.ExternalId, // *string post-04.1 (column nullable).
 		Name:           req.Body.Name,
 		ChannelType:    string(req.Body.ChannelType),
 		DefaultQueueID: defQID,
@@ -273,6 +283,18 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 		}}, nil
 	}
 	channelID := uuid.UUID(req.Id)
+
+	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
+	// DB call (incl. the D-76 FK probe) so a malformed PATCH gets 400, not 422.
+	if req.Body.Code != nil {
+		if !validateCodeFormat(*req.Body.Code) {
+			return api.UpdateChannel400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error:  api.ErrorCodeInvalidBody,
+				Reason: "invalid_code_format",
+			}}, nil
+		}
+	}
+
 	q := generated.New(h.deps.OrgDB)
 
 	// D-76 — same probe as CreateChannel. Only validate when the client
@@ -294,6 +316,35 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 			return api.UpdateChannel500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
 				Error: api.ErrorCodeInternal, Reason: "queue_probe_failed",
 			}}, nil
+		}
+	}
+
+	// Phase 04.1 Layer 2 (D04_1-20) — immutability gate. When req.Body.Code
+	// is present, fetch the stored row first; reuse it in the 0-row branch
+	// instead of a second probe. nil → preserve Phase 3 post-UPDATE flow.
+	var stored *generated.Channel
+	if req.Body.Code != nil {
+		s, perr := q.GetChannelByIdAnyVersion(ctx, generated.GetChannelByIdAnyVersionParams{
+			ID:    pgUUID(channelID),
+			OrgID: pgUUID(orgID),
+		})
+		if errors.Is(perr, pgx.ErrNoRows) {
+			return api.UpdateChannel404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+				Error: api.ErrorCodeNotFound, Reason: "channel_not_found",
+			}}, nil
+		}
+		if perr != nil {
+			h.deps.Logger.ErrorContext(ctx, "load stored channel for immutability check", "err", perr)
+			return api.UpdateChannel500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error: api.ErrorCodeInternal, Reason: "load_stored_failed",
+			}}, nil
+		}
+		stored = &s
+		if !validateImmutableCode(stored.Code, *req.Body.Code) {
+			return api.UpdateChannel422JSONResponse(api.ErrorResponse{
+				Error:  api.ErrorCodeImmutableField,
+				Reason: "code",
+			}), nil
 		}
 	}
 
@@ -324,20 +375,28 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := q.GetChannelByIdAnyVersion(ctx, generated.GetChannelByIdAnyVersionParams{
-			ID:    pgUUID(channelID),
-			OrgID: pgUUID(orgID),
-		})
-		if errors.Is(perr, pgx.ErrNoRows) {
-			return api.UpdateChannel404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
-				Error: api.ErrorCodeNotFound, Reason: "channel_not_found",
-			}}, nil
-		}
-		if perr != nil {
-			h.deps.Logger.ErrorContext(ctx, "update channel disambiguate", "err", perr)
-			return api.UpdateChannel500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-				Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
-			}}, nil
+		// Phase 04.1: reuse `stored` if pre-UPDATE fetch already ran
+		// (Branch 1: req.Body.Code != nil). Otherwise probe (Branch 2).
+		var cur generated.Channel
+		if stored != nil {
+			cur = *stored
+		} else {
+			s2, perr := q.GetChannelByIdAnyVersion(ctx, generated.GetChannelByIdAnyVersionParams{
+				ID:    pgUUID(channelID),
+				OrgID: pgUUID(orgID),
+			})
+			if errors.Is(perr, pgx.ErrNoRows) {
+				return api.UpdateChannel404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+					Error: api.ErrorCodeNotFound, Reason: "channel_not_found",
+				}}, nil
+			}
+			if perr != nil {
+				h.deps.Logger.ErrorContext(ctx, "update channel disambiguate", "err", perr)
+				return api.UpdateChannel500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+					Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
+				}}, nil
+			}
+			cur = s2
 		}
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "channels", channelID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "channels", channelID), "err", delErr)
@@ -406,6 +465,7 @@ func mapChannel(row generated.Channel) api.Channel {
 	return api.Channel{
 		Id:             api.UUIDv7(apiUUID(row.ID)),
 		OrgId:          api.UUIDv7(apiUUID(row.OrgID)),
+		Code:           row.Code,
 		ExternalId:     row.ExternalID,
 		Name:           row.Name,
 		ChannelType:    api.ChannelType(row.ChannelType),

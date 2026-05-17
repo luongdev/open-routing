@@ -45,6 +45,15 @@ func (h *Handlers) CreateQueue(ctx context.Context, req api.CreateQueueRequestOb
 		}}, nil
 	}
 
+	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
+	// because oapi-codegen v2 does NOT auto-enforce the OpenAPI `pattern`.
+	if !validateCodeFormat(req.Body.Code) {
+		return api.CreateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error:  api.ErrorCodeInvalidBody,
+			Reason: "invalid_code_format",
+		}}, nil
+	}
+
 	id := uuid.Must(uuid.NewV7())
 	ctStrings := make([]string, 0, len(req.Body.ChannelTypes))
 	for _, ct := range req.Body.ChannelTypes {
@@ -67,7 +76,8 @@ func (h *Handlers) CreateQueue(ctx context.Context, req api.CreateQueueRequestOb
 	row, err := q.InsertQueue(ctx, generated.InsertQueueParams{
 		ID:           pgUUID(id),
 		OrgID:        pgUUID(orgID),
-		ExternalID:   req.Body.ExternalId,
+		Code:         req.Body.Code,
+		ExternalID:   req.Body.ExternalId, // *string post-04.1 (column nullable).
 		Name:         req.Body.Name,
 		ChannelTypes: ctStrings,
 		Priority:     priority,
@@ -259,6 +269,17 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 	}
 	queueID := uuid.UUID(req.Id)
 
+	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
+	// DB call so a malformed PATCH gets 400, not 422.
+	if req.Body.Code != nil {
+		if !validateCodeFormat(*req.Body.Code) {
+			return api.UpdateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error:  api.ErrorCodeInvalidBody,
+				Reason: "invalid_code_format",
+			}}, nil
+		}
+	}
+
 	// Codex C3 sparse PATCH: pass nil → COALESCE preserves the column.
 	// For channel_types the slice itself is the omission signal — sqlc
 	// treats a nil []string as SQL NULL on the parameter side.
@@ -292,6 +313,36 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 	}
 
 	q := generated.New(h.deps.OrgDB)
+
+	// Phase 04.1 Layer 2 (D04_1-20) — immutability gate. When req.Body.Code
+	// is present, fetch the stored row first; reuse it in the 0-row branch
+	// instead of a second probe. nil → preserve Phase 3 post-UPDATE flow.
+	var stored *generated.Queue
+	if req.Body.Code != nil {
+		s, perr := q.GetQueueByIdAnyVersion(ctx, generated.GetQueueByIdAnyVersionParams{
+			ID:    pgUUID(queueID),
+			OrgID: pgUUID(orgID),
+		})
+		if errors.Is(perr, pgx.ErrNoRows) {
+			return api.UpdateQueue404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+				Error: api.ErrorCodeNotFound, Reason: "queue_not_found",
+			}}, nil
+		}
+		if perr != nil {
+			h.deps.Logger.ErrorContext(ctx, "load stored queue for immutability check", "err", perr)
+			return api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error: api.ErrorCodeInternal, Reason: "load_stored_failed",
+			}}, nil
+		}
+		stored = &s
+		if !validateImmutableCode(stored.Code, *req.Body.Code) {
+			return api.UpdateQueue422JSONResponse(api.ErrorResponse{
+				Error:  api.ErrorCodeImmutableField,
+				Reason: "code",
+			}), nil
+		}
+	}
+
 	expectedVersion, ok := int32Checked(req.Body.Version)
 	if !ok {
 		return api.UpdateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
@@ -309,20 +360,28 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := q.GetQueueByIdAnyVersion(ctx, generated.GetQueueByIdAnyVersionParams{
-			ID:    pgUUID(queueID),
-			OrgID: pgUUID(orgID),
-		})
-		if errors.Is(perr, pgx.ErrNoRows) {
-			return api.UpdateQueue404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
-				Error: api.ErrorCodeNotFound, Reason: "queue_not_found",
-			}}, nil
-		}
-		if perr != nil {
-			h.deps.Logger.ErrorContext(ctx, "update queue disambiguate", "err", perr)
-			return api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-				Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
-			}}, nil
+		// Phase 04.1: reuse `stored` if pre-UPDATE fetch already ran
+		// (Branch 1: req.Body.Code != nil). Otherwise probe (Branch 2).
+		var cur generated.Queue
+		if stored != nil {
+			cur = *stored
+		} else {
+			s2, perr := q.GetQueueByIdAnyVersion(ctx, generated.GetQueueByIdAnyVersionParams{
+				ID:    pgUUID(queueID),
+				OrgID: pgUUID(orgID),
+			})
+			if errors.Is(perr, pgx.ErrNoRows) {
+				return api.UpdateQueue404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+					Error: api.ErrorCodeNotFound, Reason: "queue_not_found",
+				}}, nil
+			}
+			if perr != nil {
+				h.deps.Logger.ErrorContext(ctx, "update queue disambiguate", "err", perr)
+				return api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+					Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
+				}}, nil
+			}
+			cur = s2
 		}
 		// D-56 — DEL on the 409 path so a stale cached value cannot mask
 		// the conflict on the client's retry.
@@ -336,9 +395,13 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 		}, nil
 	}
 	if err != nil {
+		status, code, reason := mapPgError(err, "queue")
+		if status == 422 {
+			return api.UpdateQueue422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		}
 		h.deps.Logger.ErrorContext(ctx, "update queue", "err", err)
 		return api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-			Error: api.ErrorCodeInternal, Reason: "internal",
+			Error: code, Reason: reason,
 		}}, nil
 	}
 
@@ -391,6 +454,7 @@ func mapQueue(row generated.Queue) api.Queue {
 	return api.Queue{
 		Id:           api.UUIDv7(apiUUID(row.ID)),
 		OrgId:        api.UUIDv7(apiUUID(row.OrgID)),
+		Code:         row.Code,
 		ExternalId:   row.ExternalID,
 		Name:         row.Name,
 		ChannelTypes: cts,

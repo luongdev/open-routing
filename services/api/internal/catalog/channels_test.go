@@ -48,12 +48,18 @@ func postChannel(t testing.TB, th *TestHandlers, body api.CreateChannelRequest) 
 
 // makeChannelBody — minimal default; default_queue_id omitted so it's
 // nil unless the test overrides.
-func makeChannelBody(externalID, name, channelType string) api.CreateChannelRequest {
-	return api.CreateChannelRequest{
-		ExternalId:  externalID,
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 required).
+// externalID is now stored as *string (column nullable post-04.1).
+func makeChannelBody(code, externalID, name, channelType string) api.CreateChannelRequest {
+	body := api.CreateChannelRequest{
+		Code:        code,
 		Name:        name,
 		ChannelType: api.ChannelType(channelType),
 	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
 }
 
 // TestChannels_CreateThenGet — happy path + cache fill on first GET.
@@ -62,7 +68,7 @@ func TestChannels_CreateThenGet(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeChannelBody("ext-001", "Voice", "voice")
+	body := makeChannelBody("ch_001", "ext-001", "Voice", "voice")
 	c := postChannel(t, th, body)
 	require.Equal(t, 1, c.Version, "fresh channel version must be 1")
 	require.True(t, c.Enabled)
@@ -106,7 +112,7 @@ func TestChannels_VersionConflict(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-vc", "Chat", "chat"))
+	c := postChannel(t, th, makeChannelBody("ch_vc", "ext-vc", "Chat", "chat"))
 	newName := "Chat v2"
 
 	bad := api.UpdateChannelRequest{Version: 99, Name: &newName}
@@ -139,7 +145,7 @@ func TestChannels_SoftDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-del", "Email", "email"))
+	c := postChannel(t, th, makeChannelBody("ch_del", "ext-del", "Email", "email"))
 
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -166,7 +172,7 @@ func TestChannels_SoftDelete_IncludeDisabled(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-del2", "Gone", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_del2", "ext-del2", "Gone", "voice"))
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
@@ -195,7 +201,7 @@ func TestChannels_Cursor(t *testing.T) {
 	const total = 60
 	ids := make(map[uuid.UUID]struct{}, total)
 	for i := 0; i < total; i++ {
-		body := makeChannelBody(fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Channel%03d", i), "voice")
+		body := makeChannelBody(fmt.Sprintf("ch_%03d", i), fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Channel%03d", i), "voice")
 		c := postChannel(t, th, body)
 		ids[uuid.UUID(c.Id)] = struct{}{}
 		time.Sleep(1 * time.Millisecond)
@@ -249,9 +255,9 @@ func TestChannels_NameSearch(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	postChannel(t, th, makeChannelBody("ext-1", "Alpha", "voice"))
-	postChannel(t, th, makeChannelBody("ext-2", "Alphabet", "chat"))
-	postChannel(t, th, makeChannelBody("ext-3", "Beta", "email"))
+	postChannel(t, th, makeChannelBody("ch_1", "ext-1", "Alpha", "voice"))
+	postChannel(t, th, makeChannelBody("ch_2", "ext-2", "Alphabet", "chat"))
+	postChannel(t, th, makeChannelBody("ch_3", "ext-3", "Beta", "email"))
 
 	q := url.Values{"name": {"al"}}
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, channelPath(th.OrgID), q)
@@ -271,7 +277,7 @@ func TestChannels_CacheInvalidationOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-cache", "CC", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_cache", "ext-cache", "CC", "voice"))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "channels", uuid.UUID(c.Id))
@@ -298,7 +304,7 @@ func TestChannels_CacheInvalidationOnDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-cd", "CD", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_cd", "ext-cd", "CD", "voice"))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "channels", uuid.UUID(c.Id))
@@ -323,7 +329,8 @@ func TestChannels_DefaultQueueId_HappyPath(t *testing.T) {
 	queueID := seedQueueForOrg(t, th, ctx, th.OrgID, "primary")
 	qUUID := api.UUIDv7(queueID)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-link",
+		Code:           "ch_link",
+		ExternalId:     strPtr("ext-link"),
 		Name:           "Linked",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -349,7 +356,8 @@ func TestChannels_DefaultQueueId_NotFound(t *testing.T) {
 
 	bogusUUID := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-bogus",
+		Code:           "ch_bogus",
+		ExternalId:     strPtr("ext-bogus"),
 		Name:           "Bogus",
 		ChannelType:    "voice",
 		DefaultQueueId: &bogusUUID,
@@ -373,7 +381,8 @@ func TestChannels_Create_UnknownQueueId_422(t *testing.T) {
 
 	bogusUUID := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-unk",
+		Code:           "ch_unk",
+		ExternalId:     strPtr("ext-unk"),
 		Name:           "Unknown",
 		ChannelType:    "chat",
 		DefaultQueueId: &bogusUUID,
@@ -402,7 +411,8 @@ func TestChannels_DefaultQueueId_Disabled(t *testing.T) {
 
 	qUUID := api.UUIDv7(queueID)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-dis",
+		Code:           "ch_dis",
+		ExternalId:     strPtr("ext-dis"),
 		Name:           "PointingDisabled",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -429,7 +439,8 @@ func TestChannels_DefaultQueueId_CrossOrg(t *testing.T) {
 
 	qUUID := api.UUIDv7(queueB)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-cross",
+		Code:           "ch_cross",
+		ExternalId:     strPtr("ext-cross"),
 		Name:           "CrossOrg",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -456,7 +467,8 @@ func TestChannels_CrossOrgQueueReject_422(t *testing.T) {
 
 	qUUID := api.UUIDv7(queueB)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-alias",
+		Code:           "ch_alias",
+		ExternalId:     strPtr("ext-alias"),
 		Name:           "AliasCross",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -476,7 +488,7 @@ func TestChannels_UpdateChannelInvalidReference(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-upd", "Plain", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_upd", "ext-upd", "Plain", "voice"))
 	bogus := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.UpdateChannelRequest{Version: 1, DefaultQueueId: &bogus}
 	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), body)
@@ -505,7 +517,7 @@ func TestChannels_Update_QueueDisabledInSameOrg_422(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-upd-dis", "Updish", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_upd_dis", "ext-upd-dis", "Updish", "voice"))
 	queueID := seedQueueForOrg(t, th, ctx, th.OrgID, "to-soft-delete")
 	respDel, _ := httpDELETE(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, queueID))
 	require.Equal(t, http.StatusNoContent, respDel.StatusCode)
@@ -528,7 +540,7 @@ func TestChannels_CrossOrgGet404(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-cog", "InOrgA", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_cog", "ext-cog", "InOrgA", "voice"))
 
 	orgB := uuid.Must(uuid.NewV7())
 	resp, raw := httpGET(t, th.HTTP, orgB, channelDetailPath(orgB, uuid.UUID(c.Id)), nil)
@@ -546,7 +558,7 @@ func TestChannels_ChannelTypeRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-ct", "Rotates", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_ct", "ext-ct", "Rotates", "voice"))
 	require.Equal(t, api.ChannelType("voice"), c.ChannelType)
 
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), nil)
@@ -604,7 +616,8 @@ func TestChannels_InvalidReference(t *testing.T) {
 
 	bogusUUID := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-ir",
+		Code:           "ch_ir",
+		ExternalId:     strPtr("ext-ir"),
 		Name:           "AliasIR",
 		ChannelType:    "voice",
 		DefaultQueueId: &bogusUUID,
