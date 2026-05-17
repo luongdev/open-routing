@@ -13,14 +13,15 @@ import (
 
 const expireWrapUp = `-- name: ExpireWrapUp :one
 UPDATE agent_states
-SET status        = CASE post_interaction_state
-                        WHEN 'ready'     THEN 'Ready'
-                        WHEN 'not_ready' THEN 'NotReady'
-                        ELSE 'NotReady'
-                    END,
-    wrapup_until  = NULL,
-    state_version = state_version + 1,
-    updated_at    = NOW()
+SET status          = CASE post_interaction_state
+                          WHEN 'ready'     THEN 'Ready'
+                          WHEN 'not_ready' THEN 'NotReady'
+                          ELSE 'NotReady'
+                      END,
+    wrapup_until    = NULL,
+    engaged_channel = NULL,
+    state_version   = state_version + 1,
+    updated_at      = NOW()
 WHERE agent_id = $1
   AND org_id   = $2
   AND status   = 'WrapUp'
