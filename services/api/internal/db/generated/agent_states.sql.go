@@ -66,9 +66,9 @@ func (q *Queries) ExpireWrapUp(ctx context.Context, arg ExpireWrapUpParams) (Exp
 const forceUpdateAgentStateStatus = `-- name: ForceUpdateAgentStateStatus :one
 UPDATE agent_states
 SET status                 = COALESCE($1::text, status),
-    engaged_channel        = $2::text,
+    engaged_channel        = COALESCE($2::text, engaged_channel),
     break_reason_id        = $3::uuid,
-    post_interaction_state = COALESCE($4::text, post_interaction_state),
+    post_interaction_state = $4::text,
     wrapup_until           = $5::timestamptz,
     state_version          = state_version + 1,
     updated_at             = NOW()
@@ -91,6 +91,9 @@ type ForceUpdateAgentStateStatusParams struct {
 // D-84: bypasses the transition matrix (no `status = expected_from`).
 // Cross-row break_reason probe STILL runs at handler layer (Pitfall 3 —
 // force does NOT bypass cross-org probes).
+//
+// Same engaged_channel COALESCE + post_interaction_state explicit-write
+// as UpdateAgentStateStatus (Gemini HIGH/MED fix — see above).
 func (q *Queries) ForceUpdateAgentStateStatus(ctx context.Context, arg ForceUpdateAgentStateStatusParams) (AgentState, error) {
 	row := q.db.QueryRow(ctx, forceUpdateAgentStateStatus,
 		arg.ToStatus,
@@ -226,9 +229,9 @@ func (q *Queries) ListExpiringWrapUps(ctx context.Context) ([]ListExpiringWrapUp
 const updateAgentStateStatus = `-- name: UpdateAgentStateStatus :one
 UPDATE agent_states
 SET status                 = COALESCE($1::text, status),
-    engaged_channel        = $2::text,
+    engaged_channel        = COALESCE($2::text, engaged_channel),
     break_reason_id        = $3::uuid,
-    post_interaction_state = COALESCE($4::text, post_interaction_state),
+    post_interaction_state = $4::text,
     wrapup_until           = $5::timestamptz,
     state_version          = state_version + 1,
     updated_at             = NOW()
@@ -253,6 +256,14 @@ type UpdateAgentStateStatusParams struct {
 // D-85: WHERE clause uses `status = expected_from` (matrix-driven gate),
 // NOT `state_version = expected_version`. 0 rows → handler runs
 // GetAgentStateByAgentId to disambiguate 404 vs 409 invalid_transition.
+//
+// engaged_channel: COALESCE preserves the existing channel — v0.1
+// handler never passes an engaged_channel value, so COALESCE(NULL, existing)
+// keeps it intact rather than wiping it (Gemini HIGH fix).
+// post_interaction_state: explicit assignment (not COALESCE) so the handler
+// can clear it by passing nil (Gemini MED fix: cross-field invariant — only
+// meaningful while Engaged or WrapUp; buildUpdateParams nil-gates it per
+// the cross-field invariant in agent_states.go).
 func (q *Queries) UpdateAgentStateStatus(ctx context.Context, arg UpdateAgentStateStatusParams) (AgentState, error) {
 	row := q.db.QueryRow(ctx, updateAgentStateStatus,
 		arg.ToStatus,

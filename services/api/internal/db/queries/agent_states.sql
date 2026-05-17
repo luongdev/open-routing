@@ -18,11 +18,19 @@ WHERE agent_id = $1 AND org_id = $2;
 -- D-85: WHERE clause uses `status = expected_from` (matrix-driven gate),
 -- NOT `state_version = expected_version`. 0 rows → handler runs
 -- GetAgentStateByAgentId to disambiguate 404 vs 409 invalid_transition.
+--
+-- engaged_channel: COALESCE preserves the existing channel — v0.1
+-- handler never passes an engaged_channel value, so COALESCE(NULL, existing)
+-- keeps it intact rather than wiping it (Gemini HIGH fix).
+-- post_interaction_state: explicit assignment (not COALESCE) so the handler
+-- can clear it by passing nil (Gemini MED fix: cross-field invariant — only
+-- meaningful while Engaged or WrapUp; buildUpdateParams nil-gates it per
+-- the cross-field invariant in agent_states.go).
 UPDATE agent_states
 SET status                 = COALESCE(sqlc.narg('to_status')::text, status),
-    engaged_channel        = sqlc.narg('engaged_channel')::text,
+    engaged_channel        = COALESCE(sqlc.narg('engaged_channel')::text, engaged_channel),
     break_reason_id        = sqlc.narg('break_reason_id')::uuid,
-    post_interaction_state = COALESCE(sqlc.narg('post_interaction_state')::text, post_interaction_state),
+    post_interaction_state = sqlc.narg('post_interaction_state')::text,
     wrapup_until           = sqlc.narg('wrapup_until')::timestamptz,
     state_version          = state_version + 1,
     updated_at             = NOW()
@@ -36,11 +44,14 @@ RETURNING agent_id, org_id, status, engaged_channel, break_reason_id,
 -- D-84: bypasses the transition matrix (no `status = expected_from`).
 -- Cross-row break_reason probe STILL runs at handler layer (Pitfall 3 —
 -- force does NOT bypass cross-org probes).
+--
+-- Same engaged_channel COALESCE + post_interaction_state explicit-write
+-- as UpdateAgentStateStatus (Gemini HIGH/MED fix — see above).
 UPDATE agent_states
 SET status                 = COALESCE(sqlc.narg('to_status')::text, status),
-    engaged_channel        = sqlc.narg('engaged_channel')::text,
+    engaged_channel        = COALESCE(sqlc.narg('engaged_channel')::text, engaged_channel),
     break_reason_id        = sqlc.narg('break_reason_id')::uuid,
-    post_interaction_state = COALESCE(sqlc.narg('post_interaction_state')::text, post_interaction_state),
+    post_interaction_state = sqlc.narg('post_interaction_state')::text,
     wrapup_until           = sqlc.narg('wrapup_until')::timestamptz,
     state_version          = state_version + 1,
     updated_at             = NOW()
