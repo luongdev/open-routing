@@ -28,7 +28,7 @@ describe('OrAgentList', () => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
 
-  it('renders a row with agent code when client.GET resolves successfully', async () => {
+  it('renders or-data-table with rows when client.GET resolves successfully', async () => {
     (el as any).orgId = 'test-org-id';
     (el as any).client = {
       GET: vi.fn().mockResolvedValue({
@@ -43,8 +43,12 @@ describe('OrAgentList', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    const text = shadow.textContent ?? '';
-    expect(text).toContain('emp_0042');
+    // The component renders or-data-table; check it received the rows
+    const dataTable = shadow.querySelector('or-data-table') as any;
+    expect(dataTable).toBeTruthy();
+    // Verify the rows property is set with the agent data
+    expect(dataTable.rows).toHaveLength(1);
+    expect(dataTable.rows[0]?.code).toBe('emp_0042');
   });
 
   it('shows loading state when task is pending (never-resolving promise)', async () => {
