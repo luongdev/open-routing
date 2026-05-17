@@ -28,7 +28,7 @@ describe('OrAgentDetail — core form (Task 2a)', () => {
 
   beforeEach(() => {
     el = document.createElement('or-agent-detail');
-    document.body.appendChild(el);
+    // Do NOT append to DOM here — tests set props before connecting
   });
 
   afterEach(() => {
@@ -36,15 +36,20 @@ describe('OrAgentDetail — core form (Task 2a)', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders code field as readonly (or-code-input with .readonly=true)', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ data: MOCK_AGENT, error: null });
-    (el as any).orgId = 'test-org';
-    (el as any).entityId = MOCK_AGENT.id;
-    (el as any).client = { GET: mockGet, PATCH: vi.fn(), DELETE: vi.fn() };
-    await (el as any).updateComplete;
+  async function mountWithAgent(element: HTMLElement, agent = MOCK_AGENT) {
+    const mockGet = vi.fn().mockResolvedValue({ data: agent, error: null });
+    (element as any).orgId = 'test-org';
+    (element as any).entityId = agent.id;
+    (element as any).client = { GET: mockGet, PATCH: vi.fn(), DELETE: vi.fn() };
+    document.body.appendChild(element);
+    await (element as any).updateComplete;
     await new Promise((r) => setTimeout(r, 50));
-    await (el as any).updateComplete;
+    await (element as any).updateComplete;
+    return mockGet;
+  }
 
+  it('renders code field as readonly (or-code-input with .readonly=true)', async () => {
+    await mountWithAgent(el);
     const shadow = el.shadowRoot!;
     const codeInput = shadow.querySelector('or-code-input') as any;
     expect(codeInput).toBeTruthy();
@@ -53,13 +58,7 @@ describe('OrAgentDetail — core form (Task 2a)', () => {
   });
 
   it('Save button is disabled until form is dirty', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ data: MOCK_AGENT, error: null });
-    (el as any).orgId = 'test-org';
-    (el as any).entityId = MOCK_AGENT.id;
-    (el as any).client = { GET: mockGet, PATCH: vi.fn(), DELETE: vi.fn() };
-    await (el as any).updateComplete;
-    await new Promise((r) => setTimeout(r, 50));
-    await (el as any).updateComplete;
+    await mountWithAgent(el);
 
     // Save button should be disabled initially (not dirty)
     expect((el as any)._dirty).toBe(false);
@@ -73,12 +72,16 @@ describe('OrAgentDetail — core form (Task 2a)', () => {
   });
 
   it('shows Saved feedback on successful 2xx PATCH', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ data: MOCK_AGENT, error: null });
     const updatedAgent = { ...MOCK_AGENT, name: 'Bob', version: 6 };
     const mockPatch = vi.fn().mockResolvedValue({ data: updatedAgent, error: null });
     (el as any).orgId = 'test-org';
     (el as any).entityId = MOCK_AGENT.id;
-    (el as any).client = { GET: mockGet, PATCH: mockPatch, DELETE: vi.fn() };
+    (el as any).client = {
+      GET: vi.fn().mockResolvedValue({ data: MOCK_AGENT, error: null }),
+      PATCH: mockPatch,
+      DELETE: vi.fn(),
+    };
+    document.body.appendChild(el);
     await (el as any).updateComplete;
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
@@ -108,7 +111,7 @@ describe('OrAgentDetail — extensions (Task 2b)', () => {
 
   beforeEach(() => {
     el = document.createElement('or-agent-detail');
-    document.body.appendChild(el);
+    // Do NOT append to DOM here — tests set props before connecting
   });
 
   afterEach(() => {
@@ -126,6 +129,7 @@ describe('OrAgentDetail — extensions (Task 2b)', () => {
     (el as any).orgId = 'test-org';
     (el as any).entityId = MOCK_AGENT.id;
     (el as any).client = { GET: mockGet, PATCH: mockPatch, DELETE: vi.fn() };
+    document.body.appendChild(el);
     await (el as any).updateComplete;
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
@@ -152,6 +156,7 @@ describe('OrAgentDetail — extensions (Task 2b)', () => {
     (el as any).orgId = 'test-org';
     (el as any).entityId = MOCK_AGENT.id;
     (el as any).client = { GET: mockGet, PATCH: vi.fn(), DELETE: vi.fn() };
+    document.body.appendChild(el);
     await (el as any).updateComplete;
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
@@ -184,6 +189,7 @@ describe('OrAgentDetail — extensions (Task 2b)', () => {
     (el as any).orgId = 'test-org';
     (el as any).entityId = MOCK_AGENT.id;
     (el as any).client = { GET: mockGet, PATCH: mockPatch, DELETE: vi.fn() };
+    document.body.appendChild(el);
     await (el as any).updateComplete;
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
@@ -202,6 +208,7 @@ describe('OrAgentDetail — extensions (Task 2b)', () => {
     (el as any).orgId = 'test-org';
     (el as any).entityId = MOCK_AGENT.id;
     (el as any).client = { GET: mockGet, PATCH: vi.fn(), DELETE: vi.fn() };
+    document.body.appendChild(el);
     await (el as any).updateComplete;
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
@@ -222,6 +229,7 @@ describe('OrAgentDetail — extensions (Task 2b)', () => {
     // Set wrapup_until 5 seconds from now
     const wrapupUntil = new Date(Date.now() + 5000).toISOString();
     (el as any).wrapupUntil = wrapupUntil;
+    // Append AFTER setting all props
     document.body.appendChild(el);
     await (el as any).updateComplete;
 
