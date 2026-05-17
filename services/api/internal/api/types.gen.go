@@ -83,24 +83,33 @@ func (e ChannelType) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeCrossOrg          ErrorCode = "cross_org"
-	ErrorCodeImportFailed      ErrorCode = "import_failed"
-	ErrorCodeInternal          ErrorCode = "internal"
-	ErrorCodeInvalidBody       ErrorCode = "invalid_body"
-	ErrorCodeInvalidId         ErrorCode = "invalid_id"
-	ErrorCodeInvalidOrgId      ErrorCode = "invalid_org_id"
-	ErrorCodeInvalidReference  ErrorCode = "invalid_reference"
-	ErrorCodeInvalidTransition ErrorCode = "invalid_transition"
-	ErrorCodeInvalidValue      ErrorCode = "invalid_value"
-	ErrorCodeNotFound          ErrorCode = "not_found"
-	ErrorCodeRateLimited       ErrorCode = "rate_limited"
-	ErrorCodeVersionConflict   ErrorCode = "version_conflict"
+	ErrorCodeCrossOrg            ErrorCode = "cross_org"
+	ErrorCodeDuplicateCode       ErrorCode = "duplicate_code"
+	ErrorCodeDuplicateExternalId ErrorCode = "duplicate_external_id"
+	ErrorCodeImmutableField      ErrorCode = "immutable_field"
+	ErrorCodeImportFailed        ErrorCode = "import_failed"
+	ErrorCodeInternal            ErrorCode = "internal"
+	ErrorCodeInvalidBody         ErrorCode = "invalid_body"
+	ErrorCodeInvalidId           ErrorCode = "invalid_id"
+	ErrorCodeInvalidOrgId        ErrorCode = "invalid_org_id"
+	ErrorCodeInvalidReference    ErrorCode = "invalid_reference"
+	ErrorCodeInvalidTransition   ErrorCode = "invalid_transition"
+	ErrorCodeInvalidValue        ErrorCode = "invalid_value"
+	ErrorCodeNotFound            ErrorCode = "not_found"
+	ErrorCodeRateLimited         ErrorCode = "rate_limited"
+	ErrorCodeVersionConflict     ErrorCode = "version_conflict"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
 	case ErrorCodeCrossOrg:
+		return true
+	case ErrorCodeDuplicateCode:
+		return true
+	case ErrorCodeDuplicateExternalId:
+		return true
+	case ErrorCodeImmutableField:
 		return true
 	case ErrorCodeImportFailed:
 		return true
@@ -353,10 +362,24 @@ type Adapter struct {
 	// AdapterType Identifier for the adapter kind (e.g. "freeswitch", "livekit", "twilio"). Free text — the platform does not restrict values in v0.1.
 	AdapterType string `json:"adapter_type"`
 
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code string `json:"code"`
+
 	// Config Free-form JSONB configuration blob. Shape is adapter-type-specific. No vendor-specific fixed columns — everything goes in this field.
 	Config    *map[string]interface{} `json:"config,omitempty"`
 	CreatedAt *time.Time              `json:"created_at,omitempty"`
 	Enabled   bool                    `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -378,6 +401,11 @@ type Adapter struct {
 
 // Agent An agent in the catalog. Agents are the humans (or bots) who handle routed interactions. Each agent belongs to exactly one org.
 type Agent struct {
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// Email Agent email address.
@@ -386,8 +414,13 @@ type Agent struct {
 	// Enabled Soft-delete flag. `false` means the agent is disabled and will not appear in default list responses (CAT-09). Use `?include_disabled=true` to surface disabled agents.
 	Enabled bool `json:"enabled"`
 
-	// ExternalId Caller-assigned stable identifier for sync/import (e.g. HR system employee ID). Unique within the org. `UNIQUE (org_id, external_id)`.
-	ExternalId string `json:"external_id"`
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -412,10 +445,22 @@ type Agent struct {
 
 // AgentListItem Flat agent record returned in list responses. Skills are intentionally omitted (OQ-1A resolution — embed skills only on detail responses).
 type AgentListItem struct {
-	CreatedAt  *time.Time          `json:"created_at,omitempty"`
-	Email      openapi_types.Email `json:"email"`
-	Enabled    bool                `json:"enabled"`
-	ExternalId string              `json:"external_id"`
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string              `json:"code"`
+	CreatedAt *time.Time          `json:"created_at,omitempty"`
+	Email     openapi_types.Email `json:"email"`
+	Enabled   bool                `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -502,11 +547,24 @@ type AgentStatus string
 
 // BreakReason A configurable reason an agent can enter the Break state. Each reason has a `routable` flag that determines whether the agent is eligible for routing while on break. The `IsRoutable` domain helper checks this (STATE-10).
 type BreakReason struct {
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// DisplayOrder Sort position in the break reason picker. Lower values appear first.
 	DisplayOrder int  `json:"display_order"`
 	Enabled      bool `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -566,12 +624,25 @@ type BulkImportResult struct {
 type Channel struct {
 	// ChannelType Supported channel types in v0.1.
 	ChannelType ChannelType `json:"channel_type"`
-	CreatedAt   *time.Time  `json:"created_at,omitempty"`
+
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// DefaultQueueId Default queue for interactions arriving on this channel when no flow route is configured. Null means no default queue.
 	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
 	Enabled        bool    `json:"enabled"`
-	ExternalId     string  `json:"external_id"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -596,22 +667,35 @@ type ChannelType string
 type CreateAdapterRequest struct {
 	AdapterType string `json:"adapter_type"`
 
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code string `json:"code"`
+
 	// Config Free-form JSONB configuration blob. Null to leave empty.
 	Config  *map[string]interface{} `json:"config,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
-	Name    string                  `json:"name"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
 }
 
 // CreateAgentRequest Request body for creating an agent.
 type CreateAgentRequest struct {
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code string `json:"code"`
+
 	// Email Agent email address.
 	Email openapi_types.Email `json:"email"`
 
 	// Enabled Initial enabled state. Defaults to `true`.
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// ExternalId Caller-assigned stable identifier. Must be unique within the org.
-	ExternalId string `json:"external_id"`
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Name Display name.
 	Name string `json:"name"`
@@ -622,44 +706,75 @@ type CreateAgentRequest struct {
 
 // CreateBreakReasonRequest defines model for CreateBreakReasonRequest.
 type CreateBreakReasonRequest struct {
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code         string `json:"code"`
 	DisplayOrder int    `json:"display_order"`
 	Enabled      *bool  `json:"enabled,omitempty"`
-	Name         string `json:"name"`
-	Routable     bool   `json:"routable"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
+	Routable   bool    `json:"routable"`
 }
 
 // CreateChannelRequest defines model for CreateChannelRequest.
 type CreateChannelRequest struct {
 	// ChannelType Supported channel types in v0.1.
-	ChannelType    ChannelType `json:"channel_type"`
-	DefaultQueueId *UUIDv7     `json:"default_queue_id,omitempty"`
-	Enabled        *bool       `json:"enabled,omitempty"`
-	ExternalId     string      `json:"external_id"`
-	Name           string      `json:"name"`
+	ChannelType ChannelType `json:"channel_type"`
+
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code           string  `json:"code"`
+	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
+	Enabled        *bool   `json:"enabled,omitempty"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
 }
 
 // CreateQueueRequest defines model for CreateQueueRequest.
 type CreateQueueRequest struct {
 	AcwSec       int           `json:"acw_sec"`
 	ChannelTypes []ChannelType `json:"channel_types"`
-	Enabled      *bool         `json:"enabled,omitempty"`
-	ExternalId   string        `json:"external_id"`
-	Name         string        `json:"name"`
-	Priority     int           `json:"priority"`
+
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code    string `json:"code"`
+	Enabled *bool  `json:"enabled,omitempty"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
+	Priority   int     `json:"priority"`
 }
 
 // CreateSkillRequest defines model for CreateSkillRequest.
 type CreateSkillRequest struct {
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code        string  `json:"code"`
 	Description *string `json:"description,omitempty"`
 	Enabled     *bool   `json:"enabled,omitempty"`
-	ExternalId  string  `json:"external_id"`
-	Name        string  `json:"name"`
-	SkillType   string  `json:"skill_type"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
+	SkillType  string  `json:"skill_type"`
 }
 
 // ErrorCode Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
 // criterion 4). Clients branch on this value — never on `reason` or HTTP
 // status alone.
+//
+// Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+// `immutable_field` to support the universal `code` identity model
+// (D04_1-16, D04_1-20).
 type ErrorCode string
 
 // ErrorResponse Canonical error envelope (D-35). Present on every 4xx/5xx response.
@@ -670,6 +785,10 @@ type ErrorResponse struct {
 	// Error Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
 	// criterion 4). Clients branch on this value — never on `reason` or HTTP
 	// status alone.
+	//
+	// Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+	// `immutable_field` to support the universal `code` identity model
+	// (D04_1-16, D04_1-20).
 	Error ErrorCode `json:"error"`
 
 	// Reason Human-readable contextual detail for debugging. Clients MUST NOT branch on this value — it is subject to change across minor versions.
@@ -830,9 +949,22 @@ type Queue struct {
 
 	// ChannelTypes Channel types this queue accepts (e.g. ["voice", "chat"]).
 	ChannelTypes []ChannelType `json:"channel_types"`
-	CreatedAt    *time.Time    `json:"created_at,omitempty"`
-	Enabled      bool          `json:"enabled"`
-	ExternalId   string        `json:"external_id"`
+
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Enabled   bool       `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -875,12 +1007,24 @@ type ReadinessResponseStatus string
 
 // Skill A skill in the catalog. Skills are assigned to agents with a proficiency rating.
 type Skill struct {
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// Description Optional long-form description.
 	Description *string `json:"description,omitempty"`
 	Enabled     bool    `json:"enabled"`
-	ExternalId  string  `json:"external_id"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -908,10 +1052,22 @@ type UUIDv7 = openapi_types.UUID
 type UpdateAdapterRequest struct {
 	AdapterType *string `json:"adapter_type,omitempty"`
 
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code *string `json:"code,omitempty"`
+
 	// Config Free-form JSONB configuration blob. Null to clear.
 	Config  *map[string]interface{} `json:"config,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
-	Name    *string                 `json:"name,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
+	// (re)bind to an external row; pass JSON null to clear the
+	// binding; omit the field to leave unchanged.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
 
 	// Version Current optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -919,9 +1075,20 @@ type UpdateAdapterRequest struct {
 
 // UpdateAgentRequest Request body for updating an agent. Include `version` from the last GET response for optimistic concurrency (CAT-08).
 type UpdateAgentRequest struct {
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code    *string              `json:"code,omitempty"`
 	Email   *openapi_types.Email `json:"email,omitempty"`
 	Enabled *bool                `json:"enabled,omitempty"`
-	Name    *string              `json:"name,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
+	// (re)bind to an external row; pass JSON null to clear the
+	// binding; omit the field to leave unchanged.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
 
 	// Skills Full-replacement skill assignment array (PUT semantics on the join table — OQ-1A resolution). Replaces the entire set atomically. Omit to leave skills unchanged.
 	Skills *[]AgentSkillAssignment `json:"skills,omitempty"`
@@ -932,10 +1099,21 @@ type UpdateAgentRequest struct {
 
 // UpdateBreakReasonRequest defines model for UpdateBreakReasonRequest.
 type UpdateBreakReasonRequest struct {
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code         *string `json:"code,omitempty"`
 	DisplayOrder *int    `json:"display_order,omitempty"`
 	Enabled      *bool   `json:"enabled,omitempty"`
-	Name         *string `json:"name,omitempty"`
-	Routable     *bool   `json:"routable,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
+	// (re)bind to an external row; pass JSON null to clear the
+	// binding; omit the field to leave unchanged.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	Routable   *bool   `json:"routable,omitempty"`
 
 	// Version Optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -944,10 +1122,22 @@ type UpdateBreakReasonRequest struct {
 // UpdateChannelRequest Request body for updating a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08).
 type UpdateChannelRequest struct {
 	// ChannelType Supported channel types in v0.1.
-	ChannelType    *ChannelType `json:"channel_type,omitempty"`
-	DefaultQueueId *UUIDv7      `json:"default_queue_id,omitempty"`
-	Enabled        *bool        `json:"enabled,omitempty"`
-	Name           *string      `json:"name,omitempty"`
+	ChannelType *ChannelType `json:"channel_type,omitempty"`
+
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code           *string `json:"code,omitempty"`
+	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
+	Enabled        *bool   `json:"enabled,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
+	// (re)bind to an external row; pass JSON null to clear the
+	// binding; omit the field to leave unchanged.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
 
 	// Version Current optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -957,9 +1147,21 @@ type UpdateChannelRequest struct {
 type UpdateQueueRequest struct {
 	AcwSec       *int           `json:"acw_sec,omitempty"`
 	ChannelTypes *[]ChannelType `json:"channel_types,omitempty"`
-	Enabled      *bool          `json:"enabled,omitempty"`
-	Name         *string        `json:"name,omitempty"`
-	Priority     *int           `json:"priority,omitempty"`
+
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code    *string `json:"code,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
+	// (re)bind to an external row; pass JSON null to clear the
+	// binding; omit the field to leave unchanged.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	Priority   *int    `json:"priority,omitempty"`
 
 	// Version Optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -967,10 +1169,21 @@ type UpdateQueueRequest struct {
 
 // UpdateSkillRequest defines model for UpdateSkillRequest.
 type UpdateSkillRequest struct {
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code        *string `json:"code,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Enabled     *bool   `json:"enabled,omitempty"`
-	Name        *string `json:"name,omitempty"`
-	SkillType   *string `json:"skill_type,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
+	// (re)bind to an external row; pass JSON null to clear the
+	// binding; omit the field to leave unchanged.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	SkillType  *string `json:"skill_type,omitempty"`
 
 	// Version Optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`

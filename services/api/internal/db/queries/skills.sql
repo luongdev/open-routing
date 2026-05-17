@@ -16,26 +16,32 @@
 -- nil — a caller CANNOT clear a previously-set description back to NULL
 -- through PATCH in v0.1. A dedicated "unset description" endpoint or a
 -- distinguishable sentinel (e.g., empty string) is deferred to v0.2.
+--
+-- (Phase 04.1) `code TEXT NOT NULL` added; included in SELECT/INSERT/RETURNING.
+--   UpdateX does NOT mutate `code` — the param list excludes it; the SET
+--   clause excludes it; the handler enforces immutability via Layer 2.
+--   New per-entity GetSkillByCode + UpsertSkillByCode queries authored for
+--   Phase 5 (Phase 04.1 does NOT invoke them).
 
 -- name: InsertSkill :one
-INSERT INTO skills (id, org_id, external_id, name, description, skill_type, enabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at;
+INSERT INTO skills (id, org_id, code, external_id, name, description, skill_type, enabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at;
 
 -- name: GetSkill :one
-SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
+SELECT id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at
 FROM skills
 WHERE id = $1 AND org_id = $2;
 
 -- name: GetSkillByIdAnyVersion :one
 -- D-66 disambiguation probe (404-vs-409 after a 0-row UpdateSkill).
-SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
+SELECT id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at
 FROM skills
 WHERE id = $1 AND org_id = $2;
 
 -- name: ListSkills :many
 -- Default-list path (D-65): enabled = TRUE.
-SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
+SELECT id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at
 FROM skills
 WHERE org_id = $1
   AND enabled = TRUE
@@ -48,7 +54,7 @@ LIMIT $2;
 
 -- name: ListSkillsIncludingDisabled :many
 -- ?include_disabled=true (CAT-09) path.
-SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
+SELECT id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at
 FROM skills
 WHERE org_id = $1
   AND (sqlc.narg('cursor_at')::timestamptz IS NULL
@@ -60,9 +66,14 @@ LIMIT $2;
 
 -- name: UpdateSkill :one
 -- D-66 atomic version-checked UPDATE. Sparse-PATCH semantics via COALESCE
--- on mutable columns (Codex C3 iter 3): name, description, skill_type, enabled.
+-- on mutable columns (Codex C3 iter 3): external_id, name, description,
+-- skill_type, enabled.
+--
+-- Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
+-- from SET clause and parameter list. external_id IS mutable (D04_1-07).
 UPDATE skills
-SET name        = COALESCE(sqlc.narg('name')::text,        name),
+SET external_id = COALESCE(sqlc.narg('external_id')::text, external_id),
+    name        = COALESCE(sqlc.narg('name')::text,        name),
     description = COALESCE(sqlc.narg('description')::text, description),
     skill_type  = COALESCE(sqlc.narg('skill_type')::text,  skill_type),
     enabled     = COALESCE(sqlc.narg('enabled')::bool,     enabled),
@@ -71,10 +82,34 @@ SET name        = COALESCE(sqlc.narg('name')::text,        name),
 WHERE id = sqlc.arg('id')
   AND org_id = sqlc.arg('org_id')
   AND version = sqlc.arg('expected_version')
-RETURNING id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at;
+RETURNING id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at;
 
 -- name: SoftDeleteSkill :execrows
 -- Idempotent soft delete (CAT-09, D-65).
 UPDATE skills
 SET enabled = FALSE, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND enabled = TRUE;
+
+-- name: GetSkillByCode :one
+-- Authored in Phase 04.1; invoked by Phase 5 upsert-by-code lookup (IMP-03).
+-- Two-org isolation preserved: composite (org_id, code) match — cross-org
+-- code probes return pgx.ErrNoRows (FOUND-08).
+SELECT id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at
+FROM skills
+WHERE org_id = $1 AND code = $2;
+
+-- name: UpsertSkillByCode :one
+-- Phase 5 bulk-import target (IMP-03). The ON CONFLICT path leaves code
+-- untouched (it IS the conflict target). external_id can be (re)bound
+-- on conflict. Phase 5 Wave 1 invokes this; Phase 04.1 just authors it.
+INSERT INTO skills (id, org_id, code, external_id, name, description, skill_type, enabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (org_id, code) DO UPDATE
+    SET external_id = EXCLUDED.external_id,
+        name        = EXCLUDED.name,
+        description = EXCLUDED.description,
+        skill_type  = EXCLUDED.skill_type,
+        enabled     = EXCLUDED.enabled,
+        version     = skills.version + 1,
+        updated_at  = NOW()
+RETURNING id, org_id, code, external_id, name, description, skill_type, enabled, version, created_at, updated_at;

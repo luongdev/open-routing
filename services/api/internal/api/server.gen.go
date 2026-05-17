@@ -2516,6 +2516,20 @@ func (response CreateAdapter400JSONResponse) VisitCreateAdapterResponse(w http.R
 	return err
 }
 
+type CreateAdapter409JSONResponse ErrorResponse
+
+func (response CreateAdapter409JSONResponse) VisitCreateAdapterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateAdapter500JSONResponse struct {
 	InternalServerErrorJSONResponse
 }
@@ -2732,6 +2746,20 @@ func (response UpdateAdapter409JSONResponse) VisitUpdateAdapterResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAdapter422JSONResponse ErrorResponse
+
+func (response UpdateAdapter422JSONResponse) VisitUpdateAdapterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3617,6 +3645,20 @@ func (response UpdateBreakReason409JSONResponse) VisitUpdateBreakReasonResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBreakReason422JSONResponse ErrorResponse
+
+func (response UpdateBreakReason422JSONResponse) VisitUpdateBreakReasonResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4509,6 +4551,20 @@ func (response UpdateQueue409JSONResponse) VisitUpdateQueueResponse(w http.Respo
 	return err
 }
 
+type UpdateQueue422JSONResponse ErrorResponse
+
+func (response UpdateQueue422JSONResponse) VisitUpdateQueueResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateQueue500JSONResponse struct {
 	InternalServerErrorJSONResponse
 }
@@ -4852,6 +4908,20 @@ func (response UpdateSkill409JSONResponse) VisitUpdateSkillResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSkill422JSONResponse ErrorResponse
+
+func (response UpdateSkill422JSONResponse) VisitUpdateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }

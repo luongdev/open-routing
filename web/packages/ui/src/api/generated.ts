@@ -109,7 +109,7 @@ export interface paths {
         put?: never;
         /**
          * Create an agent
-         * @description Creates a new agent in the org. The server mints a UUIDv7 `id`. `external_id` must be unique within the org (FOUND-06). Skills can be provided at creation time via the `skills` array.
+         * @description Creates a new agent in the org. The server mints a UUIDv7 `id`. `code` is required and must be unique within the org; `external_id` is optional and unique within the org when set. Skills can be provided at creation time via the `skills` array.
          */
         post: operations["CreateAgent"];
         delete?: never;
@@ -647,9 +647,13 @@ export interface components {
          * @description Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
          *     criterion 4). Clients branch on this value — never on `reason` or HTTP
          *     status alone.
+         *
+         *     Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+         *     `immutable_field` to support the universal `code` identity model
+         *     (D04_1-16, D04_1-20).
          * @enum {string}
          */
-        ErrorCode: "invalid_body" | "invalid_id" | "not_found" | "internal" | "version_conflict" | "cross_org" | "invalid_org_id" | "invalid_transition" | "import_failed" | "rate_limited" | "invalid_reference" | "invalid_value";
+        ErrorCode: "invalid_body" | "invalid_id" | "not_found" | "internal" | "version_conflict" | "cross_org" | "duplicate_code" | "duplicate_external_id" | "invalid_org_id" | "invalid_transition" | "import_failed" | "immutable_field" | "rate_limited" | "invalid_reference" | "invalid_value";
         /**
          * @description Canonical error envelope (D-35). Present on every 4xx/5xx response.
          *     `request_id` is omitted on bypass routes that run before the RequestID
@@ -737,10 +741,23 @@ export interface components {
             /** @description The org this agent belongs to. */
             org_id: components["schemas"]["UUIDv7"];
             /**
-             * @description Caller-assigned stable identifier for sync/import (e.g. HR system employee ID). Unique within the org. `UNIQUE (org_id, external_id)`.
-             * @example EMP-0042
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example emp_0042
              */
-            external_id: string;
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /**
              * @description Display name of the agent.
              * @example Alice Nguyen
@@ -779,8 +796,24 @@ export interface components {
         AgentListItem: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example EMP-0042 */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example emp_0042
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /** @example Alice Nguyen */
             name: string;
             /**
@@ -806,10 +839,17 @@ export interface components {
         /** @description Request body for creating an agent. */
         CreateAgentRequest: {
             /**
-             * @description Caller-assigned stable identifier. Must be unique within the org.
-             * @example EMP-0042
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example emp_0042
              */
-            external_id: string;
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /**
              * @description Display name.
              * @example Alice Nguyen
@@ -831,6 +871,22 @@ export interface components {
         };
         /** @description Request body for updating an agent. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateAgentRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example emp_0042
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a string to
+             *     (re)bind to an external row; pass JSON null to clear the
+             *     binding; omit the field to leave unchanged.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /** @example Alice Nguyen */
             name?: string;
             /**
@@ -851,8 +907,24 @@ export interface components {
         Skill: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example SKILL-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example skill_voice_tier1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-SKILL-VOICE
+             */
+            external_id?: string | null;
             /** @example Billing Support */
             name: string;
             /**
@@ -881,8 +953,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateSkillRequest: {
-            /** @example SKILL-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example skill_voice_tier1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example HR-SKILL-VOICE
+             */
+            external_id?: string | null;
             /** @example Billing Support */
             name: string;
             /** @example Handle billing inquiries and payment disputes. */
@@ -893,6 +975,22 @@ export interface components {
             enabled: boolean;
         };
         UpdateSkillRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example skill_voice_tier1
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a string to
+             *     (re)bind to an external row; pass JSON null to clear the
+             *     binding; omit the field to leave unchanged.
+             * @example HR-SKILL-VOICE
+             */
+            external_id?: string | null;
             /** @example Billing Support */
             name?: string;
             description?: string | null;
@@ -909,8 +1007,24 @@ export interface components {
         Queue: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example QUEUE-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example queue_billing
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example CRM-Q-BILLING
+             */
+            external_id?: string | null;
             /** @example Billing Queue */
             name: string;
             /** @description Channel types this queue accepts (e.g. ["voice", "chat"]). */
@@ -941,8 +1055,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateQueueRequest: {
-            /** @example QUEUE-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example queue_billing
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example CRM-Q-BILLING
+             */
+            external_id?: string | null;
             /** @example Billing Queue */
             name: string;
             channel_types: components["schemas"]["ChannelType"][];
@@ -954,6 +1078,22 @@ export interface components {
             enabled: boolean;
         };
         UpdateQueueRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example queue_billing
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a string to
+             *     (re)bind to an external row; pass JSON null to clear the
+             *     binding; omit the field to leave unchanged.
+             * @example CRM-Q-BILLING
+             */
+            external_id?: string | null;
             name?: string;
             channel_types?: components["schemas"]["ChannelType"][];
             priority?: number;
@@ -974,8 +1114,24 @@ export interface components {
         Channel: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example CHAN-VOICE-MAIN */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example channel_voice_primary
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example CRM-CH-VOICE
+             */
+            external_id?: string | null;
             /** @example Main Voice Channel */
             name: string;
             channel_type: components["schemas"]["ChannelType"];
@@ -1000,8 +1156,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateChannelRequest: {
-            /** @example CHAN-VOICE-MAIN */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example channel_voice_primary
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example CRM-CH-VOICE
+             */
+            external_id?: string | null;
             /** @example Main Voice Channel */
             name: string;
             channel_type: components["schemas"]["ChannelType"];
@@ -1011,6 +1177,22 @@ export interface components {
         };
         /** @description Request body for updating a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateChannelRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example channel_voice_primary
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a string to
+             *     (re)bind to an external row; pass JSON null to clear the
+             *     binding; omit the field to leave unchanged.
+             * @example CRM-CH-VOICE
+             */
+            external_id?: string | null;
             /**
              * @description Current optimistic-lock version. Mismatch → HTTP 409.
              * @example 1
@@ -1025,6 +1207,24 @@ export interface components {
         Adapter: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example adapter_freeswitch_dc1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example MDM-ADAPTER-FS-DC1
+             */
+            external_id?: string | null;
             /**
              * @description Display name for this adapter configuration.
              * @example FreeSWITCH Bridge - DC1
@@ -1064,6 +1264,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateAdapterRequest: {
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example adapter_freeswitch_dc1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example MDM-ADAPTER-FS-DC1
+             */
+            external_id?: string | null;
             /** @example FreeSWITCH Bridge - DC1 */
             name: string;
             /** @example freeswitch */
@@ -1077,6 +1289,22 @@ export interface components {
         };
         /** @description Request body for updating an adapter. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateAdapterRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example adapter_freeswitch_dc1
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a string to
+             *     (re)bind to an external row; pass JSON null to clear the
+             *     binding; omit the field to leave unchanged.
+             * @example MDM-ADAPTER-FS-DC1
+             */
+            external_id?: string | null;
             /**
              * @description Current optimistic-lock version. Mismatch → HTTP 409.
              * @example 1
@@ -1094,6 +1322,24 @@ export interface components {
         BreakReason: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example break_lunch
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-BREAK-LUNCH
+             */
+            external_id?: string | null;
             /**
              * @description Display label shown on the agent desktop.
              * @example Lunch
@@ -1125,6 +1371,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateBreakReasonRequest: {
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example break_lunch
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example HR-BREAK-LUNCH
+             */
+            external_id?: string | null;
             /** @example Lunch */
             name: string;
             /** @example false */
@@ -1135,6 +1393,22 @@ export interface components {
             enabled: boolean;
         };
         UpdateBreakReasonRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example break_lunch
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a string to
+             *     (re)bind to an external row; pass JSON null to clear the
+             *     binding; omit the field to leave unchanged.
+             * @example HR-BREAK-LUNCH
+             */
+            external_id?: string | null;
             name?: string;
             routable?: boolean;
             display_order?: number;
@@ -1602,7 +1876,14 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id` within the org, or optimistic concurrency conflict (version mismatch, CAT-08). On version mismatch the body includes the current server-side record. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). For agents only, an optimistic
+             *     concurrency conflict on PATCH may also surface here (CAT-08,
+             *     ErrorCode=version_conflict). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1745,12 +2026,15 @@ export interface operations {
                 };
             };
             /**
-             * @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, ROADMAP Phase 3 CRIT 4). Two flavors share this status: (a) `invalid_reference` — a `skills[].skill_id` references a skill
-             *         that does not exist in the caller's org (CAT-03, PUT-semantics
-             *         replacement).
-             *     (b) `invalid_value` — a `skills[].proficiency` value is outside
-             *         the inclusive range 1-10.
-             *     The `field` slot in ErrorResponse identifies which request body path failed (e.g. `skills[0].proficiency`).
+             * @description Business-rule violation. ErrorCode disambiguates: (a)
+             *     `immutable_field` — PATCH attempted to change a field that is
+             *     immutable in v0.1 (e.g., `code`; rename support deferred to
+             *     v0.2 per D04_1-02); (b) `invalid_reference` — a `skills[].skill_id`
+             *     references a skill that does not exist in the caller's org
+             *     (CAT-03, PUT-semantics replacement); (c) `invalid_value` — a
+             *     `skills[].proficiency` value is outside the inclusive range
+             *     1-10. The `field` slot in ErrorResponse identifies which
+             *     request body path failed (e.g. `code` or `skills[0].proficiency`).
              */
             422: {
                 headers: {
@@ -1931,7 +2215,12 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id` within the org. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2058,6 +2347,19 @@ export interface operations {
                     };
                 };
             };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2137,7 +2439,12 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id`. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2264,6 +2571,19 @@ export interface operations {
                     };
                 };
             };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2343,7 +2663,12 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id`. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2479,7 +2804,15 @@ export interface operations {
                     };
                 };
             };
-            /** @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, D-76). For UpdateChannel: the supplied `default_queue_id` does not exist (or is disabled) in the caller's org. Returns `ErrorCode=invalid_reference`. The `field` slot in ErrorResponse identifies which request body path failed (e.g. `default_queue_id`). */
+            /**
+             * @description Business-rule violation. ErrorCode disambiguates: (a)
+             *     `immutable_field` — PATCH attempted to change a field that is
+             *     immutable in v0.1 (e.g., `code`; rename support deferred to
+             *     v0.2 per D04_1-02); (b) `invalid_reference` — the supplied
+             *     `default_queue_id` does not exist (or is disabled) in the
+             *     caller's org. The `field` slot in ErrorResponse identifies
+             *     which request body path failed (e.g. `code` or `default_queue_id`).
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2567,6 +2900,21 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Phase 04.1 added these
+             *     uniqueness constraints to adapters — pre-04.1 adapters had only
+             *     PRIMARY KEY(id) uniqueness so 23505 was impossible.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2685,6 +3033,19 @@ export interface operations {
                     };
                 };
             };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2764,7 +3125,14 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description UNIQUE(org_id, name) collision — the supplied name already exists in this org. Wave 5 cross-AI review: 23505 surfaced as 500 was poisoning 5xx metrics for a client-correctable error. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Phase 04.1 dropped the
+             *     previous `UNIQUE(org_id, name)` constraint and replaced it
+             *     with the universal `(org_id, code)` identity model (D04_1-09).
+             *     Clients should branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2889,6 +3257,19 @@ export interface operations {
                     "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["BreakReason"];
                     };
+                };
+            };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             500: components["responses"]["InternalServerError"];
