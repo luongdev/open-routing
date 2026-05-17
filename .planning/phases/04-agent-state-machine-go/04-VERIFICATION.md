@@ -18,7 +18,7 @@ re_verification: false
 
 ## Verdict: PASS
 
-All 5 ROADMAP success criteria verified with file:line evidence. All 10 STATE-* requirements verified. All 4 cross-AI HIGH fixes confirmed in code. All 5 Pitfall mitigations confirmed. Full test suite: **404 passed, 0 failed** (`go test -count=1 ./...`). `go vet ./...` clean.
+All 5 ROADMAP success criteria verified with file:line evidence. All 10 STATE-* requirements verified. All 4 cross-AI HIGH fixes confirmed in code. All 5 Pitfall mitigations confirmed. Full test suite passed (`go test -count=1 ./...` and `go test -race -count=1 ./...`). `go vet ./...` clean.
 
 ---
 
@@ -42,7 +42,7 @@ All 5 ROADMAP success criteria verified with file:line evidence. All 10 STATE-* 
 | STATE-02 | PATCH accepts: NotReady↔Ready, Ready→Break, Break→Ready, Break→NotReady, WrapUp→Ready, WrapUp→NotReady | VERIFIED | `transitions.go:32` — matrix encodes exactly 7 edges; `transitions_test.go:12` — exhaustive walk confirms all 7 allowed (require.Len check enforces count); `agent_states_test.go:392` — live acceptance test |
 | STATE-03 | Invalid transitions → 409 with `{"from","to","error":"invalid_transition"}` | VERIFIED | `agent_states.go:208-215` — `validateTransition` error → `PatchAgentStatus409JSONResponse(InvalidTransitionErrorResponse{...})`; `agent_states_test.go:143` — `TestPatchAgentStatus_InvalidTransition_409` asserts `api.InvalidTransition` + `from/to` fields |
 | STATE-04 | `Ready→Break` requires same-org `break_reason_id`; missing/cross-org → 422 | VERIFIED | `agent_states.go:179-203` — break_reason probe runs first (before matrix); `agent_states_test.go:173` — nil 422; line 201 — non-existent 422; `test/isolation/state_test.go:121` — cross-org 422; line 167 — force=true also 422 |
-| STATE-05 | `Engaged` carries `engaged_channel`; system-initiated transitions schema-ready | VERIFIED | `migrations/000002_catalog_v0_1.up.sql:196` — `engaged_channel CHECK`; `agent_states.sql:31` — `COALESCE` preserves existing channel; `transitions_test.go:57` — `TestMatrix_EngagedDeferred` confirms Ready→Engaged is NOT in v0.1 matrix |
+| STATE-05 | `Engaged` carries `engaged_channel`; system-initiated transitions schema-ready | VERIFIED | `migrations/000002_catalog_v0_1.up.sql:196` — `engaged_channel CHECK`; `agent_states.sql:30-34` — preserves channel only while target remains Engaged and clears it otherwise; `agent_states_test.go:293` — forced Engaged→NotReady clears stale channel; `transitions_test.go:57` — `TestMatrix_EngagedDeferred` confirms Ready→Engaged is NOT in v0.1 matrix |
 | STATE-06 | Agent can set `post_interaction_state` while Engaged | VERIFIED | `agent_states.go:315-318` — `buildUpdateParams` gates PIS write on `expectedFrom==Engaged AND target∈{Engaged,WrapUp}`; `agent_states.go:338-342` — same in `buildForceUpdateParams`; `agent_states.sql:33` — explicit assignment (not COALESCE) so nil clears stale value |
 | STATE-07 | Server-owned WrapUp TTL goroutine fires `WrapUp → post_interaction_state` on expiry | VERIFIED | `ttl.go:30` — `scheduleWrapUpExpiry` per-agent `clockwork.AfterFunc`; `ttl.go:132` — `startupSweep`; `ttl.go:160` — `safetySweep` 30s ticker; `handlers.go:97` — `Start` runs startup sweep synchronously; `ttl_test.go:38,91,135,173` — clockwork-driven TTL tests |
 | STATE-08 | Monotonic `state_version` on every mutation | VERIFIED | `agent_states.sql:35,55,93` — `state_version = state_version + 1` in all three UPDATE queries; `agent_states_test.go:102` — `TestPatchAgentStatus_StateVersionMonotonic`; line 546 — `TestAcceptance_StateVersionMonotonic` |
@@ -56,7 +56,7 @@ All 5 ROADMAP success criteria verified with file:line evidence. All 10 STATE-* 
 | Fix | Expected Pattern | Status | Evidence |
 |-----|-----------------|--------|----------|
 | F-1 | Wave 3 depends_on bump to 04-03 (executor-time only; code-invisible) | VERIFIED (not observable in code; executor-time plan fix) | Plan dependency graph documented in `04-06-SUMMARY.md` frontmatter |
-| F-2 | `ExpireWrapUp` uses CASE post_interaction_state translation (not COALESCE) — Gemini HIGH-1 | VERIFIED | `agent_states.sql:86-90` — `CASE post_interaction_state WHEN 'ready' THEN 'Ready' WHEN 'not_ready' THEN 'NotReady' ELSE 'NotReady' END`; comment on line 79 documents the Gemini-HIGH-1 rationale |
+| F-2 | `ExpireWrapUp` uses CASE post_interaction_state translation (not COALESCE) and clears PIS after expiry — Gemini HIGH-1 | VERIFIED | `agent_states.sql:92-99` — `CASE post_interaction_state WHEN 'ready' THEN 'Ready' WHEN 'not_ready' THEN 'NotReady' ELSE 'NotReady' END`, then `post_interaction_state = NULL`; `ttl_test.go:135` covers both target states |
 | F-3 | `scheduleWrapUpExpiry` uses `var t clockwork.Timer` + `cur == t` pointer-equality — Gemini HIGH-2 | VERIFIED | `ttl.go:57` — `var t clockwork.Timer`; `ttl.go:76` — `if cur, ok := s.timers.t[agentID]; ok && cur == t`; comment on lines 26-29 documents the pointer-equality rationale |
 | F-4 | `jitter()` function, `uuid.New().Time()`, `pgtype.Text` guard, and `pgtype` import all ABSENT (Codex HIGH-2 + Gemini MED) | VERIFIED (absent) | grep across `ttl.go`, `handlers.go`, `agent_states.go` returns zero matches for `jitter`, `uuid.New`, `pgtype.Text`; `pgtype` IS imported in `agent_states.go:10` as `pgtype.UUID` (correct use); no spurious pgtype.Text |
 
@@ -136,7 +136,7 @@ All 5 ROADMAP success criteria verified with file:line evidence. All 10 STATE-* 
 | `TestAcceptance_WrapUpExpiresWithoutClient` — real clock 1s TTL | `agent_states_test.go:496` — 8s timeout, 100ms poll | PASS |
 | `TestState_ForceDoesNotBypassCrossOrgBreakReason_422` — D-94(c) | `test/isolation/state_test.go:167` — force=true + cross-org still 422 | PASS |
 | `TestCreateAgentSeedsState` — D-93 atomic seeding | `test/isolation/state_test.go:199` — GET /status immediately after POST /agents → 200 | PASS |
-| Full suite: `go test -count=1 ./...` | 404 passed, 0 failed | PASS |
+| Full suite: `go test -count=1 ./...` | passed | PASS |
 | `go vet ./...` | No issues | PASS |
 
 ---
@@ -155,7 +155,7 @@ Step 7c: SKIPPED (no probe-*.sh scripts declared in any phase plan or found unde
 | STATE-02 | 04-02-PLAN.md | Allowed transitions via PATCH | SATISFIED | transitions.go:32 + transitions_test.go:12 |
 | STATE-03 | 04-03-PLAN.md | Invalid → 409 with from/to | SATISFIED | agent_states.go:208 + agent_states_test.go:143 |
 | STATE-04 | 04-03-PLAN.md | Break requires same-org break_reason_id | SATISFIED | agent_states.go:179 + isolation/state_test.go:121 |
-| STATE-05 | 04-02-PLAN.md | Engaged carries engaged_channel | SATISFIED | migration:196 + agent_states.sql:31 (COALESCE) |
+| STATE-05 | 04-02-PLAN.md | Engaged carries engaged_channel | SATISFIED | migration:196 + agent_states.sql:30-34 + agent_states_test.go:293 |
 | STATE-06 | 04-03-PLAN.md | post_interaction_state while Engaged | SATISFIED | agent_states.go:315-318 |
 | STATE-07 | 04-04-PLAN.md | Server-owned WrapUp TTL | SATISFIED | ttl.go:30 + ttl_test.go:38 + agent_states_test.go:496 |
 | STATE-08 | 04-03-PLAN.md | Monotonic state_version | SATISFIED | agent_states.sql:35,55,93 + agent_states_test.go:546 |
@@ -189,7 +189,9 @@ None. All Phase 4 acceptance criteria are covered by automated integration tests
 | `test/isolation` | 24 | PASS |
 | Full suite (`./...`) | **404 total across 16 packages** | **PASS** |
 
-Command: `cd services/api && go test -count=1 ./... 2>&1` — 404 passed, 0 failed.
+Command: `cd services/api && go test -count=1 ./... 2>&1` — passed.
+
+Command: `cd services/api && go test -race -count=1 ./... 2>&1` — passed.
 `go vet ./...` — No issues.
 
 ---

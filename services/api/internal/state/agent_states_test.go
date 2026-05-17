@@ -290,6 +290,39 @@ func TestPatchAgentStatus_Force_BypassesMatrix(t *testing.T) {
 	require.Equal(t, api.AgentStatusNotReady, state.Status)
 }
 
+func TestPatchAgentStatus_Force_NotReadyClearsEngagedChannel(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
+
+	agentID := uuid.Must(uuid.NewV7())
+	channel := string(api.Voice)
+	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-force-clear-channel", "Force Clear Channel Agent")
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:        agentID,
+		OrgID:          th.OrgID,
+		Status:         "Engaged",
+		EngagedChannel: &channel,
+		StateVersion:   1,
+	})
+
+	forceTrue := true
+	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{
+		To:    api.AgentStatusNotReady,
+		Force: &forceTrue,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "force=true Engaged→NotReady want 200, body=%s", raw)
+
+	var state api.AgentState
+	require.NoError(t, json.Unmarshal(raw, &state))
+	require.Equal(t, api.AgentStatusNotReady, state.Status)
+	require.Nil(t, state.EngagedChannel)
+
+	row := loadAgentStateRow(t, th.Pool, th.OrgID, agentID)
+	require.Nil(t, row.EngagedChannel)
+}
+
 // TestPatchAgentStatus_Force_DoesNotBypassBreakReason is the Pitfall 3
 // regression gate: force=true MUST bypass the transition matrix only —
 // the cross-row break_reason probe MUST still run (D-84 / T-04-06).

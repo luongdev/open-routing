@@ -19,16 +19,19 @@ WHERE agent_id = $1 AND org_id = $2;
 -- NOT `state_version = expected_version`. 0 rows → handler runs
 -- GetAgentStateByAgentId to disambiguate 404 vs 409 invalid_transition.
 --
--- engaged_channel: COALESCE preserves the existing channel — v0.1
--- handler never passes an engaged_channel value, so COALESCE(NULL, existing)
--- keeps it intact rather than wiping it (Gemini HIGH fix).
+-- engaged_channel is only meaningful while Engaged; leaving Engaged must
+-- clear stale routing context even when the caller does not pass a channel.
 -- post_interaction_state: explicit assignment (not COALESCE) so the handler
 -- can clear it by passing nil (Gemini MED fix: cross-field invariant — only
 -- meaningful while Engaged or WrapUp; buildUpdateParams nil-gates it per
 -- the cross-field invariant in agent_states.go).
 UPDATE agent_states
 SET status                 = COALESCE(sqlc.narg('to_status')::text, status),
-    engaged_channel        = COALESCE(sqlc.narg('engaged_channel')::text, engaged_channel),
+    engaged_channel        = CASE
+                                 WHEN COALESCE(sqlc.narg('to_status')::text, status) = 'Engaged'
+                                 THEN COALESCE(sqlc.narg('engaged_channel')::text, engaged_channel)
+                                 ELSE NULL
+                             END,
     break_reason_id        = sqlc.narg('break_reason_id')::uuid,
     post_interaction_state = sqlc.narg('post_interaction_state')::text,
     wrapup_until           = sqlc.narg('wrapup_until')::timestamptz,
@@ -45,11 +48,14 @@ RETURNING agent_id, org_id, status, engaged_channel, break_reason_id,
 -- Cross-row break_reason probe STILL runs at handler layer (Pitfall 3 —
 -- force does NOT bypass cross-org probes).
 --
--- Same engaged_channel COALESCE + post_interaction_state explicit-write
--- as UpdateAgentStateStatus (Gemini HIGH/MED fix — see above).
+-- Same cross-field column semantics as UpdateAgentStateStatus.
 UPDATE agent_states
 SET status                 = COALESCE(sqlc.narg('to_status')::text, status),
-    engaged_channel        = COALESCE(sqlc.narg('engaged_channel')::text, engaged_channel),
+    engaged_channel        = CASE
+                                 WHEN COALESCE(sqlc.narg('to_status')::text, status) = 'Engaged'
+                                 THEN COALESCE(sqlc.narg('engaged_channel')::text, engaged_channel)
+                                 ELSE NULL
+                             END,
     break_reason_id        = sqlc.narg('break_reason_id')::uuid,
     post_interaction_state = sqlc.narg('post_interaction_state')::text,
     wrapup_until           = sqlc.narg('wrapup_until')::timestamptz,
@@ -90,6 +96,7 @@ SET status          = CASE post_interaction_state
                       END,
     wrapup_until    = NULL,
     engaged_channel = NULL,
+    post_interaction_state = NULL,
     state_version   = state_version + 1,
     updated_at      = NOW()
 WHERE agent_id = $1

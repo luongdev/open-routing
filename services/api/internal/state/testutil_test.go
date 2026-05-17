@@ -419,11 +419,6 @@ func httpGETStatus(t testing.TB, th *TestHandlers, agentID uuid.UUID) (*http.Res
 	return httpGET(t, th.HTTP, th.OrgID, agentStatusPath(th.OrgID, agentID), nil)
 }
 
-func httpPOST(t testing.TB, srv *httptest.Server, orgID uuid.UUID, path string, body any) (*http.Response, []byte) {
-	t.Helper()
-	return doJSON(t, srv, http.MethodPost, orgID, path, nil, body)
-}
-
 func httpGET(t testing.TB, srv *httptest.Server, orgID uuid.UUID, path string, q url.Values) (*http.Response, []byte) {
 	t.Helper()
 	return doJSON(t, srv, http.MethodGet, orgID, path, q, nil)

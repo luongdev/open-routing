@@ -132,6 +132,55 @@ func TestWrapUpTTL_StartupSweep_PastDue_FiresImmediately(t *testing.T) {
 		"wrapup_until must be cleared after expiry")
 }
 
+func TestWrapUpTTL_ExpireWrapUp_UsesAndClearsPostInteractionState(t *testing.T) {
+	th := newTestHandlers(t)
+	require.NotNil(t, th)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
+
+	s := New(Deps{
+		OrgDB:  th.S.deps.OrgDB,
+		Cache:  th.S.deps.Cache,
+		Logger: th.S.deps.Logger,
+	})
+
+	cases := []struct {
+		name       string
+		pis        string
+		wantStatus string
+	}{
+		{"ready", "ready", "Ready"},
+		{"not_ready", "not_ready", "NotReady"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			agentID := uuid.Must(uuid.NewV7())
+			channel := "voice"
+			pastDue := time.Now().Add(-1 * time.Hour)
+			seedAgent(t, th.Pool, th.OrgID, agentID, "ext-ttl-pis-"+c.name, "TTL PIS Agent "+c.name)
+			seedAgentStateRow(t, th.Pool, SeedStateParams{
+				AgentID:              agentID,
+				OrgID:                th.OrgID,
+				Status:               "WrapUp",
+				EngagedChannel:       &channel,
+				WrapupUntil:          &pastDue,
+				PostInteractionState: &c.pis,
+				StateVersion:         1,
+			})
+
+			s.expireWrapUp(ctx, agentID, th.OrgID)
+
+			row := loadAgentStateRow(t, th.Pool, th.OrgID, agentID)
+			require.Equal(t, c.wantStatus, row.Status)
+			require.Nil(t, row.PostInteractionState)
+			require.False(t, row.WrapupUntil.Valid)
+			require.Nil(t, row.EngagedChannel)
+		})
+	}
+}
+
 // TestWrapUpTTL_StartupSweep_FutureSchedules asserts that Start schedules
 // AfterFunc timers for WrapUp rows with future wrapup_until (does NOT
 // fire immediately), then the timer fires after enough clock time passes.
