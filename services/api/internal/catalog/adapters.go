@@ -274,7 +274,7 @@ func (h *Handlers) ListAdapters(ctx context.Context, req api.ListAdaptersRequest
 
 // UpdateAdapter — PATCH /v1/orgs/{org_id}/adapters/{id} (CAT-06, CAT-08).
 // D-66: 0 rows from version-checked UPDATE = 404 (no row) or 409 (version
-// mismatch). Disambiguation probe runs via GetAdapterByIdAnyVersion.
+// mismatch). Disambiguation probe runs via GetAdapter.
 func (h *Handlers) UpdateAdapter(ctx context.Context, req api.UpdateAdapterRequestObject) (api.UpdateAdapterResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {

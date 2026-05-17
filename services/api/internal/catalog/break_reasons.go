@@ -7,7 +7,7 @@
 //
 // Locked patterns inherited from agents.go:
 //
-//   - D-66 — version-checked UPDATE 0-row → GetBreakReasonByIdAnyVersion
+//   - D-66 — version-checked UPDATE 0-row → GetBreakReason
 //     in the same tx. 409 path also cache.Dels (D-56).
 //   - D-55 — cache.Del after every mutation commit (and the 409 path).
 //   - CAT-11 — GetBreakReason via cache.GetOrSet[api.BreakReason] under

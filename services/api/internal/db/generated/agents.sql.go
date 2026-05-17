@@ -128,7 +128,7 @@ type InsertAgentParams struct {
 // Phase 3 Wave 1 catalog queries — CAT-01 agents.
 //
 // Layout per D-62 (one file per entity). The query set per entity is
-// canonical (Insert / Get / GetByIdAnyVersion / List / ListIncludingDisabled
+// canonical (Insert / Get / List / ListIncludingDisabled
 // / Update / SoftDelete) so handler code in Wave 3 can be generated from
 // a shared template.
 //
@@ -144,7 +144,7 @@ type InsertAgentParams struct {
 //     NULL for unset fields and COALESCE preserves the current value.
 //   - D-66 — UPDATE returns the row via RETURNING; 0 rows means either
 //     row missing (404) or version mismatched (409). Handler issues
-//     GetAgentByIdAnyVersion to disambiguate.
+//     GetAgent to disambiguate.
 //   - D-65 — two list variants: default omits soft-deleted rows; the
 //     IncludingDisabled variant powers ?include_disabled=true.
 //   - (Phase 04.1) `code TEXT NOT NULL` added; included in SELECT/INSERT/RETURNING.
@@ -358,7 +358,7 @@ type UpdateAgentParams struct {
 // column value when the handler passes NULL. Required because PATCH may
 // omit optional fields and oapi-codegen renders omitted pointer types as
 // nil → sqlc renders NULL → without COALESCE the UPDATE would zero out
-// email/enabled. 0 rows returned → handler issues GetAgentByIdAnyVersion
+// email/enabled. 0 rows returned → handler issues GetAgent
 // to choose 404 (no row) vs 409 (version mismatched).
 //
 // Phase 04.1 (D04_1-15): `code` is IMMUTABLE — it appears in RETURNING
