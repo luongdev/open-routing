@@ -44,6 +44,9 @@ import '../break-reasons/break-reason-list.js';
 import '../break-reasons/break-reason-detail.js';
 import '../break-reasons/break-reason-form.js';
 
+// Wave 5: Status Panel (Plan 06-12)
+import '../status/status-panel.js';
+
 /** UUIDv7 regex per D6-13 and CONTEXT.md. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -243,11 +246,12 @@ export class OrCatalogShell extends LitElement {
         html`<or-agent-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-agent-detail>`,
     },
     {
-      // D6-12: status panel nested per-agent. Placeholder for Wave 5 (Plan 06-12).
+      // D6-12: status panel nested per-agent. Wired in Wave 5 (Plan 06-12).
+      // enter: this._orgRouteEnter — UUIDv7 guard preserved (mirrors 06-09 BreakReasons pattern).
       path: '/orgs/:org_id/agents/:id/status',
       enter: this._orgRouteEnter,
-      render: ({ id }: Record<string, string | undefined>) =>
-        html`<div class="placeholder-wave" data-route="agent-status" data-agent-id="${id}">Agent Status Panel — coming in Wave 5 (Plan 06-12)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-status-panel .orgId=${org_id ?? ''} .agentId=${id ?? ''} .client=${this._client!}></or-status-panel>`,
     },
     {
       // Skills — placeholder for Wave 3 (Plan 06-07)
