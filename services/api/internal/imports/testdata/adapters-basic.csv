@@ -1,0 +1,3 @@
+code,name,adapter_type,config
+adapter_twilio,Twilio Adapter,voice,"{""endpoint"":""https://twilio.example""}"
+adapter_zendesk,Zendesk Adapter,chat,"{""endpoint"":""https://zendesk.example""}"

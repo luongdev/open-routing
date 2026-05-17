@@ -1,0 +1,4 @@
+code,name,email,enabled
+emp_001,Alice Anderson,alice@example.com,true
+emp_002,Bob Brown,bob@example.com,true
+emp_003,Carol Carpenter,carol@example.com,true

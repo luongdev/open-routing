@@ -1,0 +1,3 @@
+code,name,email
+INVALID_UPPER_CODE,Alice,alice@example.com
+valid_code_one,Bob,bob@example.com

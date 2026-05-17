@@ -619,6 +619,32 @@ func materialiseTypedRaw(entity api.ImportEntityType, cells map[string]any) inte
 				continue
 			}
 			out[k] = v
+		case "config":
+			// Adapters-only: CSV's `config` cell is a JSON-encoded string
+			// (per RFC 4180 escaping); ImportAdapterRequest.Config expects
+			// a *map[string]interface{}. Decode the string into a map so
+			// the downstream reMarshalAs[ImportAdapterRequest] round-trip
+			// produces the typed shape the row processor expects. An empty
+			// string or nil falls through to omit the field, matching the
+			// JSONB column's NULL/empty-object behaviour.
+			if s, ok := v.(string); ok && s != "" {
+				var m map[string]interface{}
+				if err := json.Unmarshal([]byte(s), &m); err == nil {
+					out[k] = m
+					continue
+				}
+				// Decode failure: leave as string and let the row processor
+				// surface invalid_json_row. Defensive — coerce.go already
+				// trimmed the input; only malformed JSON lands here.
+				out[k] = v
+				continue
+			}
+			// Nil / empty string → omit the field (row processor's Config
+			// will be nil, which defaults to "{}" at JSONB write time).
+			if v == nil || v == "" {
+				continue
+			}
+			out[k] = v
 		default:
 			out[k] = v
 		}

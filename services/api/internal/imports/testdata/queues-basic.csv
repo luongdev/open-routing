@@ -1,0 +1,3 @@
+code,name,channel_types,priority,acw_sec
+queue_main,Main Queue,voice|chat,1,30
+queue_vip,VIP Queue,voice,5,60
