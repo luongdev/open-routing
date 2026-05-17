@@ -24,6 +24,11 @@ import '@shoelace-style/shoelace/dist/components/drawer/drawer.js';
 // Import primitives used in route renders (must be registered before outlet renders them)
 import '../primitives/org-picker.js';
 
+// Wave 3: Break Reasons entity (Plan 06-09)
+import '../break-reasons/break-reason-list.js';
+import '../break-reasons/break-reason-detail.js';
+import '../break-reasons/break-reason-form.js';
+
 /** UUIDv7 regex per D6-13 and CONTEXT.md. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -243,15 +248,18 @@ export class OrCatalogShell extends LitElement {
     },
     {
       path: '/orgs/:org_id/break-reasons',
-      render: () => html`<div data-route="break-reasons">Break Reasons list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-break-reason-list org-id=${org_id ?? ''} data-route="break-reasons"></or-break-reason-list>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/new',
-      render: () => html`<div data-route="break-reasons-new">Break Reason create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-break-reason-form org-id=${org_id ?? ''} data-route="break-reasons-new"></or-break-reason-form>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/:id',
-      render: () => html`<div data-route="break-reason-detail">Break Reason detail</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-break-reason-detail org-id=${org_id ?? ''} entity-id=${id ?? ''} data-route="break-reason-detail"></or-break-reason-detail>`,
     },
     {
       path: '/orgs/:org_id/imports/new',
