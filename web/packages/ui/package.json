@@ -8,7 +8,8 @@
     "./api": "./src/api/index.ts",
     "./components": "./src/components/index.ts",
     "./components/shell": "./src/components/shell/index.ts",
-    "./locales/locale-codes.js": "./src/locales/locale-codes.ts"
+    "./locales/locale-codes.js": "./src/locales/locale-codes.ts",
+    "./locales/*.js": "./src/locales/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

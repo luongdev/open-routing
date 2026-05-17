@@ -5,6 +5,9 @@ import { configureLocalization } from '@lit/localize';
 import { sourceLocale, targetLocales } from '@open-routing/ui/locales/locale-codes.js';
 import '@open-routing/ui/components/shell'; // registers <or-catalog-shell>
 
+type AppLocale = typeof sourceLocale | (typeof targetLocales)[number];
+const VALID_LOCALES: ReadonlySet<string> = new Set([sourceLocale, ...targetLocales]);
+
 const { setLocale } = configureLocalization({
   sourceLocale,
   targetLocales,
@@ -12,7 +15,9 @@ const { setLocale } = configureLocalization({
     import(`@open-routing/ui/locales/${locale}.js`) as Promise<Record<string, unknown>>,
 });
 
-// Locale detection: localStorage override → navigator.language → 'en'
+// Locale detection: validate localStorage override → navigator.language → 'en'
 const saved = localStorage.getItem('or-locale');
-const detected = navigator.language.startsWith('vi') ? 'vi' : 'en';
-await setLocale((saved ?? detected) as typeof sourceLocale | (typeof targetLocales)[number]);
+const detected: AppLocale = navigator.language.startsWith('vi') ? 'vi' : 'en';
+const locale: AppLocale =
+  saved !== null && VALID_LOCALES.has(saved) ? (saved as AppLocale) : detected;
+await setLocale(locale);
