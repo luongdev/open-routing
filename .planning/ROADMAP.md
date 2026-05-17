@@ -305,7 +305,37 @@ Plans:
   4. When a write returns HTTP 409, the admin app re-fetches the entity and surfaces a visible "Changed by someone else, reload?" affordance rather than silently discarding the user's edits.
   5. Shoelace theme tokens applied via CSS custom properties at the admin root switch theme variants at runtime without a page reload.
 
-**Plans**: TBD
+**Plans**: 14 plans
+Plans:
+**Wave 1** *(scaffold + tooling)*
+
+- [ ] 06-01-PLAN.md — Vite 8 + Lit 3 + decorator support; admin app package.json + tsconfigs; Vitest + happy-dom setup
+- [ ] 06-02-PLAN.md — ajv validators codegen; theme CSS files; lit-localize skeleton; errors.ts extended; barrel exports
+- [ ] 06-03-PLAN.md — or-catalog-shell (router + sidebar + theme toggle + locale toggle); or-org-picker
+- [ ] 06-04-PLAN.md — Primitives: or-data-table, or-cursor-paginator, or-code-input, or-conflict-banner, or-form-wizard; CI extensions
+
+**Wave 2** *(agents exemplar + shell wiring)*
+
+- [ ] 06-05-PLAN.md — or-agent-list, or-agent-detail (skills sub-table), or-agent-form (3-step wizard)
+- [ ] 06-06-PLAN.md — Shell agent routes wired + createApiClient bootstrap; Playwright smoke test (checkpoint)
+
+**Wave 3** *(parallel: skills + queues + break-reasons)*
+
+- [ ] 06-07-PLAN.md — or-skill-list, or-skill-detail, or-skill-form (single-step wizard); skill routes in shell
+- [ ] 06-08-PLAN.md — or-queue-list (channel_types badges), or-queue-detail, or-queue-form; queue routes in shell
+- [ ] 06-09-PLAN.md — or-break-reason-list (routable/display_order), or-break-reason-detail, or-break-reason-form; break-reason routes in shell
+
+**Wave 4** *(parallel: channels + adapters)*
+
+- [ ] 06-10-PLAN.md — or-queue-picker primitive; or-channel-list, or-channel-detail, or-channel-form (3-step wizard); channel routes in shell
+- [ ] 06-11-PLAN.md — or-adapter-list (no config column), or-adapter-detail (JSONB textarea), or-adapter-form; adapter routes in shell
+
+**Wave 5** *(status + import + final integration)*
+
+- [ ] 06-12-PLAN.md — or-status-panel (5s polling, state machine, break picker, force flag); status route in shell
+- [ ] 06-13-PLAN.md — or-import-page (3-step wizard + drop zone), or-import-result (207 stat cards + failure table); import routes in shell
+- [ ] 06-14-PLAN.md — Export audit; CI drift gate + admin build smoke; end-to-end human verification (checkpoint)
+
 **Branch**: `gsd/phase-06-shared-ui-admin`
 **UI hint**: yes
 
@@ -343,7 +373,7 @@ Plans:
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
 | 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
 | 5. Bulk Import (Go) | 0/8 | Not started | - |
-| 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
+| 6. Shared UI Library & Standalone Admin | 0/14 | In progress | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
 
 ---
