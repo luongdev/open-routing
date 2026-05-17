@@ -8,7 +8,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
-import { repeat } from 'lit/directives/repeat.js';
 
 // Shoelace per-component imports (D6-08)
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -263,8 +262,6 @@ export class OrFormWizard extends LitElement {
   }
 
   private _renderStepContent() {
-    const currentKey = this.steps[this.currentStep]?.key;
-
     return html`
       <div class="step-content">
         ${this.steps.map((step, i) => html`

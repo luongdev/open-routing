@@ -17,6 +17,20 @@ export default [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      // Allow _-prefixed parameters and variables to be unused (standard TypeScript
+      // convention for intentionally unused callback params, e.g. _url/_init).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  // Test file overrides: shadow DOM testing requires `any` casts for reactive
+  // property access on Lit custom elements (no public TS interface at test time).
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   {

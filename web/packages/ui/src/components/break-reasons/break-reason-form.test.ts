@@ -32,7 +32,7 @@ describe('OrBreakReasonForm', () => {
     expect(shadowHtml).toContain('Create break reason');
 
     // Single step — currentStep always 0, no Back button
-    const steps = (el as any)._steps ?? (el as any)._currentStep;
+    const _steps = (el as any)._steps ?? (el as any)._currentStep;
     // If steps array exists, should have exactly 1 step
     // Otherwise currentStep should be 0 (only step)
     const formData = (el as any)._formData;
