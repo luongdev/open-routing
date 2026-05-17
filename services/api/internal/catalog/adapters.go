@@ -359,6 +359,8 @@ func (h *Handlers) UpdateAdapter(ctx context.Context, req api.UpdateAdapterReque
 		ID:              pgUUID(adapterID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through (see agents.go).
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		AdapterType:     req.Body.AdapterType,
 		Config:          cfgBytes,
@@ -400,16 +402,28 @@ func (h *Handlers) UpdateAdapter(ctx context.Context, req api.UpdateAdapterReque
 				Error: api.ErrorCodeInternal, Reason: "config_unmarshal_failed",
 			}}, nil
 		}
-		return api.UpdateAdapter409JSONResponse{
+		// Phase 5 fix H1 — UpdateAdapter409 is now a oneOf union (see
+		// agents.go for the version_conflict vs duplicate_external_id
+		// rationale).
+		var body api.UpdateAdapter409JSONResponseBody
+		_ = body.FromUpdateAdapter409JSONResponseBody1(api.UpdateAdapter409JSONResponseBody1{
 			Current: curDTO,
-			Error:   api.UpdateAdapter409JSONResponseBodyErrorVersionConflict,
+			Error:   api.UpdateAdapter409JSONResponseBody1ErrorVersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateAdapter409JSONResponse(body), nil
 	}
 	if err != nil {
+		// Phase 5 fix H1 — PATCH-time duplicate_external_id must surface as
+		// 409 (not 500). See agents.go for the rationale.
 		status, code, reason := MapPgError(err, "adapter")
-		if status == 422 {
+		switch status {
+		case 422:
 			return api.UpdateAdapter422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateAdapter409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateAdapter409JSONResponse(body), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "update adapter", "err", err)
 		return api.UpdateAdapter500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{

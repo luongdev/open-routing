@@ -62,8 +62,15 @@ LIMIT $2;
 --
 -- Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 -- from SET clause and parameter list. external_id IS mutable (D04_1-07).
+--
+-- Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+-- agents.sql:UpdateAgent for the three-way rationale).
 UPDATE channels
-SET external_id      = COALESCE(sqlc.narg('external_id')::text,      external_id),
+SET external_id      = CASE
+                         WHEN sqlc.narg('external_id')::text IS NULL THEN external_id
+                         WHEN sqlc.narg('external_id')::text = ''    THEN NULL
+                         ELSE sqlc.narg('external_id')::text
+                       END,
     name             = COALESCE(sqlc.narg('name')::text,             name),
     channel_type     = COALESCE(sqlc.narg('channel_type')::text,     channel_type),
     default_queue_id = COALESCE(sqlc.narg('default_queue_id')::uuid, default_queue_id),

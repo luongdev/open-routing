@@ -622,3 +622,43 @@ func TestAdapters_LimitOutOfRange(t *testing.T) {
 		})
 	}
 }
+
+// TestAdapters_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. See agents_test.go for rationale.
+func TestAdapters_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	_ = postAdapter(t, th, makeAdapterBodyWithCode("adapter_h1_a", "ext-ad-h1-001", "A", "freeswitch", nil))
+	b := postAdapter(t, th, makeAdapterBodyWithCode("adapter_h1_b", "ext-ad-h1-002", "B", "livekit", nil))
+
+	dup := "ext-ad-h1-001"
+	patchBody := api.UpdateAdapterRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, adapterDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestAdapters_PatchClearExternalId_NullsTheField — Phase 5 fix H2.
+func TestAdapters_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postAdapter(t, th, makeAdapterBodyWithCode("adapter_h2_a", "ext-ad-h2-bind", "A", "freeswitch", nil))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-ad-h2-bind", *a.ExternalId, "precondition")
+
+	clear := ""
+	patchBody := api.UpdateAdapterRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, adapterDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "H2 body=%s", string(raw))
+	var updated api.Adapter
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: empty-string sentinel must null external_id")
+}

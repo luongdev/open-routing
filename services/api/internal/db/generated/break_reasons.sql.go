@@ -342,7 +342,11 @@ func (q *Queries) SoftDeleteBreakReason(ctx context.Context, arg SoftDeleteBreak
 
 const updateBreakReason = `-- name: UpdateBreakReason :one
 UPDATE break_reasons
-SET external_id   = COALESCE($1::text,   external_id),
+SET external_id   = CASE
+                      WHEN $1::text IS NULL THEN external_id
+                      WHEN $1::text = ''    THEN NULL
+                      ELSE $1::text
+                    END,
     name          = COALESCE($2::text,          name),
     routable      = COALESCE($3::bool,      routable),
     display_order = COALESCE($4::int,  display_order),
@@ -372,6 +376,9 @@ type UpdateBreakReasonParams struct {
 // Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 // from SET clause and parameter list. external_id IS mutable (D04_1-07) —
 // NEW for break_reasons in Phase 04.1.
+//
+// Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+// agents.sql:UpdateAgent for the three-way rationale).
 func (q *Queries) UpdateBreakReason(ctx context.Context, arg UpdateBreakReasonParams) (BreakReason, error) {
 	row := q.db.QueryRow(ctx, updateBreakReason,
 		arg.ExternalID,

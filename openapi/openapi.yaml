@@ -493,9 +493,16 @@ components:
           type: string
           nullable: true
           description: |
-            Mutable external-system mapping (D04_1-07). Pass a string to
-            (re)bind to an external row; pass JSON null to clear the
-            binding; omit the field to leave unchanged.
+            Mutable external-system mapping (D04_1-07). Pass a non-empty
+            string to (re)bind to an external row; pass an empty string
+            `""` to CLEAR the binding (server sets external_id to SQL NULL);
+            omit the field to leave the existing binding unchanged. Phase 5
+            fix H2 — `null` JSON values are indistinguishable from omission
+            in the current oapi-codegen pointer encoding (both decode to a
+            nil `*string`), so the empty-string sentinel is the documented
+            v0.1 way to clear. A future v0.2 release may add a tri-state
+            wrapper that allows literal `null` to clear, at which point the
+            empty-string sentinel will be deprecated but still honoured.
           example: HR-EMP-0042
         name:
           type: string
@@ -642,9 +649,16 @@ components:
           type: string
           nullable: true
           description: |
-            Mutable external-system mapping (D04_1-07). Pass a string to
-            (re)bind to an external row; pass JSON null to clear the
-            binding; omit the field to leave unchanged.
+            Mutable external-system mapping (D04_1-07). Pass a non-empty
+            string to (re)bind to an external row; pass an empty string
+            `""` to CLEAR the binding (server sets external_id to SQL NULL);
+            omit the field to leave the existing binding unchanged. Phase 5
+            fix H2 — `null` JSON values are indistinguishable from omission
+            in the current oapi-codegen pointer encoding (both decode to a
+            nil `*string`), so the empty-string sentinel is the documented
+            v0.1 way to clear. A future v0.2 release may add a tri-state
+            wrapper that allows literal `null` to clear, at which point the
+            empty-string sentinel will be deprecated but still honoured.
           example: HR-SKILL-VOICE
         name:
           type: string
@@ -803,9 +817,16 @@ components:
           type: string
           nullable: true
           description: |
-            Mutable external-system mapping (D04_1-07). Pass a string to
-            (re)bind to an external row; pass JSON null to clear the
-            binding; omit the field to leave unchanged.
+            Mutable external-system mapping (D04_1-07). Pass a non-empty
+            string to (re)bind to an external row; pass an empty string
+            `""` to CLEAR the binding (server sets external_id to SQL NULL);
+            omit the field to leave the existing binding unchanged. Phase 5
+            fix H2 — `null` JSON values are indistinguishable from omission
+            in the current oapi-codegen pointer encoding (both decode to a
+            nil `*string`), so the empty-string sentinel is the documented
+            v0.1 way to clear. A future v0.2 release may add a tri-state
+            wrapper that allows literal `null` to clear, at which point the
+            empty-string sentinel will be deprecated but still honoured.
           example: CRM-Q-BILLING
         name:
           type: string
@@ -965,9 +986,16 @@ components:
           type: string
           nullable: true
           description: |
-            Mutable external-system mapping (D04_1-07). Pass a string to
-            (re)bind to an external row; pass JSON null to clear the
-            binding; omit the field to leave unchanged.
+            Mutable external-system mapping (D04_1-07). Pass a non-empty
+            string to (re)bind to an external row; pass an empty string
+            `""` to CLEAR the binding (server sets external_id to SQL NULL);
+            omit the field to leave the existing binding unchanged. Phase 5
+            fix H2 — `null` JSON values are indistinguishable from omission
+            in the current oapi-codegen pointer encoding (both decode to a
+            nil `*string`), so the empty-string sentinel is the documented
+            v0.1 way to clear. A future v0.2 release may add a tri-state
+            wrapper that allows literal `null` to clear, at which point the
+            empty-string sentinel will be deprecated but still honoured.
           example: CRM-CH-VOICE
         version:
           type: integer
@@ -1126,9 +1154,16 @@ components:
           type: string
           nullable: true
           description: |
-            Mutable external-system mapping (D04_1-07). Pass a string to
-            (re)bind to an external row; pass JSON null to clear the
-            binding; omit the field to leave unchanged.
+            Mutable external-system mapping (D04_1-07). Pass a non-empty
+            string to (re)bind to an external row; pass an empty string
+            `""` to CLEAR the binding (server sets external_id to SQL NULL);
+            omit the field to leave the existing binding unchanged. Phase 5
+            fix H2 — `null` JSON values are indistinguishable from omission
+            in the current oapi-codegen pointer encoding (both decode to a
+            nil `*string`), so the empty-string sentinel is the documented
+            v0.1 way to clear. A future v0.2 release may add a tri-state
+            wrapper that allows literal `null` to clear, at which point the
+            empty-string sentinel will be deprecated but still honoured.
           example: MDM-ADAPTER-FS-DC1
         version:
           type: integer
@@ -1277,9 +1312,16 @@ components:
           type: string
           nullable: true
           description: |
-            Mutable external-system mapping (D04_1-07). Pass a string to
-            (re)bind to an external row; pass JSON null to clear the
-            binding; omit the field to leave unchanged.
+            Mutable external-system mapping (D04_1-07). Pass a non-empty
+            string to (re)bind to an external row; pass an empty string
+            `""` to CLEAR the binding (server sets external_id to SQL NULL);
+            omit the field to leave the existing binding unchanged. Phase 5
+            fix H2 — `null` JSON values are indistinguishable from omission
+            in the current oapi-codegen pointer encoding (both decode to a
+            nil `*string`), so the empty-string sentinel is the documented
+            v0.1 way to clear. A future v0.2 release may add a tri-state
+            wrapper that allows literal `null` to clear, at which point the
+            empty-string sentinel will be deprecated but still honoured.
           example: HR-BREAK-LUNCH
         name:
           type: string
@@ -2184,16 +2226,25 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Version mismatch. Body contains the current server-side agent record (D-37).
+          description: |
+            Optimistic-concurrency conflict (CAT-08, D-37, ErrorCode=version_conflict)
+            with the current server-side agent record returned in `current`,
+            OR a uniqueness collision raised by a PATCH that supplied an
+            external_id already bound to another agent in the org
+            (ErrorCode=duplicate_external_id; Phase 5 fix H1 — UPDATE 23505
+            previously surfaced as 500 instead of 409). Clients should branch
+            on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
-                  - type: object
-                    properties:
-                      current:
-                        $ref: "#/components/schemas/Agent"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - allOf:
+                      - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                      - type: object
+                        properties:
+                          current:
+                            $ref: "#/components/schemas/Agent"
         "422":
           description: |
             Business-rule violation. ErrorCode disambiguates: (a)
@@ -2461,16 +2512,24 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Version mismatch (D-37).
+          description: |
+            Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+            with the current server-side skill record returned in `current`,
+            OR a uniqueness collision raised by a PATCH that supplied an
+            external_id already bound to another skill in the org
+            (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+            branch on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
-                  - type: object
-                    properties:
-                      current:
-                        $ref: "#/components/schemas/Skill"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - allOf:
+                      - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                      - type: object
+                        properties:
+                          current:
+                            $ref: "#/components/schemas/Skill"
         "422":
           description: |
             Business-rule violation: `code` is immutable post-create
@@ -2623,16 +2682,24 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Version mismatch (D-37).
+          description: |
+            Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+            with the current server-side queue record returned in `current`,
+            OR a uniqueness collision raised by a PATCH that supplied an
+            external_id already bound to another queue in the org
+            (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+            branch on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
-                  - type: object
-                    properties:
-                      current:
-                        $ref: "#/components/schemas/Queue"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - allOf:
+                      - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                      - type: object
+                        properties:
+                          current:
+                            $ref: "#/components/schemas/Queue"
         "422":
           description: |
             Business-rule violation: `code` is immutable post-create
@@ -2801,16 +2868,24 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Version mismatch. Body contains the current server-side channel record (D-37).
+          description: |
+            Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+            with the current server-side channel record returned in `current`,
+            OR a uniqueness collision raised by a PATCH that supplied an
+            external_id already bound to another channel in the org
+            (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+            branch on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
-                  - type: object
-                    properties:
-                      current:
-                        $ref: "#/components/schemas/Channel"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - allOf:
+                      - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                      - type: object
+                        properties:
+                          current:
+                            $ref: "#/components/schemas/Channel"
         "422":
           description: |
             Business-rule violation. ErrorCode disambiguates: (a)
@@ -2976,16 +3051,24 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Version mismatch. Body contains the current server-side adapter record (D-37).
+          description: |
+            Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+            with the current server-side adapter record returned in `current`,
+            OR a uniqueness collision raised by a PATCH that supplied an
+            external_id already bound to another adapter in the org
+            (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+            branch on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
-                  - type: object
-                    properties:
-                      current:
-                        $ref: "#/components/schemas/Adapter"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - allOf:
+                      - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                      - type: object
+                        properties:
+                          current:
+                            $ref: "#/components/schemas/Adapter"
         "422":
           description: |
             Business-rule violation: `code` is immutable post-create
@@ -3149,16 +3232,24 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Version mismatch (D-37).
+          description: |
+            Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+            with the current server-side break_reason record returned in
+            `current`, OR a uniqueness collision raised by a PATCH that
+            supplied an external_id already bound to another break_reason in
+            the org (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients
+            should branch on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
-                  - type: object
-                    properties:
-                      current:
-                        $ref: "#/components/schemas/BreakReason"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - allOf:
+                      - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                      - type: object
+                        properties:
+                          current:
+                            $ref: "#/components/schemas/BreakReason"
         "422":
           description: |
             Business-rule violation: `code` is immutable post-create

@@ -307,7 +307,11 @@ func (q *Queries) SoftDeleteChannel(ctx context.Context, arg SoftDeleteChannelPa
 
 const updateChannel = `-- name: UpdateChannel :one
 UPDATE channels
-SET external_id      = COALESCE($1::text,      external_id),
+SET external_id      = CASE
+                         WHEN $1::text IS NULL THEN external_id
+                         WHEN $1::text = ''    THEN NULL
+                         ELSE $1::text
+                       END,
     name             = COALESCE($2::text,             name),
     channel_type     = COALESCE($3::text,     channel_type),
     default_queue_id = COALESCE($4::uuid, default_queue_id),
@@ -337,6 +341,9 @@ type UpdateChannelParams struct {
 //
 // Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 // from SET clause and parameter list. external_id IS mutable (D04_1-07).
+//
+// Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+// agents.sql:UpdateAgent for the three-way rationale).
 func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) (Channel, error) {
 	row := q.db.QueryRow(ctx, updateChannel,
 		arg.ExternalID,

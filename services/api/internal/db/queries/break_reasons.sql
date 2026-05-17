@@ -63,8 +63,15 @@ LIMIT $2;
 -- Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 -- from SET clause and parameter list. external_id IS mutable (D04_1-07) —
 -- NEW for break_reasons in Phase 04.1.
+--
+-- Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+-- agents.sql:UpdateAgent for the three-way rationale).
 UPDATE break_reasons
-SET external_id   = COALESCE(sqlc.narg('external_id')::text,   external_id),
+SET external_id   = CASE
+                      WHEN sqlc.narg('external_id')::text IS NULL THEN external_id
+                      WHEN sqlc.narg('external_id')::text = ''    THEN NULL
+                      ELSE sqlc.narg('external_id')::text
+                    END,
     name          = COALESCE(sqlc.narg('name')::text,          name),
     routable      = COALESCE(sqlc.narg('routable')::bool,      routable),
     display_order = COALESCE(sqlc.narg('display_order')::int,  display_order),

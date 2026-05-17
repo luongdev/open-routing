@@ -327,7 +327,11 @@ func (q *Queries) SoftDeleteAgent(ctx context.Context, arg SoftDeleteAgentParams
 
 const updateAgent = `-- name: UpdateAgent :one
 UPDATE agents
-SET external_id = COALESCE($1::text, external_id),
+SET external_id = CASE
+                    WHEN $1::text IS NULL THEN external_id
+                    WHEN $1::text = ''    THEN NULL
+                    ELSE $1::text
+                  END,
     name        = COALESCE($2::text,        name),
     email       = COALESCE($3::text,       email),
     enabled     = COALESCE($4::bool,     enabled),
@@ -363,6 +367,15 @@ type UpdateAgentParams struct {
 // via Layer 2 (validateImmutableCode); the absence here is the structural
 // backstop so the COALESCE sparse-PATCH pattern cannot silently mutate
 // code. external_id IS mutable (D04_1-07).
+//
+// Phase 5 fix H2 (#external_id clear): the OpenAPI Update*Request schema
+// documents the empty-string `""` sentinel as the v0.1 way to clear
+// external_id back to SQL NULL (oapi-codegen pointer encoding cannot
+// distinguish JSON `null` from omission — both decode to `*string == nil`).
+// The CASE expression below preserves three-way semantics:
+//   - narg IS NULL          → field omitted, preserve current value
+//   - narg = ” (empty)     → explicit clear, set column to NULL
+//   - narg = '<non-empty>'  → new value
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error) {
 	row := q.db.QueryRow(ctx, updateAgent,
 		arg.ExternalID,

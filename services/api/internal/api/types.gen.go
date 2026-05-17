@@ -288,88 +288,88 @@ func (e VersionConflictErrorResponseError) Valid() bool {
 	}
 }
 
-// Defines values for UpdateAdapter409JSONResponseBodyError.
+// Defines values for UpdateAdapter409JSONResponseBody1Error.
 const (
-	UpdateAdapter409JSONResponseBodyErrorVersionConflict UpdateAdapter409JSONResponseBodyError = "version_conflict"
+	UpdateAdapter409JSONResponseBody1ErrorVersionConflict UpdateAdapter409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateAdapter409JSONResponseBodyError enum.
-func (e UpdateAdapter409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateAdapter409JSONResponseBody1Error enum.
+func (e UpdateAdapter409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateAdapter409JSONResponseBodyErrorVersionConflict:
+	case UpdateAdapter409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateAgent409JSONResponseBodyError.
+// Defines values for UpdateAgent409JSONResponseBody1Error.
 const (
-	UpdateAgent409JSONResponseBodyErrorVersionConflict UpdateAgent409JSONResponseBodyError = "version_conflict"
+	UpdateAgent409JSONResponseBody1ErrorVersionConflict UpdateAgent409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateAgent409JSONResponseBodyError enum.
-func (e UpdateAgent409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateAgent409JSONResponseBody1Error enum.
+func (e UpdateAgent409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateAgent409JSONResponseBodyErrorVersionConflict:
+	case UpdateAgent409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateBreakReason409JSONResponseBodyError.
+// Defines values for UpdateBreakReason409JSONResponseBody1Error.
 const (
-	UpdateBreakReason409JSONResponseBodyErrorVersionConflict UpdateBreakReason409JSONResponseBodyError = "version_conflict"
+	UpdateBreakReason409JSONResponseBody1ErrorVersionConflict UpdateBreakReason409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateBreakReason409JSONResponseBodyError enum.
-func (e UpdateBreakReason409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateBreakReason409JSONResponseBody1Error enum.
+func (e UpdateBreakReason409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateBreakReason409JSONResponseBodyErrorVersionConflict:
+	case UpdateBreakReason409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateChannel409JSONResponseBodyError.
+// Defines values for UpdateChannel409JSONResponseBody1Error.
 const (
-	UpdateChannel409JSONResponseBodyErrorVersionConflict UpdateChannel409JSONResponseBodyError = "version_conflict"
+	UpdateChannel409JSONResponseBody1ErrorVersionConflict UpdateChannel409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateChannel409JSONResponseBodyError enum.
-func (e UpdateChannel409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateChannel409JSONResponseBody1Error enum.
+func (e UpdateChannel409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateChannel409JSONResponseBodyErrorVersionConflict:
+	case UpdateChannel409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateQueue409JSONResponseBodyError.
+// Defines values for UpdateQueue409JSONResponseBody1Error.
 const (
-	UpdateQueue409JSONResponseBodyErrorVersionConflict UpdateQueue409JSONResponseBodyError = "version_conflict"
+	UpdateQueue409JSONResponseBody1ErrorVersionConflict UpdateQueue409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateQueue409JSONResponseBodyError enum.
-func (e UpdateQueue409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateQueue409JSONResponseBody1Error enum.
+func (e UpdateQueue409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateQueue409JSONResponseBodyErrorVersionConflict:
+	case UpdateQueue409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateSkill409JSONResponseBodyError.
+// Defines values for UpdateSkill409JSONResponseBody1Error.
 const (
-	VersionConflict UpdateSkill409JSONResponseBodyError = "version_conflict"
+	VersionConflict UpdateSkill409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateSkill409JSONResponseBodyError enum.
-func (e UpdateSkill409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateSkill409JSONResponseBody1Error enum.
+func (e UpdateSkill409JSONResponseBody1Error) Valid() bool {
 	switch e {
 	case VersionConflict:
 		return true
@@ -1171,9 +1171,16 @@ type UpdateAdapterRequest struct {
 	Config  *map[string]interface{} `json:"config,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
 
-	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
-	// (re)bind to an external row; pass JSON null to clear the
-	// binding; omit the field to leave unchanged.
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       *string `json:"name,omitempty"`
 
@@ -1192,9 +1199,16 @@ type UpdateAgentRequest struct {
 	Email   *openapi_types.Email `json:"email,omitempty"`
 	Enabled *bool                `json:"enabled,omitempty"`
 
-	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
-	// (re)bind to an external row; pass JSON null to clear the
-	// binding; omit the field to leave unchanged.
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       *string `json:"name,omitempty"`
 
@@ -1216,9 +1230,16 @@ type UpdateBreakReasonRequest struct {
 	DisplayOrder *int    `json:"display_order,omitempty"`
 	Enabled      *bool   `json:"enabled,omitempty"`
 
-	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
-	// (re)bind to an external row; pass JSON null to clear the
-	// binding; omit the field to leave unchanged.
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       *string `json:"name,omitempty"`
 	Routable   *bool   `json:"routable,omitempty"`
@@ -1241,9 +1262,16 @@ type UpdateChannelRequest struct {
 	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
 	Enabled        *bool   `json:"enabled,omitempty"`
 
-	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
-	// (re)bind to an external row; pass JSON null to clear the
-	// binding; omit the field to leave unchanged.
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       *string `json:"name,omitempty"`
 
@@ -1264,9 +1292,16 @@ type UpdateQueueRequest struct {
 	Code    *string `json:"code,omitempty"`
 	Enabled *bool   `json:"enabled,omitempty"`
 
-	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
-	// (re)bind to an external row; pass JSON null to clear the
-	// binding; omit the field to leave unchanged.
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       *string `json:"name,omitempty"`
 	Priority   *int    `json:"priority,omitempty"`
@@ -1286,9 +1321,16 @@ type UpdateSkillRequest struct {
 	Description *string `json:"description,omitempty"`
 	Enabled     *bool   `json:"enabled,omitempty"`
 
-	// ExternalId Mutable external-system mapping (D04_1-07). Pass a string to
-	// (re)bind to an external row; pass JSON null to clear the
-	// binding; omit the field to leave unchanged.
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       *string `json:"name,omitempty"`
 	SkillType  *string `json:"skill_type,omitempty"`
@@ -1400,8 +1442,26 @@ type ListAdaptersParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateAdapter409JSONResponseBodyError defines parameters for UpdateAdapter.
-type UpdateAdapter409JSONResponseBodyError string
+// UpdateAdapter409JSONResponseBody1 defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBody1 struct {
+	// Current An adapter registry row. Adapters represent integration points (e.g. a FreeSWITCH bridge, a LiveKit gateway). In v0.1 this is a catalog row only — no SDK contract, no execution. Real adapter execution lands in a later milestone.
+	Current Adapter                                `json:"current"`
+	Error   UpdateAdapter409JSONResponseBody1Error `json:"error"`
+	Reason  string                                 `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateAdapter409JSONResponseBody1Error defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBody1Error string
+
+// UpdateAdapter409JSONResponseBody defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListAgentsParams defines parameters for ListAgents.
 type ListAgentsParams struct {
@@ -1423,8 +1483,26 @@ type CreateAgent409JSONResponseBody struct {
 	union json.RawMessage
 }
 
-// UpdateAgent409JSONResponseBodyError defines parameters for UpdateAgent.
-type UpdateAgent409JSONResponseBodyError string
+// UpdateAgent409JSONResponseBody1 defines parameters for UpdateAgent.
+type UpdateAgent409JSONResponseBody1 struct {
+	// Current An agent in the catalog. Agents are the humans (or bots) who handle routed interactions. Each agent belongs to exactly one org.
+	Current Agent                                `json:"current"`
+	Error   UpdateAgent409JSONResponseBody1Error `json:"error"`
+	Reason  string                               `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateAgent409JSONResponseBody1Error defines parameters for UpdateAgent.
+type UpdateAgent409JSONResponseBody1Error string
+
+// UpdateAgent409JSONResponseBody defines parameters for UpdateAgent.
+type UpdateAgent409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListBreakReasonsParams defines parameters for ListBreakReasons.
 type ListBreakReasonsParams struct {
@@ -1441,8 +1519,26 @@ type ListBreakReasonsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateBreakReason409JSONResponseBodyError defines parameters for UpdateBreakReason.
-type UpdateBreakReason409JSONResponseBodyError string
+// UpdateBreakReason409JSONResponseBody1 defines parameters for UpdateBreakReason.
+type UpdateBreakReason409JSONResponseBody1 struct {
+	// Current A configurable reason an agent can enter the Break state. Each reason has a `routable` flag that determines whether the agent is eligible for routing while on break. The `IsRoutable` domain helper checks this (STATE-10).
+	Current BreakReason                                `json:"current"`
+	Error   UpdateBreakReason409JSONResponseBody1Error `json:"error"`
+	Reason  string                                     `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateBreakReason409JSONResponseBody1Error defines parameters for UpdateBreakReason.
+type UpdateBreakReason409JSONResponseBody1Error string
+
+// UpdateBreakReason409JSONResponseBody defines parameters for UpdateBreakReason.
+type UpdateBreakReason409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // BulkImportCatalogJSONBody defines parameters for BulkImportCatalog.
 type BulkImportCatalogJSONBody = []interface{}
@@ -1474,8 +1570,26 @@ type ListChannelsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateChannel409JSONResponseBodyError defines parameters for UpdateChannel.
-type UpdateChannel409JSONResponseBodyError string
+// UpdateChannel409JSONResponseBody1 defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBody1 struct {
+	// Current A channel in the catalog. Channels represent a logical communication medium (voice, chat, email). They link to a default queue for unrouted interactions.
+	Current Channel                                `json:"current"`
+	Error   UpdateChannel409JSONResponseBody1Error `json:"error"`
+	Reason  string                                 `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateChannel409JSONResponseBody1Error defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBody1Error string
+
+// UpdateChannel409JSONResponseBody defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListQueuesParams defines parameters for ListQueues.
 type ListQueuesParams struct {
@@ -1492,8 +1606,26 @@ type ListQueuesParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateQueue409JSONResponseBodyError defines parameters for UpdateQueue.
-type UpdateQueue409JSONResponseBodyError string
+// UpdateQueue409JSONResponseBody1 defines parameters for UpdateQueue.
+type UpdateQueue409JSONResponseBody1 struct {
+	// Current A queue in the catalog. Queues hold interactions waiting to be assigned to an agent. Queues have a channel type, priority, and an after-contact work (ACW) timer.
+	Current Queue                                `json:"current"`
+	Error   UpdateQueue409JSONResponseBody1Error `json:"error"`
+	Reason  string                               `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateQueue409JSONResponseBody1Error defines parameters for UpdateQueue.
+type UpdateQueue409JSONResponseBody1Error string
+
+// UpdateQueue409JSONResponseBody defines parameters for UpdateQueue.
+type UpdateQueue409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
@@ -1510,8 +1642,26 @@ type ListSkillsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateSkill409JSONResponseBodyError defines parameters for UpdateSkill.
-type UpdateSkill409JSONResponseBodyError string
+// UpdateSkill409JSONResponseBody1 defines parameters for UpdateSkill.
+type UpdateSkill409JSONResponseBody1 struct {
+	// Current A skill in the catalog. Skills are assigned to agents with a proficiency rating.
+	Current Skill                                `json:"current"`
+	Error   UpdateSkill409JSONResponseBody1Error `json:"error"`
+	Reason  string                               `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateSkill409JSONResponseBody1Error defines parameters for UpdateSkill.
+type UpdateSkill409JSONResponseBody1Error string
+
+// UpdateSkill409JSONResponseBody defines parameters for UpdateSkill.
+type UpdateSkill409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // CreateAdapterJSONRequestBody defines body for CreateAdapter for application/json ContentType.
 type CreateAdapterJSONRequestBody = CreateAdapterRequest
@@ -1554,6 +1704,68 @@ type CreateSkillJSONRequestBody = CreateSkillRequest
 
 // UpdateSkillJSONRequestBody defines body for UpdateSkill for application/json ContentType.
 type UpdateSkillJSONRequestBody = UpdateSkillRequest
+
+// AsErrorResponse returns the union data inside the UpdateAdapter409JSONResponseBody as a ErrorResponse
+func (t UpdateAdapter409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateAdapter409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateAdapter409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateAdapter409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateAdapter409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateAdapter409JSONResponseBody1 returns the union data inside the UpdateAdapter409JSONResponseBody as a UpdateAdapter409JSONResponseBody1
+func (t UpdateAdapter409JSONResponseBody) AsUpdateAdapter409JSONResponseBody1() (UpdateAdapter409JSONResponseBody1, error) {
+	var body UpdateAdapter409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateAdapter409JSONResponseBody1 overwrites any union data inside the UpdateAdapter409JSONResponseBody as the provided UpdateAdapter409JSONResponseBody1
+func (t *UpdateAdapter409JSONResponseBody) FromUpdateAdapter409JSONResponseBody1(v UpdateAdapter409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateAdapter409JSONResponseBody1 performs a merge with any union data inside the UpdateAdapter409JSONResponseBody, using the provided UpdateAdapter409JSONResponseBody1
+func (t *UpdateAdapter409JSONResponseBody) MergeUpdateAdapter409JSONResponseBody1(v UpdateAdapter409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateAdapter409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateAdapter409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsErrorResponse returns the union data inside the CreateAgent409JSONResponseBody as a ErrorResponse
 func (t CreateAgent409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
@@ -1613,6 +1825,316 @@ func (t CreateAgent409JSONResponseBody) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreateAgent409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateAgent409JSONResponseBody as a ErrorResponse
+func (t UpdateAgent409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateAgent409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateAgent409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateAgent409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateAgent409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateAgent409JSONResponseBody1 returns the union data inside the UpdateAgent409JSONResponseBody as a UpdateAgent409JSONResponseBody1
+func (t UpdateAgent409JSONResponseBody) AsUpdateAgent409JSONResponseBody1() (UpdateAgent409JSONResponseBody1, error) {
+	var body UpdateAgent409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateAgent409JSONResponseBody1 overwrites any union data inside the UpdateAgent409JSONResponseBody as the provided UpdateAgent409JSONResponseBody1
+func (t *UpdateAgent409JSONResponseBody) FromUpdateAgent409JSONResponseBody1(v UpdateAgent409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateAgent409JSONResponseBody1 performs a merge with any union data inside the UpdateAgent409JSONResponseBody, using the provided UpdateAgent409JSONResponseBody1
+func (t *UpdateAgent409JSONResponseBody) MergeUpdateAgent409JSONResponseBody1(v UpdateAgent409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateAgent409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateAgent409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateBreakReason409JSONResponseBody as a ErrorResponse
+func (t UpdateBreakReason409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateBreakReason409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateBreakReason409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateBreakReason409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateBreakReason409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateBreakReason409JSONResponseBody1 returns the union data inside the UpdateBreakReason409JSONResponseBody as a UpdateBreakReason409JSONResponseBody1
+func (t UpdateBreakReason409JSONResponseBody) AsUpdateBreakReason409JSONResponseBody1() (UpdateBreakReason409JSONResponseBody1, error) {
+	var body UpdateBreakReason409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateBreakReason409JSONResponseBody1 overwrites any union data inside the UpdateBreakReason409JSONResponseBody as the provided UpdateBreakReason409JSONResponseBody1
+func (t *UpdateBreakReason409JSONResponseBody) FromUpdateBreakReason409JSONResponseBody1(v UpdateBreakReason409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateBreakReason409JSONResponseBody1 performs a merge with any union data inside the UpdateBreakReason409JSONResponseBody, using the provided UpdateBreakReason409JSONResponseBody1
+func (t *UpdateBreakReason409JSONResponseBody) MergeUpdateBreakReason409JSONResponseBody1(v UpdateBreakReason409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateBreakReason409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateBreakReason409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateChannel409JSONResponseBody as a ErrorResponse
+func (t UpdateChannel409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateChannel409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateChannel409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateChannel409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateChannel409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateChannel409JSONResponseBody1 returns the union data inside the UpdateChannel409JSONResponseBody as a UpdateChannel409JSONResponseBody1
+func (t UpdateChannel409JSONResponseBody) AsUpdateChannel409JSONResponseBody1() (UpdateChannel409JSONResponseBody1, error) {
+	var body UpdateChannel409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateChannel409JSONResponseBody1 overwrites any union data inside the UpdateChannel409JSONResponseBody as the provided UpdateChannel409JSONResponseBody1
+func (t *UpdateChannel409JSONResponseBody) FromUpdateChannel409JSONResponseBody1(v UpdateChannel409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateChannel409JSONResponseBody1 performs a merge with any union data inside the UpdateChannel409JSONResponseBody, using the provided UpdateChannel409JSONResponseBody1
+func (t *UpdateChannel409JSONResponseBody) MergeUpdateChannel409JSONResponseBody1(v UpdateChannel409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateChannel409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateChannel409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateQueue409JSONResponseBody as a ErrorResponse
+func (t UpdateQueue409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateQueue409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateQueue409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateQueue409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateQueue409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateQueue409JSONResponseBody1 returns the union data inside the UpdateQueue409JSONResponseBody as a UpdateQueue409JSONResponseBody1
+func (t UpdateQueue409JSONResponseBody) AsUpdateQueue409JSONResponseBody1() (UpdateQueue409JSONResponseBody1, error) {
+	var body UpdateQueue409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateQueue409JSONResponseBody1 overwrites any union data inside the UpdateQueue409JSONResponseBody as the provided UpdateQueue409JSONResponseBody1
+func (t *UpdateQueue409JSONResponseBody) FromUpdateQueue409JSONResponseBody1(v UpdateQueue409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateQueue409JSONResponseBody1 performs a merge with any union data inside the UpdateQueue409JSONResponseBody, using the provided UpdateQueue409JSONResponseBody1
+func (t *UpdateQueue409JSONResponseBody) MergeUpdateQueue409JSONResponseBody1(v UpdateQueue409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateQueue409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateQueue409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateSkill409JSONResponseBody as a ErrorResponse
+func (t UpdateSkill409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateSkill409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateSkill409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateSkill409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateSkill409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateSkill409JSONResponseBody1 returns the union data inside the UpdateSkill409JSONResponseBody as a UpdateSkill409JSONResponseBody1
+func (t UpdateSkill409JSONResponseBody) AsUpdateSkill409JSONResponseBody1() (UpdateSkill409JSONResponseBody1, error) {
+	var body UpdateSkill409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateSkill409JSONResponseBody1 overwrites any union data inside the UpdateSkill409JSONResponseBody as the provided UpdateSkill409JSONResponseBody1
+func (t *UpdateSkill409JSONResponseBody) FromUpdateSkill409JSONResponseBody1(v UpdateSkill409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateSkill409JSONResponseBody1 performs a merge with any union data inside the UpdateSkill409JSONResponseBody, using the provided UpdateSkill409JSONResponseBody1
+func (t *UpdateSkill409JSONResponseBody) MergeUpdateSkill409JSONResponseBody1(v UpdateSkill409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateSkill409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateSkill409JSONResponseBody) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

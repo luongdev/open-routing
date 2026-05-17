@@ -323,6 +323,10 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		ID:              pgUUID(skillID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through. nil → preserve,
+		// empty-string → NULL (clear), non-empty → new value. See
+		// agents.go UpdateAgent for full rationale.
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		Description:     req.Body.Description,
 		SkillType:       req.Body.SkillType,
@@ -356,16 +360,28 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "skills", skillID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "skills", skillID), "err", delErr)
 		}
-		return api.UpdateSkill409JSONResponse{
+		// Phase 5 fix H1 — UpdateSkill409 is now a oneOf union (see
+		// agents.go for the version_conflict vs duplicate_external_id
+		// rationale).
+		var body api.UpdateSkill409JSONResponseBody
+		_ = body.FromUpdateSkill409JSONResponseBody1(api.UpdateSkill409JSONResponseBody1{
 			Current: mapSkill(cur),
 			Error:   api.VersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateSkill409JSONResponse(body), nil
 	}
 	if err != nil {
+		// Phase 5 fix H1 — PATCH-time duplicate_external_id must surface as
+		// 409 (not 500). See agents.go for the rationale.
 		status, code, reason := MapPgError(err, "skill")
-		if status == 422 {
+		switch status {
+		case 422:
 			return api.UpdateSkill422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateSkill409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateSkill409JSONResponse(body), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "update skill", "err", err)
 		return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{

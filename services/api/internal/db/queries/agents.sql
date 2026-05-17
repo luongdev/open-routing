@@ -95,8 +95,21 @@ LIMIT $2;
 -- via Layer 2 (validateImmutableCode); the absence here is the structural
 -- backstop so the COALESCE sparse-PATCH pattern cannot silently mutate
 -- code. external_id IS mutable (D04_1-07).
+--
+-- Phase 5 fix H2 (#external_id clear): the OpenAPI Update*Request schema
+-- documents the empty-string `""` sentinel as the v0.1 way to clear
+-- external_id back to SQL NULL (oapi-codegen pointer encoding cannot
+-- distinguish JSON `null` from omission — both decode to `*string == nil`).
+-- The CASE expression below preserves three-way semantics:
+--   * narg IS NULL          → field omitted, preserve current value
+--   * narg = '' (empty)     → explicit clear, set column to NULL
+--   * narg = '<non-empty>'  → new value
 UPDATE agents
-SET external_id = COALESCE(sqlc.narg('external_id')::text, external_id),
+SET external_id = CASE
+                    WHEN sqlc.narg('external_id')::text IS NULL THEN external_id
+                    WHEN sqlc.narg('external_id')::text = ''    THEN NULL
+                    ELSE sqlc.narg('external_id')::text
+                  END,
     name        = COALESCE(sqlc.narg('name')::text,        name),
     email       = COALESCE(sqlc.narg('email')::text,       email),
     enabled     = COALESCE(sqlc.narg('enabled')::bool,     enabled),

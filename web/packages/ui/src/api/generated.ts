@@ -893,9 +893,16 @@ export interface components {
              */
             code?: string;
             /**
-             * @description Mutable external-system mapping (D04_1-07). Pass a string to
-             *     (re)bind to an external row; pass JSON null to clear the
-             *     binding; omit the field to leave unchanged.
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
              * @example HR-EMP-0042
              */
             external_id?: string | null;
@@ -997,9 +1004,16 @@ export interface components {
              */
             code?: string;
             /**
-             * @description Mutable external-system mapping (D04_1-07). Pass a string to
-             *     (re)bind to an external row; pass JSON null to clear the
-             *     binding; omit the field to leave unchanged.
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
              * @example HR-SKILL-VOICE
              */
             external_id?: string | null;
@@ -1100,9 +1114,16 @@ export interface components {
              */
             code?: string;
             /**
-             * @description Mutable external-system mapping (D04_1-07). Pass a string to
-             *     (re)bind to an external row; pass JSON null to clear the
-             *     binding; omit the field to leave unchanged.
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
              * @example CRM-Q-BILLING
              */
             external_id?: string | null;
@@ -1199,9 +1220,16 @@ export interface components {
              */
             code?: string;
             /**
-             * @description Mutable external-system mapping (D04_1-07). Pass a string to
-             *     (re)bind to an external row; pass JSON null to clear the
-             *     binding; omit the field to leave unchanged.
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
              * @example CRM-CH-VOICE
              */
             external_id?: string | null;
@@ -1311,9 +1339,16 @@ export interface components {
              */
             code?: string;
             /**
-             * @description Mutable external-system mapping (D04_1-07). Pass a string to
-             *     (re)bind to an external row; pass JSON null to clear the
-             *     binding; omit the field to leave unchanged.
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
              * @example MDM-ADAPTER-FS-DC1
              */
             external_id?: string | null;
@@ -1415,9 +1450,16 @@ export interface components {
              */
             code?: string;
             /**
-             * @description Mutable external-system mapping (D04_1-07). Pass a string to
-             *     (re)bind to an external row; pass JSON null to clear the
-             *     binding; omit the field to leave unchanged.
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
              * @example HR-BREAK-LUNCH
              */
             external_id?: string | null;
@@ -2134,15 +2176,23 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch. Body contains the current server-side agent record (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (CAT-08, D-37, ErrorCode=version_conflict)
+             *     with the current server-side agent record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another agent in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1 — UPDATE 23505
+             *     previously surfaced as 500 instead of 409). Clients should branch
+             *     on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Agent"];
-                    };
+                    });
                 };
             };
             /**
@@ -2456,15 +2506,22 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side skill record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another skill in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Skill"];
-                    };
+                    });
                 };
             };
             /**
@@ -2680,15 +2737,22 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side queue record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another queue in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Queue"];
-                    };
+                    });
                 };
             };
             /**
@@ -2913,15 +2977,22 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch. Body contains the current server-side channel record (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side channel record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another channel in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Channel"];
-                    };
+                    });
                 };
             };
             /**
@@ -3142,15 +3213,22 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch. Body contains the current server-side adapter record (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side adapter record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another adapter in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Adapter"];
-                    };
+                    });
                 };
             };
             /**
@@ -3368,15 +3446,22 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side break_reason record returned in
+             *     `current`, OR a uniqueness collision raised by a PATCH that
+             *     supplied an external_id already bound to another break_reason in
+             *     the org (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients
+             *     should branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["BreakReason"];
-                    };
+                    });
                 };
             };
             /**

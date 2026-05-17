@@ -71,8 +71,15 @@ LIMIT $2;
 --
 -- Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 -- from SET clause and parameter list. external_id IS mutable (D04_1-07).
+--
+-- Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+-- agents.sql:UpdateAgent for the three-way rationale).
 UPDATE skills
-SET external_id = COALESCE(sqlc.narg('external_id')::text, external_id),
+SET external_id = CASE
+                    WHEN sqlc.narg('external_id')::text IS NULL THEN external_id
+                    WHEN sqlc.narg('external_id')::text = ''    THEN NULL
+                    ELSE sqlc.narg('external_id')::text
+                  END,
     name        = COALESCE(sqlc.narg('name')::text,        name),
     description = COALESCE(sqlc.narg('description')::text, description),
     skill_type  = COALESCE(sqlc.narg('skill_type')::text,  skill_type),

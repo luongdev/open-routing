@@ -588,3 +588,43 @@ func TestBreakReasons_TwoNullExternalIds_NoConflict(t *testing.T) {
 	require.Equalf(t, http.StatusCreated, resp.StatusCode,
 		"body=%s — two NULL external_ids must coexist", string(raw))
 }
+
+// TestBreakReasons_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. See agents_test.go for rationale.
+func TestBreakReasons_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	_ = postBreakReason(t, th, makeBreakReasonBodyWithCode("break_h1_a", "ext-br-h1-001", "First", false, 100))
+	b := postBreakReason(t, th, makeBreakReasonBodyWithCode("break_h1_b", "ext-br-h1-002", "Second", false, 101))
+
+	dup := "ext-br-h1-001"
+	patchBody := api.UpdateBreakReasonRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestBreakReasons_PatchClearExternalId_NullsTheField — Phase 5 fix H2.
+func TestBreakReasons_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postBreakReason(t, th, makeBreakReasonBodyWithCode("break_h2_a", "ext-br-h2-bind", "First", false, 102))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-br-h2-bind", *a.ExternalId, "precondition")
+
+	clear := ""
+	patchBody := api.UpdateBreakReasonRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "H2 body=%s", string(raw))
+	var updated api.BreakReason
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: empty-string sentinel must null external_id")
+}

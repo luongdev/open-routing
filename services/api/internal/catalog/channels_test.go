@@ -771,3 +771,43 @@ func TestChannels_TwoNullExternalIds_NoConflict(t *testing.T) {
 	require.Equalf(t, http.StatusCreated, resp.StatusCode,
 		"body=%s — two NULL external_ids must coexist", string(raw))
 }
+
+// TestChannels_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. See agents_test.go for rationale.
+func TestChannels_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	_ = postChannel(t, th, makeChannelBody("channel_h1_a", "ext-ch-h1-001", "First", "voice"))
+	b := postChannel(t, th, makeChannelBody("channel_h1_b", "ext-ch-h1-002", "Second", "chat"))
+
+	dup := "ext-ch-h1-001"
+	patchBody := api.UpdateChannelRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestChannels_PatchClearExternalId_NullsTheField — Phase 5 fix H2.
+func TestChannels_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postChannel(t, th, makeChannelBody("channel_h2_a", "ext-ch-h2-bind", "First", "voice"))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-ch-h2-bind", *a.ExternalId, "precondition")
+
+	clear := ""
+	patchBody := api.UpdateChannelRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "H2 body=%s", string(raw))
+	var updated api.Channel
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: empty-string sentinel must null external_id")
+}

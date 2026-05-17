@@ -897,3 +897,59 @@ func TestAgents_TwoNullExternalIds_NoConflict(t *testing.T) {
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body2)
 	require.Equalf(t, http.StatusCreated, resp.StatusCode, "body=%s — two NULL external_ids must coexist", string(raw))
 }
+
+// TestAgents_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. PATCH that supplies an external_id already bound to
+// another agent in the org MUST surface as HTTP 409 with
+// ErrorCode=duplicate_external_id. Pre-fix the handler only branched on
+// 422 and let MapPgError's 409 status fall through to a 500, poisoning
+// 5xx metrics for a client-correctable error.
+func TestAgents_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	// Two distinct rows: row A claims ext-h1-001; row B (target of the
+	// PATCH) starts with a different external_id.
+	_ = postAgent(t, th, makeAgentBody("emp_h1_a", "ext-h1-001", "Alice", nil))
+	b := postAgent(t, th, makeAgentBody("emp_h1_b", "ext-h1-002", "Bob", nil))
+
+	// PATCH row B's external_id to row A's value → partial UNIQUE on
+	// (org_id, external_id) fires (23505) → handler must return 409
+	// duplicate_external_id (post-fix), NOT 500 internal.
+	dup := "ext-h1-001"
+	patchBody := api.UpdateAgentRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestAgents_PatchClearExternalId_NullsTheField — Phase 5 fix H2. PATCH
+// with external_id=""  (empty-string sentinel) MUST clear the persisted
+// column to SQL NULL. Pre-fix the SQL used COALESCE(narg, col) which
+// preserved the existing value whenever the SQL parameter was NULL —
+// and since oapi-codegen renders both omitted and explicit-null as nil
+// pointer, clients literally could not clear external_id via PATCH.
+func TestAgents_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postAgent(t, th, makeAgentBody("emp_h2_a", "ext-h2-bind", "Alice", nil))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-h2-bind", *a.ExternalId, "precondition: external_id is bound")
+
+	// PATCH with empty-string sentinel → expect external_id=NULL.
+	clear := ""
+	patchBody := api.UpdateAgentRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode,
+		"H2: PATCH external_id=\"\" must return 200; body=%s", string(raw))
+	var updated api.Agent
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: PATCH external_id=\"\" must null the column")
+}

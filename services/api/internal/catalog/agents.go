@@ -491,6 +491,12 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 		ID:              pgUUID(agentID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through. The SQL CASE expression
+		// treats: nil → preserve (omitted), empty string → NULL (clear),
+		// non-empty → new value. Pre-fix the handler omitted ExternalID
+		// entirely so the SQL COALESCE always preserved the existing value
+		// and clients literally could not PATCH external_id.
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		Email:           emailStr,
 		Enabled:         req.Body.Enabled,
@@ -530,16 +536,34 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "agents", agentID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "agents", agentID), "err", delErr)
 		}
-		return api.UpdateAgent409JSONResponse{
+		// Phase 5 fix H1 — UpdateAgent409 is now a oneOf union to share the
+		// HTTP status code between version_conflict (CAT-08) and
+		// duplicate_external_id (PATCH-time UNIQUE collision). The version-
+		// conflict branch builds via FromUpdateAgent409JSONResponseBody1
+		// (the allOf VersionConflictErrorResponse + Current member).
+		var body api.UpdateAgent409JSONResponseBody
+		_ = body.FromUpdateAgent409JSONResponseBody1(api.UpdateAgent409JSONResponseBody1{
 			Current: mapAgent(cur, nil),
-			Error:   api.UpdateAgent409JSONResponseBodyErrorVersionConflict,
+			Error:   api.UpdateAgent409JSONResponseBody1ErrorVersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateAgent409JSONResponse(body), nil
 	}
 	if err != nil {
+		// Phase 5 fix H1 — PATCH-time 23505 (duplicate_external_id) MUST
+		// surface as 409, not 500. MapPgError returns status=409 for
+		// duplicate_external_id (per Phase 04.1 D04_1-21 constraint-name
+		// introspect); pre-fix the handler only branched on 422 and let 409
+		// fall through to 500. The new branch builds the ErrorResponse
+		// member of the oneOf union.
 		status, code, reason := MapPgError(err, "agent")
-		if status == 422 {
+		switch status {
+		case 422:
 			return api.UpdateAgent422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateAgent409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateAgent409JSONResponse(body), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "update agent", "err", err)
 		return api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{

@@ -369,6 +369,8 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 		ID:              pgUUID(channelID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through (see agents.go).
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		ChannelType:     channelTypeStr,
 		DefaultQueueID:  defQID,
@@ -401,16 +403,28 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "channels", channelID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "channels", channelID), "err", delErr)
 		}
-		return api.UpdateChannel409JSONResponse{
+		// Phase 5 fix H1 — UpdateChannel409 is now a oneOf union (see
+		// agents.go for the version_conflict vs duplicate_external_id
+		// rationale).
+		var body api.UpdateChannel409JSONResponseBody
+		_ = body.FromUpdateChannel409JSONResponseBody1(api.UpdateChannel409JSONResponseBody1{
 			Current: mapChannel(cur),
-			Error:   api.UpdateChannel409JSONResponseBodyErrorVersionConflict,
+			Error:   api.UpdateChannel409JSONResponseBody1ErrorVersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateChannel409JSONResponse(body), nil
 	}
 	if err != nil {
+		// Phase 5 fix H1 — PATCH-time duplicate_external_id must surface as
+		// 409 (not 500). See agents.go for the rationale.
 		status, code, reason := MapPgError(err, "channel")
-		if status == 422 {
+		switch status {
+		case 422:
 			return api.UpdateChannel422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateChannel409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateChannel409JSONResponse(body), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "update channel", "err", err)
 		return api.UpdateChannel500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{

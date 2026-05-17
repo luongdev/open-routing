@@ -2747,22 +2747,12 @@ func (response UpdateAdapter404JSONResponse) VisitUpdateAdapterResponse(w http.R
 	return err
 }
 
-type UpdateAdapter409JSONResponse struct {
-	// Current An adapter registry row. Adapters represent integration points (e.g. a FreeSWITCH bridge, a LiveKit gateway). In v0.1 this is a catalog row only — no SDK contract, no execution. Real adapter execution lands in a later milestone.
-	Current Adapter                               `json:"current"`
-	Error   UpdateAdapter409JSONResponseBodyError `json:"error"`
-	Reason  string                                `json:"reason"`
-
-	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	RequestId *UUIDv7 `json:"request_id,omitempty"`
-}
+type UpdateAdapter409JSONResponse = UpdateAdapter409JSONResponseBody
 
 func (response UpdateAdapter409JSONResponse) VisitUpdateAdapterResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3122,22 +3112,12 @@ func (response UpdateAgent404JSONResponse) VisitUpdateAgentResponse(w http.Respo
 	return err
 }
 
-type UpdateAgent409JSONResponse struct {
-	// Current An agent in the catalog. Agents are the humans (or bots) who handle routed interactions. Each agent belongs to exactly one org.
-	Current Agent                               `json:"current"`
-	Error   UpdateAgent409JSONResponseBodyError `json:"error"`
-	Reason  string                              `json:"reason"`
-
-	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	RequestId *UUIDv7 `json:"request_id,omitempty"`
-}
+type UpdateAgent409JSONResponse = UpdateAgent409JSONResponseBody
 
 func (response UpdateAgent409JSONResponse) VisitUpdateAgentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3646,22 +3626,12 @@ func (response UpdateBreakReason404JSONResponse) VisitUpdateBreakReasonResponse(
 	return err
 }
 
-type UpdateBreakReason409JSONResponse struct {
-	// Current A configurable reason an agent can enter the Break state. Each reason has a `routable` flag that determines whether the agent is eligible for routing while on break. The `IsRoutable` domain helper checks this (STATE-10).
-	Current BreakReason                               `json:"current"`
-	Error   UpdateBreakReason409JSONResponseBodyError `json:"error"`
-	Reason  string                                    `json:"reason"`
-
-	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	RequestId *UUIDv7 `json:"request_id,omitempty"`
-}
+type UpdateBreakReason409JSONResponse = UpdateBreakReason409JSONResponseBody
 
 func (response UpdateBreakReason409JSONResponse) VisitUpdateBreakReasonResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -4120,22 +4090,12 @@ func (response UpdateChannel404JSONResponse) VisitUpdateChannelResponse(w http.R
 	return err
 }
 
-type UpdateChannel409JSONResponse struct {
-	// Current A channel in the catalog. Channels represent a logical communication medium (voice, chat, email). They link to a default queue for unrouted interactions.
-	Current Channel                               `json:"current"`
-	Error   UpdateChannel409JSONResponseBodyError `json:"error"`
-	Reason  string                                `json:"reason"`
-
-	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	RequestId *UUIDv7 `json:"request_id,omitempty"`
-}
+type UpdateChannel409JSONResponse = UpdateChannel409JSONResponseBody
 
 func (response UpdateChannel409JSONResponse) VisitUpdateChannelResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -4548,22 +4508,12 @@ func (response UpdateQueue404JSONResponse) VisitUpdateQueueResponse(w http.Respo
 	return err
 }
 
-type UpdateQueue409JSONResponse struct {
-	// Current A queue in the catalog. Queues hold interactions waiting to be assigned to an agent. Queues have a channel type, priority, and an after-contact work (ACW) timer.
-	Current Queue                               `json:"current"`
-	Error   UpdateQueue409JSONResponseBodyError `json:"error"`
-	Reason  string                              `json:"reason"`
-
-	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	RequestId *UUIDv7 `json:"request_id,omitempty"`
-}
+type UpdateQueue409JSONResponse = UpdateQueue409JSONResponseBody
 
 func (response UpdateQueue409JSONResponse) VisitUpdateQueueResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -4909,22 +4859,12 @@ func (response UpdateSkill404JSONResponse) VisitUpdateSkillResponse(w http.Respo
 	return err
 }
 
-type UpdateSkill409JSONResponse struct {
-	// Current A skill in the catalog. Skills are assigned to agents with a proficiency rating.
-	Current Skill                               `json:"current"`
-	Error   UpdateSkill409JSONResponseBodyError `json:"error"`
-	Reason  string                              `json:"reason"`
-
-	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	RequestId *UUIDv7 `json:"request_id,omitempty"`
-}
+type UpdateSkill409JSONResponse = UpdateSkill409JSONResponseBody
 
 func (response UpdateSkill409JSONResponse) VisitUpdateSkillResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")

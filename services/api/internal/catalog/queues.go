@@ -353,6 +353,8 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 		ID:              pgUUID(queueID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through (see agents.go).
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		ChannelTypes:    ctStrings,
 		Priority:        priority,
@@ -388,16 +390,28 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "queues", queueID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "queues", queueID), "err", delErr)
 		}
-		return api.UpdateQueue409JSONResponse{
+		// Phase 5 fix H1 — UpdateQueue409 is now a oneOf union (see
+		// agents.go for the version_conflict vs duplicate_external_id
+		// rationale).
+		var body api.UpdateQueue409JSONResponseBody
+		_ = body.FromUpdateQueue409JSONResponseBody1(api.UpdateQueue409JSONResponseBody1{
 			Current: mapQueue(cur),
-			Error:   api.UpdateQueue409JSONResponseBodyErrorVersionConflict,
+			Error:   api.UpdateQueue409JSONResponseBody1ErrorVersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateQueue409JSONResponse(body), nil
 	}
 	if err != nil {
+		// Phase 5 fix H1 — PATCH-time duplicate_external_id must surface as
+		// 409 (not 500). See agents.go for the rationale.
 		status, code, reason := MapPgError(err, "queue")
-		if status == 422 {
+		switch status {
+		case 422:
 			return api.UpdateQueue422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateQueue409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateQueue409JSONResponse(body), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "update queue", "err", err)
 		return api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{

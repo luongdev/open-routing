@@ -337,7 +337,11 @@ func (q *Queries) SoftDeleteQueue(ctx context.Context, arg SoftDeleteQueueParams
 
 const updateQueue = `-- name: UpdateQueue :one
 UPDATE queues
-SET external_id   = COALESCE($1::text,    external_id),
+SET external_id   = CASE
+                      WHEN $1::text IS NULL THEN external_id
+                      WHEN $1::text = ''    THEN NULL
+                      ELSE $1::text
+                    END,
     name          = COALESCE($2::text,           name),
     channel_types = COALESCE($3::text[], channel_types),
     priority      = COALESCE($4::int,         priority),
@@ -368,6 +372,9 @@ type UpdateQueueParams struct {
 //
 // Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 // from SET clause and parameter list. external_id IS mutable (D04_1-07).
+//
+// Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+// agents.sql:UpdateAgent for the three-way rationale).
 func (q *Queries) UpdateQueue(ctx context.Context, arg UpdateQueueParams) (Queue, error) {
 	row := q.db.QueryRow(ctx, updateQueue,
 		arg.ExternalID,

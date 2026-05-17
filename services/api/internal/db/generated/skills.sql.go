@@ -374,7 +374,11 @@ func (q *Queries) SoftDeleteSkill(ctx context.Context, arg SoftDeleteSkillParams
 
 const updateSkill = `-- name: UpdateSkill :one
 UPDATE skills
-SET external_id = COALESCE($1::text, external_id),
+SET external_id = CASE
+                    WHEN $1::text IS NULL THEN external_id
+                    WHEN $1::text = ''    THEN NULL
+                    ELSE $1::text
+                  END,
     name        = COALESCE($2::text,        name),
     description = COALESCE($3::text, description),
     skill_type  = COALESCE($4::text,  skill_type),
@@ -404,6 +408,9 @@ type UpdateSkillParams struct {
 //
 // Phase 04.1 (D04_1-15): `code` is IMMUTABLE — present in RETURNING, absent
 // from SET clause and parameter list. external_id IS mutable (D04_1-07).
+//
+// Phase 5 fix H2: empty-string-as-clear sentinel for external_id (see
+// agents.sql:UpdateAgent for the three-way rationale).
 func (q *Queries) UpdateSkill(ctx context.Context, arg UpdateSkillParams) (Skill, error) {
 	row := q.db.QueryRow(ctx, updateSkill,
 		arg.ExternalID,
