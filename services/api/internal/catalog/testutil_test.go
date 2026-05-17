@@ -265,6 +265,48 @@ func strPtr(s string) *string {
 	return &s
 }
 
+// makeAdapterBodyWithCode constructs a CreateAdapterRequest with an
+// explicit code (Plan 05 Hazard #3 from 04.1-04 SUMMARY). The default
+// makeAdapterBody helper derives Code from name via sanitizeForCode so
+// every legacy call site stays compiling; tests that need to mutate
+// `code` in isolation (Layer 1 / Layer 2 / duplicate paths) call this
+// variant to fix the code field to a known regex-compliant value.
+//
+// externalID may be empty (treated as nil → no external_id field sent).
+func makeAdapterBodyWithCode(code, externalID, name, adapterType string, cfg map[string]any) api.CreateAdapterRequest {
+	body := api.CreateAdapterRequest{
+		Code:        code,
+		Name:        name,
+		AdapterType: adapterType,
+	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	if cfg != nil {
+		body.Config = &cfg
+	}
+	return body
+}
+
+// makeBreakReasonBodyWithCode constructs a CreateBreakReasonRequest with
+// explicit code + externalID (Plan 05 Hazard #3 from 04.1-04 SUMMARY).
+// Mirrors makeAdapterBodyWithCode: the default helper derives Code from
+// name; tests that need an explicit code use this variant.
+//
+// externalID may be empty (treated as nil → no external_id field sent).
+func makeBreakReasonBodyWithCode(code, externalID, name string, routable bool, displayOrder int) api.CreateBreakReasonRequest {
+	body := api.CreateBreakReasonRequest{
+		Code:         code,
+		Name:         name,
+		Routable:     routable,
+		DisplayOrder: displayOrder,
+	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
+}
+
 // sanitizeForCode converts an arbitrary string into a valid `code` per
 // D04_1-03 regex (`^[a-z][a-z0-9_]{0,63}$`). Used by test seed helpers so
 // they can derive a unique code from a display name without hand-crafting

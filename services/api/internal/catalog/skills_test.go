@@ -409,28 +409,174 @@ func TestSkills_CrossOrgGet404(t *testing.T) {
 	require.Equal(t, api.ErrorCodeNotFound, e.Error)
 }
 
-// TestSkills_ExternalIdCollision — POST two skills with the same external_id
-// in the same org → 409 with reason=external_id_collision (CAT-02).
+// TestSkills_ExternalIdCollision — Phase 04.1 rewrite (resolves Plan 04
+// Hazard #1). Both POSTs share BOTH `code` AND `external_id`; the FIRST
+// constraint to fire (composite UNIQUE on (org_id, code) — `skills_org_id_code_key`)
+// wins, so mapPgError introspects the constraint name and returns
+// ErrorCodeDuplicateCode / "duplicate_code". The dedicated
+// TestSkills_DuplicateExternalId_Returns409_DuplicateExternalId test below
+// exercises the duplicate-external-id branch with a fresh code.
 func TestSkills_ExternalIdCollision(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	// TODO(04.1-05): Plan 05 will rewrite assertions per Phase 04.1 semantics.
-	// Both POSTs share BOTH code AND external_id; mapPgError now distinguishes
-	// duplicate_code vs duplicate_external_id. The first constraint to fire
-	// (composite UNIQUE on (org_id, code)) wins, so the new wire shape is
-	// ErrorCodeDuplicateCode / "duplicate_code". Until Plan 05 lands the
-	// assertion below will fail at runtime — expected per the wave-boundary
-	// ledger in Plan 04.1-03 SUMMARY.
 	_ = postSkill(t, th, makeSkillBody("skill_dup", "skl-dup", "First", nil))
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID),
 		makeSkillBody("skill_dup", "skl-dup", "Second", nil))
 	require.Equalf(t, http.StatusConflict, resp.StatusCode,
-		"second POST with same external_id must be 409, body=%s", string(raw))
+		"second POST with same (code, external_id) must be 409, body=%s", string(raw))
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
-	require.Equal(t, api.ErrorCodeVersionConflict, e.Error)
-	require.Equal(t, "external_id_collision", e.Reason)
+	// Phase 04.1 (D04_1-21): the (org_id, code) UNIQUE fires first.
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+// ---------------------------------------------------------------------------
+
+// TestSkills_MissingCode_Returns400 — POST with body Code = "" (empty)
+// triggers Layer 1 (regex rejects empty). Asserts 400 invalid_body /
+// reason="invalid_code_format". Locks D04_1-05.
+func TestSkills_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("", "", "English", nil) // empty code
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestSkills_DuplicateCode_Returns409_DuplicateCode — POST with existing
+// code → 409 ErrorCode=duplicate_code (constraint-name introspect).
+func TestSkills_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("skill_voice", "ext-skl-001", "Voice", nil)
+	_ = postSkill(t, th, body)
+
+	body2 := makeSkillBody("skill_voice", "ext-skl-002", "Voice2", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestSkills_DuplicateExternalId_Returns409_DuplicateExternalId — fresh
+// code + duplicate external_id → 409 duplicate_external_id (camelcase Id).
+func TestSkills_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("skill_dx_001", "ext-skl-001", "First", nil)
+	_ = postSkill(t, th, body)
+
+	body2 := makeSkillBody("skill_dx_002", "ext-skl-001", "Second", nil) // fresh code, dup external_id
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestSkills_PatchSameCode_Returns200 — PATCH with code === stored.Code
+// passes Layer 1 + Layer 2; UPDATE proceeds with non-code fields.
+func TestSkills_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("skill_same_001", "ext-skl-same", "Spanish", nil)
+	created := postSkill(t, th, body)
+
+	sameCode := "skill_same_001"
+	newName := "Spanish v2"
+	patchBody := api.UpdateSkillRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.Skill
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestSkills_PatchDifferentCode_Returns422_ImmutableField — PATCH with
+// a different (valid) code → 422 immutable_field / "code".
+func TestSkills_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("skill_diff_001", "ext-skl-diff", "Italian", nil)
+	created := postSkill(t, th, body)
+
+	newCode := "skill_diff_002"
+	patchBody := api.UpdateSkillRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestSkills_PatchInvalidCodeFormat_Returns400 — PATCH with malformed
+// code → 400 invalid_body. Layer 1 fires BEFORE Layer 2 immutability.
+func TestSkills_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("skill_bad_001", "ext-skl-bad", "German", nil)
+	created := postSkill(t, th, body)
+
+	badCode := "BAD-CODE" // hyphen + uppercase → fails regex
+	patchBody := api.UpdateSkillRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestSkills_TwoNullExternalIds_NoConflict — IDENT-02. Two skills in the
+// same org both omitting external_id must coexist (partial UNIQUE WHERE
+// external_id IS NOT NULL).
+func TestSkills_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeSkillBody("skill_null_001", "", "Korean", nil)
+	_ = postSkill(t, th, body)
+
+	body2 := makeSkillBody("skill_null_002", "", "Japanese", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — two NULL external_ids must coexist", string(raw))
 }

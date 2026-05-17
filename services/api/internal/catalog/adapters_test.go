@@ -450,6 +450,159 @@ func TestAdapters_CrossOrgGet404(t *testing.T) {
 	require.Equal(t, api.ErrorCodeNotFound, e.Error)
 }
 
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+//
+// Adapters pre-04.1 had NO unique constraints beyond PRIMARY KEY(id), so the
+// DuplicateCode + DuplicateExternalId tests are FRESH coverage (not edits of
+// previous patterns). Plan 01 added composite UNIQUE(org_id, code) and the
+// partial UNIQUE(org_id, external_id) WHERE external_id IS NOT NULL; Plan 04
+// added the 409 wrapper around CreateAdapter (Pitfall 7 resolution).
+//
+// The makeAdapterBody helper derives Code from name via sanitizeForCode; the
+// makeAdapterBodyWithCode variant fixes Code explicitly so the tests can
+// mutate it in isolation (Plan 04 SUMMARY Hazard #3).
+// ---------------------------------------------------------------------------
+
+// TestAdapters_MissingCode_Returns400 — Layer 1 rejects empty code.
+func TestAdapters_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("", "", "EmptyCode", "freeswitch", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, adapterPath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestAdapters_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
+// (org_id, code); CreateAdapter409JSONResponse wraps the FLAT ErrorResponse
+// (Pitfall 7 — adapters had no 409 wrapper pre-04.1).
+func TestAdapters_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("adapter_freeswitch", "ext-adp-001", "FS Edge", "freeswitch", nil)
+	_ = postAdapter(t, th, body)
+
+	body2 := makeAdapterBodyWithCode("adapter_freeswitch", "ext-adp-002", "FS Edge 2", "freeswitch", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, adapterPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestAdapters_DuplicateExternalId_Returns409_DuplicateExternalId — partial
+// UNIQUE on (org_id, external_id) fires; adapters' external_id column is
+// NEW in Phase 04.1.
+func TestAdapters_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("adapter_dx_001", "ext-adp-001", "Adapter A", "freeswitch", nil)
+	_ = postAdapter(t, th, body)
+
+	body2 := makeAdapterBodyWithCode("adapter_dx_002", "ext-adp-001", "Adapter B", "livekit", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, adapterPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestAdapters_PatchSameCode_Returns200 — PATCH with same code is a no-op.
+func TestAdapters_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("adapter_same_001", "ext-adp-same", "Adapter Same", "freeswitch", nil)
+	created := postAdapter(t, th, body)
+
+	sameCode := "adapter_same_001"
+	newName := "Adapter Same v2"
+	patchBody := api.UpdateAdapterRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, adapterDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.Adapter
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestAdapters_PatchDifferentCode_Returns422_ImmutableField — Layer 2 rejects.
+func TestAdapters_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("adapter_diff_001", "ext-adp-diff", "Adapter Diff", "freeswitch", nil)
+	created := postAdapter(t, th, body)
+
+	newCode := "adapter_diff_002"
+	patchBody := api.UpdateAdapterRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, adapterDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestAdapters_PatchInvalidCodeFormat_Returns400 — Layer 1 fires first.
+func TestAdapters_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("adapter_bad_001", "ext-adp-bad", "Adapter Bad", "freeswitch", nil)
+	created := postAdapter(t, th, body)
+
+	badCode := "Adapter-FreeSWITCH" // hyphen + uppercase → fails regex
+	patchBody := api.UpdateAdapterRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, adapterDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestAdapters_TwoNullExternalIds_NoConflict — IDENT-02. external_id is
+// NEW for adapters in Phase 04.1; the partial unique index allows two NULLs.
+func TestAdapters_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAdapterBodyWithCode("adapter_null_001", "", "Adapter A", "freeswitch", nil)
+	_ = postAdapter(t, th, body)
+
+	body2 := makeAdapterBodyWithCode("adapter_null_002", "", "Adapter B", "livekit", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, adapterPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — two NULL external_ids must coexist", string(raw))
+}
+
 // TestAdapters_LimitOutOfRange — ?limit=0 / ?limit=101 → 400.
 func TestAdapters_LimitOutOfRange(t *testing.T) {
 	th := newTestHandlers(t)

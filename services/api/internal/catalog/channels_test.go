@@ -629,3 +629,145 @@ func TestChannels_InvalidReference(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &e))
 	require.Equal(t, api.ErrorCodeInvalidReference, e.Error)
 }
+
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+// ---------------------------------------------------------------------------
+
+// TestChannels_MissingCode_Returns400 — Layer 1 rejects empty code.
+// Channels.go has Layer 1 BEFORE the D-76 default_queue_id FK probe, so
+// the regex fires regardless of any FK column state.
+func TestChannels_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("", "", "Voice", "voice") // empty code
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestChannels_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
+// (org_id, code) fires; mapPgError returns duplicate_code.
+func TestChannels_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_voice", "ext-ch-001", "Voice", "voice")
+	_ = postChannel(t, th, body)
+
+	body2 := makeChannelBody("channel_voice", "ext-ch-002", "Voice2", "voice")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestChannels_DuplicateExternalId_Returns409_DuplicateExternalId — partial
+// UNIQUE on (org_id, external_id) fires; mapPgError returns duplicate_external_id.
+func TestChannels_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_dx_001", "ext-ch-001", "First", "voice")
+	_ = postChannel(t, th, body)
+
+	body2 := makeChannelBody("channel_dx_002", "ext-ch-001", "Second", "chat")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestChannels_PatchSameCode_Returns200 — PATCH with same code is a no-op.
+func TestChannels_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_same_001", "ext-ch-same", "Plain", "voice")
+	created := postChannel(t, th, body)
+
+	sameCode := "channel_same_001"
+	newName := "Plain v2"
+	patchBody := api.UpdateChannelRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.Channel
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestChannels_PatchDifferentCode_Returns422_ImmutableField — Layer 2 rejects.
+func TestChannels_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_diff_001", "ext-ch-diff", "Email1", "email")
+	created := postChannel(t, th, body)
+
+	newCode := "channel_diff_002"
+	patchBody := api.UpdateChannelRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestChannels_PatchInvalidCodeFormat_Returns400 — Layer 1 fires first.
+func TestChannels_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_bad_001", "ext-ch-bad", "Bad", "voice")
+	created := postChannel(t, th, body)
+
+	badCode := "has spaces" // space → fails regex
+	patchBody := api.UpdateChannelRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestChannels_TwoNullExternalIds_NoConflict — IDENT-02.
+func TestChannels_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_null_001", "", "First", "voice")
+	_ = postChannel(t, th, body)
+
+	body2 := makeChannelBody("channel_null_002", "", "Second", "chat")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — two NULL external_ids must coexist", string(raw))
+}
