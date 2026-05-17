@@ -322,23 +322,23 @@ export class OrCatalogShell extends LitElement {
       render: () => html`<div class="placeholder-wave" data-route="adapter-detail">Adapter Detail — coming in Wave 3 (Plan 06-11)</div>`,
     },
     {
-      // Break Reasons — placeholder for Wave 3 (Plan 06-09)
+      // Break Reasons — wired in Wave 3 (Plan 06-09); client prop added here (Rule 2 fix)
       path: '/orgs/:org_id/break-reasons',
       enter: this._orgRouteEnter,
       render: ({ org_id }: Record<string, string | undefined>) =>
-        html`<or-break-reason-list org-id=${org_id ?? ''} data-route="break-reasons"></or-break-reason-list>`,
+        html`<or-break-reason-list .orgId=${org_id ?? ''} .client=${this._client!}></or-break-reason-list>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/new',
       enter: this._orgRouteEnter,
       render: ({ org_id }: Record<string, string | undefined>) =>
-        html`<or-break-reason-form org-id=${org_id ?? ''} data-route="break-reasons-new"></or-break-reason-form>`,
+        html`<or-break-reason-form .orgId=${org_id ?? ''} .client=${this._client!}></or-break-reason-form>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/:id',
       enter: this._orgRouteEnter,
       render: ({ org_id, id }: Record<string, string | undefined>) =>
-        html`<or-break-reason-detail org-id=${org_id ?? ''} entity-id=${id ?? ''} data-route="break-reason-detail"></or-break-reason-detail>`,
+        html`<or-break-reason-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-break-reason-detail>`,
     },
     {
       // D6-12: Import is top-level org route. Placeholder for Wave 5 (Plan 06-13).
