@@ -75,12 +75,18 @@ describe('OrBreakReasonList', () => {
     expect(dataTable).toBeTruthy();
     expect(dataTable.rows).toHaveLength(2);
 
-    // Check that rows are rendered — trigger the column render and check shadow DOM
-    // The rendered output for routable=true should include check-lg icon
-    const shadowHtml = shadow.innerHTML;
-    expect(shadowHtml).toContain('check-lg');
-    // The rendered output for routable=false should include x-lg icon
-    expect(shadowHtml).toContain('x-lg');
+    // Check routable column render function produces correct icons
+    const columns = (el as any)._columns as Array<{ key: string; render?: (row: Record<string, unknown>) => unknown }>;
+    const routableCol = columns.find((c) => c.key === 'routable');
+    expect(routableCol?.render).toBeTruthy();
+
+    // routable=true → check-lg icon
+    const routableTrueRendered = JSON.stringify(routableCol!.render!({ routable: true }));
+    expect(routableTrueRendered).toContain('check-lg');
+
+    // routable=false → x-lg icon
+    const routableFalseRendered = JSON.stringify(routableCol!.render!({ routable: false }));
+    expect(routableFalseRendered).toContain('x-lg');
   });
 
   it('routable column header has sl-tooltip with correct content', async () => {
