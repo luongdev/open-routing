@@ -22,7 +22,7 @@ func TestGetAgentStatus_404_AgentMissing(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	resp, raw := httpGETStatus(t, th, agentID)
@@ -37,7 +37,7 @@ func TestGetAgentStatus_200_FromCache(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-cache-test", "Cache Test Agent")
@@ -78,7 +78,7 @@ func TestPatchAgentStatus_AllowedTransition_HappyPath(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-happy", "Happy Agent")
@@ -103,7 +103,7 @@ func TestPatchAgentStatus_StateVersionMonotonic(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-version", "Version Agent")
@@ -144,7 +144,7 @@ func TestPatchAgentStatus_InvalidTransition_409(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-invalid", "Invalid Agent")
@@ -174,7 +174,7 @@ func TestPatchAgentStatus_BreakReasonRequired_422(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-brreq", "BR Required Agent")
@@ -202,7 +202,7 @@ func TestPatchAgentStatus_BreakReasonProbe_422_missing(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-brmiss", "BR Missing Agent")
@@ -230,7 +230,7 @@ func TestPatchAgentStatus_BreakReasonProbe_200_valid(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-brvalid", "BR Valid Agent")
@@ -266,7 +266,7 @@ func TestPatchAgentStatus_Force_BypassesMatrix(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-force", "Force Agent")
@@ -297,7 +297,7 @@ func TestPatchAgentStatus_Force_DoesNotBypassBreakReason(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-force-br", "Force BR Agent")
@@ -337,7 +337,7 @@ func TestPatchAgentStatus_PostInteractionState_SetViaForce(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-pis", "PIS Agent")
@@ -375,7 +375,7 @@ func TestPatchAgentStatus_404_AgentMissing(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{To: api.AgentStatusReady})
@@ -393,7 +393,7 @@ func TestAcceptance_AllTransitions(t *testing.T) {
 	th := newTestHandlers(t)
 	require.NotNil(t, th)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	brID := uuid.Must(uuid.NewV7())
 	seedBreakReason(t, th.Pool, th.OrgID, brID, "AccBreak", false)
@@ -446,7 +446,7 @@ func TestAcceptance_AllTransitions(t *testing.T) {
 			if c.wantCode == http.StatusConflict {
 				var err409 api.InvalidTransitionErrorResponse
 				require.NoError(t, json.Unmarshal(raw, &err409))
-				require.Equal(t, api.ErrorCodeInvalidTransition, err409.Error)
+				require.Equal(t, api.InvalidTransition, err409.Error)
 				require.Equal(t, api.AgentStatus(c.seedFrom), err409.From,
 					"409 must carry the observed current status")
 			}
@@ -463,7 +463,7 @@ func TestAcceptance_BreakReasonValidation(t *testing.T) {
 	th := newTestHandlers(t)
 	require.NotNil(t, th)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	brID := uuid.Must(uuid.NewV7())
@@ -498,7 +498,7 @@ func TestAcceptance_WrapUpExpiresWithoutClient(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	// Fresh Server with real clock + short sweep interval so the safety
 	// sweep can catch the timer if AfterFunc misfires.
@@ -548,7 +548,7 @@ func TestAcceptance_StateVersionMonotonic(t *testing.T) {
 	th := newTestHandlers(t)
 	require.NotNil(t, th)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	brID := uuid.Must(uuid.NewV7())
@@ -592,7 +592,7 @@ func TestPatchAgentStatus_BreakReasonIgnoredOnNonBreak(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	brID := uuid.Must(uuid.NewV7())
@@ -626,7 +626,7 @@ func TestPatchAgentStatus_PostInteractionStateClearedOnExitEngaged(t *testing.T)
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-pisce", "PIS Clear Agent")
@@ -658,7 +658,7 @@ func TestPatchAgentStatus_InvalidEnum_422(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-invalidenum", "Invalid Enum Agent")
@@ -685,7 +685,7 @@ func TestGetAgentStatus_SoftDeletedAgent_Returns404(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-softdel-get", "Soft Delete Agent")
@@ -718,7 +718,7 @@ func TestPatchAgentStatus_SoftDeletedAgent_Returns404(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-softdel-patch", "Soft Delete PATCH Agent")
@@ -750,7 +750,7 @@ func TestPatchAgentStatus_CacheInvalidation(t *testing.T) {
 	t.Parallel()
 	th := newTestHandlers(t)
 	ctx := context.Background()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	agentID := uuid.Must(uuid.NewV7())
 	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-cacheinval", "Cache Inval Agent")

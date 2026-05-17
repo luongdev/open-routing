@@ -40,7 +40,7 @@ func TestWrapUpTTL_FiresOnExpiry(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	fakeClock := clockwork.NewFakeClock()
 	s := New(Deps{
@@ -93,7 +93,7 @@ func TestWrapUpTTL_StartupSweep_PastDue_FiresImmediately(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	fakeClock := clockwork.NewFakeClock()
 	s := New(Deps{
@@ -140,7 +140,7 @@ func TestWrapUpTTL_StartupSweep_FutureSchedules(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	fakeClock := clockwork.NewFakeClock()
 	s := New(Deps{
@@ -210,7 +210,7 @@ func TestWrapUpTTL_SafetySweep_FiresMissedTimer(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	fakeClock := clockwork.NewFakeClock()
 	s := New(Deps{
@@ -274,7 +274,7 @@ func TestWrapUpTTL_GracefulShutdown_NoFireAfterStop(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	fakeClock := clockwork.NewFakeClock()
 	s := New(Deps{
@@ -335,7 +335,7 @@ func TestWrapUpTTL_RaceCondition_IdempotentMultiFire(t *testing.T) {
 	require.NotNil(t, th)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cleanStateTables(t, ctx, th.Pool)
+	cleanStateTables(t, ctx, th.Pool, th.OrgID)
 
 	s := New(Deps{
 		OrgDB:  th.S.deps.OrgDB,

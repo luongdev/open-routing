@@ -17,7 +17,7 @@
 //   - newTestHandlers(t) constructs ONE state.Server + miniredis +
 //     httptest server PER TEST so test isolation is total (no leaking
 //     cache state, no leaking orgID).
-//   - cleanStateTables(t, ctx, pool) TRUNCATEs agent_states + catalog
+//   - cleanStateTables(t, ctx, pool, orgID) DELETEs agent_states + catalog
 //     tables before each test starts so the suite is order-independent.
 //   - httpPOST / httpGET / httpPATCH marshal JSON, set X-Org-Id +
 //     Content-Type, and return (response, body) for the caller to parse.
@@ -274,15 +274,25 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 	}
 }
 
-// cleanStateTables truncates agent_states + the catalog tables this test
-// touches. Run at start of each test that mutates DB state.
-func cleanStateTables(t testing.TB, ctx context.Context, pool *pgxpool.Pool) {
+// cleanStateTables removes state + catalog rows for a single org.
+// Per-org DELETE instead of TRUNCATE so parallel tests with distinct orgIDs
+// do not stomp each other's fixtures (pre-existing race — FOUND-D-73 test
+// isolation contract requires orgID-scoped cleanup in parallel suites).
+func cleanStateTables(t testing.TB, ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID) {
 	t.Helper()
 	if pool == nil {
 		return
 	}
-	_, err := pool.Exec(ctx, `TRUNCATE TABLE agent_states, agents, break_reasons CASCADE`)
-	require.NoError(t, err, "cleanStateTables: TRUNCATE failed")
+	// No FK constraints across these tables (D-76, D-80) so order is free.
+	for _, stmt := range []string{
+		`DELETE FROM agent_states  WHERE org_id = $1`,
+		`DELETE FROM agent_skills  WHERE org_id = $1`,
+		`DELETE FROM break_reasons WHERE org_id = $1`,
+		`DELETE FROM agents        WHERE org_id = $1`,
+	} {
+		_, err := pool.Exec(ctx, stmt, orgID)
+		require.NoError(t, err, "cleanStateTables: DELETE failed for %s", stmt)
+	}
 }
 
 // ---------------------------------------------------------------------------
