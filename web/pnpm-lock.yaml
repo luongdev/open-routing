@@ -71,6 +71,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@lit-labs/router':
+        specifier: ^0.1.4
+        version: 0.1.4
       '@lit/localize':
         specifier: ^0.12.2
         version: 0.12.2

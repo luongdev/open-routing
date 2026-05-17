@@ -1,24 +1,25 @@
 /**
- * Theme token maps for the <or-catalog-shell> _applyTheme() method.
+ * Theme token maps for the <or-catalog-shell> _applyTheme() method (D6-19 / D6-20).
  *
  * These are the JS-side equivalents of the CSS files in this directory.
  * The shell component imports these and calls style.setProperty(key, val)
- * on the host element so CSS custom properties cascade through all
- * nested Shadow DOM children — including Shoelace components.
+ * on the host element so CSS custom properties cascade through all nested
+ * Shadow DOM children — including Shoelace components.
  *
- * Per D6-19 / D6-20 / UI-SPEC §2.2.
+ * Per UI-SPEC §2.2.
  */
 
 export type ThemeName = 'or-light' | 'or-dark' | 'or-brand';
 
 /**
- * Theme is either a named preset or an arbitrary token map (Phase 7 embed).
+ * Theme is either a named preset or an arbitrary token map (Phase 7 embed will
+ * forward a JSON object via the <open-routing-catalog theme="..."> attribute).
  */
 export type Theme = ThemeName | Record<string, string>;
 
 /**
- * or-light token map — clean white shell, mid-tone teal primary (hue=185, sat=43%).
- * or-light is the default; values shown are overrides from Shoelace defaults.
+ * or-light: clean white shell, neutral grays, mid-tone teal primary
+ * (hue=185, sat=43%). Default theme. --sl-color-primary-500 = #2b8a93.
  */
 export const orLight: Record<string, string> = {
   '--sl-color-primary-50': '#f0fafa',
@@ -69,7 +70,7 @@ export const orLight: Record<string, string> = {
 };
 
 /**
- * or-dark token map — dark surfaces, lighter teal primary so it reads on dark backgrounds.
+ * or-dark: dark surfaces, lighter teal primary (#4faab2) so it pops on dark backgrounds.
  */
 export const orDark: Record<string, string> = {
   '--sl-color-primary-50': '#0c2024',
@@ -120,8 +121,8 @@ export const orDark: Record<string, string> = {
 };
 
 /**
- * or-brand token map — deeper, more saturated brand teal (hue=190, sat=60%).
- * Sidebar gets a subtle brand-color tint for visual identity.
+ * or-brand: deeper, more saturated brand teal (hue=190, sat=60%). Sidebar gets
+ * a subtle brand-color tint for visual identity. --sl-color-primary-500 = #0d8b96.
  */
 export const orBrand: Record<string, string> = {
   '--sl-color-primary-50': '#ebfafa',
@@ -172,11 +173,19 @@ export const orBrand: Record<string, string> = {
 };
 
 /**
- * Lookup map for named themes.
- * Used by <or-catalog-shell>._applyTheme() to resolve ThemeName → token map.
+ * Lookup map for named themes. Used by <or-catalog-shell>._applyTheme()
+ * to resolve ThemeName → token map.
  */
 export const THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
   'or-light': orLight,
   'or-dark': orDark,
   'or-brand': orBrand,
 };
+
+/**
+ * Union of all token keys across all themes. Used for cleanup before switching
+ * (removeProperty on previous-theme keys that the new theme doesn't redefine).
+ */
+export const ALL_TOKEN_KEYS: readonly string[] = Array.from(
+  new Set([...Object.keys(orLight), ...Object.keys(orDark), ...Object.keys(orBrand)])
+);

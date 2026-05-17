@@ -29,6 +29,7 @@
     "gen:validators": "node scripts/gen-validators.mjs"
   },
   "dependencies": {
+    "@lit-labs/router": "^0.1.4",
     "@lit/localize": "^0.12.2",
     "@lit/reactive-element": "^2.1.2",
     "@lit/task": "^1.0.0",
