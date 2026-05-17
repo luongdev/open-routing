@@ -22,39 +22,10 @@ type GetQueueParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Keep unfiltered by version/enabled: update handlers reuse this for D-66
+// 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 func (q *Queries) GetQueue(ctx context.Context, arg GetQueueParams) (Queue, error) {
 	row := q.db.QueryRow(ctx, getQueue, arg.ID, arg.OrgID)
-	var i Queue
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.ExternalID,
-		&i.Name,
-		&i.ChannelTypes,
-		&i.Priority,
-		&i.AcwSec,
-		&i.Enabled,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getQueueByIdAnyVersion = `-- name: GetQueueByIdAnyVersion :one
-SELECT id, org_id, external_id, name, channel_types, priority, acw_sec, enabled, version, created_at, updated_at
-FROM queues
-WHERE id = $1 AND org_id = $2
-`
-
-type GetQueueByIdAnyVersionParams struct {
-	ID    pgtype.UUID `json:"id"`
-	OrgID pgtype.UUID `json:"org_id"`
-}
-
-// D-66 disambiguation probe.
-func (q *Queries) GetQueueByIdAnyVersion(ctx context.Context, arg GetQueueByIdAnyVersionParams) (Queue, error) {
-	row := q.db.QueryRow(ctx, getQueueByIdAnyVersion, arg.ID, arg.OrgID)
 	var i Queue
 	err := row.Scan(
 		&i.ID,

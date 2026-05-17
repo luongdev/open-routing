@@ -309,7 +309,7 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := q.GetQueueByIdAnyVersion(ctx, generated.GetQueueByIdAnyVersionParams{
+		cur, perr := q.GetQueue(ctx, generated.GetQueueParams{
 			ID:    pgUUID(queueID),
 			OrgID: pgUUID(orgID),
 		})

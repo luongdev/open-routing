@@ -23,12 +23,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at;
 
 -- name: GetSkill :one
-SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
-FROM skills
-WHERE id = $1 AND org_id = $2;
-
--- name: GetSkillByIdAnyVersion :one
--- D-66 disambiguation probe (404-vs-409 after a 0-row UpdateSkill).
+-- Keep unfiltered by version/enabled: update handlers reuse this for D-66
+-- 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
 FROM skills
 WHERE id = $1 AND org_id = $2;

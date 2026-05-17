@@ -16,12 +16,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, org_id, external_id, name, channel_type, default_queue_id, enabled, version, created_at, updated_at;
 
 -- name: GetChannel :one
-SELECT id, org_id, external_id, name, channel_type, default_queue_id, enabled, version, created_at, updated_at
-FROM channels
-WHERE id = $1 AND org_id = $2;
-
--- name: GetChannelByIdAnyVersion :one
--- D-66 disambiguation probe.
+-- Keep unfiltered by version/enabled: update handlers reuse this for D-66
+-- 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 SELECT id, org_id, external_id, name, channel_type, default_queue_id, enabled, version, created_at, updated_at
 FROM channels
 WHERE id = $1 AND org_id = $2;

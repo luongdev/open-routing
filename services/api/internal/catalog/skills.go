@@ -5,7 +5,7 @@
 //
 // Locked patterns inherited from agents.go:
 //
-//   - D-66 — version-checked UPDATE 0-row → GetSkillByIdAnyVersion
+//   - D-66 — version-checked UPDATE 0-row → GetSkill
 //     inside the same tx to disambiguate 404 (no row) vs 409 (version
 //     mismatch). 409 path also cache.Dels (D-56) so a stale cached
 //     value can never mask a conflict on retry.
@@ -235,7 +235,7 @@ func (h *Handlers) ListSkills(ctx context.Context, req api.ListSkillsRequestObje
 }
 
 // UpdateSkill — PATCH /v1/orgs/{org_id}/skills/{id} (CAT-02, CAT-08).
-// D-66: 0-row version-checked UPDATE → disambiguate via GetSkillByIdAnyVersion
+// D-66: 0-row version-checked UPDATE → disambiguate via GetSkill
 // in the same tx. 409 path also cache.Dels (D-56).
 func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestObject) (api.UpdateSkillResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
@@ -273,7 +273,7 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := q.GetSkillByIdAnyVersion(ctx, generated.GetSkillByIdAnyVersionParams{
+		cur, perr := q.GetSkill(ctx, generated.GetSkillParams{
 			ID:    pgUUID(skillID),
 			OrgID: pgUUID(orgID),
 		})

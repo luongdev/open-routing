@@ -1,7 +1,7 @@
 -- Phase 3 Wave 1 catalog queries — CAT-01 agents.
 --
 -- Layout per D-62 (one file per entity). The query set per entity is
--- canonical (Insert / Get / GetByIdAnyVersion / List / ListIncludingDisabled
+-- canonical (Insert / Get / List / ListIncludingDisabled
 -- / Update / SoftDelete) so handler code in Wave 3 can be generated from
 -- a shared template.
 --
@@ -17,7 +17,7 @@
 --     NULL for unset fields and COALESCE preserves the current value.
 --   * D-66 — UPDATE returns the row via RETURNING; 0 rows means either
 --     row missing (404) or version mismatched (409). Handler issues
---     GetAgentByIdAnyVersion to disambiguate.
+--     GetAgent to disambiguate.
 --   * D-65 — two list variants: default omits soft-deleted rows; the
 --     IncludingDisabled variant powers ?include_disabled=true.
 
@@ -29,16 +29,8 @@ RETURNING id, org_id, external_id, name, email, enabled, version, created_at, up
 -- name: GetAgent :one
 -- Single-row lookup by (id, org_id). Returns pgx.ErrNoRows when the row
 -- does not exist or belongs to another org (FOUND-08 isolation guarantee).
-SELECT id, org_id, external_id, name, email, enabled, version, created_at, updated_at
-FROM agents
-WHERE id = $1 AND org_id = $2;
-
--- name: GetAgentByIdAnyVersion :one
--- D-66 disambiguation probe. UpdateAgent returns 0 rows when either the
--- row does not exist (404) or the row exists with a different version
--- (409). Handler calls this after a 0-row UPDATE to choose the response
--- code. Same body as GetAgent — separate name keeps the intent grep-able
--- in the codebase.
+-- Keep unfiltered by version/enabled: update handlers reuse this for D-66
+-- 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 SELECT id, org_id, external_id, name, email, enabled, version, created_at, updated_at
 FROM agents
 WHERE id = $1 AND org_id = $2;
@@ -81,7 +73,7 @@ LIMIT $2;
 -- column value when the handler passes NULL. Required because PATCH may
 -- omit optional fields and oapi-codegen renders omitted pointer types as
 -- nil → sqlc renders NULL → without COALESCE the UPDATE would zero out
--- email/enabled. 0 rows returned → handler issues GetAgentByIdAnyVersion
+-- email/enabled. 0 rows returned → handler issues GetAgent
 -- to choose 404 (no row) vs 409 (version mismatched).
 UPDATE agents
 SET name       = COALESCE(sqlc.narg('name')::text,    name),

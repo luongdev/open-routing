@@ -324,7 +324,7 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := q.GetChannelByIdAnyVersion(ctx, generated.GetChannelByIdAnyVersionParams{
+		cur, perr := q.GetChannel(ctx, generated.GetChannelParams{
 			ID:    pgUUID(channelID),
 			OrgID: pgUUID(orgID),
 		})
