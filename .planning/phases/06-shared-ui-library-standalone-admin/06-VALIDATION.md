@@ -41,10 +41,34 @@ created: 2026-05-17
 > Populated by the planner during PLAN.md generation. Each plan task whose
 > `<acceptance_criteria>` matches a phase requirement MUST appear here, citing
 > the automated command from "Test Infrastructure".
+>
+> Wave 1 rows are pre-populated. Waves 2–5 rows are placeholders to be filled
+> per-wave during execution.
+>
+> `nyquist_compliant: true` flips after Wave 1 actually executes green — not
+> during planning.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 06-XX-YY | XX | N | ADMIN-NN | — | — | unit/build/lint | `pnpm --filter @open-routing/ui test` | ❌ W0/W1 | ⬜ pending |
+| 06-01-T1 | 06-01 | 1 | ADMIN-01 | — | Vite SPA config + Lit 3 decorator setup | build | `pnpm --filter @open-routing/admin build 2>&1 \| tail -5` | ❌ W0/W1 | ⬜ pending |
+| 06-01-T2 | 06-01 | 1 | ADMIN-01 | — | Vitest + happy-dom test harness + urlpattern-polyfill | build | `pnpm --filter @open-routing/ui test 2>&1 \| tail -5` | ❌ W0/W1 | ⬜ pending |
+| 06-02-T1 | 06-02 | 1 | ADMIN-06 | T-06-02-01 | ajv codegen + theme CSS files (or-light --sl-color-primary-500: #2b8a93) | build | `cd web/packages/ui && node scripts/gen-validators.mjs 2>&1 \| grep "Generated:" \| wc -l` | ❌ W0/W1 | ⬜ pending |
+| 06-02-T2 | 06-02 | 1 | ADMIN-04 | T-06-02-03 | createImporter() typed wrapper; no raw fetch() in components; 7 unit tests pass | unit | `pnpm --filter @open-routing/ui test -- --testPathPattern=import.test 2>&1 \| tail -20` | ❌ W0/W1 | ⬜ pending |
+| 06-02-T3 | 06-02 | 1 | ADMIN-04, ADMIN-06 | — | ErrorCodes extended; ERROR_I18N_KEYS; barrel exports; lit-localize.json | lint | `grep -c "duplicate_code" web/packages/ui/src/api/errors.ts` | ❌ W0/W1 | ⬜ pending |
+| 06-03-T1 | 06-03 | 1 | ADMIN-01, ADMIN-03 | — | or-catalog-shell skeleton + or-org-picker; shell theme test | unit | `pnpm --filter @open-routing/ui test -- --testPathPattern=catalog-shell 2>&1 \| tail -20` | ❌ W0/W1 | ⬜ pending |
+| 06-03-T2 | 06-03 | 1 | ADMIN-06 | — | Shell theme property sets CSS vars on this.style (D6-20) | unit | `pnpm --filter @open-routing/ui test -- --testPathPattern=org-picker 2>&1 \| tail -20` | ❌ W0/W1 | ⬜ pending |
+| 06-04-T1 | 06-04 | 1 | ADMIN-02, ADMIN-05 | T-06-04-01 | or-data-table, or-cursor-paginator, or-conflict-banner, or-form-wizard, or-code-input | unit | `pnpm --filter @open-routing/ui test -- --testPathPattern=data-table\|conflict-banner 2>&1 \| tail -20` | ❌ W0/W1 | ⬜ pending |
+| 06-04-T2 | 06-04 | 1 | ADMIN-04 | — | CI codegen drift gate + admin build smoke in ci.yml | build | `pnpm --filter @open-routing/admin build 2>&1 \| tail -5` | ❌ W0/W1 | ⬜ pending |
+| 06-05-T1 | 06-05 | 2 | ADMIN-02 | — | or-agent-list: search, pagination, navigation | unit | `pnpm --filter @open-routing/ui test -- agent-list 2>&1 \| tail -10` | ❌ W1 dep | ⬜ pending |
+| 06-05-T2 | 06-05 | 2 | ADMIN-02, ADMIN-05 | — | or-agent-detail + or-agent-form; 409 via error.current (D6-03) | unit | `pnpm --filter @open-routing/ui test -- agent 2>&1 \| tail -15` | ❌ W1 dep | ⬜ pending |
+| 06-06-XX | 06-06 | 2 | ADMIN-01 | — | (Wave 2 — populate during execution) | — | — | — | ⬜ pending |
+| 06-07-XX | 06-07 | 3 | ADMIN-02, ADMIN-05 | — | (Wave 3 — populate during execution) | — | — | — | ⬜ pending |
+| 06-08-XX | 06-08 | 3 | ADMIN-02, ADMIN-05 | — | (Wave 3 — populate during execution) | — | — | — | ⬜ pending |
+| 06-09-XX | 06-09 | 3 | ADMIN-02, ADMIN-05 | — | (Wave 3 — populate during execution) | — | — | — | ⬜ pending |
+| 06-10-XX | 06-10 | 4 | ADMIN-02, ADMIN-05 | — | (Wave 4 — populate during execution) | — | — | — | ⬜ pending |
+| 06-11-XX | 06-11 | 4 | ADMIN-02, ADMIN-05 | — | (Wave 4 — populate during execution) | — | — | — | ⬜ pending |
+| 06-12-XX | 06-12 | 5 | ADMIN-02 | T-06-12-01 | (Wave 5 — populate during execution) | — | — | — | ⬜ pending |
+| 06-13-XX | 06-13 | 5 | ADMIN-02, ADMIN-04 | T-06-13-05 | (Wave 5 — populate during execution) | — | — | — | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -66,6 +90,7 @@ created: 2026-05-17
 - [ ] `web/packages/ui/lit-localize.json` — `@lit/localize` config (sourceLocale: `en`, targetLocales: `[vi]`, mode: `runtime`)
 - [ ] `web/packages/ui/xliff/en.xliff` — initial empty XLIFF source for extract pipeline
 - [ ] `tsconfig.base.json` / `web/tsconfig.json` — set `experimentalDecorators: true`, `useDefineForClassFields: false`, `verbatimModuleSyntax: true` per Lit 3 + Vite 8 requirements (RESEARCH §A.4)
+- [ ] `web/packages/ui/src/api/import.ts` — `createImporter()` typed wrapper for CSV/JSON catalog import (ADMIN-04; created in 06-02 Task 2)
 
 ---
 
@@ -90,3 +115,8 @@ created: 2026-05-17
 - [ ] `nyquist_compliant: true` set in frontmatter once the per-task map is complete and green
 
 **Approval:** pending
+
+<revision_log>
+Iteration 1 — WARNING 2 (VALIDATION.md per-task map is a template stub)
+Populated Wave 1 per-task rows for Plans 06-01 through 06-04 (8 rows total). Each row maps: Task ID → Plan ID → Wave → Requirement → Threat Ref → Secure Behavior → Test Type → Automated Command (from plan <verify><automated>). Also added Wave 2 stub row for 06-05 (visible pattern; full 06-05 rows not listed since Wave 1 is the fix target). Waves 3-5 remain as execution-time placeholders. Wave 0 checklist updated to include import.ts. nyquist_compliant remains false per checker instruction — flips only after Wave 1 actually executes green.
+</revision_log>
