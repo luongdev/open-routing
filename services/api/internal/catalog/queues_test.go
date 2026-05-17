@@ -405,6 +405,146 @@ func TestQueues_CrossOrgGet404(t *testing.T) {
 	require.Equal(t, api.ErrorCodeNotFound, e.Error)
 }
 
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+// ---------------------------------------------------------------------------
+
+// TestQueues_MissingCode_Returns400 — Layer 1 rejects empty code.
+func TestQueues_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("", "", "Support") // empty code
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, queuePath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestQueues_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
+// (org_id, code) fires; mapPgError returns duplicate_code.
+func TestQueues_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("queue_billing", "ext-q-001", "Billing")
+	_ = postQueue(t, th, body)
+
+	body2 := makeQueueBody("queue_billing", "ext-q-002", "Billing2")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, queuePath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestQueues_DuplicateExternalId_Returns409_DuplicateExternalId — partial
+// UNIQUE on (org_id, external_id) fires; mapPgError returns duplicate_external_id.
+func TestQueues_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("queue_dx_001", "ext-q-001", "First")
+	_ = postQueue(t, th, body)
+
+	body2 := makeQueueBody("queue_dx_002", "ext-q-001", "Second")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, queuePath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestQueues_PatchSameCode_Returns200 — PATCH with same code is a no-op.
+func TestQueues_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("queue_same_001", "ext-q-same", "Support")
+	created := postQueue(t, th, body)
+
+	sameCode := "queue_same_001"
+	newName := "Support v2"
+	patchBody := api.UpdateQueueRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.Queue
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestQueues_PatchDifferentCode_Returns422_ImmutableField — Layer 2 rejects.
+func TestQueues_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("queue_diff_001", "ext-q-diff", "Sales")
+	created := postQueue(t, th, body)
+
+	newCode := "queue_diff_002"
+	patchBody := api.UpdateQueueRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestQueues_PatchInvalidCodeFormat_Returns400 — Layer 1 fires before Layer 2.
+func TestQueues_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("queue_bad_001", "ext-q-bad", "Bad")
+	created := postQueue(t, th, body)
+
+	badCode := "9start_with_digit" // starts with digit → fails regex
+	patchBody := api.UpdateQueueRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestQueues_TwoNullExternalIds_NoConflict — IDENT-02.
+func TestQueues_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeQueueBody("queue_null_001", "", "First")
+	_ = postQueue(t, th, body)
+
+	body2 := makeQueueBody("queue_null_002", "", "Second")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, queuePath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — two NULL external_ids must coexist", string(raw))
+}
+
 // TestQueues_LimitOutOfRange — handler-side 400 invalid_body on ?limit
 // boundaries. The spec doesn't declare min/max on LimitQuery so the
 // handler owns the 400 wire shape (matches agents).

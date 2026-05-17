@@ -73,8 +73,9 @@ func TestState_GetStatusCrossOrg_404(t *testing.T) {
 	orgA, orgB := freshOrg(t), freshOrg(t)
 
 	// CreateAgent atomically seeds agent_states (D-93) so the state row exists.
+	// Phase 04.1: every Create body must include a regex-compliant `code`.
 	codeA, agentA := postEntity(t, baseURL(), "agents", orgA, map[string]any{
-		"external_id": "iso-state-a", "name": "A", "email": "a@example.com",
+		"code": "iso_state_a", "external_id": "iso-state-a", "name": "A", "email": "a@example.com",
 	})
 	require.Equal(t, http.StatusCreated, codeA)
 
@@ -96,7 +97,7 @@ func TestState_PatchStatusCrossOrgAgent_404(t *testing.T) {
 	orgA, orgB := freshOrg(t), freshOrg(t)
 
 	codeA, agentA := postEntity(t, baseURL(), "agents", orgA, map[string]any{
-		"external_id": "iso-state-pcr-a", "name": "A", "email": "a@example.com",
+		"code": "iso_state_pcr_a", "external_id": "iso-state-pcr-a", "name": "A", "email": "a@example.com",
 	})
 	require.Equal(t, http.StatusCreated, codeA)
 
@@ -124,13 +125,13 @@ func TestState_PatchStatusCrossOrgBreakReason_422(t *testing.T) {
 	orgA, orgB := freshOrg(t), freshOrg(t)
 
 	codeA, agentA := postEntity(t, baseURL(), "agents", orgA, map[string]any{
-		"external_id": "iso-state-pco-a", "name": "A", "email": "a@example.com",
+		"code": "iso_state_pco_a", "external_id": "iso-state-pco-a", "name": "A", "email": "a@example.com",
 	})
 	require.Equal(t, http.StatusCreated, codeA)
 
 	// Seed break_reason in orgB.
 	codeB, brB := postEntity(t, baseURL(), "break-reasons", orgB, map[string]any{
-		"name": "OtherOrgBreak", "routable": false, "display_order": 0,
+		"code": "iso_state_br_other", "name": "OtherOrgBreak", "routable": false, "display_order": 0,
 	})
 	require.Equal(t, http.StatusCreated, codeB)
 
@@ -170,12 +171,12 @@ func TestState_ForceDoesNotBypassCrossOrgBreakReason_422(t *testing.T) {
 	orgA, orgB := freshOrg(t), freshOrg(t)
 
 	codeA, agentA := postEntity(t, baseURL(), "agents", orgA, map[string]any{
-		"external_id": "iso-state-fcb-a", "name": "A", "email": "a@example.com",
+		"code": "iso_state_fcb_a", "external_id": "iso-state-fcb-a", "name": "A", "email": "a@example.com",
 	})
 	require.Equal(t, http.StatusCreated, codeA)
 
 	codeB, brB := postEntity(t, baseURL(), "break-reasons", orgB, map[string]any{
-		"name": "OtherOrgBreakForce", "routable": false, "display_order": 0,
+		"code": "iso_state_br_force", "name": "OtherOrgBreakForce", "routable": false, "display_order": 0,
 	})
 	require.Equal(t, http.StatusCreated, codeB)
 
@@ -202,7 +203,7 @@ func TestCreateAgentSeedsState(t *testing.T) {
 	org := freshOrg(t)
 
 	code, agentID := postEntity(t, baseURL(), "agents", org, map[string]any{
-		"external_id": "iso-state-cas", "name": "Seeded", "email": "s@example.com",
+		"code": "iso_state_cas", "external_id": "iso-state-cas", "name": "Seeded", "email": "s@example.com",
 	})
 	require.Equal(t, http.StatusCreated, code)
 
