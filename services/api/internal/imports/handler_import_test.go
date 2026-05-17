@@ -269,7 +269,8 @@ func TestBulkImportCatalog_InvalidHeader_400(t *testing.T) {
 
 // TestBulkImportCatalog_IdempotencyHit_ReturnsReplay — pre-seed an
 // import_jobs row with idempotency_key K; call BulkImportCatalog with
-// the same key; verify the replay path returns 200 with
+// the same key; verify the replay path returns the matching status
+// (Phase 5 fix M5: succeeded=0/failed=1 → 422) with
 // idempotent_replay=true and the persisted Failed errors.
 //
 // Uses the testcontainer fixture because lookupIdempotentReplay runs
@@ -309,8 +310,10 @@ func TestBulkImportCatalog_IdempotencyHit_ReturnsReplay(t *testing.T) {
 	}
 	resp, err := th.I.BulkImportCatalog(ctx, req)
 	require.NoError(t, err)
-	r, ok := resp.(api.BulkImportCatalog200JSONResponse)
-	require.True(t, ok, "expected 200 replay; got %T", resp)
+	// Phase 5 fix M5: pre-seeded counters are succeeded=0 / failed=1 →
+	// replay returns 422 (all-failed), NOT 200.
+	r, ok := resp.(api.BulkImportCatalog422JSONResponse)
+	require.True(t, ok, "M5: expected 422 (succeeded=0/failed=1); got %T", resp)
 	require.NotNil(t, r.IdempotentReplay)
 	require.True(t, *r.IdempotentReplay, "replay flag must be true")
 	require.Empty(t, r.Succeeded, "v0.1 KNOWN LIMITATION: succeeded[] is empty on replay (D5-13)")

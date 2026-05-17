@@ -110,6 +110,10 @@ func TestBulkImport_IdempotencyKey_HitReturnsReplay_NoNewWork(t *testing.T) {
 // import_jobs row with status=completed + errors JSONB; POST with the
 // stored key; the response failed[] MUST mirror the persisted entries
 // byte-for-byte (D5-12 zero-transformation guarantee).
+//
+// Phase 5 fix M5 amendment: the pre-seeded row has succeeded=0,
+// failed=3 — the M5 fix now returns 422 (all-failed) for replays of
+// such rows. Pre-fix this returned 200.
 func TestBulkImport_IdempotencyKey_HitReturnsPriorFailures(t *testing.T) {
 	th := newTestImports(t)
 	if th == nil {
@@ -140,7 +144,8 @@ func TestBulkImport_IdempotencyKey_HitReturnsPriorFailures(t *testing.T) {
 		map[string]interface{}{"code": "emp_idem_failures_001", "name": "A", "email": "a@example.com"},
 	}
 	resp, body := postImportJSONWithIdempotencyKey(t, th, api.Agents, rows, k2)
-	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"M5: pre-seeded row has succeeded=0/failed=3 → replay returns 422; body=%s", string(body))
 	r := decodeBulkImportResult(t, body)
 	require.NotNil(t, r.IdempotentReplay)
 	require.True(t, *r.IdempotentReplay)
@@ -247,6 +252,88 @@ func TestBulkImport_IdempotencyKey_DifferentOrgSameKey_BothProceed(t *testing.T)
 	// Both orgs have ONE import_jobs row with the same idempotency_key.
 	require.Equal(t, 1, countImportJobsByOrg(t, ctx, th.Pool, th.OrgID))
 	require.Equal(t, 1, countImportJobsByOrg(t, ctxB, th.Pool, orgB))
+}
+
+// TestBulkImport_IdempotencyKey_HitReplay_PartialSuccess_Returns207 —
+// Phase 5 fix M5. Pre-fix rehydrateBulkImportResult was hardcoded to
+// return BulkImportCatalog200JSONResponse for every replay, masking
+// the actual outcome. The M5 fix derives the status from the
+// persisted SucceededRows / FailedRows counters: a job that originally
+// returned 207 (partial-success) must replay as 207.
+func TestBulkImport_IdempotencyKey_HitReplay_PartialSuccess_Returns207(t *testing.T) {
+	th := newTestImports(t)
+	if th == nil {
+		return
+	}
+	ctx := orgkey.SetOrgID(context.Background(), th.OrgID)
+	cleanImportTables(t, ctx, th.Pool, th.OrgID)
+	defer cleanImportTables(t, ctx, th.Pool, th.OrgID)
+
+	// Pre-seed an import_jobs row with succeeded=2 + failed=1 +
+	// status=completed (the live handler returns 207 for partial).
+	jobID := uuid.Must(uuid.NewV7())
+	k := uuid.Must(uuid.NewV7())
+	keyStr := k.String()
+	errorsJSON := []byte(`[{"row":3,"error":"import_failed","reason":"invalid_code_format"}]`)
+	_, err := th.Pool.Exec(ctx,
+		`INSERT INTO import_jobs
+			(id, org_id, entity_type, status, total_rows, succeeded_rows, failed_rows, errors, idempotency_key, created_at, updated_at)
+		 VALUES ($1, $2, 'agents', 'completed', 3, 2, 1, $3::jsonb, $4, NOW(), NOW())`,
+		jobID, th.OrgID, errorsJSON, keyStr,
+	)
+	require.NoError(t, err)
+
+	// New body wouldn't matter; replay short-circuits. Use any.
+	rows := []interface{}{
+		map[string]interface{}{"code": "ignored", "name": "ignored", "email": "ignored@example.com"},
+	}
+	resp, body := postImportJSONWithIdempotencyKey(t, th, api.Agents, rows, k)
+	require.Equalf(t, http.StatusMultiStatus, resp.StatusCode,
+		"M5: replay of 207-partial job must return 207, not 200; body=%s", string(body))
+	r := decodeBulkImportResult(t, body)
+	require.NotNil(t, r.IdempotentReplay)
+	require.True(t, *r.IdempotentReplay)
+	require.Len(t, r.Failed, 1, "persisted failure must surface; body=%s", string(body))
+	require.Equal(t, "invalid_code_format", r.Failed[0].Reason)
+}
+
+// TestBulkImport_IdempotencyKey_HitReplay_AllFailed_Returns422 —
+// Phase 5 fix M5. A job that originally returned 422 (all rows
+// failed) must replay as 422, not 200.
+func TestBulkImport_IdempotencyKey_HitReplay_AllFailed_Returns422(t *testing.T) {
+	th := newTestImports(t)
+	if th == nil {
+		return
+	}
+	ctx := orgkey.SetOrgID(context.Background(), th.OrgID)
+	cleanImportTables(t, ctx, th.Pool, th.OrgID)
+	defer cleanImportTables(t, ctx, th.Pool, th.OrgID)
+
+	jobID := uuid.Must(uuid.NewV7())
+	k := uuid.Must(uuid.NewV7())
+	keyStr := k.String()
+	errorsJSON := []byte(`[
+		{"row":1,"error":"import_failed","reason":"invalid_code_format"},
+		{"row":2,"error":"import_failed","reason":"duplicate_code:agents"}
+	]`)
+	_, err := th.Pool.Exec(ctx,
+		`INSERT INTO import_jobs
+			(id, org_id, entity_type, status, total_rows, succeeded_rows, failed_rows, errors, idempotency_key, created_at, updated_at)
+		 VALUES ($1, $2, 'agents', 'failed', 2, 0, 2, $3::jsonb, $4, NOW(), NOW())`,
+		jobID, th.OrgID, errorsJSON, keyStr,
+	)
+	require.NoError(t, err)
+
+	rows := []interface{}{
+		map[string]interface{}{"code": "ignored", "name": "ignored", "email": "ignored@example.com"},
+	}
+	resp, body := postImportJSONWithIdempotencyKey(t, th, api.Agents, rows, k)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"M5: replay of 422-all-failed job must return 422, not 200; body=%s", string(body))
+	r := decodeBulkImportResult(t, body)
+	require.NotNil(t, r.IdempotentReplay)
+	require.True(t, *r.IdempotentReplay)
+	require.Len(t, r.Failed, 2, "both persisted failures must surface")
 }
 
 // TestBulkImport_NoIdempotencyKey_DoubleRunCreatesTwoJobs_NoDupesByCode —
