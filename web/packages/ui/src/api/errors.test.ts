@@ -46,13 +46,16 @@ describe('parseApiError', () => {
 });
 
 describe('ErrorCodes', () => {
-  it('has exactly the 10 D-36 codes', () => {
+  it('has the 10 D-36 codes plus 5 Phase 04.1 codes (15 total, D6-24)', () => {
     const expected = new Set([
+      // Phase 2 D-36 original codes
       'invalid_body', 'invalid_id', 'not_found', 'internal', 'version_conflict',
       'cross_org', 'invalid_org_id', 'invalid_transition', 'import_failed', 'rate_limited',
+      // Phase 04.1 + Phase 5 additions (D6-24)
+      'duplicate_code', 'duplicate_external_id', 'immutable_field', 'invalid_reference', 'invalid_value',
     ]);
     const actual = new Set(Object.values(ErrorCodes));
-    expect(actual.size).toBe(10);
+    expect(actual.size).toBe(15);
     expect(actual).toEqual(expected);
   });
 });

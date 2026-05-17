@@ -32,6 +32,12 @@ export const ErrorCodes = {
   INVALID_TRANSITION: 'invalid_transition',
   IMPORT_FAILED: 'import_failed',
   RATE_LIMITED: 'rate_limited',
+  // Phase 04.1 + Phase 5 error codes (D6-24)
+  DUPLICATE_CODE: 'duplicate_code',
+  DUPLICATE_EXTERNAL_ID: 'duplicate_external_id',
+  IMMUTABLE_FIELD: 'immutable_field',
+  INVALID_REFERENCE: 'invalid_reference',
+  INVALID_VALUE: 'invalid_value',
 } as const;
 
 /**
@@ -58,6 +64,31 @@ export function isApiError(value: unknown): value is ApiError {
     typeof (value as { reason: unknown }).reason === 'string'
   );
 }
+
+/**
+ * ERROR_I18N_KEYS maps each ErrorCode to its i18n message key for use with
+ * @lit/localize msg() calls in components (D6-24).
+ *
+ * Components look up the key by: ERROR_I18N_KEYS[err.error] ?? 'errors.internal'
+ * XLIFF files in xliff/ contain the translations for each key.
+ */
+export const ERROR_I18N_KEYS: Record<ErrorCode, string> = {
+  invalid_body: 'errors.invalid_body',
+  invalid_id: 'errors.invalid_id',
+  not_found: 'errors.not_found',
+  internal: 'errors.internal',
+  version_conflict: 'errors.version_conflict',
+  cross_org: 'errors.cross_org',
+  invalid_org_id: 'errors.invalid_org_id',
+  invalid_transition: 'errors.invalid_transition',
+  import_failed: 'errors.import_failed',
+  rate_limited: 'errors.rate_limited',
+  duplicate_code: 'errors.duplicate_code',
+  duplicate_external_id: 'errors.duplicate_external_id',
+  immutable_field: 'errors.immutable_field',
+  invalid_reference: 'errors.invalid_reference',
+  invalid_value: 'errors.invalid_value',
+};
 
 /**
  * Parse an HTTP Response as the canonical error body.

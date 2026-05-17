@@ -6,8 +6,18 @@
   "exports": {
     ".": "./src/index.ts",
     "./api": "./src/api/index.ts",
+    "./api/import": "./src/api/import.ts",
     "./components": "./src/components/index.ts",
+    "./components/agents": "./src/components/agents/index.ts",
+    "./components/skills": "./src/components/skills/index.ts",
+    "./components/queues": "./src/components/queues/index.ts",
+    "./components/channels": "./src/components/channels/index.ts",
+    "./components/adapters": "./src/components/adapters/index.ts",
+    "./components/break-reasons": "./src/components/break-reasons/index.ts",
     "./components/shell": "./src/components/shell/index.ts",
+    "./components/primitives": "./src/components/primitives/index.ts",
+    "./validators": "./src/validators/index.ts",
+    "./themes": "./src/themes/index.ts",
     "./locales/locale-codes.js": "./src/locales/locale-codes.ts",
     "./locales/*.js": "./src/locales/*.ts"
   },
@@ -15,7 +25,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "test": "vitest run",
-    "gen:api": "openapi-typescript ../../../openapi/openapi.yaml -o src/api/generated.ts"
+    "gen:api": "openapi-typescript ../../../openapi/openapi.yaml -o src/api/generated.ts",
+    "gen:validators": "node scripts/gen-validators.mjs"
   },
   "dependencies": {
     "@lit/localize": "^0.12.2",
