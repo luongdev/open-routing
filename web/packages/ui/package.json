@@ -4,7 +4,20 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./src/api/index.ts",
+    "./api/import": "./src/api/import.ts",
+    "./components": "./src/components/index.ts",
+    "./components/agents": "./src/components/agents/index.ts",
+    "./components/skills": "./src/components/skills/index.ts",
+    "./components/queues": "./src/components/queues/index.ts",
+    "./components/channels": "./src/components/channels/index.ts",
+    "./components/adapters": "./src/components/adapters/index.ts",
+    "./components/break-reasons": "./src/components/break-reasons/index.ts",
+    "./components/shell": "./src/components/shell/index.ts",
+    "./validators": "./src/validators/index.ts",
+    "./themes": "./src/themes/index.ts",
+    "./locales/locale-codes.js": "./src/locales/locale-codes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

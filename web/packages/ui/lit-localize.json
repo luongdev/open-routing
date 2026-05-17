@@ -1,0 +1,14 @@
+{
+  "sourceLocale": "en",
+  "targetLocales": ["vi"],
+  "tsConfig": "./tsconfig.json",
+  "output": {
+    "mode": "runtime",
+    "outputDir": "./src/locales",
+    "localeCodesModule": "./src/locales/locale-codes.ts"
+  },
+  "interchange": {
+    "format": "xliff",
+    "xliffDir": "./xliff"
+  }
+}
