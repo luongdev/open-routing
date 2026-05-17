@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.1
-milestone_name: milestone
-status: completed
+milestone_name: Catalog Foundation
+status: "Phase 04 shipped — PR #4"
 stopped_at: Phase 4 planned (6 waves, cross-AI READY WITH FIXES applied)
-last_updated: "2026-05-17T05:10:02.676Z"
-last_activity: 2026-05-17 -- Phase 04 marked complete
+last_updated: "2026-05-17T05:35:56.571Z"
+last_activity: "2026-05-17 -- Phase 04 shipped — PR #4"
 progress:
   total_phases: 7
   completed_phases: 4
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-16)
 
 Phase: 04 — COMPLETE
 Plan: 2 of 6
-Status: Phase 04 complete
-Last activity: 2026-05-17 -- Phase 04 marked complete
+Status: Phase 04 shipped — PR #4
+Last activity: 2026-05-17 -- Phase 04 shipped — PR #4
 
 Progress: [██████████] 100%
 
