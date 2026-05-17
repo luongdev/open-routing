@@ -295,6 +295,63 @@ func (q *Queries) ListSkillsIncludingDisabled(ctx context.Context, arg ListSkill
 	return items, nil
 }
 
+const resolveSkillCodes = `-- name: ResolveSkillCodes :many
+SELECT id, code
+FROM skills
+WHERE org_id = $1 AND code = ANY($2::text[])
+`
+
+type ResolveSkillCodesParams struct {
+	OrgID   pgtype.UUID `json:"org_id"`
+	Column2 []string    `json:"column_2"`
+}
+
+type ResolveSkillCodesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Code string      `json:"code"`
+}
+
+// D5-16 + D5-17 (Phase 5 bulk import, post-04.1): batch lookup of skill
+// UUIDs by `code`. Used by the agent row processor to resolve nested
+// skill references once per chunk via Phase 04.1's `code` column.
+// Returns (id, code) pairs; missing codes are absent from the result
+// set — handler distinguishes "unknown skill" by set difference
+// (mirror agent_skills.go SkillsPresentInOrg miss-detection pattern
+// from the file header comment in agent_skills.sql).
+//
+// RESEARCH Pitfall 6 (N+1 lookup avoidance) is the trap this query
+// exists to eliminate. 50 rows × 3 skills each = 150 round trips
+// without batching; one ANY($2::text[]) call collapses it to 1 round
+// trip per chunk. The handler's row processor builds the input slice
+// by uniqifying all skill_codes referenced across the 50-row chunk
+// (D5-16 JSON shape `skills: [{skill_code, proficiency}, ...]` and
+// D5-17 CSV shape `skill_voice:7|skill_chat:9`).
+//
+// SQLChecker compliance (D-02): top-level FROM skills (a tenant alias
+// per sqlcheck.go tenantTables map line 35) + literal `org_id = $1` in
+// WHERE — preflight is green. The org_id leads parameter ordering to
+// match the Phase 04.1 convention (GetSkillByCode line 99,
+// UpsertSkillByCode line 105 both put org_id as $1).
+func (q *Queries) ResolveSkillCodes(ctx context.Context, arg ResolveSkillCodesParams) ([]ResolveSkillCodesRow, error) {
+	rows, err := q.db.Query(ctx, resolveSkillCodes, arg.OrgID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolveSkillCodesRow{}
+	for rows.Next() {
+		var i ResolveSkillCodesRow
+		if err := rows.Scan(&i.ID, &i.Code); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteSkill = `-- name: SoftDeleteSkill :execrows
 UPDATE skills
 SET enabled = FALSE, updated_at = NOW()
