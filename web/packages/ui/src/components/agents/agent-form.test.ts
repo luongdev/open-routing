@@ -32,14 +32,18 @@ describe('OrAgentForm', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders 3-step wizard stepper with Basics, Skills, Review labels', async () => {
+  it('renders 3-step wizard with Basics, Skills, Review steps in or-form-wizard', async () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    const text = shadow.textContent ?? '';
-    expect(text).toContain('Basics');
-    expect(text).toContain('Skills');
-    expect(text).toContain('Review');
+    // or-form-wizard should be rendered with 3 steps
+    const wizard = shadow.querySelector('or-form-wizard') as any;
+    expect(wizard).toBeTruthy();
+    const steps = wizard.steps as Array<{ key: string; label: string }>;
+    expect(steps).toHaveLength(3);
+    expect(steps[0]?.label).toBe('Basics');
+    expect(steps[1]?.label).toBe('Skills');
+    expect(steps[2]?.label).toBe('Review');
   });
 
   it('Step 1: empty code field prevents advancing — code validation error shown', async () => {
