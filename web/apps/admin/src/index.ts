@@ -11,8 +11,14 @@ const VALID_LOCALES: ReadonlySet<string> = new Set([sourceLocale, ...targetLocal
 const { setLocale } = configureLocalization({
   sourceLocale,
   targetLocales,
+  // Known typing limitation of @lit/localize — locale modules are typed as
+  // Record<string, unknown> by the generator until `lit-localize build` runs.
+  // Cast through unknown to satisfy the configureLocalization contract.
+  // (Verifier-flagged ship fix; once lit-localize build runs the cast can drop.)
   loadLocale: (locale: string) =>
-    import(`@open-routing/ui/locales/${locale}.js`) as Promise<Record<string, unknown>>,
+    import(`@open-routing/ui/locales/${locale}.js`) as unknown as ReturnType<
+      Parameters<typeof configureLocalization>[0]['loadLocale']
+    >,
 });
 
 // Locale detection: validate localStorage override → navigator.language → 'en'
