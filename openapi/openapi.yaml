@@ -1519,6 +1519,18 @@ components:
           description: Structured errors for each failed row. Empty when all rows succeed.
           items:
             $ref: "#/components/schemas/BulkImportFailedRow"
+        idempotent_replay:
+          type: boolean
+          default: false
+          nullable: true
+          readOnly: true
+          description: >
+            True when this response is a persisted prior result returned
+            because the client repeated the Idempotency-Key (D5-13). False or
+            absent on a first-time POST. v0.1 KNOWN LIMITATION: when true,
+            `succeeded` is always an empty array because the server stores
+            only counters; rely on `failed[]` for forensics (see operation
+            description).
 
     ImportJob:
       type: object
@@ -1529,6 +1541,7 @@ components:
         - id
         - org_id
         - entity_type
+        - status
         - total_rows
         - succeeded_rows
         - failed_rows
@@ -1540,6 +1553,18 @@ components:
           $ref: "#/components/schemas/UUIDv7"
         entity_type:
           $ref: "#/components/schemas/ImportEntityType"
+        status:
+          type: string
+          enum:
+            - pending
+            - completed
+            - failed
+          description: >
+            Lifecycle of the import (D5-26). `pending` — the row was created
+            before processing began; in v0.1 callers normally observe only
+            `completed` or `failed` because the request is synchronous.
+            `failed` may be set by the crash-recovery sweep (D5-11) when a
+            process restart leaves a pending row stranded.
         total_rows:
           type: integer
           example: 100
@@ -1560,6 +1585,120 @@ components:
           format: date-time
           readOnly: true
           example: "2026-05-15T00:00:00Z"
+
+    # ── Bulk Import Per-Entity Request Schemas (Phase 5 / IMP-01) ─────────────
+    # Each schema is the per-row JSON shape selected by `?entity=` on
+    # POST /v1/orgs/{org_id}/catalog/import. FK fields reference the target
+    # entity by `code` (D5-15 / Phase 04.1 D04_1-01 — the universal canonical
+    # user-facing identifier). `external_id` is supported as an optional
+    # integration-mapping field (D04_1-07) but is NOT the upsert key.
+    # Alphabetised by schema name.
+
+    ImportAdapterRequest:
+      type: object
+      description: |
+        Phase 5 (IMP-01) per-row JSON shape for `entity=adapters`. `config`
+        is a free-form JSONB blob passed through to storage with no
+        validation (D-72 Phase 3 contract).
+      required: [code, name, adapter_type]
+      properties:
+        code:         { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        external_id:  { type: string, nullable: true }
+        name:         { type: string }
+        adapter_type: { type: string }
+        config:
+          type: object
+          description: Free-form vendor configuration; no fixed schema.
+          additionalProperties: true
+        enabled:      { type: boolean, default: true }
+
+    ImportAgentRequest:
+      type: object
+      description: |
+        Phase 5 (IMP-01) per-row JSON shape for `entity=agents`. Mirror of
+        CreateAgentRequest with FK references by `code` instead of UUID.
+        `external_id` is optional integration-mapping (mutable per D04_1-07).
+      required: [code, name, email]
+      properties:
+        code:        { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$', example: "emp_0042" }
+        external_id: { type: string, nullable: true, example: "HR-EMP-0042" }
+        name:        { type: string, example: "Mai Linh" }
+        email:       { type: string, format: email, example: "mai@example.com" }
+        enabled:     { type: boolean, default: true }
+        skills:
+          type: array
+          description: >
+            Skill assignments referenced by `skill_code`. MERGE semantics
+            (D5-18) — existing assignments not in this list are LEFT INTACT;
+            proficiency for codes present in this list is set to the value
+            supplied (D5-19 import wins). Skill removal via import is
+            deferred to v0.2.
+          items:
+            type: object
+            required: [skill_code, proficiency]
+            properties:
+              skill_code:  { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+              proficiency: { type: integer, minimum: 1, maximum: 10 }
+
+    ImportBreakReasonRequest:
+      type: object
+      description: |
+        Phase 5 (IMP-01) per-row JSON shape for `entity=break_reasons`.
+        `name` is a mutable display label (Phase 04.1 dropped
+        UNIQUE(org_id, name) — IDENT-03).
+      required: [code, name]
+      properties:
+        code:          { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        external_id:   { type: string, nullable: true }
+        name:          { type: string }
+        routable:      { type: boolean, default: true }
+        display_order: { type: integer, default: 0 }
+        enabled:       { type: boolean, default: true }
+
+    ImportChannelRequest:
+      type: object
+      description: |
+        Phase 5 (IMP-01) per-row JSON shape for `entity=channels`. FK
+        `default_queue_code` references an existing queue by code; cross-row
+        FK probe is performed in the same chunk transaction.
+      required: [code, name, channel_type]
+      properties:
+        code:               { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        external_id:        { type: string, nullable: true }
+        name:               { type: string }
+        channel_type:       { type: string }
+        default_queue_code: { type: string, nullable: true, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        enabled:            { type: boolean, default: true }
+
+    ImportQueueRequest:
+      type: object
+      description: Phase 5 (IMP-01) per-row JSON shape for `entity=queues`.
+      required: [code, name, channel_types]
+      properties:
+        code:        { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        external_id: { type: string, nullable: true }
+        name:        { type: string }
+        channel_types:
+          type: array
+          items: { type: string }
+          description: >
+            Multi-valued — in CSV use pipe-delimited per D5-04
+            (`voice|chat`); in JSON use the array form.
+        priority:    { type: integer, default: 5 }
+        acw_sec:     { type: integer, default: 0 }
+        enabled:     { type: boolean, default: true }
+
+    ImportSkillRequest:
+      type: object
+      description: Phase 5 (IMP-01) per-row JSON shape for `entity=skills`.
+      required: [code, name, skill_type]
+      properties:
+        code:        { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        external_id: { type: string, nullable: true }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        skill_type:  { type: string }
+        enabled:     { type: boolean, default: true }
 
     # ── Infrastructure Schemas ─────────────────────────────────────────────────
 
@@ -1643,6 +1782,20 @@ components:
         returns HTTP 400 `invalid_id`.
       schema:
         $ref: "#/components/schemas/UUIDv7"
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe
+        (D5-13). A repeated request with the same key in the same org returns
+        the persisted prior result with `idempotent_replay: true` (D5-27).
+        Optional — absent header means a fresh job row is created each call.
+      schema:
+        type: string
+        format: uuid
+        example: "01919e1b-7c80-7c80-8000-0123456789ab"
 
     ImportJobIdPath:
       name: import_id
@@ -3064,9 +3217,21 @@ paths:
         field names. BOM handling: UTF-8 BOM is stripped automatically (IMP-02).
         Line endings: CRLF and LF both accepted (IMP-02).
 
-        **Upsert semantics:** Rows are upserted keyed by `(org_id, external_id)`
-        — existing rows update fields, new rows insert. Running the same input
-        twice produces no duplicates (IMP-03).
+        **Upsert semantics:** Rows are upserted keyed by `(org_id, code)` —
+        the universal user-facing canonical identifier introduced by Phase 04.1
+        (D04_1-01). Existing rows update fields, new rows insert. Running the
+        same input twice produces no duplicates (IMP-03). `external_id` is
+        supported as an optional integration-mapping field on every
+        `Import*Request` (mutable per D04_1-07) but is NOT the upsert key.
+
+        **Idempotency:** Clients MAY pass an `Idempotency-Key` UUIDv7 header to
+        make a POST retry-safe. A repeated request with the same key in the
+        same org returns the persisted prior result with `idempotent_replay:
+        true` (D5-13 / D5-27). Note: in v0.1 the replay response carries an
+        empty `succeeded` array because the server stores only counters +
+        errors JSONB — original succeeded IDs are not reconstructable. Callers
+        that need full replay should use the non-idempotent path or wait for
+        v0.2.
 
         **Size limits:** Maximum 50 MB body and 500 rows (IMP-07). Oversized
         requests return HTTP 413 (request_too_large_use_async_pathway) before
@@ -3086,13 +3251,35 @@ paths:
         supported versions. JSON payloads do not require this parameter.
       security:
         - OrgHeader: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
       requestBody:
         required: true
+        # Per-row shape is one of the six Import*Request schemas in
+        # components.schemas, selected by the `?entity=` query parameter.
+        # Polymorphic `oneOf` is NOT used on `application/json.items` because
+        # oapi-codegen v2 does not emit accessor helpers for `oneOf` request
+        # bodies (verified — see oapi-codegen issue #1620 / RESEARCH §F2).
+        # The 6 schemas still appear in components.schemas so clients have
+        # typed shapes; the server dispatches the per-row decode based on
+        # `?entity=`.
+        x-import-row-types:
+          - ImportAgentRequest
+          - ImportSkillRequest
+          - ImportQueueRequest
+          - ImportChannelRequest
+          - ImportAdapterRequest
+          - ImportBreakReasonRequest
         content:
           application/json:
             schema:
               type: array
-              description: Array of entity objects (Create*Request shape for the target entity).
+              description: >
+                Array of entity objects. Per-row shape is one of the six
+                Import*Request schemas in `components.schemas`, selected by
+                the `?entity=` query parameter. Polymorphic `oneOf` is NOT
+                used because oapi-codegen v2 does not emit accessor helpers
+                for `oneOf` request bodies (verified — issue #1620).
               items: {}
               maxItems: 500
           text/csv:
@@ -3209,5 +3396,8 @@ tags:
   - name: Import
     description: >
       Bulk import for all 6 catalog entities (IMP-01 through IMP-08). Accepts
-      JSON or CSV. Upserts keyed by `(org_id, external_id)`. Returns HTTP 207
-      on partial success. Capped at 50 MB / 500 rows in v0.1.
+      JSON or CSV. Upserts keyed by `(org_id, code)` — the universal
+      user-facing canonical identifier introduced by Phase 04.1 (D04_1-01);
+      `external_id` is supported as an optional integration-mapping field on
+      every `Import*Request` (D04_1-07) but is NOT the upsert key. Returns
+      HTTP 207 on partial success. Capped at 50 MB / 500 rows in v0.1.
