@@ -1121,8 +1121,6 @@ components:
             target state when WrapUp expires. Ignored on other transitions.
         force:
           type: boolean
-          default: false
-          nullable: true
           description: >
             Admin override (D-84). When `true`, bypasses the transition matrix
             (skips HTTP 409 `invalid_transition`). Cross-row probes still run:

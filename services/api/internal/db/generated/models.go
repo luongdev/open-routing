@@ -40,6 +40,18 @@ type AgentSkill struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type AgentState struct {
+	AgentID              pgtype.UUID        `json:"agent_id"`
+	OrgID                pgtype.UUID        `json:"org_id"`
+	Status               string             `json:"status"`
+	EngagedChannel       *string            `json:"engaged_channel"`
+	BreakReasonID        pgtype.UUID        `json:"break_reason_id"`
+	PostInteractionState *string            `json:"post_interaction_state"`
+	WrapupUntil          pgtype.Timestamptz `json:"wrapup_until"`
+	StateVersion         int64              `json:"state_version"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type BreakReason struct {
 	ID           pgtype.UUID        `json:"id"`
 	OrgID        pgtype.UUID        `json:"org_id"`
