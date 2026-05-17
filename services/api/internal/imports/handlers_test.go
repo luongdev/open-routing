@@ -23,14 +23,23 @@ package imports
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 )
+
+// errFinaliseInjected — sentinel used by Phase 5 fix H3 test injection
+// to force finaliseJob to fail. Defined as a package-level var so the
+// test's override closure can return the same identity-comparable
+// error on every call (none of the production code branches on
+// identity, but the sentinel keeps the test reason readable).
+var errFinaliseInjected = errors.New("finalise injected failure")
 
 // ---------------------------------------------------------------------------
 // Agents — JSON + CSV happy paths.
@@ -641,4 +650,56 @@ func TestBulkImport_AgentImport_UnknownSkillCode_PerRow(t *testing.T) {
 	require.NotNil(t, r.Failed[0].Field)
 	require.Contains(t, *r.Failed[0].Field, "skills[",
 		"unknown skill failure must report the skills[N].skill_code path")
+}
+
+// TestBulkImport_FinaliseJobFails_Returns500 — Phase 5 fix H3.
+// When `finaliseJob` (the audit-row UPDATE that flips status=pending →
+// completed/failed) errors out, the handler MUST return HTTP 500
+// signalling that the import data did commit but the persisted audit
+// row stayed in `pending`. Pre-fix the handler logged warn and returned
+// the success/partial result anyway, poisoning the audit trail (GET /
+// imports returned status=pending with zero counters, idempotency
+// replay returned empty result, the 24h sweep overwrote with
+// server_crash). Test seam: WithFinaliseOverride lets us force the
+// error without destructive schema mutations.
+func TestBulkImport_FinaliseJobFails_Returns500(t *testing.T) {
+	th := newTestImports(t)
+	if th == nil {
+		return
+	}
+	ctx := orgkey.SetOrgID(context.Background(), th.OrgID)
+	cleanImportTables(t, ctx, th.Pool, th.OrgID)
+	defer cleanImportTables(t, ctx, th.Pool, th.OrgID)
+
+	// Inject the failure hook. Same package → direct field access (no
+	// exported setter needed; the override field is intentionally
+	// unexported so production wiring cannot set it).
+	th.I.finaliseOverride = func(
+		_ context.Context,
+		_, _ uuid.UUID,
+		_ string,
+		_, _ int,
+		_ []byte,
+	) error {
+		return errFinaliseInjected
+	}
+
+	rows := []interface{}{
+		map[string]interface{}{"code": "emp_h3_fin", "name": "Alice", "email": "alice@example.com"},
+	}
+	resp, body := postImportJSON(t, th, api.Agents, rows)
+	require.Equalf(t, http.StatusInternalServerError, resp.StatusCode,
+		"H3: finaliseJob failure must surface as 500, not 200; body=%s", string(body))
+
+	// The data did land — verify the agent row exists despite the audit
+	// failure (this is what makes H3 nuanced: the import IS committed,
+	// only the audit step failed). The status code surfaces the
+	// inconsistency so admin can verify via GET /imports/{id}.
+	var agentRows int
+	err := th.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM agents WHERE org_id = $1 AND code = 'emp_h3_fin'`,
+		th.OrgID).Scan(&agentRows)
+	require.NoError(t, err)
+	require.Equal(t, 1, agentRows,
+		"H3: per-row chunk commit happened before finaliseJob; agent row must exist")
 }

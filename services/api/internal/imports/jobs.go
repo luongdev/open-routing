@@ -81,6 +81,14 @@ func (s *Importer) finaliseJob(
 	succeeded, failed int,
 	errorsJSON []byte,
 ) error {
+	// Phase 5 fix H3 test seam: WithFinaliseOverride installs a hook
+	// that lets integration tests force a finalise failure without
+	// destructive schema mutations. Production wiring leaves the hook
+	// nil; the override is package-internal so external callers cannot
+	// reach it.
+	if s.finaliseOverride != nil {
+		return s.finaliseOverride(ctx, jobID, orgID, string(status), succeeded, failed, errorsJSON)
+	}
 	q := generated.New(s.deps.OrgDB)
 	// succeeded + failed each ≤ totalRows ≤ 500 (D5-22 bound enforced
 	// in handler before chunk loop). int → int32 is safe — annotated

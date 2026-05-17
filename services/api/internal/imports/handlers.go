@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 
 	"github.com/luongdev/open-routing/services/api/internal/cache"
@@ -69,6 +70,17 @@ func WithClock(c clockwork.Clock) Option { return func(s *Importer) { s.clock = 
 // Production wiring never calls this — the cadence is locked at D5-11.
 func WithSweepInterval(d time.Duration) Option { return func(s *Importer) { s.sweepInterval = d } }
 
+// WithFinaliseOverride installs a test hook that replaces the
+// finaliseJob DB call. Used by Phase 5 fix H3 integration tests to
+// force the audit-row update to fail without mutating the schema.
+// Production wiring leaves this unset; the override must be nil in
+// any non-test build.
+func WithFinaliseOverride(
+	fn func(ctx context.Context, jobID, orgID uuid.UUID, status string, succeeded, failed int, errorsJSON []byte) error,
+) Option {
+	return func(s *Importer) { s.finaliseOverride = fn }
+}
+
 // Importer implements the SUBSET of api.StrictServerInterface dealing
 // with bulk-import operations (BulkImportCatalog + GetImportJob; Wave 4
 // adds the method bodies). The full interface is satisfied by the
@@ -90,6 +102,13 @@ type Importer struct {
 	wg      sync.WaitGroup
 	started bool
 	startMu sync.Mutex
+
+	// Phase 5 fix H3 test hook: when non-nil, replaces the finaliseJob
+	// DB call so integration tests can inject a forced failure (e.g.,
+	// simulate DB-down at the finalise step) without resorting to
+	// destructive schema mutations. Production callers leave this nil;
+	// only set via WithFinaliseOverride.
+	finaliseOverride func(ctx context.Context, jobID, orgID uuid.UUID, status string, succeeded, failed int, errorsJSON []byte) error
 }
 
 // New constructs an *Importer. Required Deps validate at first

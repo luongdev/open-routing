@@ -444,11 +444,33 @@ func (s *Importer) runImportPipeline(
 		terminalStatus = api.ImportJobStatus("failed")
 	}
 	if finErr := s.finaliseJob(ctx, jobID, orgID, terminalStatus, len(allSucceeded), len(allFailed), errorsJSON); finErr != nil {
-		// Log but proceed: the import landed at the DB level; only the
-		// audit row failed. Returning the result preserves the admin's
-		// ability to see what succeeded; the sweep goroutine will mark
-		// the pending row failed after 24h if the row ever surfaces.
-		s.deps.Logger.WarnContext(ctx, "import.finalise_job_failed", "err", finErr, "job_id", jobID)
+		// Phase 5 fix H3 — finaliseJob failure MUST surface as HTTP 500.
+		// Pre-fix: handler logged warn and returned the 200/207 success
+		// result anyway. Three downstream consequences poisoned the audit
+		// trail:
+		//   1. GET /imports/{id} returned status=pending with zero counters
+		//      (the persisted row never advanced past the createJob step).
+		//   2. Idempotency-Key replay rehydrated the pending row, returning
+		//      empty succeeded[] + empty failed[] with status 200 — masking
+		//      the original outcome from clients that retried.
+		//   3. The 24h crash sweep flipped the pending row to
+		//      failed/server_crash, overwriting the actual outcome with a
+		//      synthetic crash entry.
+		// The import IS already committed at the DB level (each chunk's
+		// outer tx ran independently), so admin retry is the recovery path
+		// — but the audit row needs to reflect reality. Returning 500
+		// signals "audit corrupt; verify state via GET" without lying
+		// about the import's outcome.
+		s.deps.Logger.ErrorContext(ctx, "import.finalise_job_failed",
+			"err", finErr, "job_id", jobID,
+			"succeeded", len(allSucceeded), "failed", len(allFailed),
+			"note", "data committed but audit row stayed pending; admin must verify via GET /imports/{id}")
+		return api.BulkImportCatalog500JSONResponse{
+			InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error:  api.ErrorCodeInternal,
+				Reason: "finalise_job_failed_data_committed_audit_corrupt",
+			},
+		}, nil
 	}
 
 	// Build the wire-shape Succeeded slice (UUIDv7s only — we drop the
