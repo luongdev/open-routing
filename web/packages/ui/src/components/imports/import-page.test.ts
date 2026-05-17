@@ -8,8 +8,8 @@ import type { ImportCatalogArgs, BulkImportResult } from '../../api/import.js';
 // Registers <or-import-page> element
 import './import-page.js';
 
-/** A valid 200 BulkImportResult fixture */
-const RESULT_200: BulkImportResult = {
+/** A valid 200 BulkImportResult fixture (reserved for future success-path tests) */
+const _RESULT_200: BulkImportResult = {
   import_id: '01935b00-0000-7000-8000-000000000001',
   entity: 'agents',
   schema_version: 'v0.1',

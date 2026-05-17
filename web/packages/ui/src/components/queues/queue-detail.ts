@@ -374,9 +374,10 @@ export class OrQueueDetail extends LitElement {
   // --- channel_types change handler ---
 
   private _handleChannelTypesChange(e: Event): void {
-    const select = e.target as HTMLSelectElement & { value: string };
-    // sl-select multiple returns a string[] or string of space-separated values
-    const val = (select as any).value;
+    // sl-select multiple returns string[] when multiple values selected.
+    // HTMLSelectElement.value is always string, but sl-select extends with string[].
+    const select = e.target as HTMLSelectElement & { value: string | string[] };
+    const val = select.value;
     let types: ChannelType[];
     if (Array.isArray(val)) {
       types = val as ChannelType[];

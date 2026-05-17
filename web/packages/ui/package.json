@@ -14,6 +14,8 @@
     "./components/channels": "./src/components/channels/index.ts",
     "./components/adapters": "./src/components/adapters/index.ts",
     "./components/break-reasons": "./src/components/break-reasons/index.ts",
+    "./components/status": "./src/components/status/index.ts",
+    "./components/imports": "./src/components/imports/index.ts",
     "./components/shell": "./src/components/shell/index.ts",
     "./components/primitives": "./src/components/primitives/index.ts",
     "./validators": "./src/validators/index.ts",
