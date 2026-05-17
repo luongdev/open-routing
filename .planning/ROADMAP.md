@@ -175,7 +175,7 @@ Plans:
 
 **Wave 0**
 
-- [ ] 04-01-PLAN.md — Spec amendment (force field) + agent_states migration append + tenantTables allowlist + codegen regen + clockwork install (D-78, D-92)
+- [x] 04-01-PLAN.md — Spec amendment (force field) + agent_states migration append + tenantTables allowlist + codegen regen + clockwork install (D-78, D-92)
 
 **Wave 1** *(blocked on Wave 0 completion)*
 
@@ -268,7 +268,7 @@ Plans:
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
-| 4. Agent State Machine (Go) | 0/TBD | Not started | - |
+| 4. Agent State Machine (Go) | 1/6 | In Progress|  |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
