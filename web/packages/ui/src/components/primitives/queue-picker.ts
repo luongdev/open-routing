@@ -106,7 +106,12 @@ export class OrQueuePicker extends LitElement {
   }
 
   private _handleChange(e: Event): void {
-    const select = e.target as HTMLElement & { value: string };
+    // Guard: only process sl-change from sl-select, not from sl-input inside the dropdown
+    // (Gemini HIGH: nested sl-input sl-change events bubble up and contaminate value)
+    const target = e.target as HTMLElement;
+    if (target.tagName.toLowerCase() !== 'sl-select') return;
+
+    const select = target as HTMLElement & { value: string };
     const rawValue = select.value;
     const queueId = rawValue === '' ? null : rawValue;
     this.value = queueId;

@@ -121,7 +121,9 @@ describe('or-queue-picker', () => {
     el.addEventListener('or-queue-picker-change', (e) => events.push(e as CustomEvent));
 
     // Call _handleChange directly — simulates sl-change from sl-select with value=''
-    const fakeEvent = { target: { value: '' } } as unknown as Event;
+    // Must use a target with tagName 'sl-select' to pass the event bubble guard.
+    const fakeTarget = { tagName: 'SL-SELECT', value: '' };
+    const fakeEvent = { target: fakeTarget } as unknown as Event;
     (el as any)._handleChange(fakeEvent);
 
     await (el as any).updateComplete;

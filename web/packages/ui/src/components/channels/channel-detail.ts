@@ -243,9 +243,10 @@ export class OrChannelDetail extends LitElement {
     this._fieldErrors = {};
 
     // Full PATCH body includes explicit null for default_queue_id (nullable field)
+    // Gemini MED: normalize external_id — pass undefined when empty to avoid 422 minLength
     const body = {
       name: this._formData.name,
-      external_id: this._formData.external_id,
+      external_id: this._formData.external_id || undefined,
       channel_type: this._formData.channel_type as ChannelType,
       default_queue_id: this._formData.default_queue_id,
       enabled: this._formData.enabled,
@@ -313,7 +314,12 @@ export class OrChannelDetail extends LitElement {
       body: { enabled: true, version: this._entity.version },
     } as never);
     const { data, error } = result as { data: Channel | null; error: unknown };
-    if (!error && data) {
+    if (error) {
+      // Gemini MED: surface enable/disable errors (not silently swallowed)
+      this._apiError = (error as { reason?: string })?.reason ?? 'Failed to enable channel';
+      return;
+    }
+    if (data) {
       this._entity = data;
       this._formData = { ...this._formData, enabled: true };
     }
@@ -326,7 +332,12 @@ export class OrChannelDetail extends LitElement {
       body: { enabled: false, version: this._entity.version },
     } as never);
     const { data, error } = result as { data: Channel | null; error: unknown };
-    if (!error && data) {
+    if (error) {
+      // Gemini MED: surface enable/disable errors (not silently swallowed)
+      this._apiError = (error as { reason?: string })?.reason ?? 'Failed to disable channel';
+      return;
+    }
+    if (data) {
       this._entity = data;
       this._formData = { ...this._formData, enabled: false };
     }
