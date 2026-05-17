@@ -215,7 +215,9 @@ export class OrSkillDetail extends LitElement {
       name: this._form.name,
       // Per D04_1-07: pass "" to clear external_id binding; null === omission
       external_id: this._form.external_id,
-      description: this._form.description || null,
+      // Per D04_1-07 / UpdateSkillRequest contract: use "" to CLEAR description; null === omission.
+      // Sending "" causes the server to set description to SQL NULL.
+      description: this._form.description,
       skill_type: this._form.skill_type,
       enabled: this._form.enabled,
       version: this._entity.version,
@@ -356,16 +358,23 @@ export class OrSkillDetail extends LitElement {
   // --- Conflict banner handlers ---
 
   private _handleConflictAcknowledged(e: CustomEvent): void {
-    if (e.detail?.action === 'discard') {
-      if (this._entity) {
-        this._form = {
-          name: this._entity.name ?? '',
-          external_id: this._entity.external_id ?? '',
-          description: (this._entity as { description?: string | null }).description ?? '',
-          skill_type: (this._entity as { skill_type?: string }).skill_type ?? '',
-          enabled: this._entity.enabled ?? true,
-        };
-        this._dirty = false;
+    if (e.detail?.action === 'discard' && this._conflictServer) {
+      // Discard user edits — revert to server's latest state (from error.current, not stale _entity)
+      const serverData = this._conflictServer as Record<string, unknown>;
+      this._entity = serverData as unknown as Skill;
+      this._form = {
+        name: (serverData['name'] as string) ?? '',
+        external_id: (serverData['external_id'] as string) ?? '',
+        description: (serverData['description'] as string) ?? '',
+        skill_type: (serverData['skill_type'] as string) ?? '',
+        enabled: (serverData['enabled'] as boolean) ?? true,
+      };
+      this._dirty = false;
+    } else if (e.detail?.action !== 'discard' && this._conflictServer) {
+      // Review / overwrite: bump local entity version to server version so next PATCH uses correct version
+      // This prevents guaranteed re-409 on the next save attempt.
+      if (this._entity && 'version' in this._conflictServer) {
+        this._entity = { ...this._entity, version: this._conflictServer['version'] as number };
       }
     }
     this._conflictServer = null;
@@ -523,10 +532,11 @@ export class OrSkillDetail extends LitElement {
       </div>
 
       <!-- Field 2: name (required) -->
+      <!-- Use .value property binding (not value= attribute) for Shoelace programmatic resets -->
       <div class="form-group">
         <sl-input
           label="Name"
-          value=${this._form.name}
+          .value=${this._form.name}
           required
           ?invalid=${!!this._fieldErrors['name']}
           @sl-input=${(e: Event) => {
@@ -544,7 +554,7 @@ export class OrSkillDetail extends LitElement {
       <div class="form-group">
         <sl-input
           label="External ID"
-          value=${this._form.external_id}
+          .value=${this._form.external_id}
           help-text="Optional integration mapping. Pass empty to clear."
           @sl-input=${(e: Event) => {
             this._form = { ...this._form, external_id: (e.target as HTMLInputElement).value };
@@ -557,7 +567,7 @@ export class OrSkillDetail extends LitElement {
       <div class="form-group">
         <sl-textarea
           label="Description"
-          value=${this._form.description}
+          .value=${this._form.description}
           @sl-input=${(e: Event) => {
             this._form = { ...this._form, description: (e.target as HTMLTextAreaElement).value };
             this._markDirty();
@@ -569,7 +579,7 @@ export class OrSkillDetail extends LitElement {
       <div class="form-group">
         <sl-input
           label="Skill Type"
-          value=${this._form.skill_type}
+          .value=${this._form.skill_type}
           required
           ?invalid=${!!this._fieldErrors['skill_type']}
           help-text="e.g. support, technical, billing"

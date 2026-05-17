@@ -220,11 +220,12 @@ export class OrSkillForm extends LitElement {
       </div>
 
       <!-- name (required) -->
+      <!-- Use .value property binding (not value= attribute) for Shoelace programmatic resets -->
       <div class="form-group">
         <sl-input
           label="Name"
           required
-          value=${this._formData.name}
+          .value=${this._formData.name}
           ?invalid=${!!this._errors['name']}
           @sl-input=${(e: Event) => {
             this._formData = { ...this._formData, name: (e.target as HTMLInputElement).value };
@@ -240,7 +241,7 @@ export class OrSkillForm extends LitElement {
       <div class="form-group">
         <sl-input
           label="External ID"
-          value=${this._formData.external_id}
+          .value=${this._formData.external_id}
           @sl-input=${(e: Event) => {
             this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
           }}
@@ -251,7 +252,7 @@ export class OrSkillForm extends LitElement {
       <div class="form-group">
         <sl-textarea
           label="Description"
-          value=${this._formData.description}
+          .value=${this._formData.description}
           @sl-input=${(e: Event) => {
             this._formData = { ...this._formData, description: (e.target as HTMLTextAreaElement).value };
           }}
@@ -263,7 +264,7 @@ export class OrSkillForm extends LitElement {
         <sl-input
           label="Skill Type"
           required
-          value=${this._formData.skill_type}
+          .value=${this._formData.skill_type}
           ?invalid=${!!this._errors['skill_type']}
           help-text="e.g. support, technical, billing"
           @sl-input=${(e: Event) => {
