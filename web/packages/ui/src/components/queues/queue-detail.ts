@@ -249,8 +249,13 @@ export class OrQueueDetail extends LitElement {
 
       if (error) {
         // 409 version_conflict — consume from error.current (Pitfall 9: never call response.json())
+        // [Rule 1 - Bug] Update _entity from error.current so re-submit uses the correct version.
+        // Storing only _conflictServer left _entity.version stale; re-submit PATCH would fail again.
         if (error && typeof error === 'object' && 'current' in error) {
-          this._conflictServer = (error as { current: Record<string, unknown> }).current;
+          const current = (error as { current: Queue }).current;
+          this._conflictServer = current as unknown as Record<string, unknown>;
+          // Update _entity so next PATCH body.version is the server's current version
+          this._entity = current;
           return;
         }
         // 422 immutable_field
@@ -339,6 +344,11 @@ export class OrQueueDetail extends LitElement {
     const { error } = result as { error: unknown };
     if (!error) {
       this._navigate(`/orgs/${this.orgId}/queues`);
+    } else {
+      // Surface delete error inline (e.g. referential integrity blocking delete)
+      this._deleteConfirmOpen = false;
+      this._deleteConfirmName = '';
+      this._apiError = (error as { reason?: string })?.reason ?? 'Delete failed. The queue may be in use.';
     }
   }
 
