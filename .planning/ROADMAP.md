@@ -216,7 +216,30 @@ Plans:
   5. `go generate ./...` and `pnpm gen:api` produce no diff against committed code (CONTRACT-04 maintained); OpenAPI 3.0 spec lint passes; `task gen` cleanly regenerates `server.gen.go` and `types.gen.go` with the new `code` field on all 6 entity schemas.
   6. Migration 000002 (still editable per D-61) is amended in place — no migration 003 is added; `task db:reset` rebuilds the schema cleanly from a Phase 1 baseline.
 
-**Plans**: TBD (run /gsd-discuss-phase 04.1 then /gsd-plan-phase 04.1)
+**Plans**: 6 plans
+Plans:
+
+**Wave 0** *(2 plans in parallel — different files, no cross-dep)*
+
+- [ ] 04.1-01-PLAN.md — Migration 000002 amend (up + down): add code TEXT NOT NULL on 6 entities + UNIQUE(org_id, code) + demote external_id to TEXT NULL with partial unique + drop break_reasons.UNIQUE(org_id, name) + idempotent row_number backfill (IDENT-01, IDENT-02, IDENT-03, IDENT-07)
+- [ ] 04.1-02-PLAN.md — OpenAPI yaml deltas: 3 new ErrorCode enum values (duplicate_code, duplicate_external_id, immutable_field) + Identity Model info.description link + code on 6 entity + 1 ListItem + 6 Create*Request + 6 Update*Request + new CreateAdapter 409 + new Update* 422 responses (IDENT-01..06)
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 04.1-03-PLAN.md — sqlc query authoring (6 files: code in InsertX/ListX/UpdateX RETURNING; new GetXByCode + UpsertXByCode) + codecheck.go + codecheck_test.go (validateCodeFormat + validateImmutableCode helpers) + task gen regen of Go server stubs + sqlc structs + TS client (IDENT-04, IDENT-05)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04.1-04-PLAN.md — Handler refactor: fix mapPgError constraint-name introspection in errors.go (fixes Phase 3 SIMPLICITY-REVIEW MED) + project Code in mappers.go + 6 entity handlers gain Layer 1 + Layer 2 + new 409/422 paths + CreateAdapter 409 wrapper + break_reasons drops name_collision (IDENT-01, IDENT-04, IDENT-06)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04.1-05-PLAN.md — Per-entity test suites: 43 new tests across 6 _test.go files (6 standard per entity + TestBreakReasons_DuplicateName_NoConflict) + isolation fixtures rewrite to regex-compliant codes + TestCatalog_CrossOrgSameCode_BothSucceed + NEW migration_idempotent_test.go (IDENT-01..08)
+
+**Wave 4** *(blocked on Wave 3 — sequential, includes human checkpoint)*
+
+- [ ] 04.1-06-PLAN.md — Phase gate: task gen drift check + task test + task lint + task db:reset smoke + cross-AI peer review (Codex + Gemini in parallel per CLAUDE.md HARD RULE) synthesized into 04.1-REVIEW.md + Phase 5 amend checklist (D04_1-25) + human checkpoint approval (IDENT-01..08)
+
 **Branch**: `gsd/phase-04-5-catalog-identity-normalization`
 **Source review**: `.planning/phases/03-catalog-crud-go/03-CATALOG-IDENTITY-REVIEW.md` + `03-CATALOG-IDENTITY-REVIEW-RESPONSE.md` (cross-AI peer-review consensus)
 
