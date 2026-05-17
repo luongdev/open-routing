@@ -46,8 +46,11 @@ func (p *queueRowProc) process(
 		return succeededRow{}, &rowError{Field: "code", Reason: "invalid_code_format"}
 	}
 
-	priority := int32(derefInt(typed.Priority, 0))
-	acwSec := int32(derefInt(typed.AcwSec, 0))
+	// priority + acw_sec are admin-supplied ints; OpenAPI schema bounds
+	// them within int32 range (CSV coerce + JSON Decode both reject
+	// overflow); safe int → int32.
+	priority := int32(derefInt(typed.Priority, 0)) //nolint:gosec // schema-bounded int32 range
+	acwSec := int32(derefInt(typed.AcwSec, 0))     //nolint:gosec // schema-bounded int32 range
 
 	id := uuid.Must(uuid.NewV7())
 	qtx := generated.New(sp)

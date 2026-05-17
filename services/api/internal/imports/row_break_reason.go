@@ -50,7 +50,9 @@ func (p *breakReasonRowProc) process(
 	}
 
 	routable := derefBool(typed.Routable, true)
-	displayOrder := int32(derefInt(typed.DisplayOrder, 0))
+	// display_order is admin-supplied; OpenAPI schema-bounded to int32
+	// range (CSV coerce + JSON Decode both reject overflow); safe.
+	displayOrder := int32(derefInt(typed.DisplayOrder, 0)) //nolint:gosec // schema-bounded int32 range
 
 	id := uuid.Must(uuid.NewV7())
 	qtx := generated.New(sp)

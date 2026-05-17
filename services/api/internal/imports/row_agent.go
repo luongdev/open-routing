@@ -173,10 +173,12 @@ func (p *agentRowProc) process(
 				}
 			}
 			if mErr := qtx.MergeAgentSkill(ctx, generated.MergeAgentSkillParams{
-				AgentID:     row.ID,
-				SkillID:     pgUUID(skillID),
-				OrgID:       pgUUID(orgID),
-				Proficiency: int32(sk.Proficiency),
+				AgentID: row.ID,
+				SkillID: pgUUID(skillID),
+				OrgID:   pgUUID(orgID),
+				// Proficiency is range-checked 0..100 in the row
+				// validator before reaching here; safe int → int32.
+				Proficiency: int32(sk.Proficiency), //nolint:gosec // bounded 0..100 by validator
 			}); mErr != nil {
 				p.handlers.deps.Logger.WarnContext(ctx, "import.agent.merge_skill_failed",
 					"agent_id", uuid.UUID(row.ID.Bytes),
