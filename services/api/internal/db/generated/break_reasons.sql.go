@@ -22,37 +22,10 @@ type GetBreakReasonParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Keep unfiltered by version/enabled: update handlers reuse this for D-66
+// 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 func (q *Queries) GetBreakReason(ctx context.Context, arg GetBreakReasonParams) (BreakReason, error) {
 	row := q.db.QueryRow(ctx, getBreakReason, arg.ID, arg.OrgID)
-	var i BreakReason
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.Name,
-		&i.Routable,
-		&i.DisplayOrder,
-		&i.Enabled,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getBreakReasonByIdAnyVersion = `-- name: GetBreakReasonByIdAnyVersion :one
-SELECT id, org_id, name, routable, display_order, enabled, version, created_at, updated_at
-FROM break_reasons
-WHERE id = $1 AND org_id = $2
-`
-
-type GetBreakReasonByIdAnyVersionParams struct {
-	ID    pgtype.UUID `json:"id"`
-	OrgID pgtype.UUID `json:"org_id"`
-}
-
-// D-66 disambiguation probe.
-func (q *Queries) GetBreakReasonByIdAnyVersion(ctx context.Context, arg GetBreakReasonByIdAnyVersionParams) (BreakReason, error) {
-	row := q.db.QueryRow(ctx, getBreakReasonByIdAnyVersion, arg.ID, arg.OrgID)
 	var i BreakReason
 	err := row.Scan(
 		&i.ID,

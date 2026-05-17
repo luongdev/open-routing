@@ -22,38 +22,10 @@ type GetChannelParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Keep unfiltered by version/enabled: update handlers reuse this for D-66
+// 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 func (q *Queries) GetChannel(ctx context.Context, arg GetChannelParams) (Channel, error) {
 	row := q.db.QueryRow(ctx, getChannel, arg.ID, arg.OrgID)
-	var i Channel
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.ExternalID,
-		&i.Name,
-		&i.ChannelType,
-		&i.DefaultQueueID,
-		&i.Enabled,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getChannelByIdAnyVersion = `-- name: GetChannelByIdAnyVersion :one
-SELECT id, org_id, external_id, name, channel_type, default_queue_id, enabled, version, created_at, updated_at
-FROM channels
-WHERE id = $1 AND org_id = $2
-`
-
-type GetChannelByIdAnyVersionParams struct {
-	ID    pgtype.UUID `json:"id"`
-	OrgID pgtype.UUID `json:"org_id"`
-}
-
-// D-66 disambiguation probe.
-func (q *Queries) GetChannelByIdAnyVersion(ctx context.Context, arg GetChannelByIdAnyVersionParams) (Channel, error) {
-	row := q.db.QueryRow(ctx, getChannelByIdAnyVersion, arg.ID, arg.OrgID)
 	var i Channel
 	err := row.Scan(
 		&i.ID,

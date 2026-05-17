@@ -22,37 +22,10 @@ type GetAdapterParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Keep unfiltered by version/enabled: update handlers reuse this for D-66
+// 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 func (q *Queries) GetAdapter(ctx context.Context, arg GetAdapterParams) (Adapter, error) {
 	row := q.db.QueryRow(ctx, getAdapter, arg.ID, arg.OrgID)
-	var i Adapter
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.Name,
-		&i.AdapterType,
-		&i.Config,
-		&i.Enabled,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getAdapterByIdAnyVersion = `-- name: GetAdapterByIdAnyVersion :one
-SELECT id, org_id, name, adapter_type, config, enabled, version, created_at, updated_at
-FROM adapters
-WHERE id = $1 AND org_id = $2
-`
-
-type GetAdapterByIdAnyVersionParams struct {
-	ID    pgtype.UUID `json:"id"`
-	OrgID pgtype.UUID `json:"org_id"`
-}
-
-// D-66 disambiguation probe.
-func (q *Queries) GetAdapterByIdAnyVersion(ctx context.Context, arg GetAdapterByIdAnyVersionParams) (Adapter, error) {
-	row := q.db.QueryRow(ctx, getAdapterByIdAnyVersion, arg.ID, arg.OrgID)
 	var i Adapter
 	err := row.Scan(
 		&i.ID,

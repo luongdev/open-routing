@@ -16,7 +16,7 @@
 //     third would break Pitfall 5 atomicity.
 //
 //   - D-66 — UPDATE returning 0 rows is ambiguous between 404 and 409.
-//     GetAgentByIdAnyVersion runs inside the same tx so the probe sees
+//     GetAgent runs inside the same tx so the probe sees
 //     the rolled-back state, then D-56 flushes the cache on the 409 path
 //     to prevent a stale read masking the conflict on the client retry.
 //
@@ -370,7 +370,7 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 // Codex C4: the version-checked UPDATE and optional skills replace share
 // one tx — a failed skills replace rolls the agent row write back too.
 // D-66: 0 rows from the version-checked UPDATE is ambiguous between 404
-// (no row) and 409 (version mismatch). GetAgentByIdAnyVersion runs in the
+// (no row) and 409 (version mismatch). GetAgent runs in the
 // same tx so the probe sees the rolled-back state; the 409 path flushes
 // the cache (D-56) so a stale read can't mask the conflict on retry.
 func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestObject) (api.UpdateAgentResponseObject, error) {
@@ -440,7 +440,7 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 0 rows — disambiguate 404 vs 409 inside the same tx.
-		cur, perr := qtx.GetAgentByIdAnyVersion(ctx, generated.GetAgentByIdAnyVersionParams{
+		cur, perr := qtx.GetAgent(ctx, generated.GetAgentParams{
 			ID:    pgUUID(agentID),
 			OrgID: pgUUID(orgID),
 		})

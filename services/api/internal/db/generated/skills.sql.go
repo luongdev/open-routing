@@ -22,38 +22,10 @@ type GetSkillParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Keep unfiltered by version/enabled: update handlers reuse this for D-66
+// 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 func (q *Queries) GetSkill(ctx context.Context, arg GetSkillParams) (Skill, error) {
 	row := q.db.QueryRow(ctx, getSkill, arg.ID, arg.OrgID)
-	var i Skill
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.ExternalID,
-		&i.Name,
-		&i.Description,
-		&i.SkillType,
-		&i.Enabled,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getSkillByIdAnyVersion = `-- name: GetSkillByIdAnyVersion :one
-SELECT id, org_id, external_id, name, description, skill_type, enabled, version, created_at, updated_at
-FROM skills
-WHERE id = $1 AND org_id = $2
-`
-
-type GetSkillByIdAnyVersionParams struct {
-	ID    pgtype.UUID `json:"id"`
-	OrgID pgtype.UUID `json:"org_id"`
-}
-
-// D-66 disambiguation probe (404-vs-409 after a 0-row UpdateSkill).
-func (q *Queries) GetSkillByIdAnyVersion(ctx context.Context, arg GetSkillByIdAnyVersionParams) (Skill, error) {
-	row := q.db.QueryRow(ctx, getSkillByIdAnyVersion, arg.ID, arg.OrgID)
 	var i Skill
 	err := row.Scan(
 		&i.ID,

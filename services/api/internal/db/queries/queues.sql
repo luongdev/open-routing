@@ -13,12 +13,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, org_id, external_id, name, channel_types, priority, acw_sec, enabled, version, created_at, updated_at;
 
 -- name: GetQueue :one
-SELECT id, org_id, external_id, name, channel_types, priority, acw_sec, enabled, version, created_at, updated_at
-FROM queues
-WHERE id = $1 AND org_id = $2;
-
--- name: GetQueueByIdAnyVersion :one
--- D-66 disambiguation probe.
+-- Keep unfiltered by version/enabled: update handlers reuse this for D-66
+-- 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 SELECT id, org_id, external_id, name, channel_types, priority, acw_sec, enabled, version, created_at, updated_at
 FROM queues
 WHERE id = $1 AND org_id = $2;

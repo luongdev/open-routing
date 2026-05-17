@@ -15,12 +15,8 @@ VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, org_id, name, adapter_type, config, enabled, version, created_at, updated_at;
 
 -- name: GetAdapter :one
-SELECT id, org_id, name, adapter_type, config, enabled, version, created_at, updated_at
-FROM adapters
-WHERE id = $1 AND org_id = $2;
-
--- name: GetAdapterByIdAnyVersion :one
--- D-66 disambiguation probe.
+-- Keep unfiltered by version/enabled: update handlers reuse this for D-66
+-- 404-vs-409 disambiguation after a version-checked UPDATE returns 0 rows.
 SELECT id, org_id, name, adapter_type, config, enabled, version, created_at, updated_at
 FROM adapters
 WHERE id = $1 AND org_id = $2;
