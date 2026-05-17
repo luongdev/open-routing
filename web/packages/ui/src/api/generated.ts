@@ -571,9 +571,21 @@ export interface paths {
          *     field names. BOM handling: UTF-8 BOM is stripped automatically (IMP-02).
          *     Line endings: CRLF and LF both accepted (IMP-02).
          *
-         *     **Upsert semantics:** Rows are upserted keyed by `(org_id, external_id)`
-         *     — existing rows update fields, new rows insert. Running the same input
-         *     twice produces no duplicates (IMP-03).
+         *     **Upsert semantics:** Rows are upserted keyed by `(org_id, code)` —
+         *     the universal user-facing canonical identifier introduced by Phase 04.1
+         *     (D04_1-01). Existing rows update fields, new rows insert. Running the
+         *     same input twice produces no duplicates (IMP-03). `external_id` is
+         *     supported as an optional integration-mapping field on every
+         *     `Import*Request` (mutable per D04_1-07) but is NOT the upsert key.
+         *
+         *     **Idempotency:** Clients MAY pass an `Idempotency-Key` UUIDv7 header to
+         *     make a POST retry-safe. A repeated request with the same key in the
+         *     same org returns the persisted prior result with `idempotent_replay:
+         *     true` (D5-13 / D5-27). Note: in v0.1 the replay response carries an
+         *     empty `succeeded` array because the server stores only counters +
+         *     errors JSONB — original succeeded IDs are not reconstructable. Callers
+         *     that need full replay should use the non-idempotent path or wait for
+         *     v0.2.
          *
          *     **Size limits:** Maximum 50 MB body and 500 rows (IMP-07). Oversized
          *     requests return HTTP 413 (request_too_large_use_async_pathway) before
@@ -1544,12 +1556,22 @@ export interface components {
             succeeded: components["schemas"]["UUIDv7"][];
             /** @description Structured errors for each failed row. Empty when all rows succeed. */
             failed: components["schemas"]["BulkImportFailedRow"][];
+            /**
+             * @description True when this response is a persisted prior result returned because the client repeated the Idempotency-Key (D5-13). False or absent on a first-time POST. v0.1 KNOWN LIMITATION: when true, `succeeded` is always an empty array because the server stores only counters; rely on `failed[]` for forensics (see operation description).
+             * @default false
+             */
+            readonly idempotent_replay: boolean | null;
         };
         /** @description A persisted import job record (IMP-06). Created by the import endpoint; queryable via `GET /v1/orgs/{org_id}/imports/{id}`. */
         ImportJob: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
             entity_type: components["schemas"]["ImportEntityType"];
+            /**
+             * @description Lifecycle of the import (D5-26). `pending` — the row was created before processing began; in v0.1 callers normally observe only `completed` or `failed` because the request is synchronous. `failed` may be set by the crash-recovery sweep (D5-11) when a process restart leaves a pending row stranded.
+             * @enum {string}
+             */
+            status: "pending" | "completed" | "failed";
             /** @example 100 */
             total_rows: number;
             /** @example 97 */
@@ -1563,6 +1585,102 @@ export interface components {
              * @example 2026-05-15T00:00:00Z
              */
             readonly created_at: string;
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=adapters`. `config`
+         *     is a free-form JSONB blob passed through to storage with no
+         *     validation (D-72 Phase 3 contract).
+         */
+        ImportAdapterRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            adapter_type: string;
+            /** @description Free-form vendor configuration; no fixed schema. */
+            config?: {
+                [key: string]: unknown;
+            };
+            /** @default true */
+            enabled: boolean;
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=agents`. Mirror of
+         *     CreateAgentRequest with FK references by `code` instead of UUID.
+         *     `external_id` is optional integration-mapping (mutable per D04_1-07).
+         */
+        ImportAgentRequest: {
+            /** @example emp_0042 */
+            code: string;
+            /** @example HR-EMP-0042 */
+            external_id?: string | null;
+            /** @example Mai Linh */
+            name: string;
+            /**
+             * Format: email
+             * @example mai@example.com
+             */
+            email: string;
+            /** @default true */
+            enabled: boolean;
+            /** @description Skill assignments referenced by `skill_code`. MERGE semantics (D5-18) — existing assignments not in this list are LEFT INTACT; proficiency for codes present in this list is set to the value supplied (D5-19 import wins). Skill removal via import is deferred to v0.2. */
+            skills?: {
+                skill_code: string;
+                proficiency: number;
+            }[];
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=break_reasons`.
+         *     `name` is a mutable display label (Phase 04.1 dropped
+         *     UNIQUE(org_id, name) — IDENT-03).
+         */
+        ImportBreakReasonRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            /** @default true */
+            routable: boolean;
+            /** @default 0 */
+            display_order: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=channels`. FK
+         *     `default_queue_code` references an existing queue by code; cross-row
+         *     FK probe is performed in the same chunk transaction.
+         */
+        ImportChannelRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            channel_type: string;
+            default_queue_code?: string | null;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Phase 5 (IMP-01) per-row JSON shape for `entity=queues`. */
+        ImportQueueRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            /** @description Multi-valued — in CSV use pipe-delimited per D5-04 (`voice|chat`); in JSON use the array form. */
+            channel_types: string[];
+            /** @default 5 */
+            priority: number;
+            /** @default 0 */
+            acw_sec: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Phase 5 (IMP-01) per-row JSON shape for `entity=skills`. */
+        ImportSkillRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            description?: string | null;
+            skill_type: string;
+            /** @default true */
+            enabled: boolean;
         };
         /** @description Liveness check response (D-17). */
         HealthResponse: {
@@ -1690,6 +1808,8 @@ export interface components {
         OrgIdPath: components["schemas"]["UUIDv7"];
         /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
         EntityIdPath: components["schemas"]["UUIDv7"];
+        /** @description Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe (D5-13). A repeated request with the same key in the same org returns the persisted prior result with `idempotent_replay: true` (D5-27). Optional — absent header means a fresh job row is created each call. */
+        IdempotencyKeyHeader: string;
         /** @description Import job UUIDv7 returned by the POST /catalog/import endpoint. */
         ImportJobIdPath: components["schemas"]["UUIDv7"];
         /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
@@ -3283,7 +3403,10 @@ export interface operations {
                 /** @description CSV schema version for import validation (IMP-08). Required when `Content-Type: text/csv`. Mismatched version returns HTTP 400 with supported versions listed. Example: `v0.1`. */
                 schema_version?: components["parameters"]["SchemaVersionQuery"];
             };
-            header?: never;
+            header?: {
+                /** @description Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe (D5-13). A repeated request with the same key in the same org returns the persisted prior result with `idempotent_replay: true` (D5-27). Optional — absent header means a fresh job row is created each call. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
+            };
             path: {
                 /**
                  * @description Organization UUIDv7. Present in the path for REST semantics. The
