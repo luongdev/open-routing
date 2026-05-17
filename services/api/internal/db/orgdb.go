@@ -228,6 +228,30 @@ func (o *OrgDB) BeginTx(ctx context.Context) (*OrgTx, error) {
 	return &OrgTx{tx: tx, checker: o.checker, mode: o.mode}, nil
 }
 
+// BeginSavepoint starts a savepoint on the current Tx and returns a new
+// *OrgTx wrapping the child. SQLChecker preflight is preserved on every
+// Exec/Query/QueryRow against the returned child Tx. The pgx Tx.Begin
+// method internally implements SAVEPOINT semantics on a non-top-level
+// Tx (verified — pkg.go.dev/github.com/jackc/pgx/v5).
+//
+// Phase 5 chunk loop (D5-09): outerTx.BeginSavepoint(ctx) per row inside
+// a chunk of 50, then sp.Commit (RELEASE) on success or sp.Rollback
+// (ROLLBACK TO) on per-row failure. The child carries the SAME checker
+// pointer + ValidationMode — preflight semantics are identical to the
+// parent Tx.
+//
+// pgx auto-generates SAVEPOINT names internally; callers do NOT issue raw
+// `SAVEPOINT row_N` strings. Calling BeginSavepoint on a Tx that has
+// already been committed/rolled-back returns a `tx is closed` error from
+// pgx (RESEARCH Pitfall 8).
+func (t *OrgTx) BeginSavepoint(ctx context.Context) (*OrgTx, error) {
+	child, err := t.tx.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("orgtx: begin savepoint: %w", err)
+	}
+	return &OrgTx{tx: child, checker: t.checker, mode: t.mode}, nil
+}
+
 // Compile-time guarantee: OrgDB satisfies the sqlc-generated DBTX
 // interface (D-01, Shared Pattern S9). If sqlc regenerates with a
 // different signature this fails to compile rather than silently
