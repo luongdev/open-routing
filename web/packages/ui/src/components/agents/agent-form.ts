@@ -218,7 +218,7 @@ export class OrAgentForm extends LitElement {
 
   async _handleNext(): Promise<void> {
     if (this._currentStep === 0) {
-      // Validate Step 1: code and name required
+      // Validate Step 1: code (required + pattern), name (required), email (format if provided)
       const errors: Record<string, string> = {};
 
       if (!this._formData.code) {
@@ -229,6 +229,14 @@ export class OrAgentForm extends LitElement {
 
       if (!this._formData.name) {
         errors['name'] = 'Name is required.';
+      }
+
+      // Email is optional but must be valid format if provided (Gemini HIGH #2)
+      if (this._formData.email) {
+        const emailRegex = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
+        if (!emailRegex.test(this._formData.email)) {
+          errors['email'] = 'Enter a valid email address.';
+        }
       }
 
       if (Object.keys(errors).length > 0) {
@@ -265,9 +273,14 @@ export class OrAgentForm extends LitElement {
     };
 
     // Client-side full validation
-    if (!validateCreateAgent(body)) {
+    // ajv standalone validators attach .errors dynamically; cast to access it.
+    const validateFn = validateCreateAgent as unknown as {
+      (data: unknown): boolean;
+      errors: Array<{ instancePath: string; message?: string }> | null;
+    };
+    if (!validateFn(body)) {
       const errors: Record<string, string> = {};
-      for (const err of validateCreateAgent.errors ?? []) {
+      for (const err of validateFn.errors ?? []) {
         const field = err.instancePath.replace(/^\//, '') || 'form';
         errors[field] = err.message ?? 'Invalid value';
       }
@@ -329,10 +342,11 @@ export class OrAgentForm extends LitElement {
         this._skillSearchResults = [];
         return;
       }
-      const { data } = await this.client.GET('/v1/orgs/{org_id}/skills' as never, {
+      const skillsResult = await this.client.GET('/v1/orgs/{org_id}/skills' as never, {
         params: { path: { org_id: this.orgId }, query: { name: query, limit: 100 } },
       } as never);
-      this._skillSearchResults = ((data as { items?: unknown[] })?.items ?? []) as Array<{
+      const skillsData = (skillsResult as { data?: unknown }).data;
+      this._skillSearchResults = ((skillsData as { items?: unknown[] } | undefined)?.items ?? []) as Array<{
         id: string;
         name: string;
         code: string;
@@ -613,6 +627,7 @@ export class OrAgentForm extends LitElement {
       <or-form-wizard
         .steps=${WIZARD_STEPS}
         .currentStep=${this._currentStep}
+        .hideNav=${true}
       >
         <div slot="step-basics">
           ${this._renderBasicsStep()}

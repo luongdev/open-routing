@@ -348,7 +348,9 @@ export class OrAgentDetail extends LitElement {
     const body = {
       name: this._form.name,
       email: this._form.email,
-      external_id: this._form.external_id || null,
+      // Per UpdateAgentRequest contract (D04_1-07): pass "" to clear binding; null === omission.
+      // We always include external_id so user clearing the field sends "" (not null/omission).
+      external_id: this._form.external_id,
       enabled: this._form.enabled,
       version: this._entity.version,
       skills: this._assignedSkills.map((s) => ({
@@ -358,9 +360,14 @@ export class OrAgentDetail extends LitElement {
     };
 
     // Client-side validation
-    if (!validateUpdateAgent(body)) {
+    // ajv standalone validators attach .errors dynamically; cast to access it.
+    const validateFn = validateUpdateAgent as unknown as {
+      (data: unknown): boolean;
+      errors: Array<{ instancePath: string; message?: string }> | null;
+    };
+    if (!validateFn(body)) {
       const errors: Record<string, string> = {};
-      for (const err of validateUpdateAgent.errors ?? []) {
+      for (const err of validateFn.errors ?? []) {
         const field = err.instancePath.replace(/^\//, '') || 'form';
         errors[field] = err.message ?? 'Invalid value';
       }
@@ -501,10 +508,11 @@ export class OrAgentDetail extends LitElement {
         this._skillSearchResults = [];
         return;
       }
-      const { data } = await this.client.GET('/v1/orgs/{org_id}/skills' as never, {
+      const skillsResult = await this.client.GET('/v1/orgs/{org_id}/skills' as never, {
         params: { path: { org_id: this.orgId }, query: { name: query, limit: 100 } },
       } as never);
-      this._skillSearchResults = ((data as { items?: unknown[] })?.items ?? []) as Array<{
+      const skillsData = (skillsResult as { data?: unknown }).data;
+      this._skillSearchResults = ((skillsData as { items?: unknown[] } | undefined)?.items ?? []) as Array<{
         id: string;
         name: string;
         code: string;

@@ -163,6 +163,14 @@ export class OrFormWizard extends LitElement {
   /** Currently active step index (0-based). Parent may sync this via property. */
   @property({ type: Number }) currentStep = 0;
 
+  /**
+   * When true, the wizard's built-in navigation buttons (Back/Next/Create) are hidden.
+   * Use this when the parent component provides its own navigation (e.g. or-agent-form
+   * which needs step-level validation before advancing). The stepper and slot content
+   * still render; only the nav bar is suppressed.
+   */
+  @property({ type: Boolean, attribute: 'hide-nav' }) hideNav = false;
+
   /** Internal dirty flag — user has entered data and may lose it on cancel. */
   @state() private _dirty = false;
 
@@ -300,7 +308,7 @@ export class OrFormWizard extends LitElement {
     return html`
       ${this._renderStepper()}
       ${this._renderStepContent()}
-      ${this._renderNavButtons()}
+      ${this.hideNav ? null : this._renderNavButtons()}
     `;
   }
 }
