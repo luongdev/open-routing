@@ -652,6 +652,59 @@ func TestBulkImport_AgentImport_SkillMerge_PreservesExisting(t *testing.T) {
 		"D5-18 MERGE: skill_chat proficiency unchanged (not in payload)")
 }
 
+// TestBulkImport_AgentImport_ProficiencyOutOfRange_FieldLevelError —
+// Phase 5 fix M4. Proficiency 1..10 is documented in the OpenAPI
+// contract; pre-fix the import row processor did NOT validate the
+// range before calling MergeAgentSkill — an out-of-range value
+// triggered the DB CHECK (23514), which MapPgError surfaced as
+// generic `merge_skill_failed` with field `skills[i]` (no
+// `.proficiency` suffix), losing the field-level precision admins
+// need to fix their CSV/JSON. The M4 fix adds the 1..10 validation
+// up-front so the precise field error surfaces directly.
+func TestBulkImport_AgentImport_ProficiencyOutOfRange_FieldLevelError(t *testing.T) {
+	th := newTestImports(t)
+	if th == nil {
+		return
+	}
+	ctx := orgkey.SetOrgID(context.Background(), th.OrgID)
+	cleanImportTables(t, ctx, th.Pool, th.OrgID)
+	defer cleanImportTables(t, ctx, th.Pool, th.OrgID)
+
+	// Pre-seed the skill so resolution succeeds; the failure must be
+	// the proficiency value, NOT an unknown_skill miss.
+	seedSkillForImports(t, ctx, th.Pool, th.OrgID, "skill_voice", "Voice", "language")
+
+	cases := []struct {
+		name        string
+		proficiency int
+	}{
+		{"zero", 0},
+		{"too_high", 11},
+		{"negative", -3},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rows := []interface{}{
+				map[string]interface{}{
+					"code": "emp_oor_" + c.name, "name": "X", "email": "x@example.com",
+					"skills": []interface{}{
+						map[string]interface{}{"skill_code": "skill_voice", "proficiency": c.proficiency},
+					},
+				},
+			}
+			resp, body := postImportJSON(t, th, api.Agents, rows)
+			require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
+				"M4: out-of-range proficiency must fail; body=%s", string(body))
+			r := decodeBulkImportResult(t, body)
+			require.Len(t, r.Failed, 1)
+			require.NotNil(t, r.Failed[0].Field, "M4: field-level error required")
+			require.Equal(t, "skills[0].proficiency", *r.Failed[0].Field,
+				"M4: field must call out the proficiency value, not just skills[N]")
+			require.Equal(t, "invalid_value", r.Failed[0].Reason)
+		})
+	}
+}
+
 // TestBulkImport_AgentImport_UnknownSkillCode_PerRow — D5-16.
 // POST agents-with-skills.json with a skill that was NOT pre-seeded.
 // Expect 422 (all-fail since the only row fails) + per-row reason

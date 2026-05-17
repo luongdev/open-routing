@@ -87,12 +87,27 @@ func (p *agentRowProc) process(
 	// in payload order so the field index in the error message
 	// matches the admin's input position. Stop at the first failing
 	// skill — admins re-import after fixing the first invalid token.
+	//
+	// Phase 5 fix M4: also enforce proficiency 1..10 BEFORE the
+	// MergeAgentSkill call. Pre-fix an out-of-range proficiency value
+	// (e.g., 15 or 0 or -3) reached MergeAgentSkill, the DB CHECK
+	// constraint fired (23514), and the result surfaced as a generic
+	// `merge_skill_failed` with field `skills[i]` (no `.proficiency`
+	// suffix). Validating up-front produces the precise field-level
+	// error matching the OpenAPI contract (skills[].proficiency
+	// minimum: 1, maximum: 10).
 	if typed.Skills != nil {
 		for i, sk := range *typed.Skills {
 			if !catalog.ValidateCodeFormat(sk.SkillCode) {
 				return succeededRow{}, &rowError{
 					Field:  fmt.Sprintf("skills[%d].skill_code", i),
 					Reason: "invalid_code_format",
+				}
+			}
+			if sk.Proficiency < 1 || sk.Proficiency > 10 {
+				return succeededRow{}, &rowError{
+					Field:  fmt.Sprintf("skills[%d].proficiency", i),
+					Reason: "invalid_value",
 				}
 			}
 		}
@@ -176,9 +191,11 @@ func (p *agentRowProc) process(
 				AgentID: row.ID,
 				SkillID: pgUUID(skillID),
 				OrgID:   pgUUID(orgID),
-				// Proficiency is range-checked 0..100 in the row
-				// validator before reaching here; safe int → int32.
-				Proficiency: int32(sk.Proficiency), //nolint:gosec // bounded 0..100 by validator
+				// Phase 5 fix M4: Proficiency is range-checked 1..10 at
+				// Step 3 above (OpenAPI ImportAgentSkillAssignment
+				// minimum: 1, maximum: 10); int → int32 is safe and
+				// gosec G115 is a false positive on this bounded value.
+				Proficiency: int32(sk.Proficiency), //nolint:gosec // bounded 1..10 by Step 3 validator
 			}); mErr != nil {
 				p.handlers.deps.Logger.WarnContext(ctx, "import.agent.merge_skill_failed",
 					"agent_id", uuid.UUID(row.ID.Bytes),
