@@ -4,8 +4,8 @@ milestone: v0.1
 milestone_name: Catalog Foundation
 status: executing
 stopped_at: Phase 04.1 context gathered
-last_updated: "2026-05-17T11:32:26.824Z"
-last_activity: 2026-05-17 -- Phase 05 planning complete
+last_updated: "2026-05-17T11:32:57.653Z"
+last_activity: 2026-05-17 -- Phase 05 execution started
 progress:
   total_phases: 8
   completed_phases: 5
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-16)
 
 **Core value:** Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
-**Current focus:** Phase 04.1 — catalog-identity-normalization
+**Current focus:** Phase 05 — bulk-import-go
 
 ## Current Position
 
-Phase: 04.1 (catalog-identity-normalization) — EXECUTING
-Plan: 1 of 6
-Status: Ready to execute
-Last activity: 2026-05-17 -- Phase 05 planning complete
+Phase: 05 (bulk-import-go) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 05
+Last activity: 2026-05-17 -- Phase 05 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
