@@ -44,6 +44,16 @@ import (
 	appmw "github.com/luongdev/open-routing/services/api/internal/middleware"
 )
 
+// importBodyLimit mirrors imports.ImportBodyLimit (D5-21 / IMP-07) — the
+// 50 MB cap on org-scoped POST bodies. Duplicated here as a local const
+// rather than reaching into the imports package because
+// `internal/imports` depends on `internal/catalog`, and pulling imports
+// into server.go would create a test-time cycle for
+// `catalog/testutil_test.go` (package catalog) which already pulls in
+// `server`. The literal is single-sourced via this comment + the
+// Phase 5 spec lock; if the spec changes both constants flip together.
+const importBodyLimit int64 = 50 << 20
+
 // Deps bundles every runtime dependency the API mux needs. cmd/api/main.go
 // constructs one of these (after wiring OTel, pool, redis, orgDB, cache,
 // catalog) and hands it to NewMux. SpecBytes is the embedded openapi.yaml
@@ -97,10 +107,22 @@ func NewMux(deps *Deps) http.Handler {
 	// orgContextMiddleware in ChiServerOptions.Middlewares applies OrgContext
 	// only for /v1/* paths, leaving bypass routes (/healthz, /readyz,
 	// /openapi.yaml, /docs) reachable without X-Org-Id (D-21).
+	//
+	//     Phase 5 (Plan 05-06): middleware.BodyLimit sits AFTER
+	//     orgContextMiddleware per Open Q7 so cheap header-level
+	//     rejections (invalid_org_id) short-circuit BEFORE the body
+	//     wrap touches r.Body. The wrap remains BEFORE
+	//     uuidv7PathParams so a malformed UUID and oversized body
+	//     both surface through the same /v1/orgs/ surface in the
+	//     order: org gate → size gate → path-shape gate →
+	//     strict-server. middleware.BodyLimit is path-scoped to
+	//     /v1/orgs/ via the second argument; non-/v1/orgs paths
+	//     (e.g., /healthz) pass through untouched.
 	api.HandlerWithOptions(strictPipeline, api.ChiServerOptions{
 		BaseRouter: r,
 		Middlewares: []api.MiddlewareFunc{
 			orgContextMiddleware,
+			appmw.BodyLimit(importBodyLimit, "/v1/orgs/"),
 			uuidv7PathParamsMiddleware,
 		},
 	})
