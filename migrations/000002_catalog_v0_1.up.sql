@@ -179,4 +179,36 @@ CREATE TABLE agent_skills (
 CREATE INDEX ix_agent_skills_org_agent ON agent_skills (org_id, agent_id);
 CREATE INDEX ix_agent_skills_org_skill ON agent_skills (org_id, skill_id);
 
+-- ---------------------------------------------------------------------------
+-- STATE-01..STATE-10: agent_states (Phase 4 — D-78)
+-- ---------------------------------------------------------------------------
+-- One row per agent. PK = agent_id. NO FK (D-80 — app-layer probes only).
+-- TEXT + CHECK encoding for status/engaged_channel/post_interaction_state
+-- (D-79). Adding values = ALTER constraint, not ALTER TYPE on PG14-.
+-- org_id is denormalized so SQLChecker (Phase 1 D-04) sees the column on
+-- every sqlc-generated query; the sweeper goroutine bypasses ctx-injection
+-- and relies on this column in the SQL WHERE clauses for org auditability.
+CREATE TABLE agent_states (
+    agent_id                UUID PRIMARY KEY,
+    org_id                  UUID NOT NULL,
+    status                  TEXT NOT NULL
+                              CHECK (status IN ('Ready','NotReady','Break','Engaged','WrapUp','Offline')),
+    engaged_channel         TEXT
+                              CHECK (engaged_channel IS NULL OR engaged_channel IN ('voice','chat','email')),
+    break_reason_id         UUID,
+    post_interaction_state  TEXT
+                              CHECK (post_interaction_state IS NULL OR post_interaction_state IN ('ready','not_ready')),
+    wrapup_until            TIMESTAMPTZ,
+    state_version           BIGINT NOT NULL DEFAULT 1,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX ix_agent_states_org_status ON agent_states (org_id, status);
+
+-- Partial index — sweeper hot path is `WHERE status='WrapUp' AND wrapup_until < NOW()`.
+-- Partial index ensures the planner reads only the small subset of rows in WrapUp.
+CREATE INDEX ix_agent_states_wrapup_until
+    ON agent_states (wrapup_until)
+    WHERE status = 'WrapUp';
+
 COMMIT;

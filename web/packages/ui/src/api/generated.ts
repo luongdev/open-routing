@@ -1223,6 +1223,8 @@ export interface components {
             break_reason_id?: (string & components["schemas"]["UUIDv7"]) | null;
             /** @description May be set while `status == Engaged` (STATE-06). Specifies the target state when WrapUp expires. Ignored on other transitions. */
             post_interaction_state?: (string & components["schemas"]["PostInteractionState"]) | null;
+            /** @description Admin override (D-84). When `true`, bypasses the transition matrix (skips HTTP 409 `invalid_transition`). Cross-row probes still run: a missing or cross-org `break_reason_id` still returns HTTP 422 (D-84 Pitfall 3). v0.1 stub auth allows any caller to pass `force=true`; v1 AUTH phase restricts to `org_admin` role. Use sparingly — every `force=true` call emits a WARN-level audit log entry (`state.force.applied`). */
+            force?: boolean;
         };
         /**
          * @description The catalog entity type being imported.

@@ -43,12 +43,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/jonboulle/clockwork"
+
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/server"
+	"github.com/luongdev/open-routing/services/api/internal/state"
 )
 
 // sharedPool is the package-level pgxpool reused across every entity
@@ -120,9 +123,12 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 		Logger: logger,
 	})
 
-	// 6. server.NewMux with catalog.Handlers as the StrictHandlers field
-	//    — same wiring main.go uses in production after Plan 03-10. Build
-	//    the spec bytes the same way main.go does — from the embedded spec.
+	// 6. server.NewMux with ApiHandlers composite as the StrictHandlers field
+	//    (D-89 — catalog.Handlers alone no longer satisfies the full
+	//    StrictServerInterface after Phase 4 removed the state stubs).
+	//    state.Server is wired with the same cache and OrgDB so it can
+	//    serve GetAgentStatus / PatchAgentStatus if a catalog test ever
+	//    calls them (unlikely — catalog tests focus on catalog endpoints).
 	swagger, _ := api.GetSpec()
 	specBytes, _ := yaml.Marshal(swagger)
 	cfg := &config.Config{
@@ -132,12 +138,22 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 		ListenAddr:     ":0",
 		ValidationMode: "panic",
 	}
+	stateServer := state.New(state.Deps{
+		OrgDB:  orgDB,
+		Cache:  c,
+		Logger: logger,
+	}, state.WithClock(clockwork.NewFakeClock()))
+	type testApiHandlers struct {
+		*Handlers
+		*state.Server
+	}
+	apiHandlers := &testApiHandlers{Handlers: h, Server: stateServer}
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,
 		Redis:          rdb,
 		OrgDB:          orgDB,
 		Config:         cfg,
-		StrictHandlers: h, // catalog.Handlers satisfies api.StrictServerInterface (D-69).
+		StrictHandlers: apiHandlers,
 		SpecBytes:      specBytes,
 	})
 	srv := httptest.NewServer(mux)

@@ -10,6 +10,11 @@
 
 BEGIN;
 
+-- Phase 4 — agent_states (D-78) reverse. Drops first because it was
+-- appended LAST in the up migration; no FK dependencies exist (D-80) so
+-- ordering is documentation-only.
+DROP TABLE IF EXISTS agent_states;
+
 DROP TABLE IF EXISTS agent_skills;
 DROP TABLE IF EXISTS break_reasons;
 DROP TABLE IF EXISTS adapters;
