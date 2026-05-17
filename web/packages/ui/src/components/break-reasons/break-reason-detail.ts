@@ -345,6 +345,10 @@ export class OrBreakReasonDetail extends LitElement {
 
   private _handleConflictAcknowledged(e: CustomEvent): void {
     if (e.detail?.action === 'discard') {
+      // Update _entity from _conflictServer so next save uses server's current version (Codex HIGH fix)
+      if (this._conflictServer) {
+        this._entity = this._conflictServer as unknown as BreakReason;
+      }
       if (this._entity) {
         this._formData = {
           name: this._entity.name ?? '',
@@ -355,6 +359,10 @@ export class OrBreakReasonDetail extends LitElement {
         };
         this._dirty = false;
       }
+    }
+    // On 'review': keep user's form as-is for re-submission — but update version to avoid repeat 409
+    if (e.detail?.action === 'review' && this._conflictServer) {
+      this._entity = this._conflictServer as unknown as BreakReason;
     }
     this._conflictServer = null;
   }

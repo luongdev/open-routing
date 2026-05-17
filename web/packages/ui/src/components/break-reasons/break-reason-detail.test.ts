@@ -71,8 +71,8 @@ describe('OrBreakReasonDetail', () => {
     await mountWithBreakReason(el);
     const shadow = el.shadowRoot!;
     const shadowHtml = shadow.innerHTML;
-    // The display_order field must be a number input
-    expect(shadowHtml).toContain('type="number"') || expect(shadowHtml).toContain("type='number'");
+    // The display_order field must be a number input (attribute rendered as type="number")
+    expect(shadowHtml.includes('type="number"') || shadowHtml.includes("type='number'")).toBe(true);
     // Helper text about break picker ordering
     expect(shadowHtml).toContain('break picker');
   });
