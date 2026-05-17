@@ -21,6 +21,9 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/drawer/drawer.js';
 
+// Import primitives used in route renders (must be registered before outlet renders them)
+import '../primitives/org-picker.js';
+
 /** UUIDv7 regex per D6-13 and CONTEXT.md. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -160,18 +163,21 @@ export class OrCatalogShell extends LitElement {
       render: () => html`<or-org-picker></or-org-picker>`,
     },
     {
-      // Route guard: redirect to / if org_id is not valid UUIDv7 (D6-13)
-      path: '/orgs/:org_id/*',
+      // UUIDv7 route guard per D6-13: added to first org route as enter() callback.
+      // NOTE: A standalone '/orgs/:org_id/*' wildcard-only guard (no render) would
+      // swallow all child routes in @lit-labs/router since routes match first-wins.
+      // Instead, the guard enter() runs on the first entity route encountered.
+      // Wave 2+ will add enter callbacks to individual entity routes as needed.
+      path: '/orgs/:org_id/agents',
       enter: async ({ org_id }: Record<string, string | undefined>) => {
         if (!UUIDV7_PATTERN.test(org_id ?? '')) {
           this._routes.goto('/');
           return false;
         }
+        // Sync orgId reactive property from URL param so sidebar nav uses correct ID
+        this.orgId = org_id ?? '';
         return true;
       },
-    },
-    {
-      path: '/orgs/:org_id/agents',
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<div data-route="agents" data-org-id="${org_id}">Agents list</div>`,
     },
@@ -260,12 +266,35 @@ export class OrCatalogShell extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     // Restore theme from localStorage on connect (D6-19)
-    const saved = localStorage.getItem('or-theme') as ThemeName | null;
-    if (saved && (VALID_THEME_NAMES as readonly string[]).includes(saved)) {
-      this.theme = saved as ThemeName;
+    // Wrapped in try/catch: localStorage can throw SecurityError in cross-origin embeds
+    try {
+      const saved = localStorage.getItem('or-theme') as ThemeName | null;
+      if (saved && (VALID_THEME_NAMES as readonly string[]).includes(saved)) {
+        this.theme = saved as ThemeName;
+      }
+    } catch {
+      // localStorage unavailable (private browsing, cross-origin embed) — use default theme
     }
     this._applyTheme();
+
+    // Listen for org-selected events from <or-org-picker> root route
+    this.addEventListener('open-routing:org-selected', this._handleOrgSelected);
   }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.removeEventListener('open-routing:org-selected', this._handleOrgSelected);
+  }
+
+  /**
+   * Handle org-selected event from <or-org-picker>.
+   * Navigates to the agents list for the selected org.
+   */
+  private _handleOrgSelected = (e: Event): void => {
+    const { orgId } = (e as CustomEvent<{ orgId: string }>).detail;
+    this.orgId = orgId;
+    this._routes.goto(`/orgs/${orgId}/agents`);
+  };
 
   override updated(changed: Map<string, unknown>): void {
     if (changed.has('theme')) {
@@ -288,8 +317,12 @@ export class OrCatalogShell extends LitElement {
     for (const [key, val] of Object.entries(tokens)) {
       this.style.setProperty(key, val);
     }
-    // Persist named theme to localStorage
-    localStorage.setItem('or-theme', this.theme);
+    // Persist named theme to localStorage (guarded: may throw in cross-origin embeds)
+    try {
+      localStorage.setItem('or-theme', this.theme);
+    } catch {
+      // Ignore — localStorage unavailable in some embed contexts
+    }
   }
 
   /** Resolve sidebar nav path for the current orgId. */

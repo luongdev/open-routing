@@ -148,8 +148,14 @@ export class OrOrgPicker extends LitElement {
   @state() private _lastUsedFromStorage = '';
 
   override firstUpdated(): void {
-    // Pre-fill from localStorage first, fall back to lastUsedOrgId property (D6-10)
-    const stored = localStorage.getItem(LS_KEY) ?? '';
+    // Pre-fill from localStorage first, fall back to lastUsedOrgId property (D6-10).
+    // Wrapped in try/catch: localStorage can throw SecurityError in cross-origin embeds.
+    let stored = '';
+    try {
+      stored = localStorage.getItem(LS_KEY) ?? '';
+    } catch {
+      // localStorage unavailable — use lastUsedOrgId property fallback
+    }
     if (stored) {
       this._value = stored;
       this._lastUsedFromStorage = stored;
@@ -179,8 +185,12 @@ export class OrOrgPicker extends LitElement {
       return;
     }
 
-    // Persist to localStorage (D6-10)
-    localStorage.setItem(LS_KEY, trimmed);
+    // Persist to localStorage (D6-10). Guarded: may throw in cross-origin embeds.
+    try {
+      localStorage.setItem(LS_KEY, trimmed);
+    } catch {
+      // Ignore — localStorage unavailable in some embed contexts
+    }
 
     // Dispatch event with composed:true so it crosses Shadow DOM for Phase 7
     this.dispatchEvent(
