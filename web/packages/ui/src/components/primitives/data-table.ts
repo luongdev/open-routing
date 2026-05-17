@@ -19,7 +19,8 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 /** Column definition for or-data-table. */
 export interface OrDataTableColumn {
   key: string;
-  label: string;
+  /** Column header label. Accepts plain string or a Lit TemplateResult for rich headers (e.g. sl-tooltip). */
+  label: string | TemplateResult;
   width?: string;
   align?: 'left' | 'right' | 'center';
   /** Optional custom renderer — receives the full row object. */
