@@ -242,10 +242,12 @@ func seedQueueForOrg(t testing.TB, th *TestHandlers, ctx context.Context, orgID 
 	t.Helper()
 	q := generated.New(th.Pool)
 	id := uuid.Must(uuid.NewV7())
+	ext := "ext-q-" + name
 	_, err := q.InsertQueue(ctx, generated.InsertQueueParams{
 		ID:           pgUUID(id),
 		OrgID:        pgUUID(orgID),
-		ExternalID:   "ext-q-" + name,
+		Code:         "queue_" + sanitizeForCode(name), // Phase 04.1: required column.
+		ExternalID:   &ext,                              // *string post-04.1 (nullable column).
 		Name:         name,
 		ChannelTypes: []string{"voice"},
 		Priority:     0,
@@ -254,6 +256,36 @@ func seedQueueForOrg(t testing.TB, th *TestHandlers, ctx context.Context, orgID 
 	})
 	require.NoError(t, err, "seedQueueForOrg: InsertQueue")
 	return id
+}
+
+// strPtr — convenience helper for test fixtures that need *string values.
+// Phase 04.1: many API request/sqlc-param fields became *string when their
+// columns flipped to nullable; test bodies still want literal strings.
+func strPtr(s string) *string {
+	return &s
+}
+
+// sanitizeForCode converts an arbitrary string into a valid `code` per
+// D04_1-03 regex (`^[a-z][a-z0-9_]{0,63}$`). Used by test seed helpers so
+// they can derive a unique code from a display name without hand-crafting
+// it per call site. Truncates at 60 chars to keep the entire code <= 64.
+func sanitizeForCode(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s) && len(out) < 60; i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			out = append(out, c+('a'-'A'))
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			out = append(out, c)
+		default:
+			out = append(out, '_')
+		}
+	}
+	if len(out) == 0 || !(out[0] >= 'a' && out[0] <= 'z') {
+		out = append([]byte{'r'}, out...)
+	}
+	return string(out)
 }
 
 func doJSON(t testing.TB, srv *httptest.Server, method string, orgID uuid.UUID, path string, q url.Values, body any) (*http.Response, []byte) {

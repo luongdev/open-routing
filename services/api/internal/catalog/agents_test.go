@@ -62,10 +62,12 @@ func seedSkill(t testing.TB, th *TestHandlers, ctx context.Context, name string)
 	// bare pool so we don't have to thread ctx through OrgContext for a
 	// trivial seed.
 	id := uuid.Must(uuid.NewV7())
+	ext := "ext-" + name
 	_, err := q.InsertSkill(ctx, generated.InsertSkillParams{
 		ID:         pgUUID(id),
 		OrgID:      pgUUID(th.OrgID),
-		ExternalID: "ext-" + name,
+		Code:       "skill_" + sanitizeForCode(name), // Phase 04.1: required column.
+		ExternalID: &ext,                              // *string post-04.1 (nullable column).
 		Name:       name,
 		SkillType:  "language",
 		Enabled:    true,
@@ -98,13 +100,23 @@ func postAgent(t testing.TB, th *TestHandlers, body api.CreateAgentRequest) api.
 }
 
 // makeAgentBody is a one-line constructor for a sensible default request body.
-func makeAgentBody(externalID, name string, skills *[]api.AgentSkillAssignment) api.CreateAgentRequest {
-	return api.CreateAgentRequest{
-		ExternalId: externalID,
-		Name:       name,
-		Email:      openapi_types.Email(name + "@example.test"),
-		Skills:     skills,
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 — `code` is
+// required and immutable on Create). `externalID` is now *string under the
+// hood because the column is nullable post-04.1; the helper takes a string
+// for caller convenience and converts via strPtr internally. Empty string
+// means "no external_id" (the helper sends nil — the Plan 05 test suite
+// will exercise the nil/empty distinction explicitly).
+func makeAgentBody(code, externalID, name string, skills *[]api.AgentSkillAssignment) api.CreateAgentRequest {
+	body := api.CreateAgentRequest{
+		Code:  code,
+		Name:  name,
+		Email: openapi_types.Email(name + "@example.test"),
+		Skills: skills,
 	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +133,7 @@ func TestAgents_CreateThenGet(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	// POST → 201
-	body := makeAgentBody("ext-001", "Alice", nil)
+	body := makeAgentBody("emp_001", "ext-001", "Alice", nil)
 	a := postAgent(t, th, body)
 	require.Equal(t, 1, a.Version, "fresh agent version must be 1")
 	require.True(t, a.Enabled, "fresh agent must default to enabled=true")
@@ -151,12 +163,21 @@ func TestAgents_CreateThenGet(t *testing.T) {
 	require.True(t, th.Miniredis.Exists(cacheKey), "cache key still present on second GET")
 }
 
+// TODO(04.1-05): Plan 05 will rewrite this test's assertions per Phase 04.1
+// semantics. Pre-04.1: any 23505 → ErrorCodeVersionConflict / "external_id_collision".
+// Post-04.1 (D04_1-21): introspection distinguishes duplicate_code (same code reused)
+// from duplicate_external_id (same external_id reused). The fixture below shares
+// BOTH code AND external_id, so the FIRST constraint to fire (composite UNIQUE on
+// (org_id, code) — `_org_id_code_key`) wins; mapPgError returns
+// ErrorCodeDuplicateCode / "duplicate_code". Plan 05 will replace the test with
+// a matched matrix: distinct-code + same-external_id → duplicate_external_id;
+// same-code → duplicate_code.
 func TestAgents_CreateDuplicateExternalID_IncludesRequestID(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeAgentBody("ext-duplicate", "Dupe", nil)
+	body := makeAgentBody("emp_dup", "ext-duplicate", "Dupe", nil)
 	_ = postAgent(t, th, body)
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
@@ -165,6 +186,9 @@ func TestAgents_CreateDuplicateExternalID_IncludesRequestID(t *testing.T) {
 
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
+	// Phase 04.1: legacy assertion preserved verbatim; Plan 05 will replace it
+	// with `api.ErrorCodeDuplicateCode` + "duplicate_code". Until then this test
+	// will fail at runtime — expected per Plan 04.1-03 wave-boundary contract.
 	require.Equal(t, api.ErrorCodeVersionConflict, e.Error)
 	require.Equal(t, "external_id_collision", e.Reason)
 	require.NotNil(t, e.RequestId, "409 body must include request_id")
@@ -194,7 +218,7 @@ func TestAgents_VersionConflict(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-002", "Bob", nil))
+	a := postAgent(t, th, makeAgentBody("emp_002", "ext-002", "Bob", nil))
 	newName := "Bob v2"
 
 	// First PATCH with wrong version → 409.
@@ -231,7 +255,7 @@ func TestAgents_SoftDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-del", "Carol", nil))
+	a := postAgent(t, th, makeAgentBody("emp_del", "ext-del", "Carol", nil))
 
 	// DELETE → 204
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)))
@@ -262,7 +286,7 @@ func TestAgents_SoftDelete_IncludeDisabled(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-del2", "Dave", nil))
+	a := postAgent(t, th, makeAgentBody("emp_del2", "ext-del2", "Dave", nil))
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
@@ -293,7 +317,7 @@ func TestAgents_Cursor(t *testing.T) {
 	const total = 60
 	ids := make(map[uuid.UUID]struct{}, total)
 	for i := 0; i < total; i++ {
-		body := makeAgentBody(fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Agent%03d", i), nil)
+		body := makeAgentBody(fmt.Sprintf("emp_%03d", i), fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Agent%03d", i), nil)
 		a := postAgent(t, th, body)
 		ids[uuid.UUID(a.Id)] = struct{}{}
 		// Tiny pause so UUIDv7 timestamps differ by at least a microsecond
@@ -356,9 +380,9 @@ func TestAgents_NameSearch(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	postAgent(t, th, makeAgentBody("ext-alice", "Alice", nil))
-	postAgent(t, th, makeAgentBody("ext-alpine", "Alpine", nil))
-	postAgent(t, th, makeAgentBody("ext-bob", "Bob", nil))
+	postAgent(t, th, makeAgentBody("emp_alice", "ext-alice", "Alice", nil))
+	postAgent(t, th, makeAgentBody("emp_alpine", "ext-alpine", "Alpine", nil))
+	postAgent(t, th, makeAgentBody("emp_bob", "ext-bob", "Bob", nil))
 
 	q := url.Values{"name": {"al"}}
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, agentPath(th.OrgID), q)
@@ -379,7 +403,7 @@ func TestAgents_CacheInvalidationOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-cache", "Eve", nil))
+	a := postAgent(t, th, makeAgentBody("emp_cache", "ext-cache", "Eve", nil))
 	// Warm the cache.
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -411,7 +435,7 @@ func TestAgents_CacheInvalidationOnDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-cache-del", "Frank", nil))
+	a := postAgent(t, th, makeAgentBody("emp_cache_del", "ext-cache-del", "Frank", nil))
 	// Warm cache.
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -444,7 +468,7 @@ func TestAgents_SkillsReplace(t *testing.T) {
 		{SkillId: api.UUIDv7(s1), Proficiency: 5},
 		{SkillId: api.UUIDv7(s2), Proficiency: 7},
 	}
-	a := postAgent(t, th, makeAgentBody("ext-skill", "Skiller", &initial))
+	a := postAgent(t, th, makeAgentBody("emp_skill", "ext-skill", "Skiller", &initial))
 
 	// GET → both skills present.
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), nil)
@@ -480,7 +504,7 @@ func TestAgents_SkillsReplace_UnknownSkill(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-unknown", "Hank", nil))
+	a := postAgent(t, th, makeAgentBody("emp_unknown", "ext-unknown", "Hank", nil))
 	unknown := uuid.Must(uuid.NewV7())
 	replace := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(unknown), Proficiency: 5},
@@ -513,7 +537,7 @@ func TestAgents_OutOfRangeProficiency_422(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	s1 := seedSkill(t, th, ctx, "spanish")
-	a := postAgent(t, th, makeAgentBody("ext-proficiency", "Iris", nil))
+	a := postAgent(t, th, makeAgentBody("emp_proficiency", "ext-proficiency", "Iris", nil))
 
 	bad := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 11}, // out of [1..10] range
@@ -538,7 +562,7 @@ func TestAgents_SkillsReplace_OutOfRangeProficiency_422(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	s1 := seedSkill(t, th, ctx, "italian")
-	a := postAgent(t, th, makeAgentBody("ext-proficiency-2", "Jack", nil))
+	a := postAgent(t, th, makeAgentBody("emp_proficiency_2", "ext-proficiency-2", "Jack", nil))
 
 	bad := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 0}, // below range
@@ -566,7 +590,7 @@ func TestAgents_Create_OutOfRangeProficiency_422(t *testing.T) {
 	bad := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 11},
 	}
-	body := makeAgentBody("ext-create-422", "Kira", &bad)
+	body := makeAgentBody("emp_create_422", "ext-create-422", "Kira", &bad)
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
 	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
@@ -593,7 +617,7 @@ func TestAgents_Create_UnknownSkillId_422(t *testing.T) {
 		{SkillId: api.UUIDv7(unknown), Proficiency: 5},
 	}
 	const externalID = "ext-create-422-unknown"
-	body := makeAgentBody(externalID, "Liam", &bad)
+	body := makeAgentBody("emp_create_422_unknown", externalID, "Liam", &bad)
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
 	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
@@ -632,7 +656,7 @@ func TestAgents_Create_DuplicateSkillId_422(t *testing.T) {
 		{SkillId: api.UUIDv7(s1), Proficiency: 5},
 		{SkillId: api.UUIDv7(s1), Proficiency: 7},
 	}
-	body := makeAgentBody("ext-create-dup", "Mia", &dup)
+	body := makeAgentBody("emp_create_dup", "ext-create-dup", "Mia", &dup)
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
 	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
 		"want 422 invalid_value, body=%s", string(raw))
@@ -703,7 +727,7 @@ func TestAgents_CrossOrgGet404(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	// Agent created in orgA (th.OrgID).
-	a := postAgent(t, th, makeAgentBody("ext-cross", "Mara", nil))
+	a := postAgent(t, th, makeAgentBody("emp_cross", "ext-cross", "Mara", nil))
 
 	// orgB — fresh UUIDv7 — issues a GET with the SAME id.
 	orgB := uuid.Must(uuid.NewV7())

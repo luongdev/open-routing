@@ -38,13 +38,20 @@ func postSkill(t testing.TB, th *TestHandlers, body api.CreateSkillRequest) api.
 	return s
 }
 
-func makeSkillBody(externalID, name string, description *string) api.CreateSkillRequest {
-	return api.CreateSkillRequest{
-		ExternalId:  externalID,
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 — required).
+// externalID stays as a string parameter but is now stored as *string per the
+// nullable column. Empty externalID → nil (no external_id sent).
+func makeSkillBody(code, externalID, name string, description *string) api.CreateSkillRequest {
+	body := api.CreateSkillRequest{
+		Code:        code,
 		Name:        name,
 		Description: description,
 		SkillType:   "language",
 	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
 }
 
 // TestSkills_CreateThenGet — POST returns 201 + Skill body with version=1,
@@ -55,7 +62,7 @@ func TestSkills_CreateThenGet(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeSkillBody("skl-001", "English", nil)
+	body := makeSkillBody("skill_001", "skl-001", "English", nil)
 	s := postSkill(t, th, body)
 	require.Equal(t, 1, s.Version, "fresh skill version must be 1")
 	require.True(t, s.Enabled, "fresh skill must default to enabled=true")
@@ -103,7 +110,7 @@ func TestSkills_VersionConflict(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-002", "French", nil))
+	s := postSkill(t, th, makeSkillBody("skill_002", "skl-002", "French", nil))
 	newName := "French v2"
 
 	bad := api.UpdateSkillRequest{Version: 99, Name: &newName}
@@ -137,7 +144,7 @@ func TestSkills_SoftDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-del", "Spanish", nil))
+	s := postSkill(t, th, makeSkillBody("skill_del", "skl-del", "Spanish", nil))
 
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(s.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -164,7 +171,7 @@ func TestSkills_SoftDelete_IncludeDisabled(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-del2", "Italian", nil))
+	s := postSkill(t, th, makeSkillBody("skill_del2", "skl-del2", "Italian", nil))
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(s.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
@@ -193,7 +200,7 @@ func TestSkills_Cursor(t *testing.T) {
 	const total = 60
 	ids := make(map[uuid.UUID]struct{}, total)
 	for i := 0; i < total; i++ {
-		body := makeSkillBody(fmt.Sprintf("skl-%03d", i), fmt.Sprintf("Skill%03d", i), nil)
+		body := makeSkillBody(fmt.Sprintf("skill_%03d", i), fmt.Sprintf("skl-%03d", i), fmt.Sprintf("Skill%03d", i), nil)
 		s := postSkill(t, th, body)
 		ids[uuid.UUID(s.Id)] = struct{}{}
 		// Tiny pause so UUIDv7 timestamps differ — keeps (created_at, id)
@@ -251,9 +258,9 @@ func TestSkills_NameSearch(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	postSkill(t, th, makeSkillBody("skl-alice", "Algebra", nil))
-	postSkill(t, th, makeSkillBody("skl-alpine", "Alpine", nil))
-	postSkill(t, th, makeSkillBody("skl-bob", "Botany", nil))
+	postSkill(t, th, makeSkillBody("skill_alice", "skl-alice", "Algebra", nil))
+	postSkill(t, th, makeSkillBody("skill_alpine", "skl-alpine", "Alpine", nil))
+	postSkill(t, th, makeSkillBody("skill_bob", "skl-bob", "Botany", nil))
 
 	q := url.Values{"name": {"al"}}
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, skillPath(th.OrgID), q)
@@ -273,7 +280,7 @@ func TestSkills_CacheInvalidationOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-cache", "German", nil))
+	s := postSkill(t, th, makeSkillBody("skill_cache", "skl-cache", "German", nil))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(s.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "skills", uuid.UUID(s.Id))
@@ -300,7 +307,7 @@ func TestSkills_CacheInvalidationOnDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-cache-del", "Hindi", nil))
+	s := postSkill(t, th, makeSkillBody("skill_cache_del", "skl-cache-del", "Hindi", nil))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(s.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "skills", uuid.UUID(s.Id))
@@ -321,7 +328,7 @@ func TestSkills_DescriptionNullable(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-desc", "Japanese", nil))
+	s := postSkill(t, th, makeSkillBody("skill_desc", "skl-desc", "Japanese", nil))
 	require.Nil(t, s.Description, "POST without description must return nil/omitted")
 
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, skillDetailPath(th.OrgID, uuid.UUID(s.Id)), nil)
@@ -391,7 +398,7 @@ func TestSkills_CrossOrgGet404(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	s := postSkill(t, th, makeSkillBody("skl-cross", "Korean", nil))
+	s := postSkill(t, th, makeSkillBody("skill_cross", "skl-cross", "Korean", nil))
 
 	orgB := uuid.Must(uuid.NewV7())
 	resp, raw := httpGET(t, th.HTTP, orgB, skillDetailPath(orgB, uuid.UUID(s.Id)), nil)
@@ -409,10 +416,17 @@ func TestSkills_ExternalIdCollision(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	_ = postSkill(t, th, makeSkillBody("skl-dup", "First", nil))
+	// TODO(04.1-05): Plan 05 will rewrite assertions per Phase 04.1 semantics.
+	// Both POSTs share BOTH code AND external_id; mapPgError now distinguishes
+	// duplicate_code vs duplicate_external_id. The first constraint to fire
+	// (composite UNIQUE on (org_id, code)) wins, so the new wire shape is
+	// ErrorCodeDuplicateCode / "duplicate_code". Until Plan 05 lands the
+	// assertion below will fail at runtime — expected per the wave-boundary
+	// ledger in Plan 04.1-03 SUMMARY.
+	_ = postSkill(t, th, makeSkillBody("skill_dup", "skl-dup", "First", nil))
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID),
-		makeSkillBody("skl-dup", "Second", nil))
+		makeSkillBody("skill_dup", "skl-dup", "Second", nil))
 	require.Equalf(t, http.StatusConflict, resp.StatusCode,
 		"second POST with same external_id must be 409, body=%s", string(raw))
 	var e api.ErrorResponse

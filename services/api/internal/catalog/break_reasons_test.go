@@ -38,8 +38,14 @@ func postBreakReason(t testing.TB, th *TestHandlers, body api.CreateBreakReasonR
 	return br
 }
 
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 — required).
+// break_reasons pre-04.1 had no external_id column; post-04.1 it gains both
+// `code` (required) and `external_id` (optional, nullable). The legacy helper
+// did not take a code; callers now derive a unique code from the name via
+// sanitizeForCode to keep the per-test fixture concise.
 func makeBreakReasonBody(name string, routable bool, displayOrder int) api.CreateBreakReasonRequest {
 	return api.CreateBreakReasonRequest{
+		Code:         "break_" + sanitizeForCode(name),
 		Name:         name,
 		Routable:     routable,
 		DisplayOrder: displayOrder,

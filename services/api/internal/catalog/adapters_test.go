@@ -38,8 +38,13 @@ func postAdapter(t testing.TB, th *TestHandlers, body api.CreateAdapterRequest) 
 	return a
 }
 
+// Phase 04.1: signature stays positional but the body now sets a required
+// `code` field (D04_1-03). Adapters pre-04.1 had no code column. The helper
+// derives a unique code from name via sanitizeForCode — Plan 05 will rewrite
+// the test suite to use explicit codes per test case.
 func makeAdapterBody(name, adapterType string, cfg map[string]any) api.CreateAdapterRequest {
 	body := api.CreateAdapterRequest{
+		Code:        "adapter_" + sanitizeForCode(name),
 		Name:        name,
 		AdapterType: adapterType,
 	}
