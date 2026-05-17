@@ -488,7 +488,7 @@ func sanitizeForCode(s string) string {
 			out = append(out, '_')
 		}
 	}
-	if len(out) == 0 || !(out[0] >= 'a' && out[0] <= 'z') {
+	if len(out) == 0 || out[0] < 'a' || out[0] > 'z' {
 		out = append([]byte{'r'}, out...)
 	}
 	return string(out)
