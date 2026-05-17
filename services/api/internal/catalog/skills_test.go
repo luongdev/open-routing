@@ -410,28 +410,30 @@ func TestSkills_CrossOrgGet404(t *testing.T) {
 }
 
 // TestSkills_ExternalIdCollision — Phase 04.1 rewrite (resolves Plan 04
-// Hazard #1). Both POSTs share BOTH `code` AND `external_id`; the FIRST
-// constraint to fire (composite UNIQUE on (org_id, code) — `skills_org_id_code_key`)
-// wins, so mapPgError introspects the constraint name and returns
-// ErrorCodeDuplicateCode / "duplicate_code". The dedicated
-// TestSkills_DuplicateExternalId_Returns409_DuplicateExternalId test below
-// exercises the duplicate-external-id branch with a fresh code.
+// Hazard #1). Two POSTs with DISTINCT codes but SAME `external_id`
+// deterministically hit the partial UNIQUE index `ix_skills_org_external_id`,
+// so mapPgError introspects the constraint name and returns
+// ErrorCodeDuplicateExternalId / "duplicate_external_id". Test name
+// accurately describes the assertion: the external_id collision branch.
 func TestSkills_ExternalIdCollision(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	_ = postSkill(t, th, makeSkillBody("skill_dup", "skl-dup", "First", nil))
+	_ = postSkill(t, th, makeSkillBody("skill_dup_a", "skl-dup", "First", nil))
 
+	// Distinct code, SAME external_id → forces the (org_id, external_id)
+	// partial unique index to fire (deterministic).
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, skillPath(th.OrgID),
-		makeSkillBody("skill_dup", "skl-dup", "Second", nil))
+		makeSkillBody("skill_dup_b", "skl-dup", "Second", nil))
 	require.Equalf(t, http.StatusConflict, resp.StatusCode,
-		"second POST with same (code, external_id) must be 409, body=%s", string(raw))
+		"second POST with same external_id must be 409, body=%s", string(raw))
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
-	// Phase 04.1 (D04_1-21): the (org_id, code) UNIQUE fires first.
-	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
-	require.Equal(t, "duplicate_code", e.Reason)
+	// Phase 04.1 (D04_1-21): same external_id, distinct codes → partial
+	// unique index fires; mapPgError returns ErrorCodeDuplicateExternalId.
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
 }
 
 // ---------------------------------------------------------------------------

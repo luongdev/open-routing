@@ -330,7 +330,8 @@ func TestCatalog_AgentsListIsolation(t *testing.T) {
 // supplies its own distinct `code` so the FIRST collision is on the
 // (org_id, external_id) partial unique index, not the (org_id, code)
 // composite unique. Confirms the constraint-name introspect path
-// distinguishes the two collision flavors at the isolation level.
+// distinguishes the two collision flavors at the isolation level (codex
+// peer-review MED #2 — asserts on body fields, not just HTTP status).
 func TestCatalog_AgentsUniqueOrgExternalId(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
@@ -344,14 +345,27 @@ func TestCatalog_AgentsUniqueOrgExternalId(t *testing.T) {
 	})
 	require.Equal(t, http.StatusCreated, code1, "first POST must succeed")
 
-	code2, _ := postEntity(t, baseURL(), "agents", org, map[string]any{
+	code2, body2 := postEntityWithBody(t, baseURL(), "agents", org, map[string]any{
 		"code":        "fnd_06_emp_b", // distinct code — forces external_id collision
 		"external_id": "ext-found-06",
 		"name":        "Second",
 		"email":       "second@example.com",
 	})
-	require.Equal(t, http.StatusConflict, code2,
-		"second POST with same (org_id, external_id) MUST return 409 (FOUND-06)")
+	require.Equalf(t, http.StatusConflict, code2,
+		"second POST with same (org_id, external_id) MUST return 409 (FOUND-06); body=%s", string(body2))
+
+	// Phase 04.1 (D04_1-21): assert the constraint-name introspect path
+	// distinguishes the partial-unique branch. Locks the wire shape end-
+	// to-end through the isolation harness.
+	var e struct {
+		Error  string `json:"error"`
+		Reason string `json:"reason"`
+	}
+	require.NoError(t, json.Unmarshal(body2, &e))
+	require.Equal(t, "duplicate_external_id", e.Error,
+		"FOUND-06 + D04_1-21: error must be duplicate_external_id; body=%s", string(body2))
+	require.Equal(t, "duplicate_external_id", e.Reason,
+		"FOUND-06 + D04_1-21: reason must be duplicate_external_id; body=%s", string(body2))
 }
 
 // TestCatalog_CrossOrgSameCode_BothSucceed — D04_1-24, VALIDATION IDENT-06.
@@ -382,8 +396,10 @@ func TestCatalog_CrossOrgSameCode_BothSucceed(t *testing.T) {
 
 // TestCatalog_AgentsDuplicateCodeSameOrg_Returns409_DuplicateCode — Plan 04
 // errors.go constraint-name introspect at the isolation level. Same org +
-// same code → 409 with reason="duplicate_code" (NOT version_conflict, NOT
-// external_id_collision). Locks the SIMPLICITY-REVIEW MED fix end-to-end.
+// same code → 409 with error="duplicate_code" + reason="duplicate_code"
+// (NOT version_conflict, NOT external_id_collision). Locks the
+// SIMPLICITY-REVIEW MED fix end-to-end. Codex peer-review MED #3:
+// unmarshal + structural assert (not strings.Contains).
 func TestCatalog_AgentsDuplicateCodeSameOrg_Returns409_DuplicateCode(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
@@ -401,9 +417,17 @@ func TestCatalog_AgentsDuplicateCodeSameOrg_Returns409_DuplicateCode(t *testing.
 		"name":  "AliceDup",
 		"email": "alicedup@example.com",
 	})
-	require.Equal(t, http.StatusConflict, bStatus)
-	require.Contains(t, string(bBody), "duplicate_code",
-		"expected ErrorCode=duplicate_code in response body; got %s", string(bBody))
+	require.Equalf(t, http.StatusConflict, bStatus, "body=%s", string(bBody))
+
+	var e struct {
+		Error  string `json:"error"`
+		Reason string `json:"reason"`
+	}
+	require.NoError(t, json.Unmarshal(bBody, &e))
+	require.Equal(t, "duplicate_code", e.Error,
+		"Plan 04 errors.go constraint-name introspect must set error=duplicate_code; body=%s", string(bBody))
+	require.Equal(t, "duplicate_code", e.Reason,
+		"reason must equal duplicate_code; body=%s", string(bBody))
 }
 
 // postEntityWithBody is a sibling helper to postEntity that ALSO returns

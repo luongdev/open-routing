@@ -164,31 +164,37 @@ func TestAgents_CreateThenGet(t *testing.T) {
 }
 
 // TestAgents_CreateDuplicateExternalID_IncludesRequestID — Phase 04.1 rewrite
-// (resolves Plan 04 Hazard #1). Both POSTs share BOTH `code` AND `external_id`;
-// the FIRST constraint to fire (composite UNIQUE on (org_id, code) —
-// `agents_org_id_code_key`) wins, so mapPgError introspects the constraint name
-// and returns ErrorCodeDuplicateCode / "duplicate_code". The `X-Request-Id`
-// header propagation contract (D-35) is preserved across the wire-shape change.
+// (resolves Plan 04 Hazard #1). Two POSTs with DISTINCT codes but SAME
+// `external_id` deterministically hit the partial UNIQUE index
+// `ix_agents_org_external_id`, so mapPgError introspects the constraint name
+// and returns ErrorCodeDuplicateExternalId / "duplicate_external_id". The
+// `X-Request-Id` header propagation contract (D-35) is preserved across
+// the wire-shape change. Test name accurately describes the assertion: the
+// external_id collision branch.
 func TestAgents_CreateDuplicateExternalID_IncludesRequestID(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeAgentBody("emp_dup", "ext-duplicate", "Dupe", nil)
+	body := makeAgentBody("emp_dup_a", "ext-duplicate", "DupeA", nil)
 	_ = postAgent(t, th, body)
 
-	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
+	// Distinct code, SAME external_id → forces the (org_id, external_id)
+	// partial unique index to fire (deterministic, not order-dependent).
+	// Name uses no spaces so makeAgentBody's name-derived email is valid.
+	body2 := makeAgentBody("emp_dup_b", "ext-duplicate", "DupeB", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body2)
 	require.Equalf(t, http.StatusConflict, resp.StatusCode, "want 409, body=%s", string(raw))
 	require.NotEmpty(t, resp.Header.Get("X-Request-Id"))
 
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
-	// Phase 04.1 (D04_1-21): same-code POST hits the (org_id, code) UNIQUE
-	// constraint first; mapPgError returns ErrorCodeDuplicateCode (camelcase
-	// `Id` lock from Plan 03 Task 3 line 572 applies to the sibling
-	// duplicate_external_id symbol — kept consistent in test references).
-	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
-	require.Equal(t, "duplicate_code", e.Reason)
+	// Phase 04.1 (D04_1-21): same external_id, distinct codes → partial
+	// unique index `ix_agents_org_external_id` fires; mapPgError returns
+	// ErrorCodeDuplicateExternalId (camelcase `Id` lock — Plan 03 Task 3
+	// line 572).
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
 	require.NotNil(t, e.RequestId, "409 body must include request_id")
 	require.Equal(t, resp.Header.Get("X-Request-Id"), e.RequestId.String())
 }
