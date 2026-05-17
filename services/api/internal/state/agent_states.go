@@ -7,7 +7,8 @@ import (
 )
 
 // GetAgentStatus is the StrictServerInterface implementation for
-// GET /v1/orgs/{org_id}/agents/{id}/status. Wave 1 ships a 501 stub
+// GET /v1/orgs/{org_id}/agents/{id}/status. Wave 1 ships a 500 stub
+// (no 501 response type exists in the spec per notimpl.go rationale)
 // so the state package can be wired into the composite ApiHandlers
 // before Wave 2 implements real cache+DB load. Wave 2 (04-03-PLAN.md)
 // replaces this body entirely.
@@ -19,7 +20,8 @@ func (s *Server) GetAgentStatus(_ context.Context, _ api.GetAgentStatusRequestOb
 }
 
 // PatchAgentStatus is the StrictServerInterface implementation for
-// PATCH /v1/orgs/{org_id}/agents/{id}/status. Wave 1 ships a 501 stub
+// PATCH /v1/orgs/{org_id}/agents/{id}/status. Wave 1 ships a 500 stub
+// (no 501 response type exists in the spec per notimpl.go rationale)
 // so the state package can be wired into the composite ApiHandlers
 // before Wave 2 implements: (a) cross-row break_reason probe, (b)
 // transition validator OR force bypass, (c) atomic UPDATE + 0-row
