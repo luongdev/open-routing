@@ -306,19 +306,46 @@ func (s *Importer) processChunk(
 
 	// Per-row savepoint loop. Each iteration is independent — a failed
 	// row ROLLBACK TO's its own savepoint without affecting siblings.
-	for _, r := range rows {
+	//
+	// Phase 5 fixes M1+M2: a BeginSavepoint or RELEASE-SAVEPOINT failure
+	// at this layer indicates the outer Tx has entered an undefined
+	// state (per PostgreSQL transaction-control semantics). Continuing
+	// the per-row loop is unsound — every subsequent BeginSavepoint
+	// will fail with the same error and outerTx.Commit at the end may
+	// commit garbage. Abort the entire chunk: every already-succeeded
+	// row + the failing row + every remaining row joins failed[] with
+	// reason=savepoint_begin_failed / savepoint_commit_failed; the
+	// outer Tx rolls back via the defer above (Pitfall 8).
+	for idx, r := range rows {
 		sp, spErr := outerTx.BeginSavepoint(ctx)
 		if spErr != nil {
-			// Savepoint begin failure is rare — the outer Tx may be in
-			// a degraded state. Mark the row failed and continue; the
-			// next BeginSavepoint will return the same error and the
-			// remaining rows will join the failed[] tally.
-			failed = append(failed, api.BulkImportFailedRow{
-				Row:    r.lineNo,
-				Error:  api.BulkImportFailedRowErrorImportFailed,
-				Reason: "savepoint_begin_failed",
-			})
-			continue
+			// M2 fix — savepoint BEGIN failure aborts the chunk. Pre-fix
+			// the loop continued, generating cascading failures that
+			// looked like per-row issues when the real cause was a
+			// degraded outer tx.
+			s.deps.Logger.WarnContext(ctx, "import.chunk.savepoint_begin_failed",
+				"err", spErr, "line_no", r.lineNo,
+				"note", "outer tx degraded; aborting chunk + rolling back succeeded rows")
+			// All previously-succeeded rows in this chunk lose their
+			// commit (the outer tx will roll back in the defer); flush
+			// them to failed[] BEFORE adding the current row + tail.
+			for _, sr := range succeeded {
+				failed = append(failed, api.BulkImportFailedRow{
+					Row:    sr.lineNo,
+					Error:  api.BulkImportFailedRowErrorImportFailed,
+					Reason: "savepoint_begin_failed",
+				})
+			}
+			succeeded = nil
+			// Current row + remaining tail.
+			for j := idx; j < len(rows); j++ {
+				failed = append(failed, api.BulkImportFailedRow{
+					Row:    rows[j].lineNo,
+					Error:  api.BulkImportFailedRowErrorImportFailed,
+					Reason: "savepoint_begin_failed",
+				})
+			}
+			return nil, failed
 		}
 
 		out, procErr := rowProc.process(ctx, sp, orgID, r, resolver)
@@ -341,12 +368,33 @@ func (s *Importer) processChunk(
 
 		// RELEASE savepoint — per-row success.
 		if commitErr := sp.Commit(ctx); commitErr != nil {
-			failed = append(failed, api.BulkImportFailedRow{
-				Row:    r.lineNo,
-				Error:  api.BulkImportFailedRowErrorImportFailed,
-				Reason: "savepoint_commit_failed",
-			})
-			continue
+			// M1 fix — RELEASE-SAVEPOINT failure aborts the chunk.
+			// Pre-fix the loop continued, but per PG semantics a
+			// RELEASE failure leaves the tx in an inconsistent state
+			// (the outer Tx.Commit may succeed but persist garbage).
+			// Rollback the savepoint, then abort the chunk by
+			// flushing succeeded rows + the current row + tail to
+			// failed[] and letting the defer roll back the outer tx.
+			s.deps.Logger.WarnContext(ctx, "import.chunk.savepoint_commit_failed",
+				"err", commitErr, "line_no", r.lineNo,
+				"note", "tx state undefined; aborting chunk + rolling back succeeded rows")
+			_ = sp.Rollback(ctx)
+			for _, sr := range succeeded {
+				failed = append(failed, api.BulkImportFailedRow{
+					Row:    sr.lineNo,
+					Error:  api.BulkImportFailedRowErrorImportFailed,
+					Reason: "savepoint_commit_failed",
+				})
+			}
+			succeeded = nil
+			for j := idx; j < len(rows); j++ {
+				failed = append(failed, api.BulkImportFailedRow{
+					Row:    rows[j].lineNo,
+					Error:  api.BulkImportFailedRowErrorImportFailed,
+					Reason: "savepoint_commit_failed",
+				})
+			}
+			return nil, failed
 		}
 		succeeded = append(succeeded, out)
 	}
