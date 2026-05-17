@@ -35,7 +35,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
  */
 @customElement('or-cursor-paginator')
 export class OrCursorPaginator extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: flex;
       align-items: center;

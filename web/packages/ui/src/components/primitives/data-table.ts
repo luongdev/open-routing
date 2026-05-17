@@ -41,7 +41,7 @@ export interface OrDataTableColumn {
  */
 @customElement('or-data-table')
 export class OrDataTable extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: block;
       width: 100%;

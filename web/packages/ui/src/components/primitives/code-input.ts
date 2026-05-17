@@ -47,7 +47,7 @@ export const CODE_ERROR_MSG =
  */
 @customElement('or-code-input')
 export class OrCodeInput extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: block;
     }
@@ -120,6 +120,13 @@ export class OrCodeInput extends LitElement {
    */
   validate(): boolean {
     if (this.readonly) return true;
+
+    // Empty value is only an error when required=true; otherwise it's valid-until-populated.
+    if (!this.value && !this.required) {
+      this._validationState = null; // Reset to untouched state — not invalid, not valid
+      this.requestUpdate();
+      return true;
+    }
 
     const valid = CODE_PATTERN.test(this.value);
     this._validationState = valid;

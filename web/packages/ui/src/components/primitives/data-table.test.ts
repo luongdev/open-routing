@@ -90,12 +90,12 @@ describe('OrCursorPaginator', () => {
     const shadow = el.shadowRoot!;
     // Find the Next button by text content or data attribute
     const buttons = shadow.querySelectorAll('sl-button, button');
-    let nextBtn: Element | null = null;
+    let nextBtn: HTMLElement | null = null;
     buttons.forEach((btn) => {
-      if (btn.textContent?.trim().includes('Next')) nextBtn = btn;
+      if (btn.textContent?.trim().includes('Next')) nextBtn = btn as HTMLElement;
     });
     expect(nextBtn).toBeTruthy();
-    expect((nextBtn as any).disabled || (nextBtn as HTMLButtonElement).hasAttribute('disabled')).toBe(true);
+    expect((nextBtn as unknown as { disabled?: boolean })?.disabled || nextBtn!.hasAttribute('disabled')).toBe(true);
   });
 
   it('Previous button click emits or-page-changed with direction=prev', async () => {
@@ -109,14 +109,14 @@ describe('OrCursorPaginator', () => {
 
     const shadow = el.shadowRoot!;
     const buttons = shadow.querySelectorAll('sl-button, button');
-    let prevBtn: Element | null = null;
+    let prevBtn: HTMLElement | null = null;
     buttons.forEach((btn) => {
       if (btn.textContent?.trim().includes('Previous') || btn.textContent?.trim().includes('Prev')) {
-        prevBtn = btn;
+        prevBtn = btn as HTMLElement;
       }
     });
     expect(prevBtn).toBeTruthy();
-    (prevBtn as HTMLButtonElement).click();
+    prevBtn!.click();
     await (el as any).updateComplete;
 
     expect(events).toHaveLength(1);

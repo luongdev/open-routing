@@ -48,7 +48,7 @@ export interface OrFormWizardStep {
  */
 @customElement('or-form-wizard')
 export class OrFormWizard extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: block;
     }
@@ -273,9 +273,7 @@ export class OrFormWizard extends LitElement {
   }
 
   private _renderNavButtons() {
-    const finalLabel = this.steps.length > 0
-      ? `Create`
-      : 'Create';
+    const finalLabel = 'Create';
 
     return html`
       <div class="nav-buttons">

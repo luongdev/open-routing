@@ -56,7 +56,7 @@ export class OrConflictBanner extends LitElement {
   // Set via connectedCallback on the host, not via static initializer,
   // because Lit's shadow-root rendering won't apply ARIA to the host itself.
 
-  static styles = css`
+  static override styles = css`
     :host {
       display: block;
       background: var(--or-color-conflict-bg, #fef3c7);
@@ -215,8 +215,14 @@ export class OrConflictBanner extends LitElement {
 
   private _renderCrudDiff() {
     // Compute the changed fields: keys present in serverValue where values differ from userValue
+    // Use JSON.stringify for deep comparison — entity fields can include
+    // nested objects (e.g. skills arrays). Primitive values (strings, numbers,
+    // booleans) stringify deterministically; key order within objects may vary
+    // but that edge case only matters for deeply nested sub-objects which are
+    // beyond v0.1 scope. For v0.1 entity fields (strings/numbers/booleans),
+    // this is safe and avoids false diffs from reference inequality.
     const changedKeys = Object.keys(this.serverValue).filter(
-      (key) => this.serverValue[key] !== this.userValue[key]
+      (key) => JSON.stringify(this.serverValue[key]) !== JSON.stringify(this.userValue[key])
     );
 
     if (changedKeys.length === 0) {

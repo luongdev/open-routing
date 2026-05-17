@@ -69,12 +69,12 @@ describe('OrConflictBanner', () => {
     const shadow = el.shadowRoot!;
     // Find the Review button
     const buttons = shadow.querySelectorAll('sl-button, button');
-    let reviewBtn: Element | null = null;
+    let reviewBtn: HTMLElement | null = null;
     buttons.forEach((btn) => {
-      if (btn.textContent?.toLowerCase().includes('review')) reviewBtn = btn;
+      if (btn.textContent?.toLowerCase().includes('review')) reviewBtn = btn as HTMLElement;
     });
     expect(reviewBtn).toBeTruthy();
-    (reviewBtn as HTMLElement).click();
+    reviewBtn!.click();
     await (el as any).updateComplete;
 
     expect(events).toHaveLength(1);
@@ -95,12 +95,12 @@ describe('OrConflictBanner', () => {
     const shadow = el.shadowRoot!;
     // Find the Discard button
     const buttons = shadow.querySelectorAll('sl-button, button');
-    let discardBtn: Element | null = null;
+    let discardBtn: HTMLElement | null = null;
     buttons.forEach((btn) => {
-      if (btn.textContent?.toLowerCase().includes('discard')) discardBtn = btn;
+      if (btn.textContent?.toLowerCase().includes('discard')) discardBtn = btn as HTMLElement;
     });
     expect(discardBtn).toBeTruthy();
-    (discardBtn as HTMLElement).click();
+    discardBtn!.click();
     await (el as any).updateComplete;
 
     expect(events).toHaveLength(1);

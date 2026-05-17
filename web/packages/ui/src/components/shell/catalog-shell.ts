@@ -75,7 +75,7 @@ const VALID_THEME_NAMES: readonly ThemeName[] = ['or-light', 'or-dark', 'or-bran
  */
 @customElement('or-catalog-shell')
 export class OrCatalogShell extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: flex;
       flex-direction: column;
