@@ -44,6 +44,11 @@ import '../break-reasons/break-reason-list.js';
 import '../break-reasons/break-reason-detail.js';
 import '../break-reasons/break-reason-form.js';
 
+// Wave 4: Channels entity + queue-picker primitive (Plan 06-10)
+import '../channels/channel-list.js';
+import '../channels/channel-detail.js';
+import '../channels/channel-form.js';
+
 // Wave 4: Status Panel (Plan 06-12)
 import '../status/status-panel.js';
 
@@ -290,20 +295,23 @@ export class OrCatalogShell extends LitElement {
       render: () => html`<div class="placeholder-wave" data-route="queue-detail">Queue Detail — coming in Wave 3 (Plan 06-08)</div>`,
     },
     {
-      // Channels — placeholder for Wave 4 (Plan 06-10)
+      // Channels — wired in Wave 4 (Plan 06-10)
       path: '/orgs/:org_id/channels',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="channels">Channels — coming in Wave 4 (Plan 06-10)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-channel-list .orgId=${org_id ?? ''} .client=${this._client!}></or-channel-list>`,
     },
     {
       path: '/orgs/:org_id/channels/new',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="channels-new">Channel Create — coming in Wave 4 (Plan 06-10)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-channel-form .orgId=${org_id ?? ''} .client=${this._client!}></or-channel-form>`,
     },
     {
       path: '/orgs/:org_id/channels/:id',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="channel-detail">Channel Detail — coming in Wave 4 (Plan 06-10)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-channel-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-channel-detail>`,
     },
     {
       // Adapters — placeholder for Wave 3 (Plan 06-11)
@@ -322,23 +330,23 @@ export class OrCatalogShell extends LitElement {
       render: () => html`<div class="placeholder-wave" data-route="adapter-detail">Adapter Detail — coming in Wave 3 (Plan 06-11)</div>`,
     },
     {
-      // Break Reasons — placeholder for Wave 3 (Plan 06-09)
+      // Break Reasons — wired in Wave 3 (Plan 06-09); client prop added here (Rule 2 fix)
       path: '/orgs/:org_id/break-reasons',
       enter: this._orgRouteEnter,
       render: ({ org_id }: Record<string, string | undefined>) =>
-        html`<or-break-reason-list org-id=${org_id ?? ''} data-route="break-reasons"></or-break-reason-list>`,
+        html`<or-break-reason-list .orgId=${org_id ?? ''} .client=${this._client!}></or-break-reason-list>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/new',
       enter: this._orgRouteEnter,
       render: ({ org_id }: Record<string, string | undefined>) =>
-        html`<or-break-reason-form org-id=${org_id ?? ''} data-route="break-reasons-new"></or-break-reason-form>`,
+        html`<or-break-reason-form .orgId=${org_id ?? ''} .client=${this._client!}></or-break-reason-form>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/:id',
       enter: this._orgRouteEnter,
       render: ({ org_id, id }: Record<string, string | undefined>) =>
-        html`<or-break-reason-detail org-id=${org_id ?? ''} entity-id=${id ?? ''} data-route="break-reason-detail"></or-break-reason-detail>`,
+        html`<or-break-reason-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-break-reason-detail>`,
     },
     {
       // D6-12: Import POST flow (Plan 06-13). Wire real or-import-page.

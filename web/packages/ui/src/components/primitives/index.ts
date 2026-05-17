@@ -8,3 +8,5 @@ export { OrCodeInput, CODE_PATTERN, CODE_ERROR_MSG } from './code-input.js';
 export { OrConflictBanner } from './conflict-banner.js';
 export { OrFormWizard } from './form-wizard.js';
 export type { OrFormWizardStep } from './form-wizard.js';
+// Plan 06-10: queue-picker primitive (shared with channels + future status panel)
+export { OrQueuePicker } from './queue-picker.js';
