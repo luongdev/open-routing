@@ -169,23 +169,7 @@ func (s *Importer) Stop() {
 	s.wg.Wait()
 }
 
-// ---------------------------------------------------------------------------
-// Sweep placeholders — REMOVED IN TASK 4 (sweep.go).
-//
-// These exist only so Plan 05-04 Task 1 can build standalone before
-// Task 4 ships sweep.go. Task 4 deletes both stubs from handlers.go
-// and ships the real implementations (safetySweep, runSweepPastDue,
-// startupSweep) in sweep.go. Removing the placeholders is part of
-// Task 4's diff; do NOT leave them in once sweep.go exists.
-// ---------------------------------------------------------------------------
-
-// startupSweep is the placeholder for Task 4's synchronous startup
-// flip-stranded-pending-rows query. Currently a no-op so handlers.go
-// compiles in isolation.
-func (s *Importer) startupSweep(_ context.Context) error { return nil } //nolint:unused // replaced by sweep.go in Task 4
-
-// safetySweep is the placeholder for Task 4's 1h-tick goroutine body.
-// Currently exits immediately so wg.Done is called and Stop() drains
-// cleanly even with the placeholder in place.
-func (s *Importer) safetySweep() { defer s.wg.Done() } //nolint:unused // replaced by sweep.go in Task 4
+// The safetySweep + runSweepPastDue + startupSweep methods on
+// *Importer live in sweep.go (D5-11 crash-recovery; SOLE
+// db.WithBypass call site outside cmd/migrate).
 
