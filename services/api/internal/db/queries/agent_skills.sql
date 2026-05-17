@@ -76,3 +76,35 @@ FROM skills
 WHERE id = ANY($1::uuid[])
   AND org_id = $2
   AND enabled = TRUE;
+
+-- name: MergeAgentSkill :exec
+-- D5-18 + D5-19 (Phase 5 bulk import): skill assignment MERGE on import.
+-- ON CONFLICT (agent_id, skill_id) DO UPDATE so existing assignments get
+-- the new proficiency from the import (D5-19 — import value wins on a
+-- proficiency conflict because the import is treated as authoritative
+-- for the skills it explicitly includes).
+--
+-- Existing skills NOT in the payload are LEFT INTACT (D5-18 PATCH-like
+-- merge semantics) — achieved by simply NOT issuing DELETE statements.
+-- Phase 5 row processors MUST NOT call catalog.replaceAgentSkills
+-- (DELETE-ALL + INSERT-N at agent_skills.go:74 — that is the wrong
+-- semantic for import; RESEARCH Pitfall 10). The trade-off: admins
+-- cannot REMOVE a skill via import — they must use the UI or the
+-- dedicated agent PATCH API (documented divergence from
+-- UpdateAgentRequest's PUT semantics per Phase 2 OQ-1A).
+--
+-- :exec (NOT :one) — the ON CONFLICT UPDATE makes the RETURNING value
+-- ambiguous about which version landed (INSERT vs UPDATE). The Phase 5
+-- row processor does not need the row back; only confirmation that the
+-- upsert succeeded. Parameter ordering mirrors InsertAgentSkill above
+-- (agent_id, skill_id, org_id, proficiency) for consistency.
+--
+-- Hazard reminder (H3 / D-02): org_id appears in the INSERT column list
+-- so SQLChecker accepts the query even though (agent_id, skill_id)
+-- already implies org scope through the schema FK semantics. D-02
+-- requires the literal column reference and does not negotiate on
+-- structural implication.
+INSERT INTO agent_skills (agent_id, skill_id, org_id, proficiency)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (agent_id, skill_id) DO UPDATE
+SET proficiency = EXCLUDED.proficiency;
