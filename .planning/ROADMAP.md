@@ -187,7 +187,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 1 — parallel with Wave 2)*
 
-- [ ] 04-04-PLAN.md — WrapUp TTL goroutine + clockwork.AfterFunc registry + 30s safety sweep + startup sweep + graceful Stop (D-81, D-95)
+- [x] 04-04-PLAN.md — WrapUp TTL goroutine + clockwork.AfterFunc registry + 30s safety sweep + startup sweep + graceful Stop (D-81, D-95)
 
 **Wave 4** *(blocked on Waves 2 + 3)*
 
@@ -268,7 +268,7 @@ Plans:
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
-| 4. Agent State Machine (Go) | 3/6 | In Progress|  |
+| 4. Agent State Machine (Go) | 4/6 | In Progress|  |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
