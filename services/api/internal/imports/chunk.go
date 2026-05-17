@@ -41,18 +41,26 @@ import (
 
 // parsedRow is one record after the JSON or CSV parser has produced
 // either a typed []interface{} item (`raw` set, `cells` nil) or a
-// coerced cell map (`cells` set, `raw` nil). The row processor reads
-// `raw` and re-marshals into the typed Import*Request shape; the CSV
-// path materialises `raw` from `cells` in Plan 05-06 dispatch.
+// coerced cell map (`cells` set, `raw` set to the materialised typed
+// shape). The row processor reads `raw` and re-marshals into the typed
+// Import*Request shape; the CSV path materialises `raw` from `cells`
+// in Plan 05-06 dispatch.
 //
 // lineNo is the 1-based row index used in BulkImportFailedRow.Row (the
 // JSON path counts array items; the CSV path counts data rows after
 // the header). The chunk loop NEVER renumbers — the parser is the
 // single source of truth for line numbers (Phase 5 OQ-2A).
+//
+// coerceFailure is set by the CSV path's per-cell coerce callback when
+// a cell value fails coercion (D5-01..D5-08 sentinels). The chunk loop
+// surfaces these as per-row failures BEFORE entering a savepoint so
+// the row never reaches the row processor. JSON path leaves this nil
+// (per-row re-marshal happens inside the row processor under savepoint).
 type parsedRow struct {
-	lineNo int
-	raw    interface{}
-	cells  map[string]any
+	lineNo        int
+	raw           interface{}
+	cells         map[string]any
+	coerceFailure *rowError
 }
 
 // succeededRow is the chunk loop's per-row success shape. Captured by
