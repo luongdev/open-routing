@@ -382,6 +382,167 @@ func TestPatchAgentStatus_404_AgentMissing(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Deferred HIGH/MED fix tests (Wave 5 Part A)
+// ---------------------------------------------------------------------------
+
+// TestPatchAgentStatus_BreakReasonIgnoredOnNonBreak — Codex HIGH cross-field
+// invariant. Sending break_reason_id with to=Ready must NOT persist the UUID
+// in the DB row (it belongs exclusively to Break transitions).
+func TestPatchAgentStatus_BreakReasonIgnoredOnNonBreak(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	brID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-brig", "BR Ignore Agent")
+	seedBreakReason(t, th.Pool, th.OrgID, brID, "IgnoreMe", false)
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "NotReady",
+		StateVersion: 1,
+	})
+
+	brUUID := api.UUIDv7(brID)
+	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{
+		To:            api.AgentStatusReady,
+		BreakReasonId: &brUUID,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "NotReady→Ready want 200, body=%s", raw)
+
+	var state api.AgentState
+	require.NoError(t, json.Unmarshal(raw, &state))
+	require.Equal(t, api.AgentStatusReady, state.Status)
+	require.Nil(t, state.BreakReasonId,
+		"break_reason_id MUST be nil on non-Break transition (cross-field invariant)")
+}
+
+// TestPatchAgentStatus_PostInteractionStateClearedOnExitEngaged — Codex HIGH
+// cross-field invariant. post_interaction_state MUST only be accepted while
+// current status==Engaged. Sending it from NotReady must be ignored.
+func TestPatchAgentStatus_PostInteractionStateClearedOnExitEngaged(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-pisce", "PIS Clear Agent")
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "NotReady",
+		StateVersion: 1,
+	})
+
+	pisReady := api.PostInteractionStateReady
+	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{
+		To:                   api.AgentStatusReady,
+		PostInteractionState: &pisReady,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "NotReady→Ready want 200, body=%s", raw)
+
+	var state api.AgentState
+	require.NoError(t, json.Unmarshal(raw, &state))
+	require.Equal(t, api.AgentStatusReady, state.Status)
+	require.Nil(t, state.PostInteractionState,
+		"post_interaction_state MUST be nil when not transitioning from Engaged (cross-field invariant)")
+}
+
+// TestPatchAgentStatus_InvalidEnum_422 — Codex MED enum validation. An
+// unrecognized `to` value must return 422 invalid_value (not 500 via
+// Postgres CHECK constraint).
+func TestPatchAgentStatus_InvalidEnum_422(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-invalidenum", "Invalid Enum Agent")
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "NotReady",
+		StateVersion: 1,
+	})
+
+	// Pass an invalid enum value via raw map (api.PatchAgentStatusRequest.To
+	// is a typed enum so we use a map to bypass compile-time validation).
+	resp, raw := httpPATCHStatus(t, th, agentID, map[string]any{"to": "InvalidStatus"})
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"unrecognized `to` value MUST return 422 (not 500 via CHECK), body=%s", raw)
+
+	var body api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &body))
+	require.Equal(t, api.ErrorCodeInvalidValue, body.Error)
+}
+
+// TestGetAgentStatus_SoftDeletedAgent_Returns404 — Gemini HIGH soft-delete.
+func TestGetAgentStatus_SoftDeletedAgent_Returns404(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-softdel-get", "Soft Delete Agent")
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "NotReady",
+		StateVersion: 1,
+	})
+
+	// Confirm 200 before soft-delete.
+	resp, raw := httpGETStatus(t, th, agentID)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "pre-delete GET want 200, body=%s", raw)
+
+	// Soft-delete the agent via direct DB UPDATE.
+	_, err := th.Pool.Exec(ctx,
+		"UPDATE agents SET enabled = FALSE, updated_at = NOW() WHERE id = $1 AND org_id = $2",
+		agentID, th.OrgID,
+	)
+	require.NoError(t, err, "soft-delete UPDATE must succeed")
+
+	// GET must now return 404.
+	resp2, raw2 := httpGETStatus(t, th, agentID)
+	require.Equal(t, http.StatusNotFound, resp2.StatusCode,
+		"soft-deleted agent GET must return 404, body=%s", raw2)
+}
+
+// TestPatchAgentStatus_SoftDeletedAgent_Returns404 — Gemini HIGH soft-delete.
+func TestPatchAgentStatus_SoftDeletedAgent_Returns404(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "ext-softdel-patch", "Soft Delete PATCH Agent")
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "NotReady",
+		StateVersion: 1,
+	})
+
+	// Soft-delete the agent.
+	_, err := th.Pool.Exec(ctx,
+		"UPDATE agents SET enabled = FALSE, updated_at = NOW() WHERE id = $1 AND org_id = $2",
+		agentID, th.OrgID,
+	)
+	require.NoError(t, err)
+
+	// PATCH must return 404.
+	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{To: api.AgentStatusReady})
+	require.Equal(t, http.StatusNotFound, resp.StatusCode,
+		"soft-deleted agent PATCH must return 404, body=%s", raw)
+}
+
+// ---------------------------------------------------------------------------
 // PATCH — cache invalidation (D-55 / D-56)
 // ---------------------------------------------------------------------------
 

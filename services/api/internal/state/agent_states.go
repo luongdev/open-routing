@@ -15,6 +15,24 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 )
 
+// agentEnabledCheck returns false when the agent row exists but is
+// soft-deleted (enabled=false). A soft-deleted agent must produce 404 for
+// all state operations — same surface as "agent does not exist" per FOUND-08.
+func (s *Server) agentEnabledCheck(ctx context.Context, orgID, agentID uuid.UUID) (ok bool, err error) {
+	q := generated.New(s.deps.OrgDB)
+	agent, ferr := q.GetAgent(ctx, generated.GetAgentParams{
+		ID:    pgUUID(agentID),
+		OrgID: pgUUID(orgID),
+	})
+	if errors.Is(ferr, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if ferr != nil {
+		return false, ferr
+	}
+	return agent.Enabled, nil
+}
+
 // GetAgentStatus serves the agent_states row through cache.GetOrSet with
 // 60s TTL keyed `or:{orgId}:agent_state:{agent_id}` (D-86). Cache miss
 // hits the DB via generated.New(orgDB).GetAgentStateByAgentId; ErrNoRows
@@ -28,6 +46,24 @@ func (s *Server) GetAgentStatus(ctx context.Context, req api.GetAgentStatusReque
 		}}, nil
 	}
 	agentID := uuid.UUID(req.Id)
+
+	// Soft-deleted agents return 404 (Gemini HIGH — treat enabled=false as
+	// non-existent for state operations; preserves FOUND-08 surface).
+	enabled, checkErr := s.agentEnabledCheck(ctx, orgID, agentID)
+	if checkErr != nil {
+		s.deps.Logger.ErrorContext(ctx, "get agent status: enabled check", "agent_id", agentID, "org_id", orgID, "err", checkErr)
+		return api.GetAgentStatus500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+			Error:  api.ErrorCodeInternal,
+			Reason: "agent_enabled_check_failed",
+		}}, nil
+	}
+	if !enabled {
+		return api.GetAgentStatus404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+			Error:  api.ErrorCodeNotFound,
+			Reason: "agent_state_not_found",
+		}}, nil
+	}
+
 	key := s.cacheKeyFor(orgID, agentID)
 
 	state, err := cache.GetOrSet[api.AgentState](ctx, s.deps.Cache, key, stateCacheTTL,
@@ -80,9 +116,40 @@ func (s *Server) PatchAgentStatus(ctx context.Context, req api.PatchAgentStatusR
 			Error: api.ErrorCodeInvalidBody, Reason: "body_required",
 		}}, nil
 	}
+
+	// Validate enums before any DB work. force=true with an invalid `to`
+	// would otherwise reach the Postgres CHECK constraint and return 500 (23514).
+	if !req.Body.To.Valid() {
+		return api.PatchAgentStatus422JSONResponse(api.ErrorResponse{
+			Error:  api.ErrorCodeInvalidValue,
+			Reason: "invalid_value:to",
+		}), nil
+	}
+	if req.Body.PostInteractionState != nil && !req.Body.PostInteractionState.Valid() {
+		return api.PatchAgentStatus422JSONResponse(api.ErrorResponse{
+			Error:  api.ErrorCodeInvalidValue,
+			Reason: "invalid_value:post_interaction_state",
+		}), nil
+	}
+
 	agentID := uuid.UUID(req.Id)
 	forced := req.Body.Force != nil && *req.Body.Force
 	targetStatus := req.Body.To
+
+	// Soft-deleted agents return 404 (Gemini HIGH — treat enabled=false as
+	// non-existent for state operations; preserves FOUND-08 surface).
+	enabled, checkErr := s.agentEnabledCheck(ctx, orgID, agentID)
+	if checkErr != nil {
+		s.deps.Logger.ErrorContext(ctx, "patch agent status: enabled check", "agent_id", agentID, "org_id", orgID, "err", checkErr)
+		return api.PatchAgentStatus500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+			Error: api.ErrorCodeInternal, Reason: "agent_enabled_check_failed",
+		}}, nil
+	}
+	if !enabled {
+		return api.PatchAgentStatus404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+			Error: api.ErrorCodeNotFound, Reason: "agent_state_not_found",
+		}}, nil
+	}
 
 	// Load current row FIRST so we have observed `from` for matrix
 	// validation, 409 body, and the UpdateAgentStateStatus expected_from
@@ -163,7 +230,7 @@ func (s *Server) PatchAgentStatus(ctx context.Context, req api.PatchAgentStatusR
 
 	var row generated.AgentState
 	if forced {
-		row, err = qtx.ForceUpdateAgentStateStatus(ctx, buildForceUpdateParams(agentID, orgID, req.Body))
+		row, err = qtx.ForceUpdateAgentStateStatus(ctx, buildForceUpdateParams(agentID, orgID, observedFrom, req.Body))
 	} else {
 		row, err = qtx.UpdateAgentStateStatus(ctx, buildUpdateParams(agentID, orgID, observedFrom, req.Body))
 	}
@@ -230,6 +297,11 @@ func (s *Server) PatchAgentStatus(ctx context.Context, req api.PatchAgentStatusR
 // buildUpdateParams translates the request body into UpdateAgentStateStatusParams.
 // Engaged channel and wrapup_until are system-set only — not settable via
 // agent-initiated PATCH per D-82.
+//
+// Cross-field invariant (Codex HIGH): break_reason_id is only written when
+// to==Break; cleared on all other transitions. post_interaction_state is only
+// written while current status==Engaged (the only state where STATE-06 applies);
+// cleared when leaving Engaged.
 func buildUpdateParams(agentID, orgID uuid.UUID, expectedFrom api.AgentStatus, body *api.PatchAgentStatusJSONRequestBody) generated.UpdateAgentStateStatusParams {
 	p := generated.UpdateAgentStateStatusParams{
 		AgentID:      pgUUID(agentID),
@@ -237,26 +309,29 @@ func buildUpdateParams(agentID, orgID uuid.UUID, expectedFrom api.AgentStatus, b
 		ExpectedFrom: string(expectedFrom),
 		ToStatus:     strPtr(string(body.To)),
 	}
-	if body.BreakReasonId != nil {
+	if body.To == api.AgentStatusBreak && body.BreakReasonId != nil {
 		p.BreakReasonID = pgtype.UUID{Bytes: uuid.UUID(*body.BreakReasonId), Valid: true}
 	}
-	if body.PostInteractionState != nil {
+	if expectedFrom == api.AgentStatusEngaged && body.PostInteractionState != nil {
 		p.PostInteractionState = strPtr(string(*body.PostInteractionState))
 	}
 	return p
 }
 
 // buildForceUpdateParams translates the request body into ForceUpdateAgentStateStatusParams.
-func buildForceUpdateParams(agentID, orgID uuid.UUID, body *api.PatchAgentStatusJSONRequestBody) generated.ForceUpdateAgentStateStatusParams {
+//
+// Cross-field invariant (Codex HIGH): same constraints as buildUpdateParams apply.
+// Force bypasses the transition matrix, but not cross-field column semantics.
+func buildForceUpdateParams(agentID, orgID uuid.UUID, currentStatus api.AgentStatus, body *api.PatchAgentStatusJSONRequestBody) generated.ForceUpdateAgentStateStatusParams {
 	p := generated.ForceUpdateAgentStateStatusParams{
 		AgentID:  pgUUID(agentID),
 		OrgID:    pgUUID(orgID),
 		ToStatus: strPtr(string(body.To)),
 	}
-	if body.BreakReasonId != nil {
+	if body.To == api.AgentStatusBreak && body.BreakReasonId != nil {
 		p.BreakReasonID = pgtype.UUID{Bytes: uuid.UUID(*body.BreakReasonId), Valid: true}
 	}
-	if body.PostInteractionState != nil {
+	if currentStatus == api.AgentStatusEngaged && body.PostInteractionState != nil {
 		p.PostInteractionState = strPtr(string(*body.PostInteractionState))
 	}
 	return p

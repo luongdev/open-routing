@@ -50,6 +50,20 @@ func (s *Server) scheduleWrapUpExpiry(agentID, orgID uuid.UUID, until time.Time)
 		default:
 		}
 
+		// Track this goroutine in the WaitGroup so Stop() can drain
+		// in-flight DB calls before closing the pool. The Add(1) is
+		// here (inside the AfterFunc) rather than at scheduling time
+		// because at scheduling time we do not know whether the timer
+		// will fire before Stop cancels the context. There is a tiny
+		// window between the ctx.Done() check above and Add(1) below
+		// where Stop can fire; if it does, Stop's cancel() closes
+		// s.ctx.Done which the check above gates on — the select will
+		// return on the next call, so at worst we Add+Done once on an
+		// already-stopped server, which is safe (pool is still open for
+		// the duration of the DB call).
+		s.wg.Add(1)
+		defer s.wg.Done()
+
 		// Bounded ctx so a hung DB call never leaks the goroutine
 		// indefinitely (Threat T-04-11).
 		expireCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
