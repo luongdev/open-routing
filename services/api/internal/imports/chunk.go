@@ -22,7 +22,7 @@
 //     generated.New(s.deps.OrgDB) (would short-circuit the savepoint).
 //   - cache.Del fires AFTER outerTx.Commit succeeds, NEVER per-row or
 //     before commit. A Del failure logs warn but never fails the chunk.
-//   - replaceAgentSkills (Phase 3 PUT semantic) is NEVER called from
+//   - catalog's Phase 3 PUT-style replace helper is NEVER called from
 //     this package — D5-18 mandates MERGE via MergeAgentSkill.
 package imports
 

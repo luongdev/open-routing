@@ -26,7 +26,7 @@
 //
 // Anti-pattern enforcement (RESEARCH Pitfall 10 + Anti-Patterns list):
 //
-//   - NEVER call catalog.replaceAgentSkills (PUT semantic). D5-18
+//   - NEVER call catalog's PUT-style skill replace helper. D5-18
 //     mandates MERGE; this file uses qtx.MergeAgentSkill exclusively.
 //   - NEVER call generated.New(s.deps.OrgDB) — every per-row query
 //     goes through generated.New(sp) so the savepoint can ROLLBACK
