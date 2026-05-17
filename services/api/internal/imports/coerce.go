@@ -58,6 +58,14 @@ var ErrInvalidSkillToken = errors.New("invalid_skill_token")
 // catalog.ValidateCodeFormat is the single source of truth.
 var ErrInvalidCodeFormat = errors.New("invalid_code_format")
 
+// ErrInvalidJSON — Phase 5 fix M3 / D5-04 amendment. Cell value for a
+// JSON-typed column (currently only `config` on adapters) did not parse
+// as a valid JSON object. Pre-fix the malformed cell was left as a
+// string and surfaced downstream as a generic `invalid_json_row` with
+// an empty field; the field-level error precision lost the "which
+// column?" signal admins need to fix their CSV.
+var ErrInvalidJSON = errors.New("invalid_json")
+
 // trimLower applies the D5-01 prefix transform: strip surrounding
 // whitespace, then lowercase. Used by parseBool, validateEnum, and the
 // skill-token parser. Not used for free-text fields (name, description)

@@ -323,6 +323,41 @@ func TestBulkImport_CSV_Adapters_HappyPath_200(t *testing.T) {
 	require.Len(t, decodeBulkImportResult(t, body).Succeeded, 2)
 }
 
+// TestBulkImport_CSV_Adapters_MalformedConfig_FieldLevelError — Phase 5
+// fix M3. A CSV adapter row with a malformed JSON `config` cell MUST
+// surface as a per-row failure with `field: "config"` and
+// `reason: "invalid_json"`. Pre-fix the malformed JSON dropped through
+// to the row processor's reMarshalAs which produced a generic
+// `invalid_json_row` with empty field — admins debugging an import had
+// no signal pointing at the offending column.
+func TestBulkImport_CSV_Adapters_MalformedConfig_FieldLevelError(t *testing.T) {
+	th := newTestImports(t)
+	if th == nil {
+		return
+	}
+	ctx := orgkey.SetOrgID(context.Background(), th.OrgID)
+	cleanImportTables(t, ctx, th.Pool, th.OrgID)
+	defer cleanImportTables(t, ctx, th.Pool, th.OrgID)
+
+	// CSV with a clearly broken JSON config cell (missing closing brace).
+	// The quote handling around the JSON object follows RFC 4180 csv
+	// escaping — the inner JSON is wrapped in double-doubled quotes.
+	csv := []byte(`code,name,adapter_type,config
+adapter_broken,Broken,voice,"{""endpoint"":""nope"
+`)
+	resp, body := postImportCSV(t, th, api.Adapters, csv)
+	// All rows failed → 422 per the existing all-fail contract.
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"M3: malformed config CSV row must fail; body=%s", string(body))
+	r := decodeBulkImportResult(t, body)
+	require.Len(t, r.Failed, 1)
+	require.NotNil(t, r.Failed[0].Field, "M3: must populate field-level slot")
+	require.Equal(t, "config", *r.Failed[0].Field,
+		"M3: field must identify the offending column, not be empty/generic")
+	require.Equal(t, "invalid_json", r.Failed[0].Reason,
+		"M3: reason must be the typed sentinel, not invalid_json_row")
+}
+
 // ---------------------------------------------------------------------------
 // BreakReasons — JSON + CSV happy paths. IMPORTANT: two rows have the
 // SAME name "Lunch" but DIFFERENT codes — Phase 04.1 IDENT-03 (D04_1-05)

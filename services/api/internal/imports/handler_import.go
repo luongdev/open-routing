@@ -642,23 +642,18 @@ func materialiseTypedRaw(entity api.ImportEntityType, cells map[string]any) inte
 			}
 			out[k] = v
 		case "config":
-			// Adapters-only: CSV's `config` cell is a JSON-encoded string
-			// (per RFC 4180 escaping); ImportAdapterRequest.Config expects
-			// a *map[string]interface{}. Decode the string into a map so
-			// the downstream reMarshalAs[ImportAdapterRequest] round-trip
-			// produces the typed shape the row processor expects. An empty
-			// string or nil falls through to omit the field, matching the
-			// JSONB column's NULL/empty-object behaviour.
-			if s, ok := v.(string); ok && s != "" {
-				var m map[string]interface{}
-				if err := json.Unmarshal([]byte(s), &m); err == nil {
-					out[k] = m
-					continue
-				}
-				// Decode failure: leave as string and let the row processor
-				// surface invalid_json_row. Defensive — coerce.go already
-				// trimmed the input; only malformed JSON lands here.
-				out[k] = v
+			// Adapters-only: ImportAdapterRequest.Config expects a
+			// *map[string]interface{}. Phase 5 fix M3: coerceJSONBObject
+			// now parses the JSON at the coerce step and returns the
+			// parsed map directly, so this branch is a passthrough.
+			// Pre-fix the parse happened here and a failure left the
+			// raw string in place, surfacing downstream as generic
+			// invalid_json_row with an empty field — the M3 fix moves
+			// the parse + error attribution to the coerce layer so a
+			// malformed config cell now surfaces as {field: "config",
+			// reason: "invalid_json"} per D5-08 / M3 contract.
+			if m, ok := v.(map[string]interface{}); ok {
+				out[k] = m
 				continue
 			}
 			// Nil / empty string → omit the field (row processor's Config
@@ -666,6 +661,9 @@ func materialiseTypedRaw(entity api.ImportEntityType, cells map[string]any) inte
 			if v == nil || v == "" {
 				continue
 			}
+			// Defensive: untyped value reached this branch. This is
+			// unreachable under the new coerce contract but keeps the
+			// switch exhaustive.
 			out[k] = v
 		default:
 			out[k] = v

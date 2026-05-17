@@ -17,6 +17,7 @@
 package imports
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -267,14 +268,28 @@ func coerceChannelTypesCell(raw string) (any, error) {
 }
 
 // coerceJSONBObject is the adapter.config splitter. Free-form JSONB
-// passed through verbatim (D-72 carry-forward — no schema). For now
-// we trim whitespace and accept any non-empty string; Wave 3's row
-// processor passes it through to pgtype.JSONB which validates JSON
-// shape at the DB driver level. Empty string → nil (NULL column).
+// passed through verbatim (D-72 carry-forward — no schema). Empty
+// string → nil (NULL column).
+//
+// Phase 5 fix M3: validate the JSON object shape AT the coerce step so
+// a malformed config cell surfaces as `{field: "config", reason:
+// "invalid_json"}` rather than as a generic `invalid_json_row` later
+// in the row-processor's reMarshalAs round-trip. Pre-fix the coerce
+// step accepted any non-empty string and the JSON parse happened in
+// materialiseTypedRaw, which dropped the failure on the floor and let
+// the row processor surface an empty-field generic error.
+//
+// We return the parsed map[string]interface{} on success so the
+// downstream materialiseTypedRaw layer is a pure passthrough — no
+// second JSON decode, no second failure mode.
 func coerceJSONBObject(raw string) (any, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return nil, nil
 	}
-	return trimmed, nil
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &m); err != nil {
+		return nil, ErrInvalidJSON
+	}
+	return m, nil
 }
