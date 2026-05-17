@@ -183,7 +183,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 04-03-PLAN.md — state.Server handler bodies: GetAgentStatus cache-read-through + PatchAgentStatus probe-then-matrix + force WARN + cache invalidation (D-66, D-84, D-86)
+- [x] 04-03-PLAN.md — state.Server handler bodies: GetAgentStatus cache-read-through + PatchAgentStatus probe-then-matrix + force WARN + cache invalidation (D-66, D-84, D-86)
 
 **Wave 3** *(blocked on Wave 1 — parallel with Wave 2)*
 
@@ -268,7 +268,7 @@ Plans:
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
-| 4. Agent State Machine (Go) | 2/6 | In Progress|  |
+| 4. Agent State Machine (Go) | 3/6 | In Progress|  |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
