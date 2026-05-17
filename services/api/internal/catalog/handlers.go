@@ -27,7 +27,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 
-	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 )
@@ -84,12 +83,10 @@ type Handlers struct {
 	clock func() time.Time
 }
 
-// Compile-time guarantee that *Handlers satisfies the generated
-// StrictServerInterface. If this line fails to compile, the package is
-// missing a method that the OpenAPI spec defines — look at the diff
-// between server.gen.go's StrictServerInterface and the catalog
-// package's method set.
-var _ api.StrictServerInterface = (*Handlers)(nil)
+// The compile-time StrictServerInterface assertion lives on the
+// *ApiHandlers composite in cmd/api/main.go (D-89): catalog.Handlers
+// alone owns 41/43 methods; state.Server contributes the 2 status
+// methods to make the composite satisfy the full interface.
 
 // New constructs a *Handlers value. Deps fields MUST be non-nil — New
 // does not validate, but the first method call that dereferences a nil
