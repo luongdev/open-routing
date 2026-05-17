@@ -191,7 +191,7 @@ Plans:
 
 **Wave 4** *(blocked on Waves 2 + 3)*
 
-- [ ] 04-05-PLAN.md — ApiHandlers composite wiring in main.go + CreateAgent atomic agent_states INSERT + notimpl.go cleanup (D-89, D-93)
+- [x] 04-05-PLAN.md — ApiHandlers composite wiring in main.go + CreateAgent atomic agent_states INSERT + notimpl.go cleanup (D-89, D-93)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -268,7 +268,7 @@ Plans:
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
-| 4. Agent State Machine (Go) | 4/6 | In Progress|  |
+| 4. Agent State Machine (Go) | 5/6 | In Progress|  |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
