@@ -44,6 +44,10 @@ import '../break-reasons/break-reason-list.js';
 import '../break-reasons/break-reason-detail.js';
 import '../break-reasons/break-reason-form.js';
 
+// Wave 5: Bulk Import (Plan 06-13)
+import '../imports/import-page.js';
+import '../imports/import-result.js';
+
 /** UUIDv7 regex per D6-13 and CONTEXT.md. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -333,15 +337,28 @@ export class OrCatalogShell extends LitElement {
         html`<or-break-reason-detail org-id=${org_id ?? ''} entity-id=${id ?? ''} data-route="break-reason-detail"></or-break-reason-detail>`,
     },
     {
-      // D6-12: Import is top-level org route. Placeholder for Wave 5 (Plan 06-13).
+      // D6-12: Import POST flow (Plan 06-13). Wire real or-import-page.
       path: '/orgs/:org_id/imports/new',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="imports-new">Bulk Import — coming in Wave 5 (Plan 06-13)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        return html`<or-import-page
+          .orgId=${org_id ?? ''}
+          .baseURL=${''}
+          .client=${this._client!}
+        ></or-import-page>`;
+      },
     },
     {
+      // D6-12: Import GET historical result (Plan 06-13). Wire real or-import-result.
       path: '/orgs/:org_id/imports/:id',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="import-result">Import Result — coming in Wave 5 (Plan 06-13)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-import-result
+          .orgId=${org_id ?? ''}
+          .importId=${id ?? ''}
+          .client=${this._client!}
+        ></or-import-result>`,
     },
   ]);
 
