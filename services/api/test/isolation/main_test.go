@@ -212,6 +212,14 @@ func TestMain(m *testing.M) {
 		Cache:  catalogCache,
 		Logger: logger,
 	}, state.WithClock(clockwork.NewRealClock()))
+	// Start runs the synchronous startup sweep (D-95) so any stuck WrapUp
+	// rows from a prior test run are cleared before tests execute.
+	if err := stateServer.Start(ctx); err != nil {
+		os.Stderr.WriteString("isolation: stateServer.Start: " + err.Error() + "\n")
+		sharedPool.Close()
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
+	}
 	type apiHandlers struct {
 		*catalog.Handlers
 		*state.Server
@@ -233,9 +241,9 @@ func TestMain(m *testing.M) {
 	// (6) Run tests.
 	code := m.Run()
 
-	// (7) Cleanup. Order matters: close httptest first so any in-flight
-	// request is rejected before we close the pool.
+	// (7) Cleanup. Order matches production LIFO: HTTP → sweeper → Redis → pool.
 	sharedSrv.Close()
+	stateServer.Stop()
 	if sharedRedis != nil {
 		_ = sharedRedis.Close()
 	}
