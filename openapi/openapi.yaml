@@ -43,6 +43,19 @@ info:
     This spec describes the v0.1 Catalog Foundation milestone. Catalog
     CRUD endpoints live under the `/v1/orgs/{org_id}/` prefix.
 
+    ## Identity Model
+
+    Catalog entities use `code` (lowercase, `^[a-z][a-z0-9_]{0,63}$`) as the
+    user-facing canonical identifier (D04_1-01). `code` is required on every
+    primary entity (agents, skills, queues, channels, adapters,
+    break_reasons), composite-unique within an org, and immutable
+    post-create in v0.1 (D04_1-02 — rename support deferred to v0.2 via a
+    dedicated rename endpoint). `external_id` is demoted to an OPTIONAL
+    integration-mapping field with partial unique `(org_id, external_id)
+    WHERE external_id IS NOT NULL` (D04_1-06). Cross-AI peer-review design
+    rationale: `.planning/phases/03-catalog-crud-go/03-CATALOG-IDENTITY-REVIEW.md`
+    and the response artifact `03-CATALOG-IDENTITY-REVIEW-RESPONSE.md`.
+
   contact:
     name: Open Routing
     url: https://github.com/luongdev/open-routing
@@ -101,6 +114,10 @@ components:
         Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
         criterion 4). Clients branch on this value — never on `reason` or HTTP
         status alone.
+
+        Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+        `immutable_field` to support the universal `code` identity model
+        (D04_1-16, D04_1-20).
       enum:
         - invalid_body
         - invalid_id
@@ -108,9 +125,12 @@ components:
         - internal
         - version_conflict
         - cross_org
+        - duplicate_code
+        - duplicate_external_id
         - invalid_org_id
         - invalid_transition
         - import_failed
+        - immutable_field
         - rate_limited
         - invalid_reference
         - invalid_value
