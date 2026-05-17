@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -17,7 +18,8 @@ const (
 	defaultSweepInterval = 30 * time.Second // D-81 safety sweep cadence
 	defaultWrapUpDur     = 60 * time.Second // v0.1 hardcoded; per-org override deferred
 	stateCacheTTL        = 60 * time.Second // D-86 matches catalog cache TTL
-	jitterMaxMs          = 100              // D-87 ±100ms thundering-herd guard
+	// jitterMaxMs: D-87 ±100ms thundering-herd guard deferred to v0.2 —
+	// no v0.1 caller for system-initiated Engaged→WrapUp (D-82).
 )
 
 // Deps bundles required runtime dependencies. Every field REQUIRED;
@@ -89,9 +91,9 @@ func New(deps Deps, opts ...Option) *Server {
 	return s
 }
 
-// Start is the lifecycle hook called by cmd/api/main.go before serving.
-// Wave 1 stubs to no-op; Wave 3 implements synchronous startup sweep +
-// safety-sweep goroutine. Idempotent via startMu + started.
+// Start is called by cmd/api/main.go before serving. Runs a synchronous
+// startup sweep (D-95 — guarantees no stuck WrapUp survives a restart)
+// BEFORE spawning the 30s safety-sweep goroutine. Idempotent via startMu.
 func (s *Server) Start(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
@@ -100,21 +102,47 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.started = true
 	s.ctx, s.cancel = context.WithCancel(ctx)
+
+	// D-95: startup sweep is synchronous so callers see a consistent
+	// state immediately after Start returns; failure aborts startup.
+	if err := s.startupSweep(s.ctx); err != nil {
+		s.started = false
+		s.cancel()
+		return fmt.Errorf("state.Server: startup sweep: %w", err)
+	}
+
+	s.wg.Add(1)
+	go s.safetySweep()
+
 	return nil
 }
 
-// Stop is called via defer in main.go shutdown path. Wave 3 cancels ctx,
-// waits for sweeper drain, cancels timers. Idempotent.
+// Stop cancels the internal ctx, waits for the safety-sweep goroutine to
+// drain, and calls Timer.Stop on every pending AfterFunc handle. Releasing
+// startMu BEFORE wg.Wait prevents a deadlock if a concurrent Stop call
+// arrives while we are waiting (the `started=false` flip is atomic under
+// the lock). Idempotent.
 func (s *Server) Stop() {
 	s.startMu.Lock()
-	defer s.startMu.Unlock()
 	if !s.started {
+		s.startMu.Unlock()
 		return
 	}
 	s.started = false
+	s.startMu.Unlock()
+
 	if s.cancel != nil {
 		s.cancel()
 	}
+
+	s.wg.Wait()
+
+	s.timers.mu.Lock()
+	for id, t := range s.timers.t {
+		t.Stop()
+		delete(s.timers.t, id)
+	}
+	s.timers.mu.Unlock()
 }
 
 // cacheKeyFor centralises the agent_state cache key namespace (D-86).
