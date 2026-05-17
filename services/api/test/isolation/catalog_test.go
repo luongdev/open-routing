@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 
@@ -104,11 +105,18 @@ func listEntityIDs(t *testing.T, urlBase, entityPath string, orgID uuid.UUID) []
 // TestCatalog_AgentsCrossOrg — CAT-01. Create in orgA; orgA GET 200;
 // orgB GET 404. The orgDB SQLChecker enforces the org_id filter at the
 // query layer; the handler maps pgx.ErrNoRows → 404.
+//
+// Phase 04.1 (D04_1-22): fixture body includes the new `code` field (required,
+// regex-compliant — underscore-only). `external_id` retains hyphens (opaque
+// field — no regex). Cross-org probes use distinct codes per test so they
+// can run with t.Parallel() against the shared testcontainer without
+// interfering on the (org_id, code) UNIQUE constraint.
 func TestCatalog_AgentsCrossOrg(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	code, idA := postEntity(t, baseURL(), "agents", orgA, map[string]any{
+		"code":        "iso_emp_a",
 		"external_id": "ext-iso-a",
 		"name":        "Alice",
 		"email":       "alice@example.com",
@@ -125,6 +133,7 @@ func TestCatalog_SkillsCrossOrg(t *testing.T) {
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	code, idA := postEntity(t, baseURL(), "skills", orgA, map[string]any{
+		"code":        "iso_skill_v",
 		"external_id": "ext-iso-s",
 		"name":        "Vietnamese",
 		"skill_type":  "language",
@@ -140,6 +149,7 @@ func TestCatalog_QueuesCrossOrg(t *testing.T) {
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	code, idA := postEntity(t, baseURL(), "queues", orgA, map[string]any{
+		"code":          "iso_q_vip",
 		"external_id":   "ext-iso-q",
 		"name":          "VIP",
 		"channel_types": []string{"voice"},
@@ -157,6 +167,7 @@ func TestCatalog_ChannelsCrossOrg(t *testing.T) {
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	code, idA := postEntity(t, baseURL(), "channels", orgA, map[string]any{
+		"code":         "iso_ch_voice",
 		"external_id":  "ext-iso-c",
 		"name":         "Inbound Voice",
 		"channel_type": "voice",
@@ -166,12 +177,15 @@ func TestCatalog_ChannelsCrossOrg(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, getEntityStatus(t, baseURL(), "channels", orgB, idA))
 }
 
-// TestCatalog_AdaptersCrossOrg — CAT-05.
+// TestCatalog_AdaptersCrossOrg — CAT-05. Adapters gained both `code` and
+// `external_id` in Phase 04.1 (Plan 01 added the columns + constraints).
 func TestCatalog_AdaptersCrossOrg(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	code, idA := postEntity(t, baseURL(), "adapters", orgA, map[string]any{
+		"code":         "iso_adapter_fs",
+		"external_id":  "ext-iso-adp",
 		"name":         "FreeSWITCH Edge",
 		"adapter_type": "freeswitch",
 		"config":       map[string]any{"sid": "AC123"},
@@ -183,12 +197,15 @@ func TestCatalog_AdaptersCrossOrg(t *testing.T) {
 
 // TestCatalog_BreakReasonsCrossOrg — CAT-06. URL uses kebab-case
 // `break-reasons` per the spec; the underlying cache slug stays
-// underscore (`break_reasons` per D-58).
+// underscore (`break_reasons` per D-58). break_reasons also gained both
+// `code` and `external_id` in Phase 04.1.
 func TestCatalog_BreakReasonsCrossOrg(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	code, idA := postEntity(t, baseURL(), "break-reasons", orgA, map[string]any{
+		"code":          "iso_break_lunch",
+		"external_id":   "ext-iso-br",
 		"name":          "Lunch",
 		"routable":      false,
 		"display_order": 10,
@@ -207,6 +224,7 @@ func TestCatalog_ChannelsDefaultQueueId_CrossOrg(t *testing.T) {
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	qCode, qB := postEntity(t, baseURL(), "queues", orgB, map[string]any{
+		"code":          "iso_q_other",
 		"external_id":   "ext-iso-cqB",
 		"name":          "OtherOrgQueue",
 		"channel_types": []string{"voice"},
@@ -216,6 +234,7 @@ func TestCatalog_ChannelsDefaultQueueId_CrossOrg(t *testing.T) {
 	require.Equal(t, http.StatusCreated, qCode, "queue must be created in orgB")
 
 	cCode, _ := postEntity(t, baseURL(), "channels", orgA, map[string]any{
+		"code":             "iso_ch_xorg",
 		"external_id":      "ext-iso-cx",
 		"name":             "InboundVoice",
 		"channel_type":     "voice",
@@ -234,6 +253,7 @@ func TestCatalog_AgentSkills_CrossOrgSkillId(t *testing.T) {
 	t.Parallel()
 	orgA, orgB := freshOrg(t), freshOrg(t)
 	sCode, skillB := postEntity(t, baseURL(), "skills", orgB, map[string]any{
+		"code":        "iso_skill_x",
 		"external_id": "ext-iso-sx",
 		"name":        "OtherOrgSkill",
 		"skill_type":  "language",
@@ -241,6 +261,7 @@ func TestCatalog_AgentSkills_CrossOrgSkillId(t *testing.T) {
 	require.Equal(t, http.StatusCreated, sCode)
 
 	aCode, _ := postEntity(t, baseURL(), "agents", orgA, map[string]any{
+		"code":        "iso_emp_x",
 		"external_id": "ext-iso-ax",
 		"name":        "AliceX",
 		"email":       "alicex@example.com",
@@ -265,6 +286,7 @@ func TestCatalog_AgentsListIsolation(t *testing.T) {
 	idsA := make(map[uuid.UUID]struct{})
 	for i := 1; i <= 3; i++ {
 		code, id := postEntity(t, baseURL(), "agents", orgA, map[string]any{
+			"code":        fmt.Sprintf("iso_emp_la_%d", i),
 			"external_id": fmt.Sprintf("ext-A-%d", i),
 			"name":        fmt.Sprintf("A-%d", i),
 			"email":       fmt.Sprintf("a%d@example.com", i),
@@ -275,6 +297,7 @@ func TestCatalog_AgentsListIsolation(t *testing.T) {
 	idsB := make(map[uuid.UUID]struct{})
 	for i := 1; i <= 2; i++ {
 		code, id := postEntity(t, baseURL(), "agents", orgB, map[string]any{
+			"code":        fmt.Sprintf("iso_emp_lb_%d", i),
 			"external_id": fmt.Sprintf("ext-B-%d", i),
 			"name":        fmt.Sprintf("B-%d", i),
 			"email":       fmt.Sprintf("b%d@example.com", i),
@@ -303,27 +326,103 @@ func TestCatalog_AgentsListIsolation(t *testing.T) {
 }
 
 // FOUND-06 HTTP-layer proof — two consecutive POSTs with the same
-// (org_id, external_id) must collide. Wave 6 review: this test was
-// dropped with the scaffold suite but FOUND-06 still applies to every
-// catalog entity. Agents is the canonical probe; the same constraint
-// holds for skills/queues/channels/adapters.
+// (org_id, external_id) must collide. Phase 04.1 rewrite: each POST now
+// supplies its own distinct `code` so the FIRST collision is on the
+// (org_id, external_id) partial unique index, not the (org_id, code)
+// composite unique. Confirms the constraint-name introspect path
+// distinguishes the two collision flavors at the isolation level.
 func TestCatalog_AgentsUniqueOrgExternalId(t *testing.T) {
 	requireContainer(t)
 	t.Parallel()
 	org := freshOrg(t)
 
 	code1, _ := postEntity(t, baseURL(), "agents", org, map[string]any{
-		"external_id": "ext-dup-iso",
+		"code":        "fnd_06_emp_a",
+		"external_id": "ext-found-06",
 		"name":        "First",
 		"email":       "first@example.com",
 	})
 	require.Equal(t, http.StatusCreated, code1, "first POST must succeed")
 
 	code2, _ := postEntity(t, baseURL(), "agents", org, map[string]any{
-		"external_id": "ext-dup-iso",
+		"code":        "fnd_06_emp_b", // distinct code — forces external_id collision
+		"external_id": "ext-found-06",
 		"name":        "Second",
 		"email":       "second@example.com",
 	})
 	require.Equal(t, http.StatusConflict, code2,
 		"second POST with same (org_id, external_id) MUST return 409 (FOUND-06)")
+}
+
+// TestCatalog_CrossOrgSameCode_BothSucceed — D04_1-24, VALIDATION IDENT-06.
+// The composite UNIQUE (org_id, code) constraint includes org_id, so two
+// separate orgs can each have an agent with code "emp_001". Mirrors the
+// pre-Phase-04.1 cross-org external_id pattern (FOUND-08 + D04_1-24).
+func TestCatalog_CrossOrgSameCode_BothSucceed(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+	orgA, orgB := freshOrg(t), freshOrg(t)
+
+	aCode, _ := postEntity(t, baseURL(), "agents", orgA, map[string]any{
+		"code":  "emp_001",
+		"name":  "Alice A",
+		"email": "alice@example.com",
+	})
+	require.Equal(t, http.StatusCreated, aCode,
+		"orgA emp_001 must succeed")
+
+	bCode, _ := postEntity(t, baseURL(), "agents", orgB, map[string]any{
+		"code":  "emp_001",
+		"name":  "Alice B",
+		"email": "aliceb@example.com",
+	})
+	require.Equal(t, http.StatusCreated, bCode,
+		"orgB emp_001 must succeed — composite UNIQUE includes org_id (FOUND-08 + D04_1-24)")
+}
+
+// TestCatalog_AgentsDuplicateCodeSameOrg_Returns409_DuplicateCode — Plan 04
+// errors.go constraint-name introspect at the isolation level. Same org +
+// same code → 409 with reason="duplicate_code" (NOT version_conflict, NOT
+// external_id_collision). Locks the SIMPLICITY-REVIEW MED fix end-to-end.
+func TestCatalog_AgentsDuplicateCodeSameOrg_Returns409_DuplicateCode(t *testing.T) {
+	requireContainer(t)
+	t.Parallel()
+	org := freshOrg(t)
+
+	aCode, _ := postEntity(t, baseURL(), "agents", org, map[string]any{
+		"code":  "dup_emp",
+		"name":  "Alice",
+		"email": "alice@example.com",
+	})
+	require.Equal(t, http.StatusCreated, aCode)
+
+	bStatus, bBody := postEntityWithBody(t, baseURL(), "agents", org, map[string]any{
+		"code":  "dup_emp", // same code in same org → 409 duplicate_code
+		"name":  "AliceDup",
+		"email": "alicedup@example.com",
+	})
+	require.Equal(t, http.StatusConflict, bStatus)
+	require.Contains(t, string(bBody), "duplicate_code",
+		"expected ErrorCode=duplicate_code in response body; got %s", string(bBody))
+}
+
+// postEntityWithBody is a sibling helper to postEntity that ALSO returns
+// the raw response body — used by the duplicate_code isolation test to
+// assert on the response body's `error`/`reason` fields without re-reading
+// the closed body in postEntity (which only returns status + parsed id).
+func postEntityWithBody(t *testing.T, urlBase, entityPath string, orgID uuid.UUID, body any) (int, []byte) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/v1/orgs/%s/%s", urlBase, orgID, entityPath),
+		bytes.NewReader(raw))
+	require.NoError(t, err)
+	req.Header.Set("X-Org-Id", orgID.String())
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, out
 }
