@@ -312,7 +312,8 @@ func buildUpdateParams(agentID, orgID uuid.UUID, expectedFrom api.AgentStatus, b
 	if body.To == api.AgentStatusBreak && body.BreakReasonId != nil {
 		p.BreakReasonID = pgtype.UUID{Bytes: uuid.UUID(*body.BreakReasonId), Valid: true}
 	}
-	if expectedFrom == api.AgentStatusEngaged && body.PostInteractionState != nil {
+	targetIsEngagedOrWrapUp := body.To == api.AgentStatusEngaged || body.To == api.AgentStatusWrapUp
+	if expectedFrom == api.AgentStatusEngaged && targetIsEngagedOrWrapUp && body.PostInteractionState != nil {
 		p.PostInteractionState = strPtr(string(*body.PostInteractionState))
 	}
 	return p

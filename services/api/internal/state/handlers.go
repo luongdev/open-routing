@@ -135,12 +135,11 @@ func (s *Server) Stop() {
 		s.cancel()
 	}
 
-	s.wg.Wait()
-
-	// Cancel every pending AfterFunc timer. For each timer that .Stop()
-	// successfully cancels (returns true), the AfterFunc will never call
-	// its defer wg.Done() — so we compensate here. This pairs with the
-	// wg.Add(1) issued in scheduleWrapUpExpiry before AfterFunc is created.
+	// Cancel pending timers BEFORE wg.Wait(). Each scheduleWrapUpExpiry call
+	// does wg.Add(1) before the AfterFunc. Timers cancelled here (Stop()==true)
+	// will never call their defer wg.Done(), so we compensate immediately.
+	// Timers already firing (Stop()==false) will call Done themselves.
+	// Only after this drain is wg guaranteed to eventually reach zero.
 	s.timers.mu.Lock()
 	for id, t := range s.timers.t {
 		if t.Stop() {
@@ -149,6 +148,11 @@ func (s *Server) Stop() {
 		delete(s.timers.t, id)
 	}
 	s.timers.mu.Unlock()
+
+	// Wait for any in-flight AfterFunc callbacks and the safetySweep goroutine
+	// to finish. Both run with the bounded expireCtx so they will not block
+	// indefinitely (Threat T-04-11 + safetySweep defers to ctx.Done).
+	s.wg.Wait()
 }
 
 // cacheKeyFor centralises the agent_state cache key namespace (D-86).
