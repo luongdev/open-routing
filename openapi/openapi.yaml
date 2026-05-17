@@ -1635,6 +1635,28 @@ components:
     # user-facing identifier). `external_id` is supported as an optional
     # integration-mapping field (D04_1-07) but is NOT the upsert key.
     # Alphabetised by schema name.
+    #
+    # Phase 5 fix L4 — TOP-LEVEL FIELD SEMANTICS:
+    #
+    # The bulk-import endpoint is PUT-style for every top-level field. The
+    # Upsert*ByCode SQL queries set EVERY column on the ON CONFLICT branch
+    # using EXCLUDED.column, which means a column with a Go zero / SQL NULL
+    # value in the import payload WILL overwrite the previously-stored
+    # value. Examples:
+    #   - Omitting external_id (or sending null) clears any previously-bound
+    #     external_id on the existing row.
+    #   - Omitting enabled (or sending null) does NOT clear it — `enabled`
+    #     carries `default: true` in the OpenAPI schema, which oapi-codegen
+    #     applies at decode time. Same for `routable`, `display_order`,
+    #     `priority`, `acw_sec`.
+    #
+    # For partial updates that preserve unspecified fields, use the
+    # dedicated PATCH endpoints (PATCH /v1/orgs/{org_id}/agents/{id}, etc).
+    # The bulk-import endpoint is for full-row sync workflows where the
+    # admin's payload IS the desired state.
+    #
+    # The agents.skills nested array is the documented exception — D5-18
+    # mandates MERGE semantics on the join table.
 
     ImportAdapterRequest:
       type: object

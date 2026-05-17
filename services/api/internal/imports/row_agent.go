@@ -31,6 +31,43 @@
 //   - NEVER call generated.New(s.deps.OrgDB) — every per-row query
 //     goes through generated.New(sp) so the savepoint can ROLLBACK
 //     TO on failure without dragging in unrelated writes.
+//
+// # Top-level field semantics — PUT not PATCH (Phase 5 fix L4)
+//
+// The Upsert*ByCode queries (UpsertAgentByCode and friends) set EVERY
+// column on the ON CONFLICT path:
+//
+//	ON CONFLICT (org_id, code) DO UPDATE
+//	    SET external_id = EXCLUDED.external_id,
+//	        name        = EXCLUDED.name,
+//	        email       = EXCLUDED.email,
+//	        enabled     = EXCLUDED.enabled,
+//	        ...
+//
+// EXCLUDED.column always carries the new value (the row processor
+// supplies it from typed.X), even when typed.X is its Go zero value
+// (`nil` *string → SQL NULL; empty string → empty; `false` → false).
+// This is intentional: bulk-import is the spreadsheet-driven sync
+// pathway; every column the admin wrote to the payload SHOULD reflect
+// in the database.
+//
+// CONSEQUENCE for admin debugging: if a CSV column is documented but
+// the admin's payload OMITS a value for one row (e.g., a blank cell
+// for `external_id`), the row processor will write NULL to that
+// column. The same applies to JSON payloads with explicit `null`
+// values. Compare with PATCH /v1/orgs/{org_id}/agents/{id} which uses
+// COALESCE in catalog.UpdateAgent's SQL to preserve omitted-field
+// values.
+//
+// Skills (agents only) are the documented exception: D5-18 mandates
+// MERGE semantics on the join table — existing assignments NOT in the
+// payload are LEFT INTACT; existing assignments IN the payload have
+// their proficiency overwritten via ON CONFLICT (agent_id, skill_id)
+// DO UPDATE.
+//
+// Admins who want partial updates should use the catalog PATCH
+// endpoints. The bulk-import endpoint is for full-row sync workflows
+// (HR export → CRM, spreadsheet bulk edit, etc).
 package imports
 
 import (
