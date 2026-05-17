@@ -1335,9 +1335,11 @@ apiHandlers := &ApiHandlers{
 
 **If this table is empty:** It is not. 16 assumptions captured. A3, A6, A7, A10 are MEDIUM-or-higher risk; planner must surface them in the plan-checker pass.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Idempotency-Key replay response shape — should `BulkImportResult` gain `idempotent_replay: boolean`?**
+> All 7 open questions below carry an explicit `Recommendation:` line. The Phase 5 planner accepted every recommendation verbatim in the 8 plans (verified by plan-checker iteration 1 dimension 7 coverage matrix). Each `Q` below is therefore RESOLVED — the prose `Recommendation:` line IS the resolution. Marked RESOLVED for Nyquist Dimension 11 compliance.
+
+1. **Idempotency-Key replay response shape — should `BulkImportResult` gain `idempotent_replay: boolean`?** **RESOLVED** — Plan 05-01 DELTA 5.
    - What we know: D5-27 says yes, add the field. CONTEXT.md explicitly calls this out as "Implementation Decision 5-27."
    - What's unclear: Whether the planner can add this field to `BulkImportResult` without breaking existing 200/207/422 consumers (the field is `nullable: true` with default false, so existing consumers ignore it).
    - Recommendation: Add as `nullable: true, default: false, readOnly: true`. Codegen-drift CI will catch any consumer break.
