@@ -194,15 +194,15 @@ export class OrCodeInput extends LitElement {
       <div class="input-wrapper">
         <sl-input
           label=${this.label}
-          value=${this.value}
+          .value=${this.value}
           ?required=${this.required}
           data-valid=${this._validationState === null ? '' : String(!showError)}
           placeholder="e.g. agent_voice_en"
           aria-label=${this.label}
           aria-invalid=${showError ? 'true' : 'false'}
           aria-describedby="code-helper"
-          @input=${this._handleInput}
-          @blur=${this._handleBlur}
+          @sl-input=${this._handleInput}
+          @sl-blur=${this._handleBlur}
         >
           ${showSuccess ? html`<sl-icon slot="suffix" name="check-circle" style="color:var(--sl-color-success-500)"></sl-icon>` : ''}
           ${showError ? html`<sl-icon slot="suffix" name="exclamation-circle" style="color:var(--sl-color-danger-500)"></sl-icon>` : ''}

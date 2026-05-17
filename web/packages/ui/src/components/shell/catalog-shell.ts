@@ -49,6 +49,18 @@ import '../channels/channel-list.js';
 import '../channels/channel-detail.js';
 import '../channels/channel-form.js';
 
+// Ship-fix (Codex review HIGH): wire Skills, Queues, Adapters routes that
+// were still rendering Wave-3 placeholders despite their components landing.
+import '../skills/skill-list.js';
+import '../skills/skill-detail.js';
+import '../skills/skill-form.js';
+import '../queues/queue-list.js';
+import '../queues/queue-detail.js';
+import '../queues/queue-form.js';
+import '../adapters/adapter-list.js';
+import '../adapters/adapter-detail.js';
+import '../adapters/adapter-form.js';
+
 // Wave 4: Status Panel (Plan 06-12)
 import '../status/status-panel.js';
 
@@ -263,36 +275,42 @@ export class OrCatalogShell extends LitElement {
         html`<or-status-panel .orgId=${org_id ?? ''} .agentId=${id ?? ''} .client=${this._client!}></or-status-panel>`,
     },
     {
-      // Skills — placeholder for Wave 3 (Plan 06-07)
+      // Skills (Plan 06-07) — wired by ship-fix
       path: '/orgs/:org_id/skills',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="skills">Skills — coming in Wave 3 (Plan 06-07)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-skill-list .orgId=${org_id ?? ''} .client=${this._client!}></or-skill-list>`,
     },
     {
       path: '/orgs/:org_id/skills/new',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="skills-new">Skill Create — coming in Wave 3 (Plan 06-07)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-skill-form .orgId=${org_id ?? ''} .client=${this._client!}></or-skill-form>`,
     },
     {
       path: '/orgs/:org_id/skills/:id',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="skill-detail">Skill Detail — coming in Wave 3 (Plan 06-07)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-skill-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-skill-detail>`,
     },
     {
-      // Queues — placeholder for Wave 3 (Plan 06-08)
+      // Queues (Plan 06-08) — wired by ship-fix
       path: '/orgs/:org_id/queues',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="queues">Queues — coming in Wave 3 (Plan 06-08)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-queue-list .orgId=${org_id ?? ''} .client=${this._client!}></or-queue-list>`,
     },
     {
       path: '/orgs/:org_id/queues/new',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="queues-new">Queue Create — coming in Wave 3 (Plan 06-08)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-queue-form .orgId=${org_id ?? ''} .client=${this._client!}></or-queue-form>`,
     },
     {
       path: '/orgs/:org_id/queues/:id',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="queue-detail">Queue Detail — coming in Wave 3 (Plan 06-08)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-queue-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-queue-detail>`,
     },
     {
       // Channels — wired in Wave 4 (Plan 06-10)
@@ -314,20 +332,23 @@ export class OrCatalogShell extends LitElement {
         html`<or-channel-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-channel-detail>`,
     },
     {
-      // Adapters — placeholder for Wave 3 (Plan 06-11)
+      // Adapters (Plan 06-11) — wired by ship-fix
       path: '/orgs/:org_id/adapters',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="adapters">Adapters — coming in Wave 3 (Plan 06-11)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-adapter-list .orgId=${org_id ?? ''} .client=${this._client!}></or-adapter-list>`,
     },
     {
       path: '/orgs/:org_id/adapters/new',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="adapters-new">Adapter Create — coming in Wave 3 (Plan 06-11)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-adapter-form .orgId=${org_id ?? ''} .client=${this._client!}></or-adapter-form>`,
     },
     {
       path: '/orgs/:org_id/adapters/:id',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="adapter-detail">Adapter Detail — coming in Wave 3 (Plan 06-11)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-adapter-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-adapter-detail>`,
     },
     {
       // Break Reasons — wired in Wave 3 (Plan 06-09); client prop added here (Rule 2 fix)

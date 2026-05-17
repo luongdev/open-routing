@@ -387,8 +387,12 @@ export class OrAgentDetail extends LitElement {
 
       if (error) {
         // 409 version_conflict — consume from error.current (Pitfall 9: never call response.json())
+        // Cross-AI fix: also update _entity.version so a re-submit uses the server-current
+        // version instead of looping into another 409 (D6-03 + Codex review HIGH).
         if (error && typeof error === 'object' && 'current' in error) {
-          this._conflictServer = (error as { current: Record<string, unknown> }).current;
+          const current = (error as { current: Agent }).current;
+          this._conflictServer = current as unknown as Record<string, unknown>;
+          this._entity = current;
           return;
         }
         // 422 immutable_field

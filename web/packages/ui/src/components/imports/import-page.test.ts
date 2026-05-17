@@ -8,8 +8,28 @@ import type { ImportCatalogArgs, BulkImportResult } from '../../api/import.js';
 // Registers <or-import-page> element
 import './import-page.js';
 
+/**
+ * The fixtures below use the ASPIRATIONAL plan-level shape (import_id, entity,
+ * schema_version, total, succeeded:number, failed:number, failures, succeeded_ids).
+ * The real OpenAPI v0.1 BulkImportResult only has succeeded:string[], failed[]
+ * (objects), and idempotent_replay. Phase 5 has not yet shipped the richer
+ * server contract, so these fixtures are cast through `unknown` until the
+ * server gains import_id / total / numeric counts. The runtime code uses
+ * ExtendedBulkImportResult casting in import-page.ts itself.
+ */
+/**
+ * The fixtures use the ASPIRATIONAL plan-level shape (import_id, entity,
+ * schema_version, total, succeeded:number, failed:number, failures, succeeded_ids).
+ * The real OpenAPI v0.1 BulkImportResult only has succeeded:string[],
+ * failed:BulkImportFailedRow[], and idempotent_replay. Phase 5 has not yet
+ * shipped the richer server contract, so this looser type lets the test
+ * fixtures keep compiling while runtime continues to use the real shapes via
+ * ExtendedBulkImportResult casting in import-page.ts.
+ */
+type AspirationalBulkImportResult = Record<string, unknown>;
+
 /** A valid 200 BulkImportResult fixture (reserved for future success-path tests) */
-const _RESULT_200: BulkImportResult = {
+const _RESULT_200: AspirationalBulkImportResult = {
   import_id: '01935b00-0000-7000-8000-000000000001',
   entity: 'agents',
   schema_version: 'v0.1',
@@ -24,7 +44,7 @@ const _RESULT_200: BulkImportResult = {
 };
 
 /** A 207 partial BulkImportResult fixture */
-const RESULT_207: BulkImportResult = {
+const RESULT_207: AspirationalBulkImportResult = {
   import_id: '01935b00-0000-7000-8000-000000000099',
   entity: 'agents',
   schema_version: 'v0.1',
@@ -212,7 +232,7 @@ describe('OrImportPage', () => {
     });
 
     // Inject a spy importer that returns 207
-    (el as any)._importerFactory = () => async (_args: ImportCatalogArgs): Promise<BulkImportResult> => RESULT_207;
+    (el as any)._importerFactory = () => async (_args: ImportCatalogArgs): Promise<BulkImportResult> => RESULT_207 as unknown as BulkImportResult;
 
     await (el as any)._doImport();
     await nextTick();
@@ -288,7 +308,7 @@ describe('OrImportPage', () => {
       navigated.push((e as CustomEvent<{ path: string }>).detail.path);
     });
 
-    const RESULT_422: BulkImportResult = {
+    const RESULT_422: AspirationalBulkImportResult = {
       import_id: '01935b00-0000-7000-8000-000000000010',
       entity: 'agents',
       schema_version: 'v0.1',
@@ -303,7 +323,7 @@ describe('OrImportPage', () => {
     };
 
     // 422 is returned as a value (not thrown) per import.ts contract
-    (el as any)._importerFactory = () => async (_args: ImportCatalogArgs): Promise<BulkImportResult> => RESULT_422;
+    (el as any)._importerFactory = () => async (_args: ImportCatalogArgs): Promise<BulkImportResult> => RESULT_422 as unknown as BulkImportResult;
 
     await (el as any)._doImport();
     await nextTick();

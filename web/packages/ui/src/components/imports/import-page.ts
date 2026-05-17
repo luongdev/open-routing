@@ -21,6 +21,7 @@ import '@shoelace-style/shoelace/dist/components/radio/radio.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -334,6 +335,12 @@ export class OrImportPage extends LitElement {
   @state() private _submitting = false;
   @state() private _error: string | null = null;
   @state() private _errorType: 'schema' | 'size' | 'generic' | null = null;
+  /**
+   * Cross-AI fix: When BulkImportResult lacks an import_id (current Phase 5 contract),
+   * render the result inline rather than navigating to /imports/{wrong-id}. Set after
+   * a successful POST when no import_id is present in the response.
+   */
+  @state() private _inlineResult: BulkImportResult | null = null;
 
   /**
    * Factory for the importer function. Overridable in tests to inject a spy.
@@ -455,16 +462,24 @@ export class OrImportPage extends LitElement {
         idempotencyKey: this._useIdempotency && this._idempotencyKey ? this._idempotencyKey : undefined,
       });
 
-      // Navigate to the import result page (200/207/422 all navigate)
-      // import_id may be in result as an extension field per plan spec
-      const importId = (result as ExtendedBulkImportResult).import_id ?? result.succeeded?.[0] ?? 'unknown';
-      this.dispatchEvent(
-        new CustomEvent('open-routing:navigate', {
-          detail: { path: `/orgs/${this.orgId}/imports/${importId}` },
-          bubbles: true,
-          composed: true,
-        })
-      );
+      // Cross-AI fix (Codex HIGH): The OpenAPI v0.1 BulkImportResult does NOT include
+      // an import_id field — the plan called for it but Phase 5 didn't add it to the
+      // response shape. succeeded[] holds ENTITY IDs, not the import job ID, so the
+      // previous fallback would navigate to /imports/{entity_id} → 404.
+      // Until the server contract gains a real import_id, render the result inline
+      // on this page (success counts + failed[] table) rather than mis-navigating.
+      const ext = result as ExtendedBulkImportResult;
+      if (ext.import_id) {
+        this.dispatchEvent(
+          new CustomEvent('open-routing:navigate', {
+            detail: { path: `/orgs/${this.orgId}/imports/${ext.import_id}` },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      } else {
+        this._inlineResult = result;
+      }
     } catch (err) {
       if (err instanceof ImportError) {
         if (err.status === 400) {
@@ -710,6 +725,59 @@ export class OrImportPage extends LitElement {
   }
 
   override render() {
+    if (this._inlineResult) {
+      // Inline result fallback (Codex HIGH ship-fix): the server's
+      // BulkImportResult does not yet include import_id, so we cannot navigate
+      // to /imports/{id}. Render a minimal success summary inline instead.
+      // Once Phase 5's contract grows a real import_id we swap back to
+      // navigation + or-import-result for the full historical view.
+      const succeededCount = this._inlineResult.succeeded?.length ?? 0;
+      const failedCount = this._inlineResult.failed?.length ?? 0;
+      const isPartial = failedCount > 0;
+      return html`
+        <h1>Bulk Import — Result</h1>
+        <div style="display:flex;gap:24px;margin:24px 0">
+          <sl-card>
+            <strong style="font-size:24px;color:var(--sl-color-success-500)">${succeededCount}</strong>
+            <div>Succeeded</div>
+          </sl-card>
+          <sl-card>
+            <strong style="font-size:24px;color:${isPartial ? 'var(--sl-color-danger-500)' : 'var(--or-color-text-muted)'}">${failedCount}</strong>
+            <div>Failed</div>
+          </sl-card>
+        </div>
+        ${isPartial ? html`
+          <sl-alert variant="warning" open style="margin-bottom:24px">
+            ${failedCount} row${failedCount === 1 ? '' : 's'} failed validation. Review the failure list below and re-upload after correcting.
+          </sl-alert>
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr><th align="left">Row</th><th align="left">Field</th><th align="left">Reason</th></tr>
+            </thead>
+            <tbody>
+              ${this._inlineResult.failed.map(
+                (row) => html`
+                  <tr style="border-top:1px solid var(--or-color-divider)">
+                    <td>${row.row ?? '—'}</td>
+                    <td>${row.field ?? '—'}</td>
+                    <td>${row.reason ?? '—'}</td>
+                  </tr>
+                `,
+              )}
+            </tbody>
+          </table>
+        ` : html`
+          <sl-alert variant="success" open style="margin-bottom:24px">
+            All ${succeededCount} row${succeededCount === 1 ? '' : 's'} imported successfully.
+          </sl-alert>
+        `}
+        <div style="margin-top:24px">
+          <sl-button @click=${() => { this._inlineResult = null; this._step = 1; this._selectedEntity = null; this._stagedFile = null; }}>
+            Start another import
+          </sl-button>
+        </div>
+      `;
+    }
     return html`
       <h1>Bulk Import</h1>
 
