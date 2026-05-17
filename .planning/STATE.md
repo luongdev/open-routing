@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Catalog Foundation
 status: executing
-stopped_at: Phase 04.1 context gathered
-last_updated: "2026-05-17T11:32:57.653Z"
-last_activity: 2026-05-17 -- Phase 05 execution started
+stopped_at: Phase 04.1 + Phase 5 shipped (BLOCK→PASS via Plan 05-09 fixup; UAT cross-AI PASS)
+last_updated: "2026-05-17T15:30:00.000Z"
+last_activity: 2026-05-17 -- Phase 04.1 + Phase 5 merged to main; UAT cross-AI PASS
 progress:
   total_phases: 8
-  completed_phases: 5
-  total_plans: 47
-  completed_plans: 40
-  percent: 63
+  completed_phases: 7
+  total_plans: 62
+  completed_plans: 55
+  percent: 88
 ---
 
 # Project State
@@ -21,16 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-16)
 
 **Core value:** Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
-**Current focus:** Phase 05 — bulk-import-go
+**Current focus:** Phase 06 — Shared UI Library & Standalone Admin (next)
 
 ## Current Position
 
-Phase: 05 (bulk-import-go) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 05
-Last activity: 2026-05-17 -- Phase 05 execution started
+Phase: 04.1 + 05 — SHIPPED (merged to main 2026-05-17 as save point)
+Status: Awaiting Phase 06 kickoff
+Last activity: 2026-05-17 -- Phase 04.1 + Phase 5 merged to main; cross-AI UAT PASS (Gemini PASS WITH NOTES + Codex runtime green)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 88%
+
+## Phase 04.1 + 05 Ship Notes (2026-05-17)
+
+- Phase 04.1 (catalog identity normalization): 6 plans, all merged inside chain. Introduced universal `code` field + demoted `external_id` to optional. Migration 000002 amended in place (Phase 4 baseline still editable per D-61).
+- Phase 5 (bulk-import-go): 8 plans + 1 FIXUP plan (05-09). 705 tests pass with race detector. `task gen` clean, `task lint` clean, `go vet` clean.
+- Combined cross-AI peer review on Plans 04.1 + 05 returned BLOCK with 12 findings (3 HIGH + 5 MED + 4 LOW). Plan 05-09 FIXUP addressed all 12 in 11 atomic commits (~55min).
+- Re-run UAT (Gemini + Codex parallel): Gemini PASS WITH NOTES (highlight oneOf 409 contract in client release notes); Codex confirmed runtime tests green; one LOW advisory about `oneOf` discriminator (deferred to v0.2).
+- Merge: `git branch -f main HEAD` (104 commits FF'd into local main as save point; no push to origin).
 
 ## Performance Metrics
 

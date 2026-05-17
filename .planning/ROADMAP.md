@@ -6,7 +6,7 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 
 ## Milestone
 
-**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 2/7 phases complete; Phase 3 is current focus.
+**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 5/7 phases complete (Phase 04.1 + Phase 5 shipped 2026-05-17); Phase 6 is current focus.
 
 ## Phases
 
@@ -21,8 +21,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift. (completed 2026-05-16)
 - [x] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads. (completed 2026-05-16)
 - [x] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper. (completed 2026-05-17)
-- [ ] **Phase 04.1: Catalog Identity Normalization (INSERTED)** - Introduce universal user-facing `code` (TEXT NOT NULL, UNIQUE per org) on all 6 primary catalog entities. Demote `external_id` to optional with partial unique. Drop `break_reasons.UNIQUE (org_id, name)`. Updates migration 000002 (still editable per D-61), OpenAPI contract, sqlc queries, 6 CRUD handlers, and tests. Unblocks Phase 5 import keyed on `code`.
-- [ ] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities keyed on `code`, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning.
+- [x] **Phase 04.1: Catalog Identity Normalization (INSERTED)** - Introduce universal user-facing `code` (TEXT NOT NULL, UNIQUE per org) on all 6 primary catalog entities. Demote `external_id` to optional with partial unique. Drop `break_reasons.UNIQUE (org_id, name)`. Updates migration 000002 (still editable per D-61), OpenAPI contract, sqlc queries, 6 CRUD handlers, and tests. Unblocks Phase 5 import keyed on `code`. (completed 2026-05-17)
+- [x] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities keyed on `code`, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning. (completed 2026-05-17)
 - [ ] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support.
 - [ ] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped.
 
