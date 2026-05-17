@@ -1,2 +1,11 @@
 * text=auto eol=lf
 *.sh text eol=lf
+
+# Phase 5 / Pitfall 1: the bulk-import suite ships a Windows-style
+# Excel-exported CSV golden file (UTF-8 BOM + CRLF + RFC-4180 quote
+# escapes) plus an invalid-UTF-8 fixture. Git MUST treat both as
+# binary so the eol=lf normalisation rule above does NOT strip the
+# CRLF or BOM on checkout, and the invalid-utf8 bytes are not
+# converted to UTF-8-replacement characters.
+services/api/internal/imports/testdata/windows-excel-agents.csv binary
+services/api/internal/imports/testdata/invalid-utf8.csv binary

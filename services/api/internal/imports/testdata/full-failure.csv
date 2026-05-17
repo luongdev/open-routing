@@ -1,0 +1,4 @@
+code,name,email
+BAD_UPPER_ONE,Alice,alice@example.com
+ANOTHER_BAD,Bob,bob@example.com
+NOT-A-VALID-CODE,Carol,carol@example.com

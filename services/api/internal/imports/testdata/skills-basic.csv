@@ -1,0 +1,4 @@
+code,name,skill_type
+skill_voice,Voice,language
+skill_chat,Chat,language
+skill_email,Email,language

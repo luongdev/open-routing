@@ -1,0 +1,5 @@
+[
+  {"code": "emp_001", "name": "Alice Anderson", "email": "alice@example.com", "enabled": true},
+  {"code": "emp_002", "name": "Bob Brown", "email": "bob@example.com", "enabled": true},
+  {"code": "emp_003", "name": "Carol Carpenter", "email": "carol@example.com", "enabled": true}
+]

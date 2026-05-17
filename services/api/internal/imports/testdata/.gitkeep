@@ -1,9 +1,0 @@
-# testdata placeholder — Wave 5 (Plan 05-07) populates this directory
-# with the real CSV/JSON fixture files:
-#   - windows-excel-agents.csv  (UTF-8 BOM + CRLF — PITFALLS 5.1 lock)
-#   - invalid-code-format.csv   (drives invalid_code_format per-row)
-#   - agents-basic.csv          (happy-path baseline)
-#   - … (per-entity matrix)
-#
-# Wave 2 (Plan 05-04) only needs the directory to exist so the
-# go test framework's testdata convention is honoured.

@@ -1,0 +1,4 @@
+code,name,routable,display_order
+br_lunch_1,Lunch,false,1
+br_lunch_2,Lunch,false,2
+br_training,Training,true,3

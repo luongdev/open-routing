@@ -1,0 +1,3 @@
+code,name,channel_type,default_queue_code
+ch_voice_main,Main Voice,voice,queue_main
+ch_chat_main,Main Chat,chat,queue_main

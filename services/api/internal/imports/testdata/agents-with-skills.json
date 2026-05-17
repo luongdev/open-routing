@@ -1,0 +1,4 @@
+[
+  {"code": "emp_skilled_001", "name": "Dan Diaz", "email": "dan@example.com", "enabled": true, "skills": [{"skill_code": "skill_voice", "proficiency": 7}, {"skill_code": "skill_chat", "proficiency": 5}]},
+  {"code": "emp_skilled_002", "name": "Eve Evans", "email": "eve@example.com", "enabled": true, "skills": [{"skill_code": "skill_email", "proficiency": 8}]}
+]
