@@ -21,7 +21,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift. (completed 2026-05-16)
 - [x] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads. (completed 2026-05-16)
 - [x] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper. (completed 2026-05-17)
-- [ ] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning.
+- [ ] **Phase 04.1: Catalog Identity Normalization (INSERTED)** - Introduce universal user-facing `code` (TEXT NOT NULL, UNIQUE per org) on all 6 primary catalog entities. Demote `external_id` to optional with partial unique. Drop `break_reasons.UNIQUE (org_id, name)`. Updates migration 000002 (still editable per D-61), OpenAPI contract, sqlc queries, 6 CRUD handlers, and tests. Unblocks Phase 5 import keyed on `code`.
+- [ ] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities keyed on `code`, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning.
 - [ ] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support.
 - [ ] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped.
 
@@ -201,14 +202,32 @@ Plans:
 
 ---
 
+### Phase 04.1: catalog-identity-normalization (INSERTED)
+
+**Goal:** A single canonical user-facing identifier `code` exists on all 6 primary catalog entities (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`). `code` is the upsert key for bulk import (Phase 5) and the cross-reference target for nested relationships. `external_id` is demoted to an optional integration-mapping field. After this phase, generic file imports and DSL references use `code`; v0.2 external sync can layer `external_source` onto the optional `external_id` without contract churn.
+**Depends on:** Phase 4
+**Requirements**: IDENT-01, IDENT-02, IDENT-03, IDENT-04, IDENT-05, IDENT-06, IDENT-07, IDENT-08
+**Success Criteria** (what must be TRUE):
+
+  1. Every primary catalog table has a `code TEXT NOT NULL` column with `UNIQUE (org_id, code)`; the existing `UNIQUE (org_id, external_id) NOT NULL` constraint is replaced by `external_id TEXT NULL` with partial unique `WHERE external_id IS NOT NULL` on `agents`, `skills`, `queues`, `channels`. `adapters` and `break_reasons` gain both new columns; `break_reasons.UNIQUE (org_id, name)` is dropped.
+  2. `POST /v1/orgs/{org_id}/{entity}` with a body missing `code` returns HTTP 400; a body whose `code` collides with an existing row in the same org returns HTTP 409 with `ErrorCode=duplicate_code`. `PATCH` requests attempting to mutate `code` are rejected.
+  3. `GET /v1/orgs/{org_id}/break_reasons/{id}` returns both `code` and `name`; renaming `name` does not change the URL or break any cross-reference; the entity remains addressable by its stable `code`.
+  4. The two-org isolation test suite passes with `code`-keyed fixtures; every CRUD endpoint exercises both `code` collisions (409) and `external_id` collisions (409 distinct error code) within a single org and across orgs.
+  5. `go generate ./...` and `pnpm gen:api` produce no diff against committed code (CONTRACT-04 maintained); OpenAPI 3.0 spec lint passes; `task gen` cleanly regenerates `server.gen.go` and `types.gen.go` with the new `code` field on all 6 entity schemas.
+  6. Migration 000002 (still editable per D-61) is amended in place — no migration 003 is added; `task db:reset` rebuilds the schema cleanly from a Phase 1 baseline.
+
+**Plans**: TBD (run /gsd-discuss-phase 04.1 then /gsd-plan-phase 04.1)
+**Branch**: `gsd/phase-04-5-catalog-identity-normalization`
+**Source review**: `.planning/phases/03-catalog-crud-go/03-CATALOG-IDENTITY-REVIEW.md` + `03-CATALOG-IDENTITY-REVIEW-RESPONSE.md` (cross-AI peer-review consensus)
+
 ### Phase 5: Bulk Import (Go)
 
 **Goal**: An org admin can seed or update any of the six catalog entities in bulk via a single synchronous import endpoint that handles JSON and CSV, tolerates partial row failures, and persists session results for polling.
-**Depends on**: Phase 3
+**Depends on**: Phase 3, Phase 04.1 (catalog identity contract — imports key on `code`, not `external_id`)
 **Requirements**: IMP-01, IMP-02, IMP-03, IMP-04, IMP-05, IMP-06, IMP-07, IMP-08
 **Success Criteria** (what must be TRUE):
 
-  1. `POST /v1/orgs/{org_id}/catalog/import?entity={type}` accepts a JSON or CSV body for any of the 6 entity types and upserts rows keyed by `(org_id, external_id)`; running the same payload twice produces no duplicates.
+  1. `POST /v1/orgs/{org_id}/catalog/import?entity={type}` accepts a JSON or CSV body for any of the 6 entity types and upserts rows keyed by `(org_id, code)`; running the same payload twice produces no duplicates. *(Updated post Phase 04.1 — was `(org_id, external_id)`.)*
   2. A CSV body containing a UTF-8 BOM, Windows CRLF line endings, and fields with embedded commas, quoted newlines, and escaped quotes is parsed without error or data corruption using Go's `encoding/csv` with explicit BOM handling.
   3. A batch where some rows fail and some succeed returns HTTP 207 with `{ succeeded: [ids], failed: [{row, field, message}] }`; valid rows are persisted even when the same batch contains invalid rows.
   4. A request body exceeding 50 MB or 500 rows returns HTTP 413 with a message pointing to the v0.2 async pathway; a CSV request missing `?schema_version=v0.1` returns HTTP 400 listing supported versions.

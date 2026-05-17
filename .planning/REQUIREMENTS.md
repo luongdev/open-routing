@@ -63,11 +63,24 @@
 - [x] **STATE-09**: System-initiated `Offline → NotReady` fires on login event; system-initiated `* → Offline` fires on logout or session timeout.
 - [x] **STATE-10**: `IsRoutable(state AgentState) bool` helper in `services/api/internal/domain` returns `true` only when `status == Ready` OR (`status == Break` AND the associated break reason has `routable=true`).
 
+### Catalog Identity Normalization (Phase 04.1 — INSERTED 2026-05-17)
+
+> Inserted after `03-CATALOG-IDENTITY-REVIEW.md` cross-AI peer-review consensus (Codex, Gemini, Claude Opus all returned BLOCK PHASE 5 ONLY). Replaces the implicit `external_id`-as-user-key model with an explicit `code` (user-facing) + optional `external_id` (integration mapping) split. See `03-CATALOG-IDENTITY-REVIEW-RESPONSE.md` for synthesis.
+
+- [ ] **IDENT-01**: All 6 primary catalog entities (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`) have a `code TEXT NOT NULL` column with composite `UNIQUE (org_id, code)`; `code` is the user-facing canonical identifier used by bulk import, OpenAPI references, and future DSL.
+- [ ] **IDENT-02**: `external_id` is demoted to optional integration mapping on all 6 entities (`TEXT NULL`) with partial unique index `(org_id, external_id) WHERE external_id IS NOT NULL`; the previous `NOT NULL` + composite-unique constraint on `agents`, `skills`, `queues`, `channels` is removed.
+- [ ] **IDENT-03**: `break_reasons.UNIQUE (org_id, name)` is dropped — `name` becomes a mutable display label, no longer identity; `break_reasons` gains both `code` (required) and `external_id` (optional) per IDENT-01/IDENT-02.
+- [ ] **IDENT-04**: `Create*Request` schemas in `openapi/openapi.yaml` require `code` for all 6 entities and may accept `external_id`; `Update*Request` schemas treat `code` as immutable in v0.1 (mutation attempts return HTTP 422 with `ErrorCode=immutable_field`); rename support deferred to v0.2.
+- [ ] **IDENT-05**: sqlc queries are regenerated for all 6 catalog entities to read/write `code`; per-entity `InsertX`/`UpsertX`/`GetXByCode` query primitives exist; `task gen` produces no manual-edit diff.
+- [ ] **IDENT-06**: 6 CRUD handlers (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`) read `code` from request bodies, surface 409 `duplicate_code` on `(org_id, code)` collisions, and surface a distinct 409 `duplicate_external_id` on `(org_id, external_id)` collisions when the field is set.
+- [ ] **IDENT-07**: Migration `000002_catalog_v0_1.up.sql` is amended in place (D-61 still applies — migration is editable until v0.1 ships); no migration 003 is added; `task db:reset` rebuilds the schema cleanly from a Phase 1 baseline.
+- [ ] **IDENT-08**: Two-org isolation test suite is updated — fixtures use `code`-keyed rows; every CRUD endpoint exercises both `code` collisions (409 duplicate_code) and `external_id` collisions (409 duplicate_external_id) within a single org and across orgs.
+
 ### Bulk Import
 
 - [ ] **IMP-01**: Org admin can `POST /v1/orgs/{org_id}/catalog/import?entity={entity_type}` with a JSON or CSV body for any of the 6 catalog entities.
 - [ ] **IMP-02**: CSV parser normalizes Byte Order Marks, accepts CRLF and LF line endings, and handles quoted fields with embedded commas, newlines, and quotes (Go `encoding/csv` with explicit BOM handling).
-- [ ] **IMP-03**: Import upserts rows keyed by `(org_id, external_id)` via `INSERT ... ON CONFLICT (org_id, external_id) DO UPDATE`; existing rows update fields, new rows insert; the same input run twice produces no duplicates.
+- [ ] **IMP-03**: Import upserts rows keyed by `(org_id, code)` via `INSERT ... ON CONFLICT (org_id, code) DO UPDATE`; existing rows update fields, new rows insert; the same input run twice produces no duplicates. *(Updated post Phase 04.1 — was `(org_id, external_id)`.)*
 - [ ] **IMP-04**: Failed rows return structured errors with row number, field name, and a human-readable message; valid rows in the same batch still succeed.
 - [ ] **IMP-05**: Import endpoint returns HTTP 207 Multi-Status with body `{ succeeded: [ids], failed: [{row, field, message}] }` when any rows fail; HTTP 200 when all succeed.
 - [ ] **IMP-06**: Import sessions persist in `import_jobs` (id, org_id, entity_type, total_rows, succeeded_rows, failed_rows, errors JSONB, created_at); `GET /v1/orgs/{org_id}/imports/{id}` returns the session result.

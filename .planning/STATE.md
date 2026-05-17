@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Catalog Foundation
-status: "Phase 04 shipped — PR #4"
-stopped_at: Phase 4 planned (6 waves, cross-AI READY WITH FIXES applied)
-last_updated: "2026-05-17T05:35:56.571Z"
-last_activity: "2026-05-17 -- Phase 04 shipped — PR #4"
+status: "Phase 04.1 inserted — discuss-phase pending"
+stopped_at: Phase 04.1 (catalog-identity-normalization) inserted; Phase 5 paused pending Phase 04.1 ship
+last_updated: "2026-05-17T13:30:00.000Z"
+last_activity: "2026-05-17 -- cross-AI peer review on catalog identity contract; consensus BLOCK PHASE 5; Phase 04.1 inserted"
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 4
   total_plans: 34
   completed_plans: 34
-  percent: 57
+  percent: 50
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-16)
 
 **Core value:** Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
-**Current focus:** Phase 04 — agent-state-machine-go
+**Current focus:** Phase 04.1 — catalog-identity-normalization (INSERTED; blocks Phase 5)
 
 ## Current Position
 
-Phase: 04 — COMPLETE
-Plan: 2 of 6
-Status: Phase 04 shipped — PR #4
-Last activity: 2026-05-17 -- Phase 04 shipped — PR #4
+Phase: 04.1 — INSERTED, awaiting discuss-phase
+Plan: 0 of TBD
+Status: Phase 04.1 catalog identity normalization inserted; Phase 5 paused pending fix
+Last activity: 2026-05-17 -- cross-AI peer review consensus BLOCK PHASE 5; Phase 04.1 created
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -99,9 +99,9 @@ From research/SUMMARY.md gaps to address during implementation:
 
 ## Session Continuity
 
-Last session: 2026-05-17T05:04:04.208Z
-Stopped at: Phase 4 planned (6 waves, cross-AI READY WITH FIXES applied)
-Resume file: None
+Last session: 2026-05-17T13:30:00.000Z
+Stopped at: Phase 04.1 inserted (catalog-identity-normalization); ready for /gsd-discuss-phase 04.1
+Resume file: .planning/phases/03-catalog-crud-go/03-CATALOG-IDENTITY-REVIEW-RESPONSE.md (cross-AI synthesis with open questions for discuss-phase)
 
 ## Phase 3 — Decision Coverage Override (2026-05-16)
 
