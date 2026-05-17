@@ -5,3 +5,6 @@ export { OrDataTable } from './data-table.js';
 export type { OrDataTableColumn } from './data-table.js';
 export { OrCursorPaginator } from './cursor-paginator.js';
 export { OrCodeInput, CODE_PATTERN, CODE_ERROR_MSG } from './code-input.js';
+export { OrConflictBanner } from './conflict-banner.js';
+export { OrFormWizard } from './form-wizard.js';
+export type { OrFormWizardStep } from './form-wizard.js';
