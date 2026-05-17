@@ -64,7 +64,7 @@ func NewOrgDB(pool *pgxpool.Pool, checker *SQLChecker, mode ValidationMode) *Org
 // args ...interface{}).
 func (o *OrgDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
 	if err := o.preflight(ctx, sql); err != nil {
-		return pgconn.CommandTag{}, o.handlePreflightError("Exec", err)
+		return pgconn.CommandTag{}, handlePreflightError(o.mode, "Exec", err)
 	}
 	return o.pool.Exec(ctx, sql, args...)
 }
@@ -73,7 +73,7 @@ func (o *OrgDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgco
 // signature constraint as Exec.
 func (o *OrgDB) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
 	if err := o.preflight(ctx, sql); err != nil {
-		return nil, o.handlePreflightError("Query", err)
+		return nil, handlePreflightError(o.mode, "Query", err)
 	}
 	return o.pool.Query(ctx, sql, args...)
 }
@@ -91,13 +91,18 @@ func (r errRow) Scan(_ ...any) error { return r.err }
 // :one queries; in prod a preflight failure indicates missing org_id scoping.
 func (o *OrgDB) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
 	if err := o.preflight(ctx, sql); err != nil {
-		return errRow{err: o.handlePreflightError("QueryRow", err)}
+		return errRow{err: handlePreflightError(o.mode, "QueryRow", err)}
 	}
 	return o.pool.QueryRow(ctx, sql, args...)
 }
 
-func (o *OrgDB) handlePreflightError(op string, err error) error {
-	if o.mode == ValidationPanic {
+// handlePreflightError converts a preflight failure into either a panic
+// (ValidationPanic — dev/test) or a typed error (ValidationError — prod).
+// Extracted to a package-level function so OrgTx can reuse the exact
+// branching (OQ-5; the tx wrapper would otherwise diverge from the pool
+// wrapper subtly).
+func handlePreflightError(mode ValidationMode, op string, err error) error {
+	if mode == ValidationPanic {
 		panic(fmt.Errorf("orgdb.%s preflight failed: %w", op, err))
 	}
 	return err
@@ -118,6 +123,16 @@ func (o *OrgDB) handlePreflightError(op string, err error) error {
 // matches what cmd/migrate emits at startup so a future audit-events
 // table can ingest both producers with one schema.
 func (o *OrgDB) preflight(ctx context.Context, sql string) error {
+	return preflightSQL(ctx, sql, o.checker)
+}
+
+// preflightSQL is the shared bypass-or-validate logic used by both
+// OrgDB and OrgTx (OQ-5). Extracted as a package-level function so the
+// transaction wrapper does not re-implement (and subtly diverge from)
+// the pool wrapper's enforcement. The mode-specific panic/error branch
+// lives in handlePreflightError so callers control the call-site message
+// (operation name) without forking the validator.
+func preflightSQL(ctx context.Context, sql string, checker *SQLChecker) error {
 	if reason, ok := BypassReason(ctx); ok {
 		caller, _ := BypassCaller(ctx)
 		var orgIDAttempted string
@@ -138,10 +153,79 @@ func (o *OrgDB) preflight(ctx context.Context, sql string) error {
 		return ErrOrgIDMissingFromContext
 	}
 
-	if err := o.checker.MustContainOrgFilter(sql); err != nil {
+	if err := checker.MustContainOrgFilter(sql); err != nil {
 		return err
 	}
 	return nil
+}
+
+// OrgTx wraps pgx.Tx and re-applies preflight on every Exec/Query/QueryRow
+// so transactions preserve the FOUND-04/D-02 SQL validator guarantee
+// (OQ-5, H5). Constructed via (*OrgDB).BeginTx; Commit/Rollback delegate
+// to the underlying pgx.Tx without preflight (those statements are
+// transaction-control, not DML, and pg_query rejects them via
+// MustContainOrgFilter — they must never reach the checker).
+//
+// OrgTx satisfies generated.DBTX exactly so Wave 3's agent_skills replace
+// can do: `tx, _ := orgDB.BeginTx(ctx); qtx := generated.New(tx); qtx.
+// DeleteAgentSkills(...); qtx.InsertAgentSkill(...); tx.Commit(ctx)`.
+type OrgTx struct {
+	tx      pgx.Tx
+	checker *SQLChecker
+	mode    ValidationMode
+}
+
+// Exec on a transaction. Preflight then delegate to pgx.Tx.Exec.
+func (t *OrgTx) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	if err := preflightSQL(ctx, sql, t.checker); err != nil {
+		return pgconn.CommandTag{}, handlePreflightError(t.mode, "Tx.Exec", err)
+	}
+	return t.tx.Exec(ctx, sql, args...)
+}
+
+// Query on a transaction. Preflight then delegate to pgx.Tx.Query.
+func (t *OrgTx) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	if err := preflightSQL(ctx, sql, t.checker); err != nil {
+		return nil, handlePreflightError(t.mode, "Tx.Query", err)
+	}
+	return t.tx.Query(ctx, sql, args...)
+}
+
+// QueryRow on a transaction. Preflight then delegate to pgx.Tx.QueryRow.
+// On preflight failure: panics in ValidationPanic mode (dev/test), returns
+// errRow in ValidationError mode (prod) so the error surfaces at Scan.
+func (t *OrgTx) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	if err := preflightSQL(ctx, sql, t.checker); err != nil {
+		return errRow{err: handlePreflightError(t.mode, "Tx.QueryRow", err)}
+	}
+	return t.tx.QueryRow(ctx, sql, args...)
+}
+
+// Commit ends the transaction successfully. Delegates directly to
+// pgx.Tx.Commit — preflight does not apply (BEGIN/COMMIT are TCL, not DML).
+func (t *OrgTx) Commit(ctx context.Context) error {
+	return t.tx.Commit(ctx)
+}
+
+// Rollback aborts the transaction. Delegates directly to pgx.Tx.Rollback —
+// preflight does not apply.
+func (t *OrgTx) Rollback(ctx context.Context) error {
+	return t.tx.Rollback(ctx)
+}
+
+// BeginTx starts a transaction inheriting the parent OrgDB's checker and
+// mode. The returned OrgTx satisfies generated.DBTX so handler code can
+// pass it to generated.New(tx) for sqlc-typed transactional queries
+// (OQ-5, H5 — used by the agent_skills full-replace in Plan 03-09).
+// Default pgx.TxOptions (read-write, default isolation) — handlers
+// needing read-only or stricter isolation should add an Options-accepting
+// overload in v0.2.
+func (o *OrgDB) BeginTx(ctx context.Context) (*OrgTx, error) {
+	tx, err := o.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("orgdb: begin tx: %w", err)
+	}
+	return &OrgTx{tx: tx, checker: o.checker, mode: o.mode}, nil
 }
 
 // Compile-time guarantee: OrgDB satisfies the sqlc-generated DBTX
@@ -149,6 +233,12 @@ func (o *OrgDB) preflight(ctx context.Context, sql string) error {
 // different signature this fails to compile rather than silently
 // permitting a divergent wrapper.
 var _ generated.DBTX = (*OrgDB)(nil)
+
+// Compile-time guarantee: OrgTx satisfies the sqlc-generated DBTX
+// interface (OQ-5). Required so handlers can do
+// `generated.New(orgDB.BeginTx(ctx))` for transactional queries while
+// preserving the org_id validator.
+var _ generated.DBTX = (*OrgTx)(nil)
 
 // Compile-time guarantee: errRow satisfies pgx.Row. pgx v5 reserves the right
 // to add methods to Row outside semver; this assertion catches any such

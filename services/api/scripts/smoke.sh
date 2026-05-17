@@ -92,15 +92,25 @@ case "$READY_BODY" in
     *)                        echo "FAIL: /readyz unexpected body $READY_BODY"; cat /tmp/api.log; exit 1;;
 esac
 
-SCAFFOLD_MISSING=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/v1/orgs/$ORG/_scaffold")
-[ "$SCAFFOLD_MISSING" = "400" ] || { echo "FAIL: missing X-Org-Id returned $SCAFFOLD_MISSING (expected 400)"; cat /tmp/api.log; exit 1; }
+# Phase 3 / Plan 03-01: Use /v1/orgs/{id}/agents as the trust boundary check.
+# Missing X-Org-Id MUST return 400 (D-21).
+AGENTS_MISSING=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/v1/orgs/$ORG/agents")
+[ "$AGENTS_MISSING" = "400" ] || { echo "FAIL: missing X-Org-Id returned $AGENTS_MISSING (expected 400)"; cat /tmp/api.log; exit 1; }
 
-SCAFFOLD_BAD=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Org-Id: not-a-uuid" "http://localhost:8080/v1/orgs/$ORG/_scaffold")
-[ "$SCAFFOLD_BAD" = "400" ] || { echo "FAIL: malformed X-Org-Id returned $SCAFFOLD_BAD (expected 400)"; cat /tmp/api.log; exit 1; }
+# Malformed X-Org-Id MUST return 400 (D-19).
+AGENTS_BAD=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Org-Id: not-a-uuid" "http://localhost:8080/v1/orgs/$ORG/agents")
+[ "$AGENTS_BAD" = "400" ] || { echo "FAIL: malformed X-Org-Id returned $AGENTS_BAD (expected 400)"; cat /tmp/api.log; exit 1; }
+
+# Valid request should return 200 (even if list is empty).
+AGENTS_OK=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Org-Id: $ORG" "http://localhost:8080/v1/orgs/$ORG/agents")
+[ "$AGENTS_OK" = "200" ] || { echo "FAIL: valid request returned $AGENTS_OK (expected 200)"; cat /tmp/api.log; exit 1; }
 
 # ---- Log assertions: each grep must succeed on its own (W-3 fix) ----
-grep -qE '"trace_id":"[0-9a-f]{32}"' /tmp/api.log || { echo "FAIL: no trace_id in /tmp/api.log"; cat /tmp/api.log; exit 1; }
-grep -qE '"span_id":"[0-9a-f]{16}"' /tmp/api.log || { echo "FAIL: no span_id in /tmp/api.log"; cat /tmp/api.log; exit 1; }
+# Wait for OTel spans to flush to stdout (Plan 06 / Pitfall 5).
+sleep 2
+# Match both slog structured logs ("trace_id") and OTel stdout spans ("TraceID").
+grep -qiE '"trace_id":"[0-9a-f]{32}"' /tmp/api.log || grep -qiE '"TraceID":\s*"[0-9a-f]{32}"' /tmp/api.log || { echo "FAIL: no trace_id/TraceID in /tmp/api.log"; cat /tmp/api.log; exit 1; }
+grep -qiE '"span_id":"[0-9a-f]{16}"' /tmp/api.log || grep -qiE '"SpanID":\s*"[0-9a-f]{16}"' /tmp/api.log || { echo "FAIL: no span_id/SpanID in /tmp/api.log"; cat /tmp/api.log; exit 1; }
 
-echo "smoke ok: HEALTH=$HEALTH READY=$READY_BODY MISSING=$SCAFFOLD_MISSING BAD=$SCAFFOLD_BAD"
+echo "smoke ok: HEALTH=$HEALTH READY=$READY_BODY MISSING=$AGENTS_MISSING BAD=$AGENTS_BAD OK=$AGENTS_OK"
 exit 0

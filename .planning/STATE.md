@@ -2,41 +2,42 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Catalog Foundation
-status: ready_to_plan
-stopped_at: Phase 02 complete (6/6) — ready to discuss Phase 3
-last_updated: 2026-05-16T02:44:03.998Z
-last_activity: 2026-05-15 -- Phase 02 waves 1+2 complete (UI sketches, OpenAPI spec, WriteError ctx)
+status: "Phase 03 shipped — PR #3"
+stopped_at: Phase 4 context gathered
+last_updated: "2026-05-17T01:50:06.689Z"
+last_activity: 2026-05-17
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 17
-  completed_plans: 17
-  percent: 14
+  completed_phases: 3
+  total_plans: 27
+  completed_plans: 28
+  percent: 43
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-15)
+See: .planning/PROJECT.md (updated 2026-05-16)
 
 **Core value:** Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
-**Current focus:** Phase 3 — catalog crud (go)
+**Current focus:** Phase 03 — catalog-crud-go
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-16
+Phase: 03 — COMPLETE
+Plan: 1 of 10
+Status: Phase 03 shipped — PR #3
+Last activity: 2026-05-17
 
-Progress: [██████████] 100%
+Progress: [███-------] 29% (2/7 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total phase plans completed: 17
+- Additional hardening/ship summaries: 1
 - Average duration: —
 - Total execution time: —
 
@@ -44,7 +45,8 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 02 | 6 | - | - |
+| 01 | 11 | - | - |
+| 02 | 6 (+1 hardening) | - | - |
 
 **Recent Trend:**
 
@@ -61,7 +63,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Key decisions affecting 
 
 - Backend: Go (latest) + chi + sqlc + pgx + golang-migrate + slog (not Node.js/Fastify/Drizzle)
 - Database: PostgreSQL 17 + Redis (cache layer for hot-path reads)
-- API contract: OpenAPI 3.1 as source-of-truth → oapi-codegen (Go server stubs) + openapi-typescript (TS client); contract-first to prevent drift
+- API contract: OpenAPI 3.0 as stored source-of-truth (downgraded from 3.1 for oapi-codegen v2 compatibility) → oapi-codegen (Go server stubs) + openapi-typescript (TS client); contract-first to prevent drift
 - Frontend: Vite + Lit + Shoelace + TypeScript (not React, not shadcn/ui, not Module Federation)
 - Embedding: Web Components (Custom Elements + Shadow DOM) — not iframe, not Module Federation
 - Repo: polyglot monorepo (Go module + pnpm workspaces side-by-side, Makefile or Turborepo for orchestration)
@@ -74,7 +76,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Key decisions affecting 
 
 ### Pending Todos
 
-None yet.
+- Phase 3 simplification cleanup: see `.planning/phases/03-catalog-crud-go/03-SIMPLICITY-REVIEW.md`. Fix request-id injection, transitional stubs, overly generic cache API, entity-specific DB conflict mapping, and plan-generated code bloat before Phase 3 grows more handlers.
 
 ### Blockers/Concerns
 
@@ -93,6 +95,18 @@ From research/SUMMARY.md gaps to address during implementation:
 
 ## Session Continuity
 
-Last session: 2026-05-15T13:26:43.262Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-openapi-contract-codegen/02-CONTEXT.md
+Last session: 2026-05-17T01:45:19.067Z
+Stopped at: Phase 4 context gathered
+Resume file: .planning/phases/04-agent-state-machine-go/04-CONTEXT.md
+
+## Phase 3 — Decision Coverage Override (2026-05-16)
+
+7 CONTEXT decisions (D-56, D-68, D-70, D-72, D-73, D-74, D-77) implement-but-do-not-cite in plan `must_haves.truths`. They ARE reflected in plan narrative + acceptance criteria + task bodies. Override recorded so verify-phase resurfaces them.
+
+- D-56 (409 cache DEL): Implemented in 03-06 + 03-07/08/09 handlers (`cache.Del` after 409 disambiguation).
+- D-68 (single catalog pkg, one file per entity): Implemented by 03-05 skeleton + 03-06/07/08/09 entity files.
+- D-70 (forward-compat ApiHandlers embed): Implemented in 03-10 main.go wiring.
+- D-72 (per-entity _test.go beside source): Implemented by 03-06/07/08/09 test files.
+- D-73 (testutil_test.go shared setup): Implemented by 03-05 + 03-06 after iter 3 rename.
+- D-74 (two-layer validation): Implemented across 03-06/07/08/09 handler tests (Layer 1 + Layer 2).
+- D-77 (scaffold deletion in commit 1): Implemented by 03-01 Wave 0.

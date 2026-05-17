@@ -40,8 +40,8 @@ info:
 
     ## Spec version
 
-    This spec describes the v0.1 Catalog Foundation milestone. Paths under the
-    `Scaffold` tag will be removed in Phase 3 when real catalog entities land.
+    This spec describes the v0.1 Catalog Foundation milestone. Catalog
+    CRUD endpoints live under the `/v1/orgs/{org_id}/` prefix.
 
   contact:
     name: Open Routing
@@ -98,8 +98,9 @@ components:
     ErrorCode:
       type: string
       description: |
-        Closed enum of machine-readable error codes (D-36). Clients branch on
-        this value — never on `reason` or HTTP status alone.
+        Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
+        criterion 4). Clients branch on this value — never on `reason` or HTTP
+        status alone.
       enum:
         - invalid_body
         - invalid_id
@@ -111,6 +112,8 @@ components:
         - invalid_transition
         - import_failed
         - rate_limited
+        - invalid_reference
+        - invalid_value
 
     ErrorResponse:
       type: object
@@ -247,12 +250,17 @@ components:
           example: "Billing Support"
         proficiency:
           type: integer
-          minimum: 1
-          maximum: 10
           description: >
-            Agent proficiency on this skill. Integer from 1 (beginner) to 10
-            (expert). Enforced server-side (CAT-03); client should also show
-            min=1/max=10 to prevent obvious mistakes.
+            Agent proficiency rating on this skill. Inclusive range 1
+            (beginner) to 10 (expert). The OpenAPI schema intentionally
+            omits `minimum`/`maximum` so the oapi-codegen Layer 1 validator
+            does NOT short-circuit out-of-range values with HTTP 400. The
+            handler (catalog package, Plan 03-09) enforces the 1-10 range
+            and returns HTTP 422 with `ErrorCode=invalid_value` when the
+            value is out of range — see ROADMAP Phase 3 success criterion 4.
+            Clients should still display min=1/max=10 in UI to prevent
+            obvious mistakes; the wire shape distinguishes "wrong value"
+            (422 invalid_value) from "wrong type" (400 invalid_body).
           example: 8
 
     Agent:
@@ -671,6 +679,7 @@ components:
         - name
         - channel_type
         - enabled
+        - version
         - created_at
         - updated_at
       properties:
@@ -697,6 +706,13 @@ components:
         enabled:
           type: boolean
           example: true
+        version:
+          type: integer
+          minimum: 1
+          description: >
+            Monotonically increasing optimistic-lock version counter (CAT-08,
+            OQ-1/A4). Server-owned. Mismatch on update returns HTTP 409.
+          example: 1
         created_at:
           type: string
           format: date-time
@@ -734,7 +750,17 @@ components:
 
     UpdateChannelRequest:
       type: object
+      description: >
+        Request body for updating a channel. Include `version` from the last
+        GET response for optimistic concurrency (CAT-08).
+      required:
+        - version
       properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Current optimistic-lock version. Mismatch → HTTP 409.
+          example: 1
         name:
           type: string
         channel_type:
@@ -761,6 +787,7 @@ components:
         - name
         - adapter_type
         - enabled
+        - version
         - created_at
         - updated_at
       properties:
@@ -790,6 +817,13 @@ components:
         enabled:
           type: boolean
           example: true
+        version:
+          type: integer
+          minimum: 1
+          description: >
+            Monotonically increasing optimistic-lock version counter (CAT-08,
+            OQ-1/A4). Server-owned. Mismatch on update returns HTTP 409.
+          example: 1
         created_at:
           type: string
           format: date-time
@@ -824,7 +858,17 @@ components:
 
     UpdateAdapterRequest:
       type: object
+      description: >
+        Request body for updating an adapter. Include `version` from the last
+        GET response for optimistic concurrency (CAT-08).
+      required:
+        - version
       properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Current optimistic-lock version. Mismatch → HTTP 409.
+          example: 1
         name:
           type: string
         adapter_type:
@@ -1188,55 +1232,6 @@ components:
           readOnly: true
           example: "2026-05-15T00:00:00Z"
 
-    # ── Scaffold Schemas (Phase 1 — deleted in Phase 3) ────────────────────────
-
-    Scaffold:
-      type: object
-      description: >
-        Throw-away scaffold entity used in Phase 1 to prove the full
-        HTTP → OrgContext → OrgDB → sqlc chain. Deleted in Phase 3.
-      required:
-        - id
-        - org_id
-        - external_id
-        - name
-        - created_at
-      properties:
-        id:
-          $ref: "#/components/schemas/UUIDv7"
-        org_id:
-          $ref: "#/components/schemas/UUIDv7"
-          description: >
-            Organization that owns this record. Enforced by the OrgDB layer —
-            a query with a mismatched org_id returns 404 not 403 (FOUND-08
-            leakage guard). This ensures cross-org probing is indistinguishable
-            from a genuine not-found response.
-        external_id:
-          type: string
-          example: "SCAFFOLD-001"
-        name:
-          type: string
-          example: "Test Record"
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-          example: "2026-05-15T00:00:00Z"
-
-    CreateScaffoldRequest:
-      type: object
-      required:
-        - external_id
-        - name
-      properties:
-        external_id:
-          type: string
-          description: Caller-assigned stable identifier. Unique within the org.
-          example: "SCAFFOLD-001"
-        name:
-          type: string
-          example: "Test Record"
-
     # ── Infrastructure Schemas ─────────────────────────────────────────────────
 
     HealthResponse:
@@ -1343,12 +1338,12 @@ components:
       in: query
       required: false
       description: >
-        Maximum number of items to return per page. Defaults to 20. Maximum 100.
+        Maximum number of items to return per page. Defaults to 25. Maximum 100.
       schema:
         type: integer
         minimum: 1
         maximum: 100
-        default: 20
+        default: 25
 
     IncludeDisabledQuery:
       name: include_disabled
@@ -1543,97 +1538,6 @@ paths:
               schema:
                 type: string
 
-  # ── Scaffold Routes (Phase 1 — deleted in Phase 3) ──────────────────────────
-
-  /v1/orgs/{org_id}/_scaffold:
-    parameters:
-      - $ref: "#/components/parameters/OrgIdPath"
-
-    post:
-      tags:
-        - Scaffold
-      operationId: CreateScaffold
-      summary: Create scaffold record
-      description: >
-        Phase 1 scaffold endpoint that proves the full HTTP → OrgContext →
-        OrgDB → sqlc chain. Deleted in Phase 3 when real catalog entities land
-        (D-18, D-46). The `{org_id}` path parameter is present for REST
-        semantics but the OrgDB reads `org_id` exclusively from the validated
-        ctx value set by `OrgContext` (FOUND-05).
-      security:
-        - OrgHeader: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateScaffoldRequest"
-      responses:
-        "201":
-          description: Scaffold record created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Scaffold"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    get:
-      tags:
-        - Scaffold
-      operationId: ListScaffolds
-      summary: List scaffold records
-      description: >
-        Returns all scaffold records for the authenticated org. Phase 1 only.
-      security:
-        - OrgHeader: []
-      responses:
-        "200":
-          description: List of scaffold records.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Scaffold"
-        "400":
-          $ref: "#/components/responses/InvalidOrgID"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /v1/orgs/{org_id}/_scaffold/{id}:
-    parameters:
-      - $ref: "#/components/parameters/OrgIdPath"
-      - $ref: "#/components/parameters/EntityIdPath"
-
-    get:
-      tags:
-        - Scaffold
-      operationId: GetScaffoldById
-      summary: Get scaffold record by ID
-      description: >
-        Returns a single scaffold record. Returns HTTP 404 for both missing
-        records and cross-org probes — the query filters by both `id` AND
-        `org_id` so a correct ID in a different org is indistinguishable from
-        a missing ID (FOUND-08 leakage guard).
-      security:
-        - OrgHeader: []
-      responses:
-        "200":
-          description: Scaffold record.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Scaffold"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
   # ── Agents (CAT-01, CAT-03) ──────────────────────────────────────────────────
 
   /v1/orgs/{org_id}/agents:
@@ -1677,6 +1581,21 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/ErrorResponse"
                   - $ref: "#/components/schemas/VersionConflictErrorResponse"
+        "422":
+          description: >
+            Semantically invalid request — structurally valid JSON that fails
+            a business-rule check (D-75, ROADMAP Phase 3 CRIT 4, Codex C2 iter
+            3). Two flavors share this status:
+            (a) `invalid_reference` — a `skills[].skill_id` references a skill
+                that does not exist in the caller's org (CAT-03).
+            (b) `invalid_value` — a `skills[].proficiency` value is outside
+                the inclusive range 1-10.
+            The `field` slot in ErrorResponse identifies which request body
+            path failed (e.g. `skills[0].proficiency`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1789,6 +1708,22 @@ paths:
                     properties:
                       current:
                         $ref: "#/components/schemas/Agent"
+        "422":
+          description: >
+            Semantically invalid request — structurally valid JSON that fails
+            a business-rule check (D-75, ROADMAP Phase 3 CRIT 4). Two flavors
+            share this status:
+            (a) `invalid_reference` — a `skills[].skill_id` references a skill
+                that does not exist in the caller's org (CAT-03, PUT-semantics
+                replacement).
+            (b) `invalid_value` — a `skills[].proficiency` value is outside
+                the inclusive range 1-10.
+            The `field` slot in ErrorResponse identifies which request body
+            path failed (e.g. `skills[0].proficiency`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2250,6 +2185,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: >
+            Semantically invalid request — structurally valid JSON that fails
+            a business-rule check (D-75, D-76). For CreateChannel: the supplied
+            `default_queue_id` does not exist (or is disabled) in the caller's
+            org. Returns `ErrorCode=invalid_reference`. The `field` slot in
+            ErrorResponse identifies which request body path failed (e.g.
+            `default_queue_id`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2315,6 +2262,10 @@ paths:
         - Channels
       operationId: UpdateChannel
       summary: Update a channel
+      description: >
+        Partial update of a channel. Include `version` from the last GET
+        response for optimistic concurrency (CAT-08, OQ-1/A4). A mismatch
+        returns HTTP 409 with the current server-side record in the body.
       security:
         - OrgHeader: []
       requestBody:
@@ -2334,6 +2285,29 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Version mismatch. Body contains the current server-side channel record (D-37).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                  - type: object
+                    properties:
+                      current:
+                        $ref: "#/components/schemas/Channel"
+        "422":
+          description: >
+            Semantically invalid request — structurally valid JSON that fails
+            a business-rule check (D-75, D-76). For UpdateChannel: the supplied
+            `default_queue_id` does not exist (or is disabled) in the caller's
+            org. Returns `ErrorCode=invalid_reference`. The `field` slot in
+            ErrorResponse identifies which request body path failed (e.g.
+            `default_queue_id`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2451,6 +2425,10 @@ paths:
         - Adapters
       operationId: UpdateAdapter
       summary: Update an adapter
+      description: >
+        Partial update of an adapter. Include `version` from the last GET
+        response for optimistic concurrency (CAT-08, OQ-1/A4). A mismatch
+        returns HTTP 409 with the current server-side record in the body.
       security:
         - OrgHeader: []
       requestBody:
@@ -2470,6 +2448,17 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Version mismatch. Body contains the current server-side adapter record (D-37).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                  - type: object
+                    properties:
+                      current:
+                        $ref: "#/components/schemas/Adapter"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2518,6 +2507,16 @@ paths:
                 $ref: "#/components/schemas/BreakReason"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: >
+            UNIQUE(org_id, name) collision — the supplied name already
+            exists in this org. Wave 5 cross-AI review: 23505 surfaced
+            as 500 was poisoning 5xx metrics for a client-correctable
+            error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2782,11 +2781,6 @@ tags:
     description: >
       Health, readiness, spec, and docs endpoints. These bypass the `OrgContext`
       middleware and do not require the `X-Org-Id` header (D-17, D-21, D-45).
-  - name: Scaffold
-    description: >
-      Phase 1 scaffold endpoints proving the HTTP → OrgContext → OrgDB → sqlc
-      chain. These routes are deleted in Phase 3 when real catalog entities land
-      (D-18, D-46).
   - name: Agents
     description: >
       Agent catalog CRUD (CAT-01, CAT-03). Skills are embedded on detail

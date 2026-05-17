@@ -11,13 +11,16 @@
 //  5. db.NewPool — pgxpool with retry-with-backoff (D-26).
 //  6. redis.NewClient via URL parse.
 //  7. db.NewOrgDB — shared instance handed to handlers.
-//  8. server.NewMux — chi mux with the LOCKED middleware chain (Recoverer
-//     -> RequestID -> bypass routes -> /v1 Route(OrgContext + scaffold)).
-//  9. otelhttp.NewHandler wraps the mux AFTER NewMux completes — Pattern S6
-//     requires the wrap is AFTER every mux.Use call so the request span
-//     exists when OrgContext sets org_id span attribute.
-//  10. http.Server.ListenAndServe in a goroutine; graceful shutdown on
-//     ctx cancel via srv.Shutdown with a 10s timeout.
+//  8. cache.New + catalog.New — catalog.Handlers satisfies
+//     api.StrictServerInterface (D-69) and is passed into server.NewMux
+//     as Deps.StrictHandlers (Plan 03-10 replaces the Wave 0 stubs).
+//  9. server.NewMux — chi mux with the LOCKED middleware chain (Recoverer
+//     -> RequestID -> bypass routes -> /v1 Route(OrgContext + catalog)).
+//  10. otelhttp.NewHandler wraps the mux AFTER NewMux completes — Pattern S6
+//      requires the wrap is AFTER every mux.Use call so the request span
+//      exists when OrgContext sets org_id span attribute.
+//  11. http.Server.ListenAndServe in a goroutine; graceful shutdown on
+//      ctx cancel via srv.Shutdown with a 10s timeout.
 //
 // Anti-pattern guard: this main MUST NOT call migrate.NewWithDatabaseInstance
 // or m.Up. Per D-11 the API never auto-runs migrations — cmd/migrate owns
@@ -40,6 +43,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
+	"github.com/luongdev/open-routing/services/api/internal/cache"
+	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/server"
@@ -129,8 +134,16 @@ func run() int {
 		return 1
 	}
 
-	// (8) Composite server: scaffold impl + bypass-path handlers + 501 stubs.
-	strictServer := server.NewCompositeServer(orgDB, pool, rdb, specBytes)
+	// (8) Cache + catalog handlers (D-69). catalog.Handlers IS the
+	// StrictServerInterface impl — there is no composite server. The cache
+	// is Redis-backed (CAT-11) and read-through via singleflight (D-52).
+	catalogCache := cache.New(rdb, slog.Default())
+	catalogHandlers := catalog.New(catalog.Deps{
+		OrgDB:  orgDB,
+		Pool:   pool,
+		Cache:  catalogCache,
+		Logger: slog.Default(),
+	})
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{
@@ -138,17 +151,17 @@ func run() int {
 		Redis:          rdb,
 		OrgDB:          orgDB,
 		Config:         cfg,
-		StrictHandlers: strictServer,
+		StrictHandlers: catalogHandlers,
 		SpecBytes:      specBytes,
 	})
 
-	// (8) OTel HTTP wrap AFTER NewMux returns (Pattern S6 — wrap is after
+	// (10) OTel HTTP wrap AFTER NewMux returns (Pattern S6 — wrap is after
 	// every mux.Use). The wrap creates a root server span on every
 	// request, including /healthz/readyz/metrics (Plan 07 case 7 will
 	// confirm via TestBypassPaths_NoHeaderRequired).
 	rootHandler := otelhttp.NewHandler(mux, "open-routing-api")
 
-	// (9) HTTP server.
+	// (11) HTTP server.
 	// ReadHeaderTimeout guards against slowloris-style header drip;
 	// 10s is the conventional default for an internal API.
 	srv := &http.Server{
@@ -157,7 +170,7 @@ func run() int {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// (10) Listen + serve in a goroutine so main can wait on ctx.Done
+	// (12) Listen + serve in a goroutine so main can wait on ctx.Done
 	// and trigger graceful shutdown when the signal arrives.
 	go func() {
 		slog.InfoContext(ctx, "listening", "addr", cfg.ListenAddr)

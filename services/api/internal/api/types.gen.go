@@ -89,7 +89,9 @@ const (
 	ErrorCodeInvalidBody       ErrorCode = "invalid_body"
 	ErrorCodeInvalidId         ErrorCode = "invalid_id"
 	ErrorCodeInvalidOrgId      ErrorCode = "invalid_org_id"
+	ErrorCodeInvalidReference  ErrorCode = "invalid_reference"
 	ErrorCodeInvalidTransition ErrorCode = "invalid_transition"
+	ErrorCodeInvalidValue      ErrorCode = "invalid_value"
 	ErrorCodeNotFound          ErrorCode = "not_found"
 	ErrorCodeRateLimited       ErrorCode = "rate_limited"
 	ErrorCodeVersionConflict   ErrorCode = "version_conflict"
@@ -110,7 +112,11 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeInvalidOrgId:
 		return true
+	case ErrorCodeInvalidReference:
+		return true
 	case ErrorCodeInvalidTransition:
+		return true
+	case ErrorCodeInvalidValue:
 		return true
 	case ErrorCodeNotFound:
 		return true
@@ -252,6 +258,21 @@ func (e VersionConflictErrorResponseError) Valid() bool {
 	}
 }
 
+// Defines values for UpdateAdapter409JSONResponseBodyError.
+const (
+	UpdateAdapter409JSONResponseBodyErrorVersionConflict UpdateAdapter409JSONResponseBodyError = "version_conflict"
+)
+
+// Valid indicates whether the value is a known member of the UpdateAdapter409JSONResponseBodyError enum.
+func (e UpdateAdapter409JSONResponseBodyError) Valid() bool {
+	switch e {
+	case UpdateAdapter409JSONResponseBodyErrorVersionConflict:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateAgent409JSONResponseBodyError.
 const (
 	UpdateAgent409JSONResponseBodyErrorVersionConflict UpdateAgent409JSONResponseBodyError = "version_conflict"
@@ -276,6 +297,21 @@ const (
 func (e UpdateBreakReason409JSONResponseBodyError) Valid() bool {
 	switch e {
 	case UpdateBreakReason409JSONResponseBodyErrorVersionConflict:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateChannel409JSONResponseBodyError.
+const (
+	UpdateChannel409JSONResponseBodyErrorVersionConflict UpdateChannel409JSONResponseBodyError = "version_conflict"
+)
+
+// Valid indicates whether the value is a known member of the UpdateChannel409JSONResponseBodyError enum.
+func (e UpdateChannel409JSONResponseBodyError) Valid() bool {
+	switch e {
+	case UpdateChannel409JSONResponseBodyErrorVersionConflict:
 		return true
 	default:
 		return false
@@ -335,6 +371,9 @@ type Adapter struct {
 	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
 	OrgId     UUIDv7     `json:"org_id"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+
+	// Version Monotonically increasing optimistic-lock version counter (CAT-08, OQ-1/A4). Server-owned. Mismatch on update returns HTTP 409.
+	Version int `json:"version"`
 }
 
 // Agent An agent in the catalog. Agents are the humans (or bots) who handle routed interactions. Each agent belongs to exactly one org.
@@ -397,7 +436,7 @@ type AgentSkillAssignment struct {
 	// Name Skill name — included on GET detail responses, omitted on write bodies.
 	Name *string `json:"name,omitempty"`
 
-	// Proficiency Agent proficiency on this skill. Integer from 1 (beginner) to 10 (expert). Enforced server-side (CAT-03); client should also show min=1/max=10 to prevent obvious mistakes.
+	// Proficiency Agent proficiency rating on this skill. Inclusive range 1 (beginner) to 10 (expert). The OpenAPI schema intentionally omits `minimum`/`maximum` so the oapi-codegen Layer 1 validator does NOT short-circuit out-of-range values with HTTP 400. The handler (catalog package, Plan 03-09) enforces the 1-10 range and returns HTTP 422 with `ErrorCode=invalid_value` when the value is out of range — see ROADMAP Phase 3 success criterion 4. Clients should still display min=1/max=10 in UI to prevent obvious mistakes; the wire shape distinguishes "wrong value" (422 invalid_value) from "wrong type" (400 invalid_body).
 	Proficiency int `json:"proficiency"`
 
 	// SkillId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
@@ -545,6 +584,9 @@ type Channel struct {
 	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
 	OrgId     UUIDv7     `json:"org_id"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+
+	// Version Monotonically increasing optimistic-lock version counter (CAT-08, OQ-1/A4). Server-owned. Mismatch on update returns HTTP 409.
+	Version int `json:"version"`
 }
 
 // ChannelType Supported channel types in v0.1.
@@ -606,13 +648,6 @@ type CreateQueueRequest struct {
 	Priority     int           `json:"priority"`
 }
 
-// CreateScaffoldRequest defines model for CreateScaffoldRequest.
-type CreateScaffoldRequest struct {
-	// ExternalId Caller-assigned stable identifier. Unique within the org.
-	ExternalId string `json:"external_id"`
-	Name       string `json:"name"`
-}
-
 // CreateSkillRequest defines model for CreateSkillRequest.
 type CreateSkillRequest struct {
 	Description *string `json:"description,omitempty"`
@@ -622,8 +657,9 @@ type CreateSkillRequest struct {
 	SkillType   string  `json:"skill_type"`
 }
 
-// ErrorCode Closed enum of machine-readable error codes (D-36). Clients branch on
-// this value — never on `reason` or HTTP status alone.
+// ErrorCode Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
+// criterion 4). Clients branch on this value — never on `reason` or HTTP
+// status alone.
 type ErrorCode string
 
 // ErrorResponse Canonical error envelope (D-35). Present on every 4xx/5xx response.
@@ -631,8 +667,9 @@ type ErrorCode string
 // middleware (e.g. responses from the OrgContext middleware itself for
 // missing/malformed X-Org-Id).
 type ErrorResponse struct {
-	// Error Closed enum of machine-readable error codes (D-36). Clients branch on
-	// this value — never on `reason` or HTTP status alone.
+	// Error Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
+	// criterion 4). Clients branch on this value — never on `reason` or HTTP
+	// status alone.
 	Error ErrorCode `json:"error"`
 
 	// Reason Human-readable contextual detail for debugging. Clients MUST NOT branch on this value — it is subject to change across minor versions.
@@ -833,23 +870,6 @@ type ReadinessResponse struct {
 // ReadinessResponseStatus defines model for ReadinessResponse.Status.
 type ReadinessResponseStatus string
 
-// Scaffold Throw-away scaffold entity used in Phase 1 to prove the full HTTP → OrgContext → OrgDB → sqlc chain. Deleted in Phase 3.
-type Scaffold struct {
-	CreatedAt  *time.Time `json:"created_at,omitempty"`
-	ExternalId string     `json:"external_id"`
-
-	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	Id   UUIDv7 `json:"id"`
-	Name string `json:"name"`
-
-	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
-	// Version must be 7 or higher; UUIDv4 and lower are rejected.
-	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	OrgId UUIDv7 `json:"org_id"`
-}
-
 // Skill A skill in the catalog. Skills are assigned to agents with a proficiency rating.
 type Skill struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
@@ -881,7 +901,7 @@ type Skill struct {
 // Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
 type UUIDv7 = openapi_types.UUID
 
-// UpdateAdapterRequest defines model for UpdateAdapterRequest.
+// UpdateAdapterRequest Request body for updating an adapter. Include `version` from the last GET response for optimistic concurrency (CAT-08).
 type UpdateAdapterRequest struct {
 	AdapterType *string `json:"adapter_type,omitempty"`
 
@@ -889,6 +909,9 @@ type UpdateAdapterRequest struct {
 	Config  *map[string]interface{} `json:"config,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
 	Name    *string                 `json:"name,omitempty"`
+
+	// Version Current optimistic-lock version. Mismatch → HTTP 409.
+	Version int `json:"version"`
 }
 
 // UpdateAgentRequest Request body for updating an agent. Include `version` from the last GET response for optimistic concurrency (CAT-08).
@@ -915,13 +938,16 @@ type UpdateBreakReasonRequest struct {
 	Version int `json:"version"`
 }
 
-// UpdateChannelRequest defines model for UpdateChannelRequest.
+// UpdateChannelRequest Request body for updating a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08).
 type UpdateChannelRequest struct {
 	// ChannelType Supported channel types in v0.1.
 	ChannelType    *ChannelType `json:"channel_type,omitempty"`
 	DefaultQueueId *UUIDv7      `json:"default_queue_id,omitempty"`
 	Enabled        *bool        `json:"enabled,omitempty"`
 	Name           *string      `json:"name,omitempty"`
+
+	// Version Current optimistic-lock version. Mismatch → HTTP 409.
+	Version int `json:"version"`
 }
 
 // UpdateQueueRequest defines model for UpdateQueueRequest.
@@ -1037,7 +1063,7 @@ type ListAdaptersParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
 	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Limit Maximum number of items to return per page. Defaults to 20. Maximum 100.
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
 	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
@@ -1047,12 +1073,15 @@ type ListAdaptersParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
+// UpdateAdapter409JSONResponseBodyError defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBodyError string
+
 // ListAgentsParams defines parameters for ListAgents.
 type ListAgentsParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
 	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Limit Maximum number of items to return per page. Defaults to 20. Maximum 100.
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
 	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
@@ -1075,7 +1104,7 @@ type ListBreakReasonsParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
 	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Limit Maximum number of items to return per page. Defaults to 20. Maximum 100.
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
 	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
@@ -1105,7 +1134,7 @@ type ListChannelsParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
 	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Limit Maximum number of items to return per page. Defaults to 20. Maximum 100.
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
 	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
@@ -1115,12 +1144,15 @@ type ListChannelsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
+// UpdateChannel409JSONResponseBodyError defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBodyError string
+
 // ListQueuesParams defines parameters for ListQueues.
 type ListQueuesParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
 	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Limit Maximum number of items to return per page. Defaults to 20. Maximum 100.
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
 	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
@@ -1138,7 +1170,7 @@ type ListSkillsParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
 	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Limit Maximum number of items to return per page. Defaults to 20. Maximum 100.
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
 	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
@@ -1150,9 +1182,6 @@ type ListSkillsParams struct {
 
 // UpdateSkill409JSONResponseBodyError defines parameters for UpdateSkill.
 type UpdateSkill409JSONResponseBodyError string
-
-// CreateScaffoldJSONRequestBody defines body for CreateScaffold for application/json ContentType.
-type CreateScaffoldJSONRequestBody = CreateScaffoldRequest
 
 // CreateAdapterJSONRequestBody defines body for CreateAdapter for application/json ContentType.
 type CreateAdapterJSONRequestBody = CreateAdapterRequest

@@ -18,23 +18,23 @@
 
 ### Foundation & Multi-Org Isolation
 
-- [ ] **FOUND-01**: Repository is structured as a polyglot monorepo with `services/api` (Go module), `web/` (pnpm workspace containing `apps/admin`, `apps/embed`, `packages/ui`), `openapi/openapi.yaml`, and `migrations/` at the root.
-- [ ] **FOUND-02**: PostgreSQL 17 schema includes `org_id UUID NOT NULL` on every org-scoped table; golang-migrate migration files enforce this constraint.
-- [ ] **FOUND-03**: API extracts `org_id` exclusively from the `X-Org-Id` request header via chi middleware; requests missing or with malformed `org_id` return HTTP 400 and never read `org_id` from request body or query parameters.
+- [x] **FOUND-01**: Repository is structured as a polyglot monorepo with `services/api` (Go module), `web/` (pnpm workspace containing `apps/admin`, `apps/embed`, `packages/ui`), `openapi/openapi.yaml`, and `migrations/` at the root.
+- [x] **FOUND-02**: PostgreSQL 17 schema includes `org_id UUID NOT NULL` on every org-scoped table; golang-migrate migration files enforce this constraint.
+- [x] **FOUND-03**: API extracts `org_id` exclusively from the `X-Org-Id` request header via chi middleware; requests missing or with malformed `org_id` return HTTP 400 and never read `org_id` from request body or query parameters.
 - [x] **FOUND-04**: All database access flows through an `orgDB` wrapper in `services/api/internal/db` that automatically injects `WHERE org_id = $N` on every query; service handlers receive only `orgDB` instances, never raw `pgx` pools.
-- [ ] **FOUND-05**: Request `org_id` propagates through the call chain via Go `context.Context` from middleware → handler → service → repository; no global state, no struct field passing.
-- [ ] **FOUND-06**: Every catalog table enforces `UNIQUE (org_id, external_id)` as a composite constraint; no table has a global `UNIQUE (external_id)`.
-- [ ] **FOUND-07**: OpenTelemetry Go SDK initializes before chi router setup; every `slog` log line and OTel span carries an `org_id` attribute extracted from `context.Context`.
-- [ ] **FOUND-08**: Integration test suite seeds two orgs with overlapping `external_id` values and exercises every CRUD endpoint, proving zero cross-org data leakage; tests run with `pgx` against a real Postgres 17 container.
-- [ ] **FOUND-09**: GitHub Actions CI runs `go vet`, `go test`, `golangci-lint`, frontend typecheck/lint/unit tests, and the two-org isolation suite on every pull request; merge blocked on any failure.
-- [ ] **FOUND-10**: Docker Compose brings up PostgreSQL 17 and Redis for local development with a single command (`docker compose up`); the Go API runs natively via `task dev` (air hot-reload) per D-25; Vite dev servers are deferred to Phase 2.
+- [x] **FOUND-05**: Request `org_id` propagates through the call chain via Go `context.Context` from middleware → handler → service → repository; no global state, no struct field passing.
+- [x] **FOUND-06**: Every catalog table enforces `UNIQUE (org_id, external_id)` as a composite constraint; no table has a global `UNIQUE (external_id)`.
+- [x] **FOUND-07**: OpenTelemetry Go SDK initializes before chi router setup; every `slog` log line and OTel span carries an `org_id` attribute extracted from `context.Context`.
+- [x] **FOUND-08**: Integration test suite seeds two orgs with overlapping `external_id` values and exercises every CRUD endpoint, proving zero cross-org data leakage; tests run with `pgx` against a real Postgres 17 container.
+- [x] **FOUND-09**: GitHub Actions CI runs `go vet`, `go test`, `golangci-lint`, frontend typecheck/lint/unit tests, and the two-org isolation suite on every pull request; merge blocked on any failure.
+- [x] **FOUND-10**: Docker Compose brings up PostgreSQL 17 and Redis for local development with a single command (`docker compose up`); the Go API runs natively via `task dev` (air hot-reload) per D-25; Vite dev servers are deferred to Phase 2.
 
 ### API Contract (OpenAPI)
 
 - [x] **CONTRACT-01**: `openapi/openapi.yaml` defines every v0.1 REST endpoint, request/response schema, and error shape as a single OpenAPI 3.0 document. *(Downgraded from 3.1 to 3.0.0 during Plan 02-03 — see 02-VERIFICATION.md.)*
 - [x] **CONTRACT-02**: Go server stubs (handler interfaces, request/response types, validators) are generated from `openapi/openapi.yaml` via `oapi-codegen` and checked into the repository under `services/api/internal/api/`.
-- [ ] **CONTRACT-03**: TypeScript client (typed fetch wrappers, schemas) is generated from `openapi/openapi.yaml` via `openapi-typescript` and consumed by both `apps/admin` and `apps/embed` via `packages/ui` re-export.
-- [ ] **CONTRACT-04**: A CI check fails the build if the committed generated code diverges from what the spec would produce (`go generate ./...` + `pnpm gen:api` produce no diff).
+- [x] **CONTRACT-03**: TypeScript client (typed fetch wrappers, schemas) is generated from `openapi/openapi.yaml` via `openapi-typescript` and consumed by both `apps/admin` and `apps/embed` via `packages/ui` re-export.
+- [x] **CONTRACT-04**: A CI check fails the build if the committed generated code diverges from what the spec would produce (`go generate ./...` + `pnpm gen:api` produce no diff).
 
 ### Catalog CRUD
 
@@ -188,20 +188,20 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | Phase 1 | Pending |
-| FOUND-02 | Phase 1 | Pending |
-| FOUND-03 | Phase 1 | Pending |
+| FOUND-01 | Phase 1 | Complete |
+| FOUND-02 | Phase 1 | Complete |
+| FOUND-03 | Phase 1 | Complete |
 | FOUND-04 | Phase 1 | Complete |
-| FOUND-05 | Phase 1 | Pending |
-| FOUND-06 | Phase 1 | Pending |
-| FOUND-07 | Phase 1 | Pending |
-| FOUND-08 | Phase 1 | Pending |
-| FOUND-09 | Phase 1 | Pending |
-| FOUND-10 | Phase 1 | Pending |
-| CONTRACT-01 | Phase 2 | Pending |
+| FOUND-05 | Phase 1 | Complete |
+| FOUND-06 | Phase 1 | Complete |
+| FOUND-07 | Phase 1 | Complete |
+| FOUND-08 | Phase 1 | Complete |
+| FOUND-09 | Phase 1 | Complete |
+| FOUND-10 | Phase 1 | Complete |
+| CONTRACT-01 | Phase 2 | Complete |
 | CONTRACT-02 | Phase 2 | Complete |
-| CONTRACT-03 | Phase 2 | Pending |
-| CONTRACT-04 | Phase 2 | Pending |
+| CONTRACT-03 | Phase 2 | Complete |
+| CONTRACT-04 | Phase 2 | Complete |
 | CAT-01 | Phase 3 | Pending |
 | CAT-02 | Phase 3 | Pending |
 | CAT-03 | Phase 3 | Pending |
@@ -255,4 +255,4 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ---
 *Requirements defined: 2026-05-15*
-*Last updated: 2026-05-15 — stack pivot (Go + Lit + Shoelace + Web Components), 53 requirements; traceability populated across 7 phases*
+*Last updated: 2026-05-16 — Phase 2 complete; traceability updated through Phase 2*

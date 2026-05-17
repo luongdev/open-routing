@@ -74,6 +74,79 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 	}
 }
 
+// TestSQLChecker_MustContainOrgFilter_CatalogTables exercises the catalog
+// v0.1 schema (Phase 3 Wave 1, D-62) against the validator. Each entity
+// in the tenantTables map (agents, skills, queues, channels, adapters,
+// break_reasons, agent_skills) MUST be accepted when the query carries
+// org_id in WHERE and rejected when it does not. This test guards the
+// allowlist policy in tenantTables — adding a new tenant table to the map
+// without extending this test would silently weaken coverage.
+func TestSQLChecker_MustContainOrgFilter_CatalogTables(t *testing.T) {
+	t.Parallel()
+	c := NewSQLChecker()
+
+	accept := []struct {
+		name string
+		sql  string
+	}{
+		// Each catalog entity: SELECT happy path.
+		{"SelectAgents", `SELECT id, name FROM agents WHERE org_id = $1 AND id = $2`},
+		{"SelectSkills", `SELECT id, name FROM skills WHERE org_id = $1 AND id = $2`},
+		{"SelectQueues", `SELECT id, name FROM queues WHERE org_id = $1 AND id = $2`},
+		{"SelectChannels", `SELECT id, name FROM channels WHERE org_id = $1 AND id = $2`},
+		{"SelectAdapters", `SELECT id, name FROM adapters WHERE org_id = $1 AND id = $2`},
+		{"SelectBreakReasons", `SELECT id, name FROM break_reasons WHERE org_id = $1 AND id = $2`},
+		{"SelectAgentSkills", `SELECT agent_id, skill_id FROM agent_skills WHERE org_id = $1 AND agent_id = $2`},
+		// UPDATE + DELETE happy paths for one entity (covers UPDATE/DELETE classify branches).
+		{"UpdateAgentVersioned", `UPDATE agents SET name = $2, version = version + 1 WHERE id = $1 AND org_id = $3 AND version = $4`},
+		{"DeleteAgentSkills", `DELETE FROM agent_skills WHERE agent_id = $1 AND org_id = $2`},
+		// INSERT happy paths.
+		{"InsertAgent", `INSERT INTO agents (id, org_id, external_id, name, email, enabled) VALUES ($1, $2, $3, $4, $5, $6)`},
+		{"InsertAdapter", `INSERT INTO adapters (id, org_id, name, adapter_type, config, enabled) VALUES ($1, $2, $3, $4, $5, $6)`},
+		// ILIKE pagination shape (D-63/D-64) — name filter via cursor and lower(name).
+		{"ListAgentsCursor", `SELECT id FROM agents WHERE org_id = $1 AND enabled = TRUE AND (created_at, id) < ($2, $3) ORDER BY created_at DESC LIMIT $4`},
+		// Joined query: ListSkillsForAgent — both tenant tables scoped via JOIN ON, WHERE binds aliased org_id for both.
+		{"ListSkillsForAgentJoin", `SELECT s.id FROM agent_skills ag_s JOIN skills s ON s.id = ag_s.skill_id AND s.org_id = ag_s.org_id WHERE ag_s.agent_id = $1 AND ag_s.org_id = $2 AND s.org_id = $2`},
+		// FK probe (D-76): QueueExistsAndEnabledInOrg returns one row if a
+		// queue with the given id is enabled in the org, otherwise zero rows.
+		// Handler maps pgx.ErrNoRows to 422 invalid_reference.
+		{"QueueExistsProbe", `SELECT 1 AS exists_in_org FROM queues WHERE id = $1 AND org_id = $2 AND enabled = TRUE LIMIT 1`},
+		// SkillsPresentInOrg pattern — array membership via ANY().
+		{"SkillsPresentInOrg", `SELECT id FROM skills WHERE id = ANY($1::uuid[]) AND org_id = $2 AND enabled = TRUE`},
+	}
+	for _, tc := range accept {
+		tc := tc
+		t.Run("accept_"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			if err := c.MustContainOrgFilter(tc.sql); err != nil {
+				t.Fatalf("expected nil, got %v for %q", err, tc.sql)
+			}
+		})
+	}
+
+	reject := []struct {
+		name string
+		sql  string
+	}{
+		{"SelectAgentsNoOrg", `SELECT id, name FROM agents WHERE id = $1`},
+		{"UpdateChannelsNoOrg", `UPDATE channels SET name = $1 WHERE id = $2`},
+		{"DeleteAgentSkillsNoOrg", `DELETE FROM agent_skills WHERE agent_id = $1`},
+		{"InsertAgentsNoOrgColumn", `INSERT INTO agents (id, external_id, name, email, enabled) VALUES ($1, $2, $3, $4, $5)`},
+		// Skill_id IN subquery where outer FROM is non-tenant unnest(...) — rejected
+		// (validator requires tenant table at top-level FROM).
+		{"UnnestExceptPattern", `SELECT input_id FROM unnest($1::uuid[]) AS t(input_id) WHERE input_id NOT IN (SELECT id FROM skills WHERE org_id = $2)`},
+	}
+	for _, tc := range reject {
+		tc := tc
+		t.Run("reject_"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			if err := c.MustContainOrgFilter(tc.sql); err == nil {
+				t.Fatalf("expected ErrSQLMissingOrgFilter, got nil for %q", tc.sql)
+			}
+		})
+	}
+}
+
 // TestSQLChecker_CacheMemoizes proves the SHA-256 cache is consulted on
 // repeated calls (D-02). The second call returns the same verdict as the
 // first; inspecting the internal map confirms a single cache entry per

@@ -6,7 +6,7 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 
 ## Milestone
 
-**v0.1 Catalog Foundation** — 53 requirements, 7 phases, Phase 1 is the current start.
+**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 2/7 phases complete; Phase 3 is current focus.
 
 ## Phases
 
@@ -18,8 +18,8 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Polyglot Monorepo** - Bootstrap the Go + pnpm polyglot monorepo with org-isolation infrastructure: `services/api` Go skeleton with chi + pgx + slog + OTel, orgDB wrapper, PostgreSQL 17 + Redis via Docker Compose, golang-migrate, pnpm workspace stub, GitHub Actions CI, and the two-org isolation integration test proving zero data leakage. (completed 2026-05-15)
-- [ ] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift.
-- [ ] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads.
+- [x] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift. (completed 2026-05-16)
+- [x] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads. (completed 2026-05-16)
 - [ ] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper.
 - [ ] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning.
 - [ ] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support.
@@ -105,7 +105,7 @@ Plans:
 
 - [x] 02-06-PLAN.md — CI codegen-drift job: Redocly lint + task gen + git diff --exit-code (CONTRACT-04, D-47, D-48)
 
-**Branch**: `gsd/phase-02-openapi-contract`
+**Branch**: `gsd/phase-02-openapi-contract-codegen`
 
 ---
 
@@ -122,7 +122,37 @@ Plans:
   4. Agent-skill assignment accepts and enforces `proficiency` in the range 1–10; values outside that range return HTTP 422.
   5. Single-entity GET responses and status lookups are served from Redis under the key `or:{orgId}:{entity}:{id}` with a 60-second TTL; a write to any entity invalidates its cache key within the same request.
 
-**Plans**: TBD
+**Plans**: 10 plans
+Plans:
+
+**Wave 0**
+
+- [x] 03-01-PLAN.md — OpenAPI spec amendment (invalid_reference + 422 + Channel/Adapter version + limit default) + scaffold deletion + codegen regen + Wave0TempStubs
+
+**Wave 1** *(blocked on Wave 0 completion — three plans in parallel)*
+
+- [x] 03-02-PLAN.md — Migration 000002 (7 catalog tables + indexes + universal version + agent_skills) + Taskfile db:reset
+- [x] 03-03-PLAN.md — sqlc queries for 7 entities + OrgDB.BeginTx (OQ-5)
+- [x] 03-04-PLAN.md — internal/cache/ package (CAT-11: GetOrSet[T] + singleflight + refresh-ahead + miniredis tests)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 03-05-PLAN.md — internal/catalog/ package skeleton (Handlers + Deps + cursor + mappers + errors + notimpl + per-entity placeholders)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 03-06-PLAN.md — Agents entity end-to-end (CAT-01, CAT-03, CAT-08, CAT-09, CAT-10, CAT-11) + main_test.go + testutil.go
+
+**Wave 4** *(blocked on Wave 3 — three plans in parallel)*
+
+- [x] 03-07-PLAN.md — Skills + BreakReasons CRUD (CAT-02, CAT-07)
+- [x] 03-08-PLAN.md — Queues + Channels CRUD + D-76 cross-row FK validation (CAT-04, CAT-05)
+- [x] 03-09-PLAN.md — Adapters CRUD (JSONB) + agent_skills helpers extraction (CAT-03, CAT-06)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 03-10-PLAN.md — main.go wiring + bypass route handlers + cross-org isolation suite extension
+
 **Branch**: `gsd/phase-03-catalog-crud`
 
 ---
@@ -205,11 +235,13 @@ Plans:
 
 **Execution Order:** 1 → 2 → 3 → 4 → 5 → 6 → 7
 
+**Overall:** 2 / 7 phases complete (29%).
+
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
-| 2. OpenAPI Contract & Codegen | 0/6 | Not started | - |
-| 3. Catalog CRUD (Go) | 0/TBD | Not started | - |
+| 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
+| 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
 | 4. Agent State Machine (Go) | 0/TBD | Not started | - |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
