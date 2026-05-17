@@ -50,6 +50,18 @@ func (h *Handlers) CreateQueue(ctx context.Context, req api.CreateQueueRequestOb
 	for _, ct := range req.Body.ChannelTypes {
 		ctStrings = append(ctStrings, string(ct))
 	}
+	priority, ok := int32Checked(req.Body.Priority)
+	if !ok {
+		return api.CreateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "priority_out_of_range",
+		}}, nil
+	}
+	acwSec, ok := int32Checked(req.Body.AcwSec)
+	if !ok {
+		return api.CreateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "acw_sec_out_of_range",
+		}}, nil
+	}
 
 	q := generated.New(h.deps.OrgDB)
 	row, err := q.InsertQueue(ctx, generated.InsertQueueParams{
@@ -58,8 +70,8 @@ func (h *Handlers) CreateQueue(ctx context.Context, req api.CreateQueueRequestOb
 		ExternalID:   req.Body.ExternalId,
 		Name:         req.Body.Name,
 		ChannelTypes: ctStrings,
-		Priority:     int32(req.Body.Priority),
-		AcwSec:       int32(req.Body.AcwSec),
+		Priority:     priority,
+		AcwSec:       acwSec,
 		Enabled:      derefOr(req.Body.Enabled, true),
 	})
 	if err != nil {
@@ -166,7 +178,7 @@ func (h *Handlers) ListQueues(ctx context.Context, req api.ListQueuesRequestObje
 
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1) // N+1 sentinel
+	limit := mustInt32(pageSize + 1) // N+1 sentinel
 
 	var rows []generated.Queue
 	if includeDisabled {
@@ -260,20 +272,36 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 
 	var priority *int32
 	if req.Body.Priority != nil {
-		v := int32(*req.Body.Priority)
+		v, ok := int32Checked(*req.Body.Priority)
+		if !ok {
+			return api.UpdateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error: api.ErrorCodeInvalidBody, Reason: "priority_out_of_range",
+			}}, nil
+		}
 		priority = &v
 	}
 	var acwSec *int32
 	if req.Body.AcwSec != nil {
-		v := int32(*req.Body.AcwSec)
+		v, ok := int32Checked(*req.Body.AcwSec)
+		if !ok {
+			return api.UpdateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error: api.ErrorCodeInvalidBody, Reason: "acw_sec_out_of_range",
+			}}, nil
+		}
 		acwSec = &v
 	}
 
 	q := generated.New(h.deps.OrgDB)
+	expectedVersion, ok := int32Checked(req.Body.Version)
+	if !ok {
+		return api.UpdateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "version_out_of_range",
+		}}, nil
+	}
 	row, err := q.UpdateQueue(ctx, generated.UpdateQueueParams{
 		ID:              pgUUID(queueID),
 		OrgID:           pgUUID(orgID),
-		ExpectedVersion: int32(req.Body.Version),
+		ExpectedVersion: expectedVersion,
 		Name:            req.Body.Name,
 		ChannelTypes:    ctStrings,
 		Priority:        priority,

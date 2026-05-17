@@ -47,6 +47,12 @@ func (h *Handlers) CreateBreakReason(ctx context.Context, req api.CreateBreakRea
 
 	id := uuid.Must(uuid.NewV7())
 	enabled := derefOr(req.Body.Enabled, true)
+	displayOrder, ok := int32Checked(req.Body.DisplayOrder)
+	if !ok {
+		return api.CreateBreakReason400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "display_order_out_of_range",
+		}}, nil
+	}
 
 	q := generated.New(h.deps.OrgDB)
 	row, err := q.InsertBreakReason(ctx, generated.InsertBreakReasonParams{
@@ -54,7 +60,7 @@ func (h *Handlers) CreateBreakReason(ctx context.Context, req api.CreateBreakRea
 		OrgID:        pgUUID(orgID),
 		Name:         req.Body.Name,
 		Routable:     req.Body.Routable,
-		DisplayOrder: int32(req.Body.DisplayOrder),
+		DisplayOrder: displayOrder,
 		Enabled:      enabled,
 	})
 	if err != nil {
@@ -168,7 +174,7 @@ func (h *Handlers) ListBreakReasons(ctx context.Context, req api.ListBreakReason
 
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1) // N+1 sentinel
+	limit := mustInt32(pageSize + 1) // N+1 sentinel
 
 	var rows []generated.BreakReason
 	if includeDisabled {
@@ -257,14 +263,25 @@ func (h *Handlers) UpdateBreakReason(ctx context.Context, req api.UpdateBreakRea
 
 	var displayOrder *int32
 	if req.Body.DisplayOrder != nil {
-		v := int32(*req.Body.DisplayOrder)
+		v, ok := int32Checked(*req.Body.DisplayOrder)
+		if !ok {
+			return api.UpdateBreakReason400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error: api.ErrorCodeInvalidBody, Reason: "display_order_out_of_range",
+			}}, nil
+		}
 		displayOrder = &v
 	}
 
+	expectedVersion, ok := int32Checked(req.Body.Version)
+	if !ok {
+		return api.UpdateBreakReason400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "version_out_of_range",
+		}}, nil
+	}
 	row, err := q.UpdateBreakReason(ctx, generated.UpdateBreakReasonParams{
 		ID:              pgUUID(brID),
 		OrgID:           pgUUID(orgID),
-		ExpectedVersion: int32(req.Body.Version),
+		ExpectedVersion: expectedVersion,
 		Name:            req.Body.Name,
 		Routable:        req.Body.Routable,
 		DisplayOrder:    displayOrder,

@@ -62,8 +62,7 @@ func (h *Handlers) CreateSkill(ctx context.Context, req api.CreateSkillRequestOb
 	})
 	if err != nil {
 		status, code, reason := mapPgError(err, "skill")
-		switch status {
-		case 409:
+		if status == 409 {
 			// CreateSkill409 is a FLAT ErrorResponse (Pitfall 2).
 			return api.CreateSkill409JSONResponse(api.ErrorResponse{
 				Error: code, Reason: "external_id_collision",
@@ -169,7 +168,7 @@ func (h *Handlers) ListSkills(ctx context.Context, req api.ListSkillsRequestObje
 
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1) // N+1 sentinel
+	limit := mustInt32(pageSize + 1) // N+1 sentinel
 
 	var rows []generated.Skill
 	if includeDisabled {
@@ -258,10 +257,16 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 	// row level is sufficient. Wave 5 review aligned this with the
 	// queues/channels/adapters template.
 	q := generated.New(h.deps.OrgDB)
+	expectedVersion, ok := int32Checked(req.Body.Version)
+	if !ok {
+		return api.UpdateSkill400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "version_out_of_range",
+		}}, nil
+	}
 	row, err := q.UpdateSkill(ctx, generated.UpdateSkillParams{
 		ID:              pgUUID(skillID),
 		OrgID:           pgUUID(orgID),
-		ExpectedVersion: int32(req.Body.Version),
+		ExpectedVersion: expectedVersion,
 		Name:            req.Body.Name,
 		Description:     req.Body.Description,
 		SkillType:       req.Body.SkillType,

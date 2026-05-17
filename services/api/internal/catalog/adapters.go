@@ -62,8 +62,7 @@ func (h *Handlers) CreateAdapter(ctx context.Context, req api.CreateAdapterReque
 	})
 	if err != nil {
 		status, code, reason := mapPgError(err, "adapter")
-		switch status {
-		case 422:
+		if status == 422 {
 			return api.CreateAdapter400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error: code, Reason: reason,
 			}}, nil
@@ -179,7 +178,7 @@ func (h *Handlers) ListAdapters(ctx context.Context, req api.ListAdaptersRequest
 
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1) // N+1 sentinel for has_more.
+	limit := mustInt32(pageSize + 1) // N+1 sentinel for has_more.
 
 	var rows []generated.Adapter
 	if includeDisabled {
@@ -286,10 +285,16 @@ func (h *Handlers) UpdateAdapter(ctx context.Context, req api.UpdateAdapterReque
 	}
 
 	q := generated.New(h.deps.OrgDB)
+	expectedVersion, ok := int32Checked(req.Body.Version)
+	if !ok {
+		return api.UpdateAdapter400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "version_out_of_range",
+		}}, nil
+	}
 	row, err := q.UpdateAdapter(ctx, generated.UpdateAdapterParams{
 		ID:              pgUUID(adapterID),
 		OrgID:           pgUUID(orgID),
-		ExpectedVersion: int32(req.Body.Version),
+		ExpectedVersion: expectedVersion,
 		Name:            req.Body.Name,
 		AdapterType:     req.Body.AdapterType,
 		Config:          cfgBytes,

@@ -277,7 +277,7 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1) // N+1 sentinel
+	limit := mustInt32(pageSize + 1) // N+1 sentinel
 
 	var rows []generated.Agent
 	if includeDisabled {
@@ -402,10 +402,16 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 	}
 
 	// Atomic version-checked UPDATE (D-66).
+	expectedVersion, ok := int32Checked(req.Body.Version)
+	if !ok {
+		return api.UpdateAgent400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "version_out_of_range",
+		}}, nil
+	}
 	row, err := qtx.UpdateAgent(ctx, generated.UpdateAgentParams{
 		ID:              pgUUID(agentID),
 		OrgID:           pgUUID(orgID),
-		ExpectedVersion: int32(req.Body.Version),
+		ExpectedVersion: expectedVersion,
 		Name:            req.Body.Name,
 		Email:           emailStr,
 		Enabled:         req.Body.Enabled,

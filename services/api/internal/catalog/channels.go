@@ -193,7 +193,7 @@ func (h *Handlers) ListChannels(ctx context.Context, req api.ListChannelsRequest
 
 	q := generated.New(h.deps.OrgDB)
 	includeDisabled := derefOr(req.Params.IncludeDisabled, false)
-	limit := int32(pageSize + 1)
+	limit := mustInt32(pageSize + 1)
 
 	var rows []generated.Channel
 	if includeDisabled {
@@ -307,11 +307,17 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 	if req.Body.DefaultQueueId != nil {
 		defQID = pgUUID(uuid.UUID(*req.Body.DefaultQueueId))
 	}
+	expectedVersion, ok := int32Checked(req.Body.Version)
+	if !ok {
+		return api.UpdateChannel400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "version_out_of_range",
+		}}, nil
+	}
 
 	row, err := q.UpdateChannel(ctx, generated.UpdateChannelParams{
 		ID:              pgUUID(channelID),
 		OrgID:           pgUUID(orgID),
-		ExpectedVersion: int32(req.Body.Version),
+		ExpectedVersion: expectedVersion,
 		Name:            req.Body.Name,
 		ChannelType:     channelTypeStr,
 		DefaultQueueID:  defQID,

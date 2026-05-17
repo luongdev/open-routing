@@ -124,7 +124,7 @@ func (h *Handlers) replaceAgentSkills(
 			AgentID:     pgUUID(agentID),
 			SkillID:     pgUUID(uuid.UUID(a.SkillId)),
 			OrgID:       pgUUID(orgID),
-			Proficiency: int32(a.Proficiency),
+			Proficiency: mustInt32(a.Proficiency),
 		}); err != nil {
 			status, code, reason := mapPgError(err, "agent_skill")
 			if status == 422 {
