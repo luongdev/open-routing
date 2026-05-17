@@ -183,6 +183,27 @@ func (e ImportEntityType) Valid() bool {
 	}
 }
 
+// Defines values for ImportJobStatus.
+const (
+	Completed ImportJobStatus = "completed"
+	Failed    ImportJobStatus = "failed"
+	Pending   ImportJobStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ImportJobStatus enum.
+func (e ImportJobStatus) Valid() bool {
+	switch e {
+	case Completed:
+		return true
+	case Failed:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvalidTransitionErrorResponseError.
 const (
 	InvalidTransition InvalidTransitionErrorResponseError = "invalid_transition"
@@ -616,6 +637,9 @@ type BulkImportResult struct {
 	// Failed Structured errors for each failed row. Empty when all rows succeed.
 	Failed []BulkImportFailedRow `json:"failed"`
 
+	// IdempotentReplay True when this response is a persisted prior result returned because the client repeated the Idempotency-Key (D5-13). False or absent on a first-time POST. v0.1 KNOWN LIMITATION: when true, `succeeded` is always an empty array because the server stores only counters; rely on `failed[]` for forensics (see operation description).
+	IdempotentReplay *bool `json:"idempotent_replay,omitempty"`
+
 	// Succeeded UUIDv7 IDs of successfully created/updated records.
 	Succeeded []UUIDv7 `json:"succeeded"`
 }
@@ -808,6 +832,61 @@ type HealthResponse struct {
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
 
+// ImportAdapterRequest Phase 5 (IMP-01) per-row JSON shape for `entity=adapters`. `config`
+// is a free-form JSONB blob passed through to storage with no
+// validation (D-72 Phase 3 contract).
+type ImportAdapterRequest struct {
+	AdapterType string `json:"adapter_type"`
+	Code        string `json:"code"`
+
+	// Config Free-form vendor configuration; no fixed schema.
+	Config     *map[string]interface{} `json:"config,omitempty"`
+	Enabled    *bool                   `json:"enabled,omitempty"`
+	ExternalId *string                 `json:"external_id,omitempty"`
+	Name       string                  `json:"name"`
+}
+
+// ImportAgentRequest Phase 5 (IMP-01) per-row JSON shape for `entity=agents`. Mirror of
+// CreateAgentRequest with FK references by `code` instead of UUID.
+// `external_id` is optional integration-mapping (mutable per D04_1-07).
+type ImportAgentRequest struct {
+	Code       string              `json:"code"`
+	Email      openapi_types.Email `json:"email"`
+	Enabled    *bool               `json:"enabled,omitempty"`
+	ExternalId *string             `json:"external_id,omitempty"`
+	Name       string              `json:"name"`
+
+	// Skills Skill assignments referenced by `skill_code`. MERGE semantics (D5-18) — existing assignments not in this list are LEFT INTACT; proficiency for codes present in this list is set to the value supplied (D5-19 import wins). Skill removal via import is deferred to v0.2.
+	Skills *[]struct {
+		Proficiency int    `json:"proficiency"`
+		SkillCode   string `json:"skill_code"`
+	} `json:"skills,omitempty"`
+}
+
+// ImportBreakReasonRequest Phase 5 (IMP-01) per-row JSON shape for `entity=break_reasons`.
+// `name` is a mutable display label (Phase 04.1 dropped
+// UNIQUE(org_id, name) — IDENT-03).
+type ImportBreakReasonRequest struct {
+	Code         string  `json:"code"`
+	DisplayOrder *int    `json:"display_order,omitempty"`
+	Enabled      *bool   `json:"enabled,omitempty"`
+	ExternalId   *string `json:"external_id,omitempty"`
+	Name         string  `json:"name"`
+	Routable     *bool   `json:"routable,omitempty"`
+}
+
+// ImportChannelRequest Phase 5 (IMP-01) per-row JSON shape for `entity=channels`. FK
+// `default_queue_code` references an existing queue by code; cross-row
+// FK probe is performed in the same chunk transaction.
+type ImportChannelRequest struct {
+	ChannelType      string  `json:"channel_type"`
+	Code             string  `json:"code"`
+	DefaultQueueCode *string `json:"default_queue_code,omitempty"`
+	Enabled          *bool   `json:"enabled,omitempty"`
+	ExternalId       *string `json:"external_id,omitempty"`
+	Name             string  `json:"name"`
+}
+
 // ImportEntityType The catalog entity type being imported.
 type ImportEntityType string
 
@@ -830,9 +909,38 @@ type ImportJob struct {
 	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
 	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	OrgId         UUIDv7 `json:"org_id"`
-	SucceededRows int    `json:"succeeded_rows"`
-	TotalRows     int    `json:"total_rows"`
+	OrgId UUIDv7 `json:"org_id"`
+
+	// Status Lifecycle of the import (D5-26). `pending` — the row was created before processing began; in v0.1 callers normally observe only `completed` or `failed` because the request is synchronous. `failed` may be set by the crash-recovery sweep (D5-11) when a process restart leaves a pending row stranded.
+	Status        ImportJobStatus `json:"status"`
+	SucceededRows int             `json:"succeeded_rows"`
+	TotalRows     int             `json:"total_rows"`
+}
+
+// ImportJobStatus Lifecycle of the import (D5-26). `pending` — the row was created before processing began; in v0.1 callers normally observe only `completed` or `failed` because the request is synchronous. `failed` may be set by the crash-recovery sweep (D5-11) when a process restart leaves a pending row stranded.
+type ImportJobStatus string
+
+// ImportQueueRequest Phase 5 (IMP-01) per-row JSON shape for `entity=queues`.
+type ImportQueueRequest struct {
+	AcwSec *int `json:"acw_sec,omitempty"`
+
+	// ChannelTypes Multi-valued — in CSV use pipe-delimited per D5-04 (`voice|chat`); in JSON use the array form.
+	ChannelTypes []string `json:"channel_types"`
+	Code         string   `json:"code"`
+	Enabled      *bool    `json:"enabled,omitempty"`
+	ExternalId   *string  `json:"external_id,omitempty"`
+	Name         string   `json:"name"`
+	Priority     *int     `json:"priority,omitempty"`
+}
+
+// ImportSkillRequest Phase 5 (IMP-01) per-row JSON shape for `entity=skills`.
+type ImportSkillRequest struct {
+	Code        string  `json:"code"`
+	Description *string `json:"description,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+	ExternalId  *string `json:"external_id,omitempty"`
+	Name        string  `json:"name"`
+	SkillType   string  `json:"skill_type"`
 }
 
 // InvalidTransitionErrorResponse HTTP 409 response for invalid agent-state transitions (STATE-03, D-37).
@@ -1219,6 +1327,9 @@ type EntityIdPath = UUIDv7
 // EntityTypeQuery The catalog entity type being imported.
 type EntityTypeQuery = ImportEntityType
 
+// IdempotencyKeyHeader defines model for IdempotencyKeyHeader.
+type IdempotencyKeyHeader = openapi_types.UUID
+
 // ImportJobIdPath A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 // Version must be 7 or higher; UUIDv4 and lower are rejected.
 // Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
@@ -1343,6 +1454,9 @@ type BulkImportCatalogParams struct {
 
 	// SchemaVersion CSV schema version for import validation (IMP-08). Required when `Content-Type: text/csv`. Mismatched version returns HTTP 400 with supported versions listed. Example: `v0.1`.
 	SchemaVersion *SchemaVersionQuery `form:"schema_version,omitempty" json:"schema_version,omitempty"`
+
+	// IdempotencyKey Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe (D5-13). A repeated request with the same key in the same org returns the persisted prior result with `idempotent_replay: true` (D5-27). Optional — absent header means a fresh job row is created each call.
+	IdempotencyKey *IdempotencyKeyHeader `json:"Idempotency-Key,omitempty"`
 }
 
 // ListChannelsParams defines parameters for ListChannels.

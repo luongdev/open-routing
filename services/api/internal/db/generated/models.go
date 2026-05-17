@@ -83,6 +83,20 @@ type Channel struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ImportJob struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	EntityType     string             `json:"entity_type"`
+	Status         string             `json:"status"`
+	TotalRows      int32              `json:"total_rows"`
+	SucceededRows  int32              `json:"succeeded_rows"`
+	FailedRows     int32              `json:"failed_rows"`
+	Errors         []byte             `json:"errors"`
+	IdempotencyKey *string            `json:"idempotency_key"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Queue struct {
 	ID           pgtype.UUID        `json:"id"`
 	OrgID        pgtype.UUID        `json:"org_id"`
