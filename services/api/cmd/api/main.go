@@ -40,6 +40,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"gopkg.in/yaml.v3"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
@@ -48,6 +49,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/server"
+	"github.com/luongdev/open-routing/services/api/internal/state"
 	"github.com/luongdev/open-routing/services/api/internal/telemetry"
 )
 
@@ -145,13 +147,59 @@ func run() int {
 		Logger: slog.Default(),
 	})
 
+	// (8.5) state.Server — D-89 composite activation. Phase 4 introduces a
+	// separate state-machine package; main.go merges it with catalog via
+	// anonymous embedding. Server (NOT Handlers) per Pitfall 1.
+	stateServer := state.New(state.Deps{
+		OrgDB:  orgDB,
+		Cache:  catalogCache,
+		Logger: slog.Default(),
+	}, state.WithClock(clockwork.NewRealClock()))
+
+	// Synchronous startup sweep — guarantees no stuck WrapUp survives a
+	// restart (D-95). Failure aborts process startup so kubernetes restarts
+	// with a fresh attempt.
+	if err := stateServer.Start(ctx); err != nil {
+		slog.ErrorContext(ctx, "state server start", "err", err)
+		return 1
+	}
+	// Shutdown order (LIFO):
+	//   1. http.Server.Shutdown drains in-flight HTTP requests
+	//   2. stateServer.Stop drains sweeper goroutine + cancels AfterFunc timers
+	//      (must precede pool.Close — sweeper UPDATEs need the pool open)
+	//   3. rdb.Close + pool.Close + telemetry shutdown
+	defer stateServer.Stop()
+
+	// ApiHandlers composite — D-70 forward-compat seam activated for Phase 4.
+	// catalog.Handlers contributes 41 methods (CRUD for 6 entities + scaffold);
+	// state.Server contributes 2 status methods. The two embed sets are
+	// disjoint — Go's method-set resolution merges them cleanly. Pitfall 1
+	// is avoided by naming the state type Server (not Handlers).
+	type ApiHandlers struct {
+		*catalog.Handlers
+		*state.Server
+	}
+	// Compile-time guarantee that the COMPOSITE satisfies the full
+	// StrictServerInterface. If this line fails to compile, either:
+	//  (a) the OpenAPI spec gained an endpoint with no implementation, OR
+	//  (b) one of the embedded types lost a method (e.g., catalog/notimpl.go
+	//      lost a stub it shouldn't have).
+	// In Phase 4 this assertion replaces the one removed from
+	// catalog/handlers.go (catalog alone no longer satisfies the full interface).
+	var _ api.StrictServerInterface = (*ApiHandlers)(nil)
+
+	apiHandlers := &ApiHandlers{
+		Handlers: catalogHandlers,
+		Server:   stateServer,
+	}
+
 	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{
 		Pool:           pool,
 		Redis:          rdb,
 		OrgDB:          orgDB,
 		Config:         cfg,
-		StrictHandlers: catalogHandlers,
+		StrictHandlers: apiHandlers,
 		SpecBytes:      specBytes,
 	})
 

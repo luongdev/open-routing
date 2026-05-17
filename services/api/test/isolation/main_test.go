@@ -39,12 +39,15 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gopkg.in/yaml.v3"
 
+	"github.com/jonboulle/clockwork"
+
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/server"
+	"github.com/luongdev/open-routing/services/api/internal/state"
 )
 
 // Package-level shared state. Every test reads from these without taking a
@@ -192,9 +195,10 @@ func TestMain(m *testing.M) {
 	swagger, _ := api.GetSpec()
 	specBytes, _ := yaml.Marshal(swagger)
 
-	// Catalog handlers are the production StrictServerInterface impl (D-69).
-	// Discard-logger keeps test output clean; the suite asserts response
-	// shapes, not log lines.
+	// Phase 4: ApiHandlers composite satisfies the full StrictServerInterface.
+	// catalog.Handlers alone no longer satisfies it after Phase 4 removed the
+	// state stubs (D-89). state.Server is wired with the same OrgDB + Cache
+	// so GetAgentStatus / PatchAgentStatus are live for isolation probes.
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	catalogCache := cache.New(sharedRedis, logger)
 	catalogHandlers := catalog.New(catalog.Deps{
@@ -203,12 +207,22 @@ func TestMain(m *testing.M) {
 		Cache:  catalogCache,
 		Logger: logger,
 	})
+	stateServer := state.New(state.Deps{
+		OrgDB:  orgDB,
+		Cache:  catalogCache,
+		Logger: logger,
+	}, state.WithClock(clockwork.NewRealClock()))
+	type apiHandlers struct {
+		*catalog.Handlers
+		*state.Server
+	}
+	handlers := &apiHandlers{Handlers: catalogHandlers, Server: stateServer}
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,
 		Redis:          sharedRedis,
 		OrgDB:          orgDB,
 		Config:         cfg,
-		StrictHandlers: catalogHandlers,
+		StrictHandlers: handlers,
 		SpecBytes:      specBytes,
 	})
 
