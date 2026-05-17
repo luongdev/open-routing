@@ -1265,37 +1265,45 @@ if (error && 'current' in error) {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All 6 open questions from initial research were resolved during planning iterations 1+2 (2026-05-17 → 2026-05-18). See per-question RESOLVED notes below.
 
 1. **`ajv-formats` version compatibility with ajv v8**
    - What we know: ajv v8 supports ajv-formats v3+; v2 works with ajv v8 via compatibility shim
    - What's unclear: whether `email` format from OpenAPI spec maps to ajv-formats email validator correctly for the `CreateAgentRequest.email` field
    - Recommendation: Add a test in the gen-validators script that validates `alice@example.com` as valid and `not-an-email` as invalid
+   - **RESOLVED (2026-05-18, iteration 2):** Smoke test added to 06-02 Task 1 acceptance_criteria — `CreateAgentRequest({ code: 'alice', name: 'Alice', email: 'a@b.co' })` returns true. ajv-formats v3 installed via 06-01 Task 1 pnpm. Email format is enabled by `addFormats(ajv)` in `gen-validators.mjs`.
 
 2. **Shoelace 2.20.1 vs upcoming v3**
    - What we know: Shoelace 2.20.1 is current stable (2025-03-11); a v3 rewrite (Shoelace to Web Awesome) was announced but is separate
    - What's unclear: whether any Phase 7 planning should account for v3 migration
    - Recommendation: Lock to `^2.20.1` for v0.1; v3 migration is Phase 7+ concern
+   - **RESOLVED (2026-05-17, iteration 1):** Locked to `^2.20.1` in 06-01 Task 1 pnpm install. v3/Web-Awesome migration deferred to Phase 7+ per CONTEXT.md `Deferred Ideas` section.
 
 3. **`@lit-labs/router` programmatic navigation and browser history**
    - What we know: `this._routes.goto(path)` uses `history.pushState` internally
    - What's unclear: whether the router handles `history.popstate` (browser back button) correctly within shadow DOM boundaries
    - Recommendation: Wave 2 integration test should verify browser back from `/agents/:id` → `/agents` restores the list view
+   - **RESOLVED (2026-05-17, iteration 1):** Wave 2 plan 06-06 includes a Playwright back-navigation smoke test. `@lit-labs/router` v0.1.4 verified to handle `popstate` via internal listener — the labs status caveat is acknowledged in 06-06 must_haves.truths.
 
 4. **Adapter `config` JSONB field form UI**
    - What we know: CONTEXT.md deferred inline JSON editor to v0.2; Wave 3-4 ships `<sl-textarea>` raw JSON entry
    - What's unclear: whether ajv validator for `CreateAdapterRequest` should validate the `config` object structure (it's free-form JSONB) or just accept any object
    - Recommendation: ajv schema for `config` should be `{ type: 'object' }` with no further constraints; validation error message "Invalid JSON" for non-parseable input
+   - **RESOLVED (2026-05-17, iteration 1):** Plan 06-11 implements adapter `config` as `<sl-textarea>` with client-side `JSON.parse` try/catch wrapping a per-keystroke parse check; ajv schema for `CreateAdapterRequest.config` is `{ type: 'object' }` per the recommendation; "Invalid JSON" copy registered in 06-11 must_haves.truths.
 
 5. **`@lit/localize` build step in Turbo pipeline**
    - What we know: `lit-localize build` must run after `lit-localize extract` to produce locale modules; these must run before TypeScript compilation to avoid import errors
    - What's unclear: how to order `lit-localize build` relative to `gen:api` and `gen:validators` in `web/turbo.json`
    - Recommendation: Add `build:locales` script that runs both extract + build; make `typecheck` depend on `build:locales` in turbo.json
+   - **RESOLVED (2026-05-17, iteration 1):** Plan 06-02 Task 3 adds the `build:locales` script (calls `lit-localize extract && lit-localize build`) and updates `web/turbo.json` so `typecheck` lists `build:locales` in its dependsOn array. Order in Wave 1 Task 3: `gen:api` → `gen:validators` → `build:locales` → `typecheck`.
 
 6. **Exact `or-brand` primary color value**
    - What we know: CONTEXT.md recommends "mid-tone teal/blue"; not a blocker
    - What's unclear: exact hex values for the full `--sl-color-primary-{50..950}` brand scale
    - Recommendation: Planner picks teal-600 (`#0d9488`) as primary-500 and generates the scale using the Shoelace color generation formula; document in Wave 1 theme token file
+   - **RESOLVED (2026-05-17, UI-SPEC produced):** UI-SPEC.md D6-V-24/25/26 locked the 3-theme primary scale — or-light `#2b8a93`, or-dark `#4faab2`, or-brand `#0d8b96`. Plan 06-02 Task 1 theme CSS uses these exact hex values per the UI-SPEC §2.2 token map.
 
 ---
 
