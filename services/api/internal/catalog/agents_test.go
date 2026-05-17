@@ -151,6 +151,26 @@ func TestAgents_CreateThenGet(t *testing.T) {
 	require.True(t, th.Miniredis.Exists(cacheKey), "cache key still present on second GET")
 }
 
+func TestAgents_CreateDuplicateExternalID_IncludesRequestID(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("ext-duplicate", "Dupe", nil)
+	_ = postAgent(t, th, body)
+
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "want 409, body=%s", string(raw))
+	require.NotEmpty(t, resp.Header.Get("X-Request-Id"))
+
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeVersionConflict, e.Error)
+	require.Equal(t, "external_id_collision", e.Reason)
+	require.NotNil(t, e.RequestId, "409 body must include request_id")
+	require.Equal(t, resp.Header.Get("X-Request-Id"), e.RequestId.String())
+}
+
 // TestAgents_GetMissing — GET an id that never existed → 404 with
 // error="not_found".
 func TestAgents_GetMissing(t *testing.T) {

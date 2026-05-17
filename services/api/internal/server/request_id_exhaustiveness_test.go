@@ -147,6 +147,11 @@ func assertID(t *testing.T, result any, typeName string) {
 		// (skills[].proficiency 1-10) error paths for the create path.
 		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
+	case api.CreateAgent409JSONResponse:
+		v, err := r.AsErrorResponse()
+		require.NoError(t, err, "%s: unmarshal ErrorResponse union", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.UpdateAgent500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 
@@ -348,7 +353,6 @@ func assertID(t *testing.T, result any, typeName string) {
 // EXCLUDED types (no RequestId field, not ErrorResponse-based):
 //   - GetReadyz503JSONResponse (ReadinessResponse — health check data)
 //   - BulkImportCatalog422JSONResponse (BulkImportResult — partial result)
-//   - CreateAgent409JSONResponse (union type alias — injection requires JSON round-trip)
 //   - Success types: *200JSONResponse, *201JSONResponse, *204JSONResponse
 func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 	t.Parallel()
@@ -361,6 +365,8 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 	invResp := api.InvalidOrgIDJSONResponse(e)
 	nfResp := api.NotFoundJSONResponse(e)
 	tooLargeResp := api.RequestEntityTooLargeJSONResponse(e)
+	var createAgent409 api.CreateAgent409JSONResponseBody
+	require.NoError(t, createAgent409.FromErrorResponse(e))
 
 	tests := []struct {
 		name  string
@@ -394,6 +400,7 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"ListAgents400JSONResponse", api.ListAgents400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"ListAgents500JSONResponse", api.ListAgents500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"CreateAgent400JSONResponse", api.CreateAgent400JSONResponse{BadRequestJSONResponse: bResp}},
+		{"CreateAgent409JSONResponse", api.CreateAgent409JSONResponse(createAgent409)},
 		// Phase 3 Codex C2 iter 3: flat ErrorResponse alias covering both
 		// invalid_reference and invalid_value paths for skills[].
 		{"CreateAgent422JSONResponse", api.CreateAgent422JSONResponse(e)},

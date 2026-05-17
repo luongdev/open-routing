@@ -28,6 +28,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -258,6 +259,8 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)
 		return api.CreateAgent422JSONResponse(v)
+	case api.CreateAgent409JSONResponse:
+		return injectCreateAgent409RequestID(r, id)
 	case api.UpdateAgent422JSONResponse:
 		// Phase 3 D-75 + ROADMAP CRIT 4: flat ErrorResponse alias covering
 		// BOTH invalid_reference (skills[].skill_id FK miss) AND invalid_value
@@ -529,7 +532,6 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	// BulkImportCatalog422JSONResponse is BulkImportResult (no ErrorResponse/RequestId) — pass through.
-	// CreateAgent409JSONResponse is a union alias (unmarshal required) — pass through.
 	// GetReadyz503JSONResponse is ReadinessResponse (no RequestId) — pass through.
 
 	// ── Channel 400/404 ───────────────────────────────────────────────────
@@ -631,6 +633,36 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		// pass through untouched.
 		return response
 	}
+}
+
+func injectCreateAgent409RequestID(r api.CreateAgent409JSONResponse, id string) api.CreateAgent409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsVersionConflictErrorResponse()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.CreateAgent409JSONResponseBody
+		_ = out.FromVersionConflictErrorResponse(v)
+		return api.CreateAgent409JSONResponse(out)
+	}
+
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.CreateAgent409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.CreateAgent409JSONResponse(out)
 }
 
 // setIfNil returns a pointer to id if current is nil, otherwise returns current.
