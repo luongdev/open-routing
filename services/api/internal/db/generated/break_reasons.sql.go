@@ -68,6 +68,33 @@ func (q *Queries) GetBreakReasonByIdAnyVersion(ctx context.Context, arg GetBreak
 	return i, err
 }
 
+const getBreakReasonForState = `-- name: GetBreakReasonForState :one
+SELECT routable
+FROM break_reasons
+WHERE id = $1 AND org_id = $2 AND enabled = TRUE
+LIMIT 1
+`
+
+type GetBreakReasonForStateParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+// D-76 cross-row probe — used by PatchAgentStatus (STATE-04 422
+// invalid_reference path) and IsRoutable callers (STATE-10). Returns
+// the routable flag when the reason exists + is enabled in the caller's
+// org; pgx.ErrNoRows otherwise. Same-org enforcement is the FOUND-08
+// invariant (cross-org reason ids return ErrNoRows → handler maps to
+// 422 invalid_reference per D-75). Combined probe per RESEARCH
+// §Pattern 5: one query covers BOTH STATE-04 existence check AND
+// STATE-10 routable scalar; keeps the sqlc surface minimal.
+func (q *Queries) GetBreakReasonForState(ctx context.Context, arg GetBreakReasonForStateParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getBreakReasonForState, arg.ID, arg.OrgID)
+	var routable bool
+	err := row.Scan(&routable)
+	return routable, err
+}
+
 const insertBreakReason = `-- name: InsertBreakReason :one
 
 INSERT INTO break_reasons (id, org_id, name, routable, display_order, enabled)
