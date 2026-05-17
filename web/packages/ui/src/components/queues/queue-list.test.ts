@@ -81,18 +81,21 @@ describe('OrQueueList', () => {
     await (el as any).updateComplete;
 
     // The column renderer for acw_sec should produce "60s" — verify by checking the column def
-    const shadow = el.shadowRoot!;
-    const table = shadow.querySelector('or-data-table') as any;
-    expect(table).toBeTruthy();
-    // Find the acw_sec column and render it with mock data
     const columns = (el as any)._columns as Array<{ key: string; render?: (row: Record<string, unknown>) => unknown }>;
     const acwCol = columns.find((c) => c.key === 'acw_sec');
     expect(acwCol).toBeTruthy();
-    // Render the column; the result should contain "60s"
+    // Render the column; the result is a TemplateResult with values array
+    // Lit TemplateResult stores dynamic values separately — join all values into string to check
     if (acwCol?.render) {
-      const rendered = acwCol.render(MOCK_QUEUE as unknown as Record<string, unknown>);
-      // rendered is a TemplateResult; stringify via string coercion
-      expect(String(rendered?.values ?? rendered)).toContain('60s');
+      const rendered = acwCol.render(MOCK_QUEUE as unknown as Record<string, unknown>) as any;
+      // TemplateResult.values is an iterable of dynamic parts; join them with the strings
+      const strings = rendered?.strings ?? [];
+      const values = rendered?.values ?? [];
+      // Combine strings and values interleaved
+      const combined = (strings as string[]).reduce((acc: string, s: string, i: number) => {
+        return acc + s + (values[i] !== undefined ? String(values[i]) : '');
+      }, '');
+      expect(combined).toContain('60s');
     }
   });
 
