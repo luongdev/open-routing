@@ -139,6 +139,28 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 		}}, nil
 	}
 
+	// D-93: seed agent_states row inside the SAME tx so agent + state
+	// commit/rollback atomically (Codex C4 invariant). InsertAgentState
+	// MUST go through qtx (not a fresh generated.New on the pool) or the
+	// state row commits independently of the agent row and breaks the
+	// invariant on failure paths (Pitfall 10).
+	//
+	// Phase 5 reminder: bulk-import (CSV/JSON upsert into agents) MUST also
+	// seed agent_states for every NEW agent it inserts. Use
+	// `ON CONFLICT (agent_id) DO NOTHING` so re-imports don't regress the
+	// state machine (Pitfall 6 / Hazard 7 in 04-PATTERNS.md).
+	if _, sErr := qtx.InsertAgentState(ctx, generated.InsertAgentStateParams{
+		AgentID: pgUUID(id),
+		OrgID:   pgUUID(orgID),
+		Status:  string(api.AgentStatusOffline),
+	}); sErr != nil {
+		h.deps.Logger.ErrorContext(ctx, "create agent state row", "agent_id", id, "org_id", orgID, "err", sErr)
+		return api.CreateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+			Error:  api.ErrorCodeInternal,
+			Reason: "agent_state_insert_failed",
+		}}, nil
+	}
+
 	// Skills replace inside the SAME tx (Codex C4 — atomicity). Failure
 	// here rolls back BOTH the agent insert and the skills writes.
 	if req.Body.Skills != nil && len(*req.Body.Skills) > 0 {
