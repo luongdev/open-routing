@@ -4,12 +4,26 @@
 //
 // D6-20: Theme CSS custom properties applied to THIS host element (this.style).
 // Applying to the shell host (not the document root) is required for Phase 7 Shadow DOM isolation.
+//
+// Plan 06-06: Wire real agent routes + createApiClient bootstrap from URL org_id.
+// - Agent routes now render OrAgentList/OrAgentDetail/OrAgentForm with .client property.
+// - Placeholder divs for Wave 3-5 entities (skills/queues/break-reasons/adapters/channels/imports/status).
+// - 'open-routing:navigate' events from entity components reach this._routes.goto().
+// - 'open-routing:org-selected' from org-picker creates client + navigates to agents list.
+// - Switch org clears _client + _currentOrgId and navigates to '/'.
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Routes } from '@lit-labs/router';
 import { orLight, orDark, orBrand, ALL_TOKEN_KEYS } from '../../themes/index.js';
 import type { ThemeName } from '../../themes/index.js';
+import { createApiClient } from '../../api/client.js';
+import type { ApiClient } from '../../api/client.js';
+
+// Agent components (Wave 2, Plan 06-05) — wired to real routes in Plan 06-06.
+import '../agents/agent-list.js';
+import '../agents/agent-detail.js';
+import '../agents/agent-form.js';
 
 // Shoelace per-component imports (D6-08: tree-shaking required for Phase 7 70KB budget)
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -72,6 +86,10 @@ const VALID_THEME_NAMES: readonly ThemeName[] = ['or-light', 'or-dark', 'or-bran
  *
  * D6-20: CSS custom properties are applied to THIS element's inline style (this.style),
  * enabling Shadow DOM isolation for Phase 7 embed reuse.
+ *
+ * D6-09: org_id is parsed from URL path and feeds createApiClient getOrgId resolver.
+ * The closure captures _currentOrgId by reference so getOrgId() returns the latest
+ * value even after navigation changes the org (no client recreation needed).
  */
 @customElement('or-catalog-shell')
 export class OrCatalogShell extends LitElement {
@@ -147,6 +165,12 @@ export class OrCatalogShell extends LitElement {
       overflow-y: auto;
       padding: 32px 32px 24px;
     }
+    .placeholder-wave {
+      color: var(--or-color-text-muted, #888);
+      font-size: 14px;
+      padding: 32px;
+      text-align: center;
+    }
   `;
 
   @property({ type: String, attribute: 'org-id' }) orgId = '';
@@ -156,6 +180,20 @@ export class OrCatalogShell extends LitElement {
 
   @state() private _sidebarOpen = false;
 
+  /**
+   * D6-09: current org_id parsed from URL. getOrgId() in createApiClient closes
+   * over _currentOrgId (not a snapshot), so the client returns the latest value
+   * without recreation.
+   */
+  @state() private _currentOrgId = '';
+
+  /**
+   * D6-09: single client instance for the lifetime of a org session.
+   * Null before an org is selected (org-picker screen).
+   * Replaced (not mutated) when org changes via org-picker or URL.
+   */
+  @state() private _client: ApiClient | null = null;
+
   /** @lit-labs/router Routes — outlet() MUST stay in this component's render() per Pitfall 7. */
   private _routes = new Routes(this, [
     {
@@ -163,103 +201,197 @@ export class OrCatalogShell extends LitElement {
       render: () => html`<or-org-picker></or-org-picker>`,
     },
     {
-      // UUIDv7 route guard per D6-13: added to first org route as enter() callback.
-      // NOTE: A standalone '/orgs/:org_id/*' wildcard-only guard (no render) would
-      // swallow all child routes in @lit-labs/router since routes match first-wins.
-      // Instead, the guard enter() runs on the first entity route encountered.
-      // Wave 2+ will add enter callbacks to individual entity routes as needed.
+      // UUIDv7 route guard per D6-13: rejects malformed org_id before any API call.
+      // Also syncs _currentOrgId so getOrgId() returns the right value on each route match.
+      // NOTE: A standalone wildcard-only guard would swallow child routes in @lit-labs/router.
+      // Instead, enter() is on the first entity route; other entity routes also sync _currentOrgId.
       path: '/orgs/:org_id/agents',
       enter: async ({ org_id }: Record<string, string | undefined>) => {
         if (!UUIDV7_PATTERN.test(org_id ?? '')) {
           this._routes.goto('/');
           return false;
         }
-        // Sync orgId reactive property from URL param so sidebar nav uses correct ID
+        // Sync state from URL for direct navigation / popstate
+        this._currentOrgId = org_id ?? '';
         this.orgId = org_id ?? '';
+        if (!this._client) {
+          this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
+        }
         return true;
       },
-      render: ({ org_id }: Record<string, string | undefined>) =>
-        html`<div data-route="agents" data-org-id="${org_id}">Agents list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<or-agent-list .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-list>`;
+      },
     },
     {
       path: '/orgs/:org_id/agents/new',
-      render: () => html`<div data-route="agents-new">Agent create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<or-agent-form .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-form>`;
+      },
     },
     {
       path: '/orgs/:org_id/agents/:id',
-      render: () => html`<div data-route="agent-detail">Agent detail</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<or-agent-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-agent-detail>`;
+      },
     },
     {
+      // D6-12: status panel nested per-agent at /orgs/:org_id/agents/:id/status.
+      // Placeholder — Wave 5 (Plan 06-12) will replace with <or-status-panel>.
       path: '/orgs/:org_id/agents/:id/status',
-      render: () => html`<div data-route="agent-status">Agent status</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="agent-status" data-agent-id="${id}">Agent Status Panel — coming in Wave 5 (Plan 06-12)</div>`;
+      },
     },
     {
+      // Skills — placeholder for Wave 3 (Plan 06-07)
       path: '/orgs/:org_id/skills',
-      render: () => html`<div data-route="skills">Skills list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="skills">Skills — coming in Wave 3 (Plan 06-07)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/skills/new',
-      render: () => html`<div data-route="skills-new">Skill create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="skills-new">Skill Create — coming in Wave 3 (Plan 06-07)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/skills/:id',
-      render: () => html`<div data-route="skill-detail">Skill detail</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="skill-detail">Skill Detail — coming in Wave 3 (Plan 06-07)</div>`;
+      },
     },
     {
+      // Queues — placeholder for Wave 3 (Plan 06-08)
       path: '/orgs/:org_id/queues',
-      render: () => html`<div data-route="queues">Queues list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="queues">Queues — coming in Wave 3 (Plan 06-08)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/queues/new',
-      render: () => html`<div data-route="queues-new">Queue create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="queues-new">Queue Create — coming in Wave 3 (Plan 06-08)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/queues/:id',
-      render: () => html`<div data-route="queue-detail">Queue detail</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="queue-detail">Queue Detail — coming in Wave 3 (Plan 06-08)</div>`;
+      },
     },
     {
+      // Channels — placeholder for Wave 4 (Plan 06-10)
       path: '/orgs/:org_id/channels',
-      render: () => html`<div data-route="channels">Channels list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="channels">Channels — coming in Wave 4 (Plan 06-10)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/channels/new',
-      render: () => html`<div data-route="channels-new">Channel create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="channels-new">Channel Create — coming in Wave 4 (Plan 06-10)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/channels/:id',
-      render: () => html`<div data-route="channel-detail">Channel detail</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="channel-detail">Channel Detail — coming in Wave 4 (Plan 06-10)</div>`;
+      },
     },
     {
+      // Adapters — placeholder for Wave 3 (Plan 06-11)
       path: '/orgs/:org_id/adapters',
-      render: () => html`<div data-route="adapters">Adapters list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="adapters">Adapters — coming in Wave 3 (Plan 06-11)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/adapters/new',
-      render: () => html`<div data-route="adapters-new">Adapter create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="adapters-new">Adapter Create — coming in Wave 3 (Plan 06-11)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/adapters/:id',
-      render: () => html`<div data-route="adapter-detail">Adapter detail</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="adapter-detail">Adapter Detail — coming in Wave 3 (Plan 06-11)</div>`;
+      },
     },
     {
+      // Break Reasons — placeholder for Wave 3 (Plan 06-09)
       path: '/orgs/:org_id/break-reasons',
-      render: () => html`<div data-route="break-reasons">Break Reasons list</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="break-reasons">Break Reasons — coming in Wave 3 (Plan 06-09)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/break-reasons/new',
-      render: () => html`<div data-route="break-reasons-new">Break Reason create</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="break-reasons-new">Break Reason Create — coming in Wave 3 (Plan 06-09)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/break-reasons/:id',
-      render: () => html`<div data-route="break-reason-detail">Break Reason detail</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="break-reason-detail">Break Reason Detail — coming in Wave 3 (Plan 06-09)</div>`;
+      },
     },
     {
+      // D6-12: Import is top-level org route. Placeholder for Wave 5 (Plan 06-13).
       path: '/orgs/:org_id/imports/new',
-      render: () => html`<div data-route="imports-new">Import page</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="imports-new">Bulk Import — coming in Wave 5 (Plan 06-13)</div>`;
+      },
     },
     {
       path: '/orgs/:org_id/imports/:id',
-      render: () => html`<div data-route="import-result">Import result</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) => {
+        this._currentOrgId = org_id ?? '';
+        this.orgId = org_id ?? '';
+        return html`<div class="placeholder-wave" data-route="import-result">Import Result — coming in Wave 5 (Plan 06-13)</div>`;
+      },
     },
   ]);
 
@@ -277,22 +409,74 @@ export class OrCatalogShell extends LitElement {
     }
     this._applyTheme();
 
+    // D6-09: Parse initial org_id from URL path on first connect.
+    // Handles direct navigation or page reload at an entity URL.
+    this._syncOrgIdFromUrl();
+
+    // D6-09: popstate fires when the user presses Back/Forward; sync org_id from URL.
+    this._handlePopState = () => { this._syncOrgIdFromUrl(); };
+    window.addEventListener('popstate', this._handlePopState);
+
     // Listen for org-selected events from <or-org-picker> root route
     this.addEventListener('open-routing:org-selected', this._handleOrgSelected);
+
+    // D6-06: entity components dispatch 'open-routing:navigate' to reach shell router.
+    // Shell catches it here and delegates to _routes.goto() (history.pushState-based).
+    this.addEventListener('open-routing:navigate', this._handleNavigate);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeEventListener('open-routing:org-selected', this._handleOrgSelected);
+    this.removeEventListener('open-routing:navigate', this._handleNavigate);
+    if (this._handlePopState) {
+      window.removeEventListener('popstate', this._handlePopState);
+    }
+  }
+
+  /** Popstate handler reference for cleanup on disconnectedCallback. */
+  private _handlePopState: (() => void) | null = null;
+
+  /**
+   * D6-09: Parse /orgs/:org_id/ segment from window.location.pathname.
+   * Called at connectedCallback and on popstate to keep _currentOrgId in sync
+   * with actual URL even when the user navigates with browser back/forward.
+   * UUIDv7 validation intentionally skipped here — route enter() guards handle it.
+   */
+  private _syncOrgIdFromUrl(): void {
+    const match = /\/orgs\/([^/]+)\//.exec(window.location.pathname);
+    if (match) {
+      const org_id = match[1];
+      this._currentOrgId = org_id;
+      this.orgId = org_id;
+      // Bootstrap client on direct URL navigation if not yet created
+      if (!this._client) {
+        this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
+      }
+    }
   }
 
   /**
+   * Handle 'open-routing:navigate' events from entity components.
+   * Entity components dispatch this event instead of calling history.pushState
+   * directly — the shell owns navigation so embed hosts can intercept if needed.
+   */
+  private _handleNavigate = (e: Event): void => {
+    const { path } = (e as CustomEvent<{ path: string }>).detail;
+    this._routes.goto(path);
+  };
+
+  /**
    * Handle org-selected event from <or-org-picker>.
-   * Navigates to the agents list for the selected org.
+   * Creates the API client with the new org_id and navigates to the agents list.
+   * D6-09: client is created here (not in index.ts) so the shell fully owns the client lifecycle.
    */
   private _handleOrgSelected = (e: Event): void => {
     const { orgId } = (e as CustomEvent<{ orgId: string }>).detail;
+    this._currentOrgId = orgId;
     this.orgId = orgId;
+    // (Re)create client so getOrgId() closure reflects the new org
+    this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
     this._routes.goto(`/orgs/${orgId}/agents`);
   };
 
@@ -397,7 +581,16 @@ export class OrCatalogShell extends LitElement {
             @click=${() => { this.theme = 'or-brand'; }}
           ></sl-icon-button>
         </sl-button-group>
-        <sl-button variant="text" @click=${() => { this._routes.goto('/'); }}>
+        <sl-button
+          variant="text"
+          @click=${() => {
+            // D6-14: Switch org = hard reset. Clear all in-memory state; navigate to org-picker.
+            this._currentOrgId = '';
+            this.orgId = '';
+            this._client = null;
+            this._routes.goto('/');
+          }}
+        >
           Switch org
         </sl-button>
       </div>
