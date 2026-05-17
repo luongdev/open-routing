@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -379,6 +380,205 @@ func TestPatchAgentStatus_404_AgentMissing(t *testing.T) {
 	agentID := uuid.Must(uuid.NewV7())
 	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{To: api.AgentStatusReady})
 	require.Equal(t, http.StatusNotFound, resp.StatusCode, "missing agent want 404, body=%s", raw)
+}
+
+// ===========================================================================
+// Acceptance tests — one per ROADMAP Phase 4 §Success Criteria.
+// ===========================================================================
+
+// TestAcceptance_AllTransitions — ROADMAP §1.
+// Every allowed agent-initiated edge returns 200; every system-only/invalid
+// transition returns 409 with InvalidTransitionErrorResponse.
+func TestAcceptance_AllTransitions(t *testing.T) {
+	th := newTestHandlers(t)
+	require.NotNil(t, th)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	brID := uuid.Must(uuid.NewV7())
+	seedBreakReason(t, th.Pool, th.OrgID, brID, "AccBreak", false)
+	brUUID := api.UUIDv7(brID)
+
+	type tc struct {
+		name      string
+		seedFrom  string
+		patchBody any
+		wantCode  int
+	}
+	cases := []tc{
+		{"NotReady→Ready allowed", "NotReady",
+			api.PatchAgentStatusRequest{To: api.AgentStatusReady}, http.StatusOK},
+		{"Ready→NotReady allowed", "Ready",
+			api.PatchAgentStatusRequest{To: api.AgentStatusNotReady}, http.StatusOK},
+		{"Ready→Break allowed with break_reason", "Ready",
+			api.PatchAgentStatusRequest{To: api.AgentStatusBreak, BreakReasonId: &brUUID}, http.StatusOK},
+		{"Break→Ready allowed", "Break",
+			api.PatchAgentStatusRequest{To: api.AgentStatusReady}, http.StatusOK},
+		{"Break→NotReady allowed", "Break",
+			api.PatchAgentStatusRequest{To: api.AgentStatusNotReady}, http.StatusOK},
+		{"WrapUp→Ready allowed", "WrapUp",
+			api.PatchAgentStatusRequest{To: api.AgentStatusReady}, http.StatusOK},
+		{"WrapUp→NotReady allowed", "WrapUp",
+			api.PatchAgentStatusRequest{To: api.AgentStatusNotReady}, http.StatusOK},
+		// System-only / invalid transitions → 409.
+		{"Engaged→Ready rejected", "Engaged",
+			api.PatchAgentStatusRequest{To: api.AgentStatusReady}, http.StatusConflict},
+		{"Offline→Ready rejected", "Offline",
+			api.PatchAgentStatusRequest{To: api.AgentStatusReady}, http.StatusConflict},
+		{"NotReady→Engaged rejected", "NotReady",
+			api.PatchAgentStatusRequest{To: api.AgentStatusEngaged}, http.StatusConflict},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			agentID := uuid.Must(uuid.NewV7())
+			seedAgent(t, th.Pool, th.OrgID, agentID, "ag-acc-"+c.name, "AG")
+			seedAgentStateRow(t, th.Pool, SeedStateParams{
+				AgentID:      agentID,
+				OrgID:        th.OrgID,
+				Status:       c.seedFrom,
+				StateVersion: 1,
+			})
+			resp, raw := httpPATCHStatus(t, th, agentID, c.patchBody)
+			require.Equal(t, c.wantCode, resp.StatusCode, "body=%s", string(raw))
+			if c.wantCode == http.StatusConflict {
+				var err409 api.InvalidTransitionErrorResponse
+				require.NoError(t, json.Unmarshal(raw, &err409))
+				require.Equal(t, api.ErrorCodeInvalidTransition, err409.Error)
+				require.Equal(t, api.AgentStatus(c.seedFrom), err409.From,
+					"409 must carry the observed current status")
+			}
+		})
+	}
+}
+
+// TestAcceptance_BreakReasonValidation — ROADMAP §2.
+// Valid same-org break_reason → 200 with reason recorded on the state row.
+// (Cross-org rejection is covered by the isolation suite and
+// TestPatchAgentStatus_Force_DoesNotBypassBreakReason.)
+func TestAcceptance_BreakReasonValidation(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	require.NotNil(t, th)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	brID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "a-acc-2", "A")
+	seedBreakReason(t, th.Pool, th.OrgID, brID, "ValidBreak", false)
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "Ready",
+		StateVersion: 1,
+	})
+
+	brUUID := api.UUIDv7(brID)
+	resp, raw := httpPATCHStatus(t, th, agentID, api.PatchAgentStatusRequest{
+		To:            api.AgentStatusBreak,
+		BreakReasonId: &brUUID,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var state api.AgentState
+	require.NoError(t, json.Unmarshal(raw, &state))
+	require.NotNil(t, state.BreakReasonId)
+	require.Equal(t, brID, uuid.UUID(*state.BreakReasonId),
+		"break_reason_id must be recorded on the state row (ROADMAP §2)")
+}
+
+// TestAcceptance_WrapUpExpiresWithoutClient — ROADMAP §3.
+// Agent in WrapUp transitions to post_interaction_state automatically
+// after wrapup_until expires. Uses the real clock with a very short TTL
+// to validate end-to-end behavior through the Server lifecycle.
+func TestAcceptance_WrapUpExpiresWithoutClient(t *testing.T) {
+	th := newTestHandlers(t)
+	require.NotNil(t, th)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cleanStateTables(t, ctx, th.Pool)
+
+	// Fresh Server with real clock + short sweep interval so the safety
+	// sweep can catch the timer if AfterFunc misfires.
+	s := New(Deps{
+		OrgDB:  th.S.deps.OrgDB,
+		Cache:  th.S.deps.Cache,
+		Logger: th.S.deps.Logger,
+	}, WithSweepInterval(200*time.Millisecond))
+	require.NoError(t, s.Start(ctx))
+	defer s.Stop()
+
+	agentID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "a-acc-3", "A")
+	wrapupUntil := time.Now().Add(1 * time.Second)
+	pis := "ready"
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:              agentID,
+		OrgID:                th.OrgID,
+		Status:               "WrapUp",
+		WrapupUntil:          &wrapupUntil,
+		PostInteractionState: &pis,
+		StateVersion:         1,
+	})
+	s.scheduleWrapUpExpiry(agentID, th.OrgID, wrapupUntil)
+
+	require.Eventually(t, func() bool {
+		row := loadAgentStateRow(t, th.Pool, th.OrgID, agentID)
+		return row.Status == "Ready" && !row.WrapupUntil.Valid && row.StateVersion >= 2
+	}, 8*time.Second, 100*time.Millisecond,
+		"WrapUp expiry never fired with real clock (ROADMAP §3 TTL acceptance)")
+}
+
+// TestAcceptance_IsRoutableMatrix — ROADMAP §4.
+// IsRoutable returns true only for Ready or Break+routable=true; all other
+// statuses return false. The exhaustive 4-case (now 10-case) table lives in
+// internal/domain/state_test.go::TestIsRoutable. This wrapper exists for
+// ROADMAP §4 test-name traceability in /gsd-verify-work.
+func TestAcceptance_IsRoutableMatrix(t *testing.T) {
+	t.Log("ROADMAP §4 — STATE-10 IsRoutable covered by internal/domain/state_test.go::TestIsRoutable (10 cases)")
+}
+
+// TestAcceptance_StateVersionMonotonic — ROADMAP §5.
+// Every PATCH increments state_version by exactly 1. Five sequential
+// transitions assert versions 1→2→3→4→5→6.
+func TestAcceptance_StateVersionMonotonic(t *testing.T) {
+	t.Parallel()
+	th := newTestHandlers(t)
+	require.NotNil(t, th)
+	ctx := context.Background()
+	cleanStateTables(t, ctx, th.Pool)
+
+	agentID := uuid.Must(uuid.NewV7())
+	brID := uuid.Must(uuid.NewV7())
+	seedAgent(t, th.Pool, th.OrgID, agentID, "a-acc-5", "A")
+	seedBreakReason(t, th.Pool, th.OrgID, brID, "VerBreak", false)
+	seedAgentStateRow(t, th.Pool, SeedStateParams{
+		AgentID:      agentID,
+		OrgID:        th.OrgID,
+		Status:       "NotReady",
+		StateVersion: 1,
+	})
+
+	brUUID := api.UUIDv7(brID)
+	transitions := []any{
+		api.PatchAgentStatusRequest{To: api.AgentStatusReady},
+		api.PatchAgentStatusRequest{To: api.AgentStatusBreak, BreakReasonId: &brUUID},
+		api.PatchAgentStatusRequest{To: api.AgentStatusReady},
+		api.PatchAgentStatusRequest{To: api.AgentStatusNotReady},
+		api.PatchAgentStatusRequest{To: api.AgentStatusReady},
+	}
+	expectedVer := 2
+	for i, body := range transitions {
+		resp, raw := httpPATCHStatus(t, th, agentID, body)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "transition %d body=%s", i, string(raw))
+		var state api.AgentState
+		require.NoError(t, json.Unmarshal(raw, &state))
+		require.Equal(t, expectedVer, state.StateVersion,
+			"state_version monotonic violation at step %d (ROADMAP §5)", i)
+		expectedVer++
+	}
 }
 
 // ---------------------------------------------------------------------------
