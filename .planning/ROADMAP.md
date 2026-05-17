@@ -170,8 +170,34 @@ Plans:
   4. `IsRoutable` in `services/api/internal/domain` returns `true` only when `status == Ready` OR (`status == Break` AND the associated break reason has `routable=true`); all four combinations are covered by unit tests.
   5. Every state mutation increments `state_version` monotonically; the `agent_states` table carries `status`, `engaged_channel`, `break_reason_id`, `post_interaction_state`, `state_version`, and `wrapup_until` from its initial migration.
 
-**Plans**: TBD
-**Branch**: `gsd/phase-04-agent-state-machine`
+**Plans**: 6 plans
+Plans:
+
+**Wave 0**
+
+- [ ] 04-01-PLAN.md — Spec amendment (force field) + agent_states migration append + tenantTables allowlist + codegen regen + clockwork install (D-78, D-92)
+
+**Wave 1** *(blocked on Wave 0 completion)*
+
+- [ ] 04-02-PLAN.md — sqlc queries + IsRoutable domain pkg (STATE-10) + state pkg skeleton with Server type (Pitfall 1 rename) + transition matrix exhaustive walk (D-91)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04-03-PLAN.md — state.Server handler bodies: GetAgentStatus cache-read-through + PatchAgentStatus probe-then-matrix + force WARN + cache invalidation (D-66, D-84, D-86)
+
+**Wave 3** *(blocked on Wave 1 — parallel with Wave 2)*
+
+- [ ] 04-04-PLAN.md — WrapUp TTL goroutine + clockwork.AfterFunc registry + 30s safety sweep + startup sweep + graceful Stop (D-81, D-95)
+
+**Wave 4** *(blocked on Waves 2 + 3)*
+
+- [ ] 04-05-PLAN.md — ApiHandlers composite wiring in main.go + CreateAgent atomic agent_states INSERT + notimpl.go cleanup (D-89, D-93)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04-06-PLAN.md — D-94 cross-org isolation suite + 5 acceptance tests + cross-AI peer review (Codex + Gemini parallel per CLAUDE.md HARD RULE)
+
+**Branch**: `gsd/phase-04-agent-state-machine-go`
 
 ---
 
