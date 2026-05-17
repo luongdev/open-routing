@@ -1,0 +1,61 @@
+/*
+ * or-brand theme — CSS custom property token map.
+ * Per UI-SPEC §2.2 (or-brand section). D6-19 / D6-20.
+ *
+ * Bolder primary; the brand identity color for Open Routing.
+ * Deeper, more saturated teal (closer to "petrol" shade, hue=190, sat=60%).
+ * Sidebar gets a subtle brand tint. v0.1 ships hardcoded; per-org override deferred to v0.2.
+ */
+
+[data-or-theme="or-brand"] {
+  /* ─── Shoelace primary scale (deeper teal, hue=190, sat=60%) ─── */
+  --sl-color-primary-50:  #ebfafa;
+  --sl-color-primary-100: #cdf0f1;
+  --sl-color-primary-200: #9be0e3;
+  --sl-color-primary-300: #5ec9cf;
+  --sl-color-primary-400: #2dadb7;
+  --sl-color-primary-500: #0d8b96;  /* brand teal — deeper than or-light */
+  --sl-color-primary-600: #086e78;
+  --sl-color-primary-700: #075a63;
+  --sl-color-primary-800: #094a52;
+  --sl-color-primary-900: #0a3d44;
+  --sl-color-primary-950: #03252a;
+
+  /* ─── Shoelace semantic (same as or-light) ─── */
+  --sl-color-danger-500:  #d92d20;
+  --sl-color-warning-500: #b54708;
+  --sl-color-success-500: #027a48;
+  --sl-color-neutral-0:   #ffffff;
+  --sl-color-neutral-50:  #f8fafa;     /* very faint brand tint on neutral whites */
+  --sl-color-neutral-100: #eef5f5;     /* sidebar — visibly brand-tinted */
+  --sl-color-neutral-200: #d9e7e8;
+  --sl-color-neutral-300: #b8cdce;
+  --sl-color-neutral-500: #678384;
+  --sl-color-neutral-700: #364949;
+  --sl-color-neutral-900: #0e1e1e;
+  --sl-color-neutral-1000:#000000;
+
+  /* ─── Open Routing custom ─── */
+  --or-color-app-bg:           var(--sl-color-neutral-0);
+  --or-color-sidebar-bg:       var(--sl-color-neutral-100);          /* tinted brand */
+  --or-color-topbar-bg:        var(--sl-color-neutral-0);
+  --or-color-card-bg:          var(--sl-color-neutral-0);
+  --or-color-card-border:      var(--sl-color-neutral-200);
+  --or-color-text-body:        var(--sl-color-neutral-700);
+  --or-color-text-strong:      var(--sl-color-neutral-900);
+  --or-color-text-muted:       var(--sl-color-neutral-500);
+  --or-color-text-on-primary:  #ffffff;
+  --or-color-conflict-bg:      #fef3c7;
+  --or-color-conflict-border:  #f59e0b;
+  --or-color-diff-removed:     #fecaca;
+  --or-color-diff-added:       #bbf7d0;
+  --or-color-code-bg:          var(--sl-color-neutral-100);
+  --or-color-code-fg:          var(--sl-color-primary-700);
+  --or-color-focus-ring:       var(--sl-color-primary-500);
+  --or-color-row-hover:        var(--sl-color-neutral-50);
+  --or-color-row-selected:     var(--sl-color-primary-50);
+  --or-color-skeleton-base:    var(--sl-color-neutral-200);
+  --or-color-skeleton-shimmer: var(--sl-color-neutral-100);
+  --or-color-divider:          var(--sl-color-neutral-200);
+  --or-color-overlay-scrim:    rgb(0 0 0 / 0.4);
+}
