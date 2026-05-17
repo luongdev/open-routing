@@ -137,9 +137,15 @@ func (s *Server) Stop() {
 
 	s.wg.Wait()
 
+	// Cancel every pending AfterFunc timer. For each timer that .Stop()
+	// successfully cancels (returns true), the AfterFunc will never call
+	// its defer wg.Done() — so we compensate here. This pairs with the
+	// wg.Add(1) issued in scheduleWrapUpExpiry before AfterFunc is created.
 	s.timers.mu.Lock()
 	for id, t := range s.timers.t {
-		t.Stop()
+		if t.Stop() {
+			s.wg.Done()
+		}
 		delete(s.timers.t, id)
 	}
 	s.timers.mu.Unlock()

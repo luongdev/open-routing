@@ -320,8 +320,12 @@ func buildUpdateParams(agentID, orgID uuid.UUID, expectedFrom api.AgentStatus, b
 
 // buildForceUpdateParams translates the request body into ForceUpdateAgentStateStatusParams.
 //
-// Cross-field invariant (Codex HIGH): same constraints as buildUpdateParams apply.
+// Cross-field invariant (Codex HIGH + MED): same constraints as buildUpdateParams.
 // Force bypasses the transition matrix, but not cross-field column semantics.
+// post_interaction_state is only accepted when BOTH currentStatus==Engaged AND
+// body.To is Engaged or WrapUp — the only states where PIS is semantically
+// meaningful (STATE-06). Setting PIS on Engaged→NotReady would leave a stale
+// value on a row that has no use for it.
 func buildForceUpdateParams(agentID, orgID uuid.UUID, currentStatus api.AgentStatus, body *api.PatchAgentStatusJSONRequestBody) generated.ForceUpdateAgentStateStatusParams {
 	p := generated.ForceUpdateAgentStateStatusParams{
 		AgentID:  pgUUID(agentID),
@@ -331,7 +335,8 @@ func buildForceUpdateParams(agentID, orgID uuid.UUID, currentStatus api.AgentSta
 	if body.To == api.AgentStatusBreak && body.BreakReasonId != nil {
 		p.BreakReasonID = pgtype.UUID{Bytes: uuid.UUID(*body.BreakReasonId), Valid: true}
 	}
-	if currentStatus == api.AgentStatusEngaged && body.PostInteractionState != nil {
+	targetIsEngagedOrWrapUp := body.To == api.AgentStatusEngaged || body.To == api.AgentStatusWrapUp
+	if currentStatus == api.AgentStatusEngaged && targetIsEngagedOrWrapUp && body.PostInteractionState != nil {
 		p.PostInteractionState = strPtr(string(*body.PostInteractionState))
 	}
 	return p

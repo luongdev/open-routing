@@ -37,11 +37,27 @@ func (s *Server) scheduleWrapUpExpiry(agentID, orgID uuid.UUID, until time.Time)
 	defer s.timers.mu.Unlock()
 
 	if prior, ok := s.timers.t[agentID]; ok {
-		prior.Stop()
+		if prior.Stop() {
+			// Compensate for the wg.Add(1) issued when the prior timer
+			// was scheduled — the prior AfterFunc will never fire so
+			// its defer wg.Done() will never execute.
+			s.wg.Done()
+		}
 	}
+
+	// Add(1) BEFORE AfterFunc so Stop()'s wg.Wait() cannot return while
+	// the callback is mid-flight. If Timer.Stop() cancels this callback
+	// before it fires, Stop() compensates with Done() when it removes
+	// the timer handle (see the timers-drain loop in Stop()).
+	// This avoids the race where Stop returns while wg=0 and the callback
+	// then starts (Codex HIGH fix — wg.Add inside AfterFunc has a
+	// Stop-concurrent-with-Add window that violates WaitGroup preconditions).
+	s.wg.Add(1)
 
 	var t clockwork.Timer
 	t = s.clock.AfterFunc(remaining, func() {
+		defer s.wg.Done()
+
 		// Pitfall 2: respect ctx.Done() before any DB work so Stop()
 		// drains cleanly even when AfterFunc fires concurrently with Stop.
 		select {
@@ -49,20 +65,6 @@ func (s *Server) scheduleWrapUpExpiry(agentID, orgID uuid.UUID, until time.Time)
 			return
 		default:
 		}
-
-		// Track this goroutine in the WaitGroup so Stop() can drain
-		// in-flight DB calls before closing the pool. The Add(1) is
-		// here (inside the AfterFunc) rather than at scheduling time
-		// because at scheduling time we do not know whether the timer
-		// will fire before Stop cancels the context. There is a tiny
-		// window between the ctx.Done() check above and Add(1) below
-		// where Stop can fire; if it does, Stop's cancel() closes
-		// s.ctx.Done which the check above gates on — the select will
-		// return on the next call, so at worst we Add+Done once on an
-		// already-stopped server, which is safe (pool is still open for
-		// the duration of the DB call).
-		s.wg.Add(1)
-		defer s.wg.Done()
 
 		// Bounded ctx so a hung DB call never leaks the goroutine
 		// indefinitely (Threat T-04-11).
