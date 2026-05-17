@@ -1880,7 +1880,8 @@ paths:
       summary: Create an agent
       description: >
         Creates a new agent in the org. The server mints a UUIDv7 `id`.
-        `external_id` must be unique within the org (FOUND-06). Skills can be
+        `code` is required and must be unique within the org; `external_id`
+        is optional and unique within the org when set. Skills can be
         provided at creation time via the `skills` array.
       security:
         - OrgHeader: []
@@ -1900,10 +1901,13 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: >
-            Duplicate `external_id` within the org, or optimistic concurrency
-            conflict (version mismatch, CAT-08). On version mismatch the body
-            includes the current server-side record.
+          description: |
+            Duplicate `code` within the org (ErrorCode=duplicate_code), or
+            duplicate `external_id` within the org when set
+            (ErrorCode=duplicate_external_id). For agents only, an optimistic
+            concurrency conflict on PATCH may also surface here (CAT-08,
+            ErrorCode=version_conflict). Clients should branch on
+            ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
@@ -2038,17 +2042,16 @@ paths:
                       current:
                         $ref: "#/components/schemas/Agent"
         "422":
-          description: >
-            Semantically invalid request — structurally valid JSON that fails
-            a business-rule check (D-75, ROADMAP Phase 3 CRIT 4). Two flavors
-            share this status:
-            (a) `invalid_reference` — a `skills[].skill_id` references a skill
-                that does not exist in the caller's org (CAT-03, PUT-semantics
-                replacement).
-            (b) `invalid_value` — a `skills[].proficiency` value is outside
-                the inclusive range 1-10.
-            The `field` slot in ErrorResponse identifies which request body
-            path failed (e.g. `skills[0].proficiency`).
+          description: |
+            Business-rule violation. ErrorCode disambiguates: (a)
+            `immutable_field` — PATCH attempted to change a field that is
+            immutable in v0.1 (e.g., `code`; rename support deferred to
+            v0.2 per D04_1-02); (b) `invalid_reference` — a `skills[].skill_id`
+            references a skill that does not exist in the caller's org
+            (CAT-03, PUT-semantics replacement); (c) `invalid_value` — a
+            `skills[].proficiency` value is outside the inclusive range
+            1-10. The `field` slot in ErrorResponse identifies which
+            request body path failed (e.g. `code` or `skills[0].proficiency`).
           content:
             application/json:
               schema:
@@ -2204,7 +2207,11 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: Duplicate `external_id` within the org.
+          description: |
+            Duplicate `code` within the org (ErrorCode=duplicate_code), or
+            duplicate `external_id` within the org when set
+            (ErrorCode=duplicate_external_id). Clients should branch on
+            ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
@@ -2311,6 +2318,15 @@ paths:
                     properties:
                       current:
                         $ref: "#/components/schemas/Skill"
+        "422":
+          description: |
+            Business-rule violation: `code` is immutable post-create
+            (D04_1-02); PATCH attempting to change it returns
+            ErrorCode=immutable_field. Rename support deferred to v0.2.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2360,7 +2376,11 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: Duplicate `external_id`.
+          description: |
+            Duplicate `code` within the org (ErrorCode=duplicate_code), or
+            duplicate `external_id` within the org when set
+            (ErrorCode=duplicate_external_id). Clients should branch on
+            ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
@@ -2460,6 +2480,15 @@ paths:
                     properties:
                       current:
                         $ref: "#/components/schemas/Queue"
+        "422":
+          description: |
+            Business-rule violation: `code` is immutable post-create
+            (D04_1-02); PATCH attempting to change it returns
+            ErrorCode=immutable_field. Rename support deferred to v0.2.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2509,7 +2538,11 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: Duplicate `external_id`.
+          description: |
+            Duplicate `code` within the org (ErrorCode=duplicate_code), or
+            duplicate `external_id` within the org when set
+            (ErrorCode=duplicate_external_id). Clients should branch on
+            ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
@@ -2626,13 +2659,14 @@ paths:
                       current:
                         $ref: "#/components/schemas/Channel"
         "422":
-          description: >
-            Semantically invalid request — structurally valid JSON that fails
-            a business-rule check (D-75, D-76). For UpdateChannel: the supplied
-            `default_queue_id` does not exist (or is disabled) in the caller's
-            org. Returns `ErrorCode=invalid_reference`. The `field` slot in
-            ErrorResponse identifies which request body path failed (e.g.
-            `default_queue_id`).
+          description: |
+            Business-rule violation. ErrorCode disambiguates: (a)
+            `immutable_field` — PATCH attempted to change a field that is
+            immutable in v0.1 (e.g., `code`; rename support deferred to
+            v0.2 per D04_1-02); (b) `invalid_reference` — the supplied
+            `default_queue_id` does not exist (or is disabled) in the
+            caller's org. The `field` slot in ErrorResponse identifies
+            which request body path failed (e.g. `code` or `default_queue_id`).
           content:
             application/json:
               schema:
@@ -2689,6 +2723,17 @@ paths:
                 $ref: "#/components/schemas/Adapter"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: |
+            Duplicate `code` within the org (ErrorCode=duplicate_code), or
+            duplicate `external_id` within the org when set
+            (ErrorCode=duplicate_external_id). Phase 04.1 added these
+            uniqueness constraints to adapters — pre-04.1 adapters had only
+            PRIMARY KEY(id) uniqueness so 23505 was impossible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2788,6 +2833,15 @@ paths:
                     properties:
                       current:
                         $ref: "#/components/schemas/Adapter"
+        "422":
+          description: |
+            Business-rule violation: `code` is immutable post-create
+            (D04_1-02); PATCH attempting to change it returns
+            ErrorCode=immutable_field. Rename support deferred to v0.2.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -2837,11 +2891,13 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: >
-            UNIQUE(org_id, name) collision — the supplied name already
-            exists in this org. Wave 5 cross-AI review: 23505 surfaced
-            as 500 was poisoning 5xx metrics for a client-correctable
-            error.
+          description: |
+            Duplicate `code` within the org (ErrorCode=duplicate_code), or
+            duplicate `external_id` within the org when set
+            (ErrorCode=duplicate_external_id). Phase 04.1 dropped the
+            previous `UNIQUE(org_id, name)` constraint and replaced it
+            with the universal `(org_id, code)` identity model (D04_1-09).
+            Clients should branch on ErrorCode, not parse the description text.
           content:
             application/json:
               schema:
@@ -2950,6 +3006,15 @@ paths:
                     properties:
                       current:
                         $ref: "#/components/schemas/BreakReason"
+        "422":
+          description: |
+            Business-rule violation: `code` is immutable post-create
+            (D04_1-02); PATCH attempting to change it returns
+            ErrorCode=immutable_field. Rename support deferred to v0.2.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
