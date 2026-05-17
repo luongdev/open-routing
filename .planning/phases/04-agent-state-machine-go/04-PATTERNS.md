@@ -1269,6 +1269,53 @@ NEVER write:
 
 For all four, the planner should reference RESEARCH.md sections directly. Do NOT extrapolate from catalog patterns — these files introduce new semantics (state machine, time-mocking, pure-function package).
 
+## Phase 5 Inheritance Reminder — Pitfall 6 / Hazard 7
+
+**Source:** D-93 (Phase 4 CONTEXT.md); Hazard 7 in §Pattern Hazards above.
+
+**What Phase 5 (bulk-import) MUST do:**
+
+When Phase 5's CSV/JSON import handler upserts agent rows, it MUST also
+INSERT into `agent_states` for every NEW agent. Phase 4's `CreateAgent`
+extension (commit history: see 04-05-PLAN.md Task 1) seeds the initial
+state row inside the existing tx. Bulk import's path is wider — it can
+INSERT many agents in one request — but the invariant is identical: a
+GET `/agents/{id}/status` MUST return 200 (not 404) for every agent
+visible via GET `/agents`.
+
+**Exact pattern to use in Phase 5's import SQL:**
+
+```sql
+-- After (or alongside) the existing INSERT INTO agents ... ON CONFLICT
+-- (org_id, external_id) DO UPDATE block:
+INSERT INTO agent_states (agent_id, org_id, status, state_version)
+SELECT id, org_id, 'Offline', 1
+FROM agents
+WHERE (org_id, external_id) IN ( /* the just-upserted set */ )
+ON CONFLICT (agent_id) DO NOTHING;
+```
+
+The `ON CONFLICT (agent_id) DO NOTHING` clause is critical:
+- New agent → INSERT succeeds (agent + state row both created).
+- Re-import of existing agent → INSERT skipped (existing state row preserved;
+  re-imports MUST NOT regress the state machine to Offline).
+
+**Regression gate:** Phase 5's plan must include a test
+`TestBulkImport_SeedsAgentStatesForNewAgents` mirroring Phase 4's
+`TestCreateAgentSeedsState` (services/api/test/isolation/state_test.go).
+The test imports 3 agents via CSV/JSON; immediately GET /status for each;
+all 3 return 200.
+
+**Reviewer (Codex / Gemini) check:** if Phase 5's diff modifies any
+agents-INSERT path WITHOUT a corresponding agent_states-INSERT (matching
+the ON CONFLICT pattern above), the reviewer MUST flag BLOCK with this
+section as the reference.
+
+**Why this lives in 04-PATTERNS.md, not 05-PATTERNS.md:** Phase 5's
+planner runs `/gsd:plan-phase 05` and will load 04-PATTERNS.md as
+part of the carry-forward context (per `<files_to_read>` in the
+planning_context). Appending here makes the reminder unmissable.
+
 ## Metadata
 
 **Analog search scope:**
