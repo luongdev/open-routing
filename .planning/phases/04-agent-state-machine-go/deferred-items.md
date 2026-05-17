@@ -20,6 +20,12 @@ only runs when `to == Break`, so a client can send `break_reason_id` with
 clear it on exit from Break. Only accept/store `post_interaction_state` while
 current status is `Engaged`; clear incompatible nullable columns on status changes.
 
+**STATUS: FIXED — commit 2aaee09**
+- buildUpdateParams: break_reason_id only written when body.To==AgentStatusBreak
+- buildForceUpdateParams: same invariant, signature extended with currentStatus param
+- Tests: TestPatchAgentStatus_BreakReasonIgnoredOnNonBreak,
+  TestPatchAgentStatus_PostInteractionStateClearedOnExitEngaged
+
 ## CODEX MED: Enum validation missing in PatchAgentStatus
 
 **File:** services/api/internal/state/agent_states.go (line 84)
@@ -29,6 +35,11 @@ mismatch); force=true with an invalid `to` reaches Postgres CHECK constraint
 and returns 500 instead of 422.
 **Required fix:** Call `req.Body.To.Valid()` (and `PostInteractionState.Valid()`)
 before DB work; return 422 `invalid_value` if false.
+
+**STATUS: FIXED — commit 2aaee09**
+- Added req.Body.To.Valid() + req.Body.PostInteractionState.Valid() checks
+  before GetAgentStateByAgentId call
+- Test: TestPatchAgentStatus_InvalidEnum_422
 
 ## CODEX MED: AfterFunc goroutines not tracked in WaitGroup
 
@@ -40,6 +51,10 @@ still running, leaving connections in-flight against a closing pool.
 **Required fix:** Add timer body to `s.wg` before dispatching; or use
 `context.WithTimeout(s.ctx, gracePeriod)` consistently.
 
+**STATUS: FIXED — commit 2aaee09**
+- s.wg.Add(1) / defer s.wg.Done() added inside AfterFunc body
+- WHY comment documents the shutdown-race trade-off (Add inside func, not at schedule time)
+
 ## GEMINI HIGH: Soft-deleted agents have status read/modified
 
 **File:** services/api/internal/db/generated/agent_states.sql.go (GetAgentState query)
@@ -48,3 +63,10 @@ join to `agents.enabled`. A soft-deleted agent (enabled=false) still returns 200
 from GetAgentStatus and accepts PatchAgentStatus transitions.
 **Required fix:** Either JOIN agents in the SQL query with `AND agents.enabled = true`,
 or add an application-level soft-delete check after fetching the agent_state row.
+
+**STATUS: FIXED — commit 2aaee09**
+- Application-level: agentEnabledCheck() helper added using existing GetAgent query
+- Both GetAgentStatus and PatchAgentStatus call agentEnabledCheck before any state ops
+- Returns 404 for enabled=false, preserving FOUND-08 surface
+- Tests: TestGetAgentStatus_SoftDeletedAgent_Returns404,
+  TestPatchAgentStatus_SoftDeletedAgent_Returns404
