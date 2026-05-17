@@ -30,7 +30,7 @@ const LS_KEY = 'or-last-org-id';
  */
 @customElement('or-org-picker')
 export class OrOrgPicker extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: flex;
       justify-content: center;
@@ -168,7 +168,13 @@ export class OrOrgPicker extends LitElement {
     // If lastUsedOrgId is set AFTER firstUpdated (e.g., set before appendChild in tests),
     // we need to apply it. But only if there's no localStorage value and _value is still empty.
     if (changed.has('lastUsedOrgId') && this.lastUsedOrgId && !this._value) {
-      const stored = localStorage.getItem(LS_KEY) ?? '';
+      // Guard with try/catch: localStorage may throw SecurityError in cross-origin embeds.
+      let stored = '';
+      try {
+        stored = localStorage.getItem(LS_KEY) ?? '';
+      } catch {
+        // localStorage unavailable — use lastUsedOrgId property fallback
+      }
       if (!stored) {
         this._value = this.lastUsedOrgId;
       }

@@ -198,3 +198,54 @@ jobs:
       - name: git diff codegen output
         run: |
           git diff --exit-code -- services/api/internal/api/ web/packages/ui/src/api/generated.ts
+
+  validators-drift:
+    # Phase 6 D6-31: ajv validator drift gate.
+    # Regenerates validators from openapi.yaml and fails if any committed
+    # validator files differ from the freshly generated output.
+    # Mirrors the gen:api drift gate from Phase 2 D-47, extended for Phase 6.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Regenerate API types
+        working-directory: web
+        run: pnpm --filter @open-routing/ui gen:api
+      - name: Gen validators drift gate
+        working-directory: web
+        run: pnpm --filter @open-routing/ui gen:validators
+      - name: git diff validators output
+        run: |
+          git diff --exit-code -- web/packages/ui/src/api/generated.ts web/packages/ui/src/validators/
+
+  admin-build-smoke:
+    # Phase 6 D6-31: production Vite build check for the admin SPA.
+    # Catches Lit decorator / SSR misconfigs and import resolution failures
+    # before they reach a deployment. Runs after the UI package is set up.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Admin production build smoke
+        working-directory: web
+        run: pnpm --filter @open-routing/admin build
