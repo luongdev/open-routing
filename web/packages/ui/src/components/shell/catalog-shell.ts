@@ -2,8 +2,8 @@
 // sidebar nav (8 entries per D6-11), top bar with theme toggle (D6-19),
 // UUIDv7 route guard (D6-13). This is the mounting point for the admin SPA.
 //
-// D6-20: Theme CSS custom properties applied to THIS host element (this.style),
-// NOT document.documentElement — required for Phase 7 Shadow DOM isolation.
+// D6-20: Theme CSS custom properties applied to THIS host element (this.style).
+// Applying to the shell host (not the document root) is required for Phase 7 Shadow DOM isolation.
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -67,8 +67,8 @@ const VALID_THEME_NAMES: readonly ThemeName[] = ['or-light', 'or-dark', 'or-bran
  *   modules   — comma-separated entity keys to show in sidebar (empty = show all)
  *   locale    — 'en' | 'vi' (default 'en')
  *
- * D6-20: CSS custom properties are applied to THIS element's inline style,
- * not document.documentElement, enabling Shadow DOM isolation for Phase 7.
+ * D6-20: CSS custom properties are applied to THIS element's inline style (this.style),
+ * enabling Shadow DOM isolation for Phase 7 embed reuse.
  */
 @customElement('or-catalog-shell')
 export class OrCatalogShell extends LitElement {
@@ -275,7 +275,7 @@ export class OrCatalogShell extends LitElement {
 
   /**
    * Apply theme CSS custom properties to THIS element's inline style (D6-20).
-   * Sets on host, NOT document.documentElement — enables Phase 7 Shadow DOM isolation.
+   * Sets on shell host element — CSS cascade reaches all nested Shadow DOM children.
    * Clears all prior tokens first to avoid stale overrides across theme switches.
    */
   private _applyTheme(): void {
