@@ -54,6 +54,37 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/state"
 )
 
+// noopImporter satisfies the *imports.Importer-shaped portion of the
+// StrictServerInterface (BulkImportCatalog + GetImportJob) without
+// importing services/api/internal/imports — the catalog package already
+// depends on the imports package transitively via the test fixture,
+// which would create a "package catalog" ↔ "package imports" cycle if
+// we also tried to embed *imports.Importer here. Defining the two
+// methods directly on a local stub type avoids the cycle while keeping
+// the StrictServerInterface assertion green.
+//
+// Phase 5 production code never reaches these stubs — they exist only
+// to satisfy the interface in catalog's package-local test binaries.
+// Tests that exercise the import endpoints live in
+// services/api/internal/imports/ + services/api/test/isolation/.
+type noopImporter struct{}
+
+func (noopImporter) BulkImportCatalog(_ context.Context, _ api.BulkImportCatalogRequestObject) (api.BulkImportCatalogResponseObject, error) {
+	return api.BulkImportCatalog500JSONResponse{
+		InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+			Error: api.ErrorCodeInternal, Reason: "not_implemented_in_catalog_test_fixture",
+		},
+	}, nil
+}
+
+func (noopImporter) GetImportJob(_ context.Context, _ api.GetImportJobRequestObject) (api.GetImportJobResponseObject, error) {
+	return api.GetImportJob500JSONResponse{
+		InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+			Error: api.ErrorCodeInternal, Reason: "not_implemented_in_catalog_test_fixture",
+		},
+	}, nil
+}
+
 // sharedPool is the package-level pgxpool reused across every entity
 // _test.go in the catalog package (D-73). Assigned in main_test.go's
 // TestMain after the Postgres testcontainer is up + migrations applied.
@@ -143,9 +174,17 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 		Cache:  c,
 		Logger: logger,
 	}, state.WithClock(clockwork.NewFakeClock()))
+	// Phase 5 (Plan 05-06): the composite gains a noopImporter to satisfy
+	// the StrictServerInterface (BulkImportCatalog + GetImportJob). We
+	// cannot embed *imports.Importer here because internal/imports already
+	// imports internal/catalog (errors.go, header.go, row_*.go), so adding
+	// the inverse direction inside this _test.go file would create a
+	// build-time package cycle. Catalog tests never exercise the import
+	// endpoints (those tests live in internal/imports/ + test/isolation/).
 	type testApiHandlers struct {
 		*Handlers
 		*state.Server
+		noopImporter
 	}
 	apiHandlers := &testApiHandlers{Handlers: h, Server: stateServer}
 	mux := server.NewMux(&server.Deps{
@@ -242,10 +281,12 @@ func seedQueueForOrg(t testing.TB, th *TestHandlers, ctx context.Context, orgID 
 	t.Helper()
 	q := generated.New(th.Pool)
 	id := uuid.Must(uuid.NewV7())
+	ext := "ext-q-" + name
 	_, err := q.InsertQueue(ctx, generated.InsertQueueParams{
 		ID:           pgUUID(id),
 		OrgID:        pgUUID(orgID),
-		ExternalID:   "ext-q-" + name,
+		Code:         "queue_" + sanitizeForCode(name), // Phase 04.1: required column.
+		ExternalID:   &ext,                              // *string post-04.1 (nullable column).
 		Name:         name,
 		ChannelTypes: []string{"voice"},
 		Priority:     0,
@@ -254,6 +295,78 @@ func seedQueueForOrg(t testing.TB, th *TestHandlers, ctx context.Context, orgID 
 	})
 	require.NoError(t, err, "seedQueueForOrg: InsertQueue")
 	return id
+}
+
+// strPtr — convenience helper for test fixtures that need *string values.
+// Phase 04.1: many API request/sqlc-param fields became *string when their
+// columns flipped to nullable; test bodies still want literal strings.
+func strPtr(s string) *string {
+	return &s
+}
+
+// makeAdapterBodyWithCode constructs a CreateAdapterRequest with an
+// explicit code (Plan 05 Hazard #3 from 04.1-04 SUMMARY). The default
+// makeAdapterBody helper derives Code from name via sanitizeForCode so
+// every legacy call site stays compiling; tests that need to mutate
+// `code` in isolation (Layer 1 / Layer 2 / duplicate paths) call this
+// variant to fix the code field to a known regex-compliant value.
+//
+// externalID may be empty (treated as nil → no external_id field sent).
+func makeAdapterBodyWithCode(code, externalID, name, adapterType string, cfg map[string]any) api.CreateAdapterRequest {
+	body := api.CreateAdapterRequest{
+		Code:        code,
+		Name:        name,
+		AdapterType: adapterType,
+	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	if cfg != nil {
+		body.Config = &cfg
+	}
+	return body
+}
+
+// makeBreakReasonBodyWithCode constructs a CreateBreakReasonRequest with
+// explicit code + externalID (Plan 05 Hazard #3 from 04.1-04 SUMMARY).
+// Mirrors makeAdapterBodyWithCode: the default helper derives Code from
+// name; tests that need an explicit code use this variant.
+//
+// externalID may be empty (treated as nil → no external_id field sent).
+func makeBreakReasonBodyWithCode(code, externalID, name string, routable bool, displayOrder int) api.CreateBreakReasonRequest {
+	body := api.CreateBreakReasonRequest{
+		Code:         code,
+		Name:         name,
+		Routable:     routable,
+		DisplayOrder: displayOrder,
+	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
+}
+
+// sanitizeForCode converts an arbitrary string into a valid `code` per
+// D04_1-03 regex (`^[a-z][a-z0-9_]{0,63}$`). Used by test seed helpers so
+// they can derive a unique code from a display name without hand-crafting
+// it per call site. Truncates at 60 chars to keep the entire code <= 64.
+func sanitizeForCode(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s) && len(out) < 60; i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			out = append(out, c+('a'-'A'))
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			out = append(out, c)
+		default:
+			out = append(out, '_')
+		}
+	}
+	if len(out) == 0 || out[0] < 'a' || out[0] > 'z' {
+		out = append([]byte{'r'}, out...)
+	}
+	return string(out)
 }
 
 func doJSON(t testing.TB, srv *httptest.Server, method string, orgID uuid.UUID, path string, q url.Values, body any) (*http.Response, []byte) {

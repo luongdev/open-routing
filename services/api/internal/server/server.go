@@ -44,6 +44,16 @@ import (
 	appmw "github.com/luongdev/open-routing/services/api/internal/middleware"
 )
 
+// importBodyLimit mirrors imports.ImportBodyLimit (D5-21 / IMP-07) — the
+// 50 MB cap on org-scoped POST bodies. Duplicated here as a local const
+// rather than reaching into the imports package because
+// `internal/imports` depends on `internal/catalog`, and pulling imports
+// into server.go would create a test-time cycle for
+// `catalog/testutil_test.go` (package catalog) which already pulls in
+// `server`. The literal is single-sourced via this comment + the
+// Phase 5 spec lock; if the spec changes both constants flip together.
+const importBodyLimit int64 = 50 << 20
+
 // Deps bundles every runtime dependency the API mux needs. cmd/api/main.go
 // constructs one of these (after wiring OTel, pool, redis, orgDB, cache,
 // catalog) and hands it to NewMux. SpecBytes is the embedded openapi.yaml
@@ -97,10 +107,22 @@ func NewMux(deps *Deps) http.Handler {
 	// orgContextMiddleware in ChiServerOptions.Middlewares applies OrgContext
 	// only for /v1/* paths, leaving bypass routes (/healthz, /readyz,
 	// /openapi.yaml, /docs) reachable without X-Org-Id (D-21).
+	//
+	//     Phase 5 (Plan 05-06): middleware.BodyLimit sits AFTER
+	//     orgContextMiddleware per Open Q7 so cheap header-level
+	//     rejections (invalid_org_id) short-circuit BEFORE the body
+	//     wrap touches r.Body. The wrap remains BEFORE
+	//     uuidv7PathParams so a malformed UUID and oversized body
+	//     both surface through the same /v1/orgs/ surface in the
+	//     order: org gate → size gate → path-shape gate →
+	//     strict-server. middleware.BodyLimit is path-scoped to
+	//     /v1/orgs/ via the second argument; non-/v1/orgs paths
+	//     (e.g., /healthz) pass through untouched.
 	api.HandlerWithOptions(strictPipeline, api.ChiServerOptions{
 		BaseRouter: r,
 		Middlewares: []api.MiddlewareFunc{
 			orgContextMiddleware,
+			appmw.BodyLimit(importBodyLimit, "/v1/orgs/"),
 			uuidv7PathParamsMiddleware,
 		},
 	})
@@ -271,15 +293,12 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		v.RequestId = setIfNil(v.RequestId, id)
 		return api.UpdateAgent422JSONResponse(v)
 	case api.UpdateChannel409JSONResponse:
-		// Phase 3 OQ-1/A4: VersionConflict variant — has its own RequestId
-		// field. Pattern matches UpdateAgent409 / UpdateQueue409.
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
+		// Phase 5 fix H1: Update*409 is now a oneOf union (VersionConflict
+		// vs ErrorResponse for duplicate_external_id). Pattern matches
+		// CreateAgent409 — see injectUpdateChannel409RequestID below.
+		return injectUpdateChannel409RequestID(r, id)
 	case api.UpdateAdapter409JSONResponse:
-		// Phase 3 OQ-1/A4: VersionConflict variant — has its own RequestId
-		// field. Pattern matches UpdateChannel409 / UpdateAgent409.
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
+		return injectUpdateAdapter409RequestID(r, id)
 	case api.CreateQueue409JSONResponse:
 		v := api.ErrorResponse(r)
 		v.RequestId = setIfNil(v.RequestId, id)
@@ -474,9 +493,9 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateAgent409JSONResponse:
-		// VersionConflictErrorResponse variant — has its own RequestId field.
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
+		// Phase 5 fix H1: Update*409 is now a oneOf union (VersionConflict
+		// vs ErrorResponse for duplicate_external_id).
+		return injectUpdateAgent409RequestID(r, id)
 
 	// ── AgentStatus 400/404/409 ───────────────────────────────────────────
 	case api.GetAgentStatus400JSONResponse:
@@ -523,9 +542,8 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateBreakReason409JSONResponse:
-		// VersionConflictErrorResponse variant — has its own RequestId field.
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
+		// Phase 5 fix H1: Update*409 is now a oneOf union.
+		return injectUpdateBreakReason409RequestID(r, id)
 
 	// ── BulkImport 413 ────────────────────────────────────────────────────
 	case api.BulkImportCatalog413JSONResponse:
@@ -594,9 +612,8 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateQueue409JSONResponse:
-		// VersionConflictErrorResponse variant — has its own RequestId field.
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
+		// Phase 5 fix H1: Update*409 is now a oneOf union.
+		return injectUpdateQueue409RequestID(r, id)
 
 	// ── Skill 400/404/409 ─────────────────────────────────────────────────
 	case api.ListSkills400JSONResponse:
@@ -624,9 +641,8 @@ func injectRequestIDIntoErrorResponse(response any, id string) any {
 		r.RequestId = setIfNil(r.RequestId, id)
 		return r
 	case api.UpdateSkill409JSONResponse:
-		// VersionConflictErrorResponse variant — has its own RequestId field.
-		r.RequestId = setIfNil(r.RequestId, id)
-		return r
+		// Phase 5 fix H1: Update*409 is now a oneOf union.
+		return injectUpdateSkill409RequestID(r, id)
 
 	default:
 		// Successful responses (200/201/204) and non-ErrorResponse shapes
@@ -663,6 +679,182 @@ func injectCreateAgent409RequestID(r api.CreateAgent409JSONResponse, id string) 
 	var out api.CreateAgent409JSONResponseBody
 	_ = out.FromErrorResponse(v)
 	return api.CreateAgent409JSONResponse(out)
+}
+
+// Phase 5 fix H1 — Update*409 inject helpers. The pre-fix UpdateXxxxx409
+// responses were FLAT VersionConflictErrorResponse structs (no union); the
+// fix promoted them to oneOf [ErrorResponse, allOf [VersionConflict, Current]]
+// so PATCH-time 23505 (duplicate_external_id) can surface as 409 with the
+// matching ErrorCode rather than as a 500. The injectXxx helpers below
+// probe for the `current` field to disambiguate the two union members,
+// inject the request_id, and re-encode. Mirrors injectCreateAgent409RequestID.
+
+func injectUpdateAgent409RequestID(r api.UpdateAgent409JSONResponse, id string) api.UpdateAgent409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsUpdateAgent409JSONResponseBody1()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.UpdateAgent409JSONResponseBody
+		_ = out.FromUpdateAgent409JSONResponseBody1(v)
+		return api.UpdateAgent409JSONResponse(out)
+	}
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.UpdateAgent409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.UpdateAgent409JSONResponse(out)
+}
+
+func injectUpdateSkill409RequestID(r api.UpdateSkill409JSONResponse, id string) api.UpdateSkill409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsUpdateSkill409JSONResponseBody1()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.UpdateSkill409JSONResponseBody
+		_ = out.FromUpdateSkill409JSONResponseBody1(v)
+		return api.UpdateSkill409JSONResponse(out)
+	}
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.UpdateSkill409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.UpdateSkill409JSONResponse(out)
+}
+
+func injectUpdateQueue409RequestID(r api.UpdateQueue409JSONResponse, id string) api.UpdateQueue409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsUpdateQueue409JSONResponseBody1()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.UpdateQueue409JSONResponseBody
+		_ = out.FromUpdateQueue409JSONResponseBody1(v)
+		return api.UpdateQueue409JSONResponse(out)
+	}
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.UpdateQueue409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.UpdateQueue409JSONResponse(out)
+}
+
+func injectUpdateChannel409RequestID(r api.UpdateChannel409JSONResponse, id string) api.UpdateChannel409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsUpdateChannel409JSONResponseBody1()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.UpdateChannel409JSONResponseBody
+		_ = out.FromUpdateChannel409JSONResponseBody1(v)
+		return api.UpdateChannel409JSONResponse(out)
+	}
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.UpdateChannel409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.UpdateChannel409JSONResponse(out)
+}
+
+func injectUpdateAdapter409RequestID(r api.UpdateAdapter409JSONResponse, id string) api.UpdateAdapter409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsUpdateAdapter409JSONResponseBody1()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.UpdateAdapter409JSONResponseBody
+		_ = out.FromUpdateAdapter409JSONResponseBody1(v)
+		return api.UpdateAdapter409JSONResponse(out)
+	}
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.UpdateAdapter409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.UpdateAdapter409JSONResponse(out)
+}
+
+func injectUpdateBreakReason409RequestID(r api.UpdateBreakReason409JSONResponse, id string) api.UpdateBreakReason409JSONResponse {
+	raw, err := r.MarshalJSON()
+	if err != nil {
+		return r
+	}
+	var probe struct {
+		Current json.RawMessage `json:"current"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil && len(probe.Current) > 0 && string(probe.Current) != "null" {
+		v, err := r.AsUpdateBreakReason409JSONResponseBody1()
+		if err != nil {
+			return r
+		}
+		v.RequestId = setIfNil(v.RequestId, id)
+		var out api.UpdateBreakReason409JSONResponseBody
+		_ = out.FromUpdateBreakReason409JSONResponseBody1(v)
+		return api.UpdateBreakReason409JSONResponse(out)
+	}
+	v, err := r.AsErrorResponse()
+	if err != nil {
+		return r
+	}
+	v.RequestId = setIfNil(v.RequestId, id)
+	var out api.UpdateBreakReason409JSONResponseBody
+	_ = out.FromErrorResponse(v)
+	return api.UpdateBreakReason409JSONResponse(out)
 }
 
 // setIfNil returns a pointer to id if current is nil, otherwise returns current.

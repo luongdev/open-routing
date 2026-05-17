@@ -46,6 +46,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/imports"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
 )
@@ -220,11 +221,31 @@ func TestMain(m *testing.M) {
 		_ = pgC.Terminate(ctx)
 		os.Exit(containerFailureExitCode())
 	}
+	// Phase 5: wire imports.Importer into the same composite so the
+	// isolation suite exercises BulkImportCatalog / GetImportJob via the
+	// same chi mux production uses (Plan 05-06 third embed; F3).
+	importer := imports.New(imports.Deps{
+		OrgDB:  orgDB,
+		Cache:  catalogCache,
+		Logger: logger,
+	}, imports.WithClock(clockwork.NewRealClock()))
+	if err := importer.Start(ctx); err != nil {
+		os.Stderr.WriteString("isolation: importer.Start: " + err.Error() + "\n")
+		stateServer.Stop()
+		sharedPool.Close()
+		_ = pgC.Terminate(ctx)
+		os.Exit(containerFailureExitCode())
+	}
 	type apiHandlers struct {
 		*catalog.Handlers
 		*state.Server
+		*imports.Importer
 	}
-	handlers := &apiHandlers{Handlers: catalogHandlers, Server: stateServer}
+	handlers := &apiHandlers{
+		Handlers: catalogHandlers,
+		Server:   stateServer,
+		Importer: importer,
+	}
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,
 		Redis:          sharedRedis,
@@ -241,8 +262,10 @@ func TestMain(m *testing.M) {
 	// (6) Run tests.
 	code := m.Run()
 
-	// (7) Cleanup. Order matches production LIFO: HTTP → sweeper → Redis → pool.
+	// (7) Cleanup. Order matches production LIFO:
+	//   HTTP → importer sweep → state sweeper → Redis → pool.
 	sharedSrv.Close()
+	importer.Stop()
 	stateServer.Stop()
 	if sharedRedis != nil {
 		_ = sharedRedis.Close()

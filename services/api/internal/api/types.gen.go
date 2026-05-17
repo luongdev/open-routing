@@ -83,24 +83,33 @@ func (e ChannelType) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeCrossOrg          ErrorCode = "cross_org"
-	ErrorCodeImportFailed      ErrorCode = "import_failed"
-	ErrorCodeInternal          ErrorCode = "internal"
-	ErrorCodeInvalidBody       ErrorCode = "invalid_body"
-	ErrorCodeInvalidId         ErrorCode = "invalid_id"
-	ErrorCodeInvalidOrgId      ErrorCode = "invalid_org_id"
-	ErrorCodeInvalidReference  ErrorCode = "invalid_reference"
-	ErrorCodeInvalidTransition ErrorCode = "invalid_transition"
-	ErrorCodeInvalidValue      ErrorCode = "invalid_value"
-	ErrorCodeNotFound          ErrorCode = "not_found"
-	ErrorCodeRateLimited       ErrorCode = "rate_limited"
-	ErrorCodeVersionConflict   ErrorCode = "version_conflict"
+	ErrorCodeCrossOrg            ErrorCode = "cross_org"
+	ErrorCodeDuplicateCode       ErrorCode = "duplicate_code"
+	ErrorCodeDuplicateExternalId ErrorCode = "duplicate_external_id"
+	ErrorCodeImmutableField      ErrorCode = "immutable_field"
+	ErrorCodeImportFailed        ErrorCode = "import_failed"
+	ErrorCodeInternal            ErrorCode = "internal"
+	ErrorCodeInvalidBody         ErrorCode = "invalid_body"
+	ErrorCodeInvalidId           ErrorCode = "invalid_id"
+	ErrorCodeInvalidOrgId        ErrorCode = "invalid_org_id"
+	ErrorCodeInvalidReference    ErrorCode = "invalid_reference"
+	ErrorCodeInvalidTransition   ErrorCode = "invalid_transition"
+	ErrorCodeInvalidValue        ErrorCode = "invalid_value"
+	ErrorCodeNotFound            ErrorCode = "not_found"
+	ErrorCodeRateLimited         ErrorCode = "rate_limited"
+	ErrorCodeVersionConflict     ErrorCode = "version_conflict"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
 	case ErrorCodeCrossOrg:
+		return true
+	case ErrorCodeDuplicateCode:
+		return true
+	case ErrorCodeDuplicateExternalId:
+		return true
+	case ErrorCodeImmutableField:
 		return true
 	case ErrorCodeImportFailed:
 		return true
@@ -168,6 +177,27 @@ func (e ImportEntityType) Valid() bool {
 	case Queues:
 		return true
 	case Skills:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImportJobStatus.
+const (
+	Completed ImportJobStatus = "completed"
+	Failed    ImportJobStatus = "failed"
+	Pending   ImportJobStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ImportJobStatus enum.
+func (e ImportJobStatus) Valid() bool {
+	switch e {
+	case Completed:
+		return true
+	case Failed:
+		return true
+	case Pending:
 		return true
 	default:
 		return false
@@ -258,88 +288,88 @@ func (e VersionConflictErrorResponseError) Valid() bool {
 	}
 }
 
-// Defines values for UpdateAdapter409JSONResponseBodyError.
+// Defines values for UpdateAdapter409JSONResponseBody1Error.
 const (
-	UpdateAdapter409JSONResponseBodyErrorVersionConflict UpdateAdapter409JSONResponseBodyError = "version_conflict"
+	UpdateAdapter409JSONResponseBody1ErrorVersionConflict UpdateAdapter409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateAdapter409JSONResponseBodyError enum.
-func (e UpdateAdapter409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateAdapter409JSONResponseBody1Error enum.
+func (e UpdateAdapter409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateAdapter409JSONResponseBodyErrorVersionConflict:
+	case UpdateAdapter409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateAgent409JSONResponseBodyError.
+// Defines values for UpdateAgent409JSONResponseBody1Error.
 const (
-	UpdateAgent409JSONResponseBodyErrorVersionConflict UpdateAgent409JSONResponseBodyError = "version_conflict"
+	UpdateAgent409JSONResponseBody1ErrorVersionConflict UpdateAgent409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateAgent409JSONResponseBodyError enum.
-func (e UpdateAgent409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateAgent409JSONResponseBody1Error enum.
+func (e UpdateAgent409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateAgent409JSONResponseBodyErrorVersionConflict:
+	case UpdateAgent409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateBreakReason409JSONResponseBodyError.
+// Defines values for UpdateBreakReason409JSONResponseBody1Error.
 const (
-	UpdateBreakReason409JSONResponseBodyErrorVersionConflict UpdateBreakReason409JSONResponseBodyError = "version_conflict"
+	UpdateBreakReason409JSONResponseBody1ErrorVersionConflict UpdateBreakReason409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateBreakReason409JSONResponseBodyError enum.
-func (e UpdateBreakReason409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateBreakReason409JSONResponseBody1Error enum.
+func (e UpdateBreakReason409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateBreakReason409JSONResponseBodyErrorVersionConflict:
+	case UpdateBreakReason409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateChannel409JSONResponseBodyError.
+// Defines values for UpdateChannel409JSONResponseBody1Error.
 const (
-	UpdateChannel409JSONResponseBodyErrorVersionConflict UpdateChannel409JSONResponseBodyError = "version_conflict"
+	UpdateChannel409JSONResponseBody1ErrorVersionConflict UpdateChannel409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateChannel409JSONResponseBodyError enum.
-func (e UpdateChannel409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateChannel409JSONResponseBody1Error enum.
+func (e UpdateChannel409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateChannel409JSONResponseBodyErrorVersionConflict:
+	case UpdateChannel409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateQueue409JSONResponseBodyError.
+// Defines values for UpdateQueue409JSONResponseBody1Error.
 const (
-	UpdateQueue409JSONResponseBodyErrorVersionConflict UpdateQueue409JSONResponseBodyError = "version_conflict"
+	UpdateQueue409JSONResponseBody1ErrorVersionConflict UpdateQueue409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateQueue409JSONResponseBodyError enum.
-func (e UpdateQueue409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateQueue409JSONResponseBody1Error enum.
+func (e UpdateQueue409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case UpdateQueue409JSONResponseBodyErrorVersionConflict:
+	case UpdateQueue409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateSkill409JSONResponseBodyError.
+// Defines values for UpdateSkill409JSONResponseBody1Error.
 const (
-	VersionConflict UpdateSkill409JSONResponseBodyError = "version_conflict"
+	VersionConflict UpdateSkill409JSONResponseBody1Error = "version_conflict"
 )
 
-// Valid indicates whether the value is a known member of the UpdateSkill409JSONResponseBodyError enum.
-func (e UpdateSkill409JSONResponseBodyError) Valid() bool {
+// Valid indicates whether the value is a known member of the UpdateSkill409JSONResponseBody1Error enum.
+func (e UpdateSkill409JSONResponseBody1Error) Valid() bool {
 	switch e {
 	case VersionConflict:
 		return true
@@ -353,10 +383,24 @@ type Adapter struct {
 	// AdapterType Identifier for the adapter kind (e.g. "freeswitch", "livekit", "twilio"). Free text — the platform does not restrict values in v0.1.
 	AdapterType string `json:"adapter_type"`
 
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code string `json:"code"`
+
 	// Config Free-form JSONB configuration blob. Shape is adapter-type-specific. No vendor-specific fixed columns — everything goes in this field.
 	Config    *map[string]interface{} `json:"config,omitempty"`
 	CreatedAt *time.Time              `json:"created_at,omitempty"`
 	Enabled   bool                    `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -378,6 +422,11 @@ type Adapter struct {
 
 // Agent An agent in the catalog. Agents are the humans (or bots) who handle routed interactions. Each agent belongs to exactly one org.
 type Agent struct {
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// Email Agent email address.
@@ -386,8 +435,13 @@ type Agent struct {
 	// Enabled Soft-delete flag. `false` means the agent is disabled and will not appear in default list responses (CAT-09). Use `?include_disabled=true` to surface disabled agents.
 	Enabled bool `json:"enabled"`
 
-	// ExternalId Caller-assigned stable identifier for sync/import (e.g. HR system employee ID). Unique within the org. `UNIQUE (org_id, external_id)`.
-	ExternalId string `json:"external_id"`
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -412,10 +466,22 @@ type Agent struct {
 
 // AgentListItem Flat agent record returned in list responses. Skills are intentionally omitted (OQ-1A resolution — embed skills only on detail responses).
 type AgentListItem struct {
-	CreatedAt  *time.Time          `json:"created_at,omitempty"`
-	Email      openapi_types.Email `json:"email"`
-	Enabled    bool                `json:"enabled"`
-	ExternalId string              `json:"external_id"`
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string              `json:"code"`
+	CreatedAt *time.Time          `json:"created_at,omitempty"`
+	Email     openapi_types.Email `json:"email"`
+	Enabled   bool                `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -502,11 +568,24 @@ type AgentStatus string
 
 // BreakReason A configurable reason an agent can enter the Break state. Each reason has a `routable` flag that determines whether the agent is eligible for routing while on break. The `IsRoutable` domain helper checks this (STATE-10).
 type BreakReason struct {
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// DisplayOrder Sort position in the break reason picker. Lower values appear first.
 	DisplayOrder int  `json:"display_order"`
 	Enabled      bool `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -558,6 +637,9 @@ type BulkImportResult struct {
 	// Failed Structured errors for each failed row. Empty when all rows succeed.
 	Failed []BulkImportFailedRow `json:"failed"`
 
+	// IdempotentReplay True when this response is a persisted prior result returned because the client repeated the Idempotency-Key (D5-13). False or absent on a first-time POST. v0.1 KNOWN LIMITATION: when true, `succeeded` is always an empty array because the server stores only counters; rely on `failed[]` for forensics (see operation description).
+	IdempotentReplay *bool `json:"idempotent_replay,omitempty"`
+
 	// Succeeded UUIDv7 IDs of successfully created/updated records.
 	Succeeded []UUIDv7 `json:"succeeded"`
 }
@@ -566,12 +648,25 @@ type BulkImportResult struct {
 type Channel struct {
 	// ChannelType Supported channel types in v0.1.
 	ChannelType ChannelType `json:"channel_type"`
-	CreatedAt   *time.Time  `json:"created_at,omitempty"`
+
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// DefaultQueueId Default queue for interactions arriving on this channel when no flow route is configured. Null means no default queue.
 	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
 	Enabled        bool    `json:"enabled"`
-	ExternalId     string  `json:"external_id"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -596,22 +691,35 @@ type ChannelType string
 type CreateAdapterRequest struct {
 	AdapterType string `json:"adapter_type"`
 
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code string `json:"code"`
+
 	// Config Free-form JSONB configuration blob. Null to leave empty.
 	Config  *map[string]interface{} `json:"config,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
-	Name    string                  `json:"name"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
 }
 
 // CreateAgentRequest Request body for creating an agent.
 type CreateAgentRequest struct {
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code string `json:"code"`
+
 	// Email Agent email address.
 	Email openapi_types.Email `json:"email"`
 
 	// Enabled Initial enabled state. Defaults to `true`.
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// ExternalId Caller-assigned stable identifier. Must be unique within the org.
-	ExternalId string `json:"external_id"`
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Name Display name.
 	Name string `json:"name"`
@@ -622,44 +730,75 @@ type CreateAgentRequest struct {
 
 // CreateBreakReasonRequest defines model for CreateBreakReasonRequest.
 type CreateBreakReasonRequest struct {
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code         string `json:"code"`
 	DisplayOrder int    `json:"display_order"`
 	Enabled      *bool  `json:"enabled,omitempty"`
-	Name         string `json:"name"`
-	Routable     bool   `json:"routable"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
+	Routable   bool    `json:"routable"`
 }
 
 // CreateChannelRequest defines model for CreateChannelRequest.
 type CreateChannelRequest struct {
 	// ChannelType Supported channel types in v0.1.
-	ChannelType    ChannelType `json:"channel_type"`
-	DefaultQueueId *UUIDv7     `json:"default_queue_id,omitempty"`
-	Enabled        *bool       `json:"enabled,omitempty"`
-	ExternalId     string      `json:"external_id"`
-	Name           string      `json:"name"`
+	ChannelType ChannelType `json:"channel_type"`
+
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code           string  `json:"code"`
+	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
+	Enabled        *bool   `json:"enabled,omitempty"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
 }
 
 // CreateQueueRequest defines model for CreateQueueRequest.
 type CreateQueueRequest struct {
 	AcwSec       int           `json:"acw_sec"`
 	ChannelTypes []ChannelType `json:"channel_types"`
-	Enabled      *bool         `json:"enabled,omitempty"`
-	ExternalId   string        `json:"external_id"`
-	Name         string        `json:"name"`
-	Priority     int           `json:"priority"`
+
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code    string `json:"code"`
+	Enabled *bool  `json:"enabled,omitempty"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
+	Priority   int     `json:"priority"`
 }
 
 // CreateSkillRequest defines model for CreateSkillRequest.
 type CreateSkillRequest struct {
+	// Code User-facing canonical identifier. Required on create, immutable
+	// after (passing a different code in PATCH returns HTTP 422 with
+	// ErrorCode=immutable_field).
+	Code        string  `json:"code"`
 	Description *string `json:"description,omitempty"`
 	Enabled     *bool   `json:"enabled,omitempty"`
-	ExternalId  string  `json:"external_id"`
-	Name        string  `json:"name"`
-	SkillType   string  `json:"skill_type"`
+
+	// ExternalId Optional caller-assigned identifier from an external system. See entity schema.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       string  `json:"name"`
+	SkillType  string  `json:"skill_type"`
 }
 
 // ErrorCode Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
 // criterion 4). Clients branch on this value — never on `reason` or HTTP
 // status alone.
+//
+// Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+// `immutable_field` to support the universal `code` identity model
+// (D04_1-16, D04_1-20).
 type ErrorCode string
 
 // ErrorResponse Canonical error envelope (D-35). Present on every 4xx/5xx response.
@@ -670,6 +809,10 @@ type ErrorResponse struct {
 	// Error Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
 	// criterion 4). Clients branch on this value — never on `reason` or HTTP
 	// status alone.
+	//
+	// Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+	// `immutable_field` to support the universal `code` identity model
+	// (D04_1-16, D04_1-20).
 	Error ErrorCode `json:"error"`
 
 	// Reason Human-readable contextual detail for debugging. Clients MUST NOT branch on this value — it is subject to change across minor versions.
@@ -688,6 +831,61 @@ type HealthResponse struct {
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// ImportAdapterRequest Phase 5 (IMP-01) per-row JSON shape for `entity=adapters`. `config`
+// is a free-form JSONB blob passed through to storage with no
+// validation (D-72 Phase 3 contract).
+type ImportAdapterRequest struct {
+	AdapterType string `json:"adapter_type"`
+	Code        string `json:"code"`
+
+	// Config Free-form vendor configuration; no fixed schema.
+	Config     *map[string]interface{} `json:"config,omitempty"`
+	Enabled    *bool                   `json:"enabled,omitempty"`
+	ExternalId *string                 `json:"external_id,omitempty"`
+	Name       string                  `json:"name"`
+}
+
+// ImportAgentRequest Phase 5 (IMP-01) per-row JSON shape for `entity=agents`. Mirror of
+// CreateAgentRequest with FK references by `code` instead of UUID.
+// `external_id` is optional integration-mapping (mutable per D04_1-07).
+type ImportAgentRequest struct {
+	Code       string              `json:"code"`
+	Email      openapi_types.Email `json:"email"`
+	Enabled    *bool               `json:"enabled,omitempty"`
+	ExternalId *string             `json:"external_id,omitempty"`
+	Name       string              `json:"name"`
+
+	// Skills Skill assignments referenced by `skill_code`. MERGE semantics (D5-18) — existing assignments not in this list are LEFT INTACT; proficiency for codes present in this list is set to the value supplied (D5-19 import wins). Skill removal via import is deferred to v0.2.
+	Skills *[]struct {
+		Proficiency int    `json:"proficiency"`
+		SkillCode   string `json:"skill_code"`
+	} `json:"skills,omitempty"`
+}
+
+// ImportBreakReasonRequest Phase 5 (IMP-01) per-row JSON shape for `entity=break_reasons`.
+// `name` is a mutable display label (Phase 04.1 dropped
+// UNIQUE(org_id, name) — IDENT-03).
+type ImportBreakReasonRequest struct {
+	Code         string  `json:"code"`
+	DisplayOrder *int    `json:"display_order,omitempty"`
+	Enabled      *bool   `json:"enabled,omitempty"`
+	ExternalId   *string `json:"external_id,omitempty"`
+	Name         string  `json:"name"`
+	Routable     *bool   `json:"routable,omitempty"`
+}
+
+// ImportChannelRequest Phase 5 (IMP-01) per-row JSON shape for `entity=channels`. FK
+// `default_queue_code` references an existing queue by code; cross-row
+// FK probe is performed in the same chunk transaction.
+type ImportChannelRequest struct {
+	ChannelType      string  `json:"channel_type"`
+	Code             string  `json:"code"`
+	DefaultQueueCode *string `json:"default_queue_code,omitempty"`
+	Enabled          *bool   `json:"enabled,omitempty"`
+	ExternalId       *string `json:"external_id,omitempty"`
+	Name             string  `json:"name"`
+}
 
 // ImportEntityType The catalog entity type being imported.
 type ImportEntityType string
@@ -711,9 +909,38 @@ type ImportJob struct {
 	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
 	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
-	OrgId         UUIDv7 `json:"org_id"`
-	SucceededRows int    `json:"succeeded_rows"`
-	TotalRows     int    `json:"total_rows"`
+	OrgId UUIDv7 `json:"org_id"`
+
+	// Status Lifecycle of the import (D5-26). `pending` — the row was created before processing began; in v0.1 callers normally observe only `completed` or `failed` because the request is synchronous. `failed` may be set by the crash-recovery sweep (D5-11) when a process restart leaves a pending row stranded.
+	Status        ImportJobStatus `json:"status"`
+	SucceededRows int             `json:"succeeded_rows"`
+	TotalRows     int             `json:"total_rows"`
+}
+
+// ImportJobStatus Lifecycle of the import (D5-26). `pending` — the row was created before processing began; in v0.1 callers normally observe only `completed` or `failed` because the request is synchronous. `failed` may be set by the crash-recovery sweep (D5-11) when a process restart leaves a pending row stranded.
+type ImportJobStatus string
+
+// ImportQueueRequest Phase 5 (IMP-01) per-row JSON shape for `entity=queues`.
+type ImportQueueRequest struct {
+	AcwSec *int `json:"acw_sec,omitempty"`
+
+	// ChannelTypes Multi-valued — in CSV use pipe-delimited per D5-04 (`voice|chat`); in JSON use the array form.
+	ChannelTypes []string `json:"channel_types"`
+	Code         string   `json:"code"`
+	Enabled      *bool    `json:"enabled,omitempty"`
+	ExternalId   *string  `json:"external_id,omitempty"`
+	Name         string   `json:"name"`
+	Priority     *int     `json:"priority,omitempty"`
+}
+
+// ImportSkillRequest Phase 5 (IMP-01) per-row JSON shape for `entity=skills`.
+type ImportSkillRequest struct {
+	Code        string  `json:"code"`
+	Description *string `json:"description,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+	ExternalId  *string `json:"external_id,omitempty"`
+	Name        string  `json:"name"`
+	SkillType   string  `json:"skill_type"`
 }
 
 // InvalidTransitionErrorResponse HTTP 409 response for invalid agent-state transitions (STATE-03, D-37).
@@ -830,9 +1057,22 @@ type Queue struct {
 
 	// ChannelTypes Channel types this queue accepts (e.g. ["voice", "chat"]).
 	ChannelTypes []ChannelType `json:"channel_types"`
-	CreatedAt    *time.Time    `json:"created_at,omitempty"`
-	Enabled      bool          `json:"enabled"`
-	ExternalId   string        `json:"external_id"`
+
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Enabled   bool       `json:"enabled"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -875,12 +1115,24 @@ type ReadinessResponseStatus string
 
 // Skill A skill in the catalog. Skills are assigned to agents with a proficiency rating.
 type Skill struct {
+	// Code User-facing canonical identifier (D04_1-01). Required, immutable
+	// after create. Composite UNIQUE (org_id, code). Used as the upsert
+	// key for bulk import (Phase 5) and cross-reference target for
+	// nested relationships and future DSL references.
+	Code      string     `json:"code"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// Description Optional long-form description.
 	Description *string `json:"description,omitempty"`
 	Enabled     bool    `json:"enabled"`
-	ExternalId  string  `json:"external_id"`
+
+	// ExternalId Optional caller-assigned identifier from an external system
+	// (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+	// key for bulk import (use `code` for that). Partial unique
+	// within an org when present. v0.1 supports at most one
+	// external source per entity per org; multi-source
+	// disambiguation deferred to v0.2 via `external_source TEXT`.
+	ExternalId *string `json:"external_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -908,10 +1160,29 @@ type UUIDv7 = openapi_types.UUID
 type UpdateAdapterRequest struct {
 	AdapterType *string `json:"adapter_type,omitempty"`
 
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code *string `json:"code,omitempty"`
+
 	// Config Free-form JSONB configuration blob. Null to clear.
 	Config  *map[string]interface{} `json:"config,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
-	Name    *string                 `json:"name,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
 
 	// Version Current optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -919,9 +1190,27 @@ type UpdateAdapterRequest struct {
 
 // UpdateAgentRequest Request body for updating an agent. Include `version` from the last GET response for optimistic concurrency (CAT-08).
 type UpdateAgentRequest struct {
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code    *string              `json:"code,omitempty"`
 	Email   *openapi_types.Email `json:"email,omitempty"`
 	Enabled *bool                `json:"enabled,omitempty"`
-	Name    *string              `json:"name,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
 
 	// Skills Full-replacement skill assignment array (PUT semantics on the join table — OQ-1A resolution). Replaces the entire set atomically. Omit to leave skills unchanged.
 	Skills *[]AgentSkillAssignment `json:"skills,omitempty"`
@@ -932,10 +1221,28 @@ type UpdateAgentRequest struct {
 
 // UpdateBreakReasonRequest defines model for UpdateBreakReasonRequest.
 type UpdateBreakReasonRequest struct {
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code         *string `json:"code,omitempty"`
 	DisplayOrder *int    `json:"display_order,omitempty"`
 	Enabled      *bool   `json:"enabled,omitempty"`
-	Name         *string `json:"name,omitempty"`
-	Routable     *bool   `json:"routable,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	Routable   *bool   `json:"routable,omitempty"`
 
 	// Version Optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -944,10 +1251,29 @@ type UpdateBreakReasonRequest struct {
 // UpdateChannelRequest Request body for updating a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08).
 type UpdateChannelRequest struct {
 	// ChannelType Supported channel types in v0.1.
-	ChannelType    *ChannelType `json:"channel_type,omitempty"`
-	DefaultQueueId *UUIDv7      `json:"default_queue_id,omitempty"`
-	Enabled        *bool        `json:"enabled,omitempty"`
-	Name           *string      `json:"name,omitempty"`
+	ChannelType *ChannelType `json:"channel_type,omitempty"`
+
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code           *string `json:"code,omitempty"`
+	DefaultQueueId *UUIDv7 `json:"default_queue_id,omitempty"`
+	Enabled        *bool   `json:"enabled,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
 
 	// Version Current optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -957,9 +1283,28 @@ type UpdateChannelRequest struct {
 type UpdateQueueRequest struct {
 	AcwSec       *int           `json:"acw_sec,omitempty"`
 	ChannelTypes *[]ChannelType `json:"channel_types,omitempty"`
-	Enabled      *bool          `json:"enabled,omitempty"`
-	Name         *string        `json:"name,omitempty"`
-	Priority     *int           `json:"priority,omitempty"`
+
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code    *string `json:"code,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	Priority   *int    `json:"priority,omitempty"`
 
 	// Version Optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -967,10 +1312,28 @@ type UpdateQueueRequest struct {
 
 // UpdateSkillRequest defines model for UpdateSkillRequest.
 type UpdateSkillRequest struct {
+	// Code Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+	// Passing a different value returns HTTP 422 with
+	// ErrorCode=immutable_field. The field is accepted in the PATCH
+	// body to preserve symmetry with the Create*Request shape; absent
+	// or matching values are no-ops. Rename support deferred to v0.2.
+	Code        *string `json:"code,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Enabled     *bool   `json:"enabled,omitempty"`
-	Name        *string `json:"name,omitempty"`
-	SkillType   *string `json:"skill_type,omitempty"`
+
+	// ExternalId Mutable external-system mapping (D04_1-07). Pass a non-empty
+	// string to (re)bind to an external row; pass an empty string
+	// `""` to CLEAR the binding (server sets external_id to SQL NULL);
+	// omit the field to leave the existing binding unchanged. Phase 5
+	// fix H2 — `null` JSON values are indistinguishable from omission
+	// in the current oapi-codegen pointer encoding (both decode to a
+	// nil `*string`), so the empty-string sentinel is the documented
+	// v0.1 way to clear. A future v0.2 release may add a tri-state
+	// wrapper that allows literal `null` to clear, at which point the
+	// empty-string sentinel will be deprecated but still honoured.
+	ExternalId *string `json:"external_id,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	SkillType  *string `json:"skill_type,omitempty"`
 
 	// Version Optimistic-lock version. Mismatch → HTTP 409.
 	Version int `json:"version"`
@@ -1005,6 +1368,9 @@ type EntityIdPath = UUIDv7
 
 // EntityTypeQuery The catalog entity type being imported.
 type EntityTypeQuery = ImportEntityType
+
+// IdempotencyKeyHeader defines model for IdempotencyKeyHeader.
+type IdempotencyKeyHeader = openapi_types.UUID
 
 // ImportJobIdPath A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 // Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -1076,8 +1442,26 @@ type ListAdaptersParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateAdapter409JSONResponseBodyError defines parameters for UpdateAdapter.
-type UpdateAdapter409JSONResponseBodyError string
+// UpdateAdapter409JSONResponseBody1 defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBody1 struct {
+	// Current An adapter registry row. Adapters represent integration points (e.g. a FreeSWITCH bridge, a LiveKit gateway). In v0.1 this is a catalog row only — no SDK contract, no execution. Real adapter execution lands in a later milestone.
+	Current Adapter                                `json:"current"`
+	Error   UpdateAdapter409JSONResponseBody1Error `json:"error"`
+	Reason  string                                 `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateAdapter409JSONResponseBody1Error defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBody1Error string
+
+// UpdateAdapter409JSONResponseBody defines parameters for UpdateAdapter.
+type UpdateAdapter409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListAgentsParams defines parameters for ListAgents.
 type ListAgentsParams struct {
@@ -1099,8 +1483,26 @@ type CreateAgent409JSONResponseBody struct {
 	union json.RawMessage
 }
 
-// UpdateAgent409JSONResponseBodyError defines parameters for UpdateAgent.
-type UpdateAgent409JSONResponseBodyError string
+// UpdateAgent409JSONResponseBody1 defines parameters for UpdateAgent.
+type UpdateAgent409JSONResponseBody1 struct {
+	// Current An agent in the catalog. Agents are the humans (or bots) who handle routed interactions. Each agent belongs to exactly one org.
+	Current Agent                                `json:"current"`
+	Error   UpdateAgent409JSONResponseBody1Error `json:"error"`
+	Reason  string                               `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateAgent409JSONResponseBody1Error defines parameters for UpdateAgent.
+type UpdateAgent409JSONResponseBody1Error string
+
+// UpdateAgent409JSONResponseBody defines parameters for UpdateAgent.
+type UpdateAgent409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListBreakReasonsParams defines parameters for ListBreakReasons.
 type ListBreakReasonsParams struct {
@@ -1117,8 +1519,26 @@ type ListBreakReasonsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateBreakReason409JSONResponseBodyError defines parameters for UpdateBreakReason.
-type UpdateBreakReason409JSONResponseBodyError string
+// UpdateBreakReason409JSONResponseBody1 defines parameters for UpdateBreakReason.
+type UpdateBreakReason409JSONResponseBody1 struct {
+	// Current A configurable reason an agent can enter the Break state. Each reason has a `routable` flag that determines whether the agent is eligible for routing while on break. The `IsRoutable` domain helper checks this (STATE-10).
+	Current BreakReason                                `json:"current"`
+	Error   UpdateBreakReason409JSONResponseBody1Error `json:"error"`
+	Reason  string                                     `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateBreakReason409JSONResponseBody1Error defines parameters for UpdateBreakReason.
+type UpdateBreakReason409JSONResponseBody1Error string
+
+// UpdateBreakReason409JSONResponseBody defines parameters for UpdateBreakReason.
+type UpdateBreakReason409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // BulkImportCatalogJSONBody defines parameters for BulkImportCatalog.
 type BulkImportCatalogJSONBody = []interface{}
@@ -1130,6 +1550,9 @@ type BulkImportCatalogParams struct {
 
 	// SchemaVersion CSV schema version for import validation (IMP-08). Required when `Content-Type: text/csv`. Mismatched version returns HTTP 400 with supported versions listed. Example: `v0.1`.
 	SchemaVersion *SchemaVersionQuery `form:"schema_version,omitempty" json:"schema_version,omitempty"`
+
+	// IdempotencyKey Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe (D5-13). A repeated request with the same key in the same org returns the persisted prior result with `idempotent_replay: true` (D5-27). Optional — absent header means a fresh job row is created each call.
+	IdempotencyKey *IdempotencyKeyHeader `json:"Idempotency-Key,omitempty"`
 }
 
 // ListChannelsParams defines parameters for ListChannels.
@@ -1147,8 +1570,26 @@ type ListChannelsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateChannel409JSONResponseBodyError defines parameters for UpdateChannel.
-type UpdateChannel409JSONResponseBodyError string
+// UpdateChannel409JSONResponseBody1 defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBody1 struct {
+	// Current A channel in the catalog. Channels represent a logical communication medium (voice, chat, email). They link to a default queue for unrouted interactions.
+	Current Channel                                `json:"current"`
+	Error   UpdateChannel409JSONResponseBody1Error `json:"error"`
+	Reason  string                                 `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateChannel409JSONResponseBody1Error defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBody1Error string
+
+// UpdateChannel409JSONResponseBody defines parameters for UpdateChannel.
+type UpdateChannel409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListQueuesParams defines parameters for ListQueues.
 type ListQueuesParams struct {
@@ -1165,8 +1606,26 @@ type ListQueuesParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateQueue409JSONResponseBodyError defines parameters for UpdateQueue.
-type UpdateQueue409JSONResponseBodyError string
+// UpdateQueue409JSONResponseBody1 defines parameters for UpdateQueue.
+type UpdateQueue409JSONResponseBody1 struct {
+	// Current A queue in the catalog. Queues hold interactions waiting to be assigned to an agent. Queues have a channel type, priority, and an after-contact work (ACW) timer.
+	Current Queue                                `json:"current"`
+	Error   UpdateQueue409JSONResponseBody1Error `json:"error"`
+	Reason  string                               `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateQueue409JSONResponseBody1Error defines parameters for UpdateQueue.
+type UpdateQueue409JSONResponseBody1Error string
+
+// UpdateQueue409JSONResponseBody defines parameters for UpdateQueue.
+type UpdateQueue409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
@@ -1183,8 +1642,26 @@ type ListSkillsParams struct {
 	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
 }
 
-// UpdateSkill409JSONResponseBodyError defines parameters for UpdateSkill.
-type UpdateSkill409JSONResponseBodyError string
+// UpdateSkill409JSONResponseBody1 defines parameters for UpdateSkill.
+type UpdateSkill409JSONResponseBody1 struct {
+	// Current A skill in the catalog. Skills are assigned to agents with a proficiency rating.
+	Current Skill                                `json:"current"`
+	Error   UpdateSkill409JSONResponseBody1Error `json:"error"`
+	Reason  string                               `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// UpdateSkill409JSONResponseBody1Error defines parameters for UpdateSkill.
+type UpdateSkill409JSONResponseBody1Error string
+
+// UpdateSkill409JSONResponseBody defines parameters for UpdateSkill.
+type UpdateSkill409JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // CreateAdapterJSONRequestBody defines body for CreateAdapter for application/json ContentType.
 type CreateAdapterJSONRequestBody = CreateAdapterRequest
@@ -1227,6 +1704,68 @@ type CreateSkillJSONRequestBody = CreateSkillRequest
 
 // UpdateSkillJSONRequestBody defines body for UpdateSkill for application/json ContentType.
 type UpdateSkillJSONRequestBody = UpdateSkillRequest
+
+// AsErrorResponse returns the union data inside the UpdateAdapter409JSONResponseBody as a ErrorResponse
+func (t UpdateAdapter409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateAdapter409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateAdapter409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateAdapter409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateAdapter409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateAdapter409JSONResponseBody1 returns the union data inside the UpdateAdapter409JSONResponseBody as a UpdateAdapter409JSONResponseBody1
+func (t UpdateAdapter409JSONResponseBody) AsUpdateAdapter409JSONResponseBody1() (UpdateAdapter409JSONResponseBody1, error) {
+	var body UpdateAdapter409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateAdapter409JSONResponseBody1 overwrites any union data inside the UpdateAdapter409JSONResponseBody as the provided UpdateAdapter409JSONResponseBody1
+func (t *UpdateAdapter409JSONResponseBody) FromUpdateAdapter409JSONResponseBody1(v UpdateAdapter409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateAdapter409JSONResponseBody1 performs a merge with any union data inside the UpdateAdapter409JSONResponseBody, using the provided UpdateAdapter409JSONResponseBody1
+func (t *UpdateAdapter409JSONResponseBody) MergeUpdateAdapter409JSONResponseBody1(v UpdateAdapter409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateAdapter409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateAdapter409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsErrorResponse returns the union data inside the CreateAgent409JSONResponseBody as a ErrorResponse
 func (t CreateAgent409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
@@ -1286,6 +1825,316 @@ func (t CreateAgent409JSONResponseBody) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreateAgent409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateAgent409JSONResponseBody as a ErrorResponse
+func (t UpdateAgent409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateAgent409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateAgent409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateAgent409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateAgent409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateAgent409JSONResponseBody1 returns the union data inside the UpdateAgent409JSONResponseBody as a UpdateAgent409JSONResponseBody1
+func (t UpdateAgent409JSONResponseBody) AsUpdateAgent409JSONResponseBody1() (UpdateAgent409JSONResponseBody1, error) {
+	var body UpdateAgent409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateAgent409JSONResponseBody1 overwrites any union data inside the UpdateAgent409JSONResponseBody as the provided UpdateAgent409JSONResponseBody1
+func (t *UpdateAgent409JSONResponseBody) FromUpdateAgent409JSONResponseBody1(v UpdateAgent409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateAgent409JSONResponseBody1 performs a merge with any union data inside the UpdateAgent409JSONResponseBody, using the provided UpdateAgent409JSONResponseBody1
+func (t *UpdateAgent409JSONResponseBody) MergeUpdateAgent409JSONResponseBody1(v UpdateAgent409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateAgent409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateAgent409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateBreakReason409JSONResponseBody as a ErrorResponse
+func (t UpdateBreakReason409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateBreakReason409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateBreakReason409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateBreakReason409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateBreakReason409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateBreakReason409JSONResponseBody1 returns the union data inside the UpdateBreakReason409JSONResponseBody as a UpdateBreakReason409JSONResponseBody1
+func (t UpdateBreakReason409JSONResponseBody) AsUpdateBreakReason409JSONResponseBody1() (UpdateBreakReason409JSONResponseBody1, error) {
+	var body UpdateBreakReason409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateBreakReason409JSONResponseBody1 overwrites any union data inside the UpdateBreakReason409JSONResponseBody as the provided UpdateBreakReason409JSONResponseBody1
+func (t *UpdateBreakReason409JSONResponseBody) FromUpdateBreakReason409JSONResponseBody1(v UpdateBreakReason409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateBreakReason409JSONResponseBody1 performs a merge with any union data inside the UpdateBreakReason409JSONResponseBody, using the provided UpdateBreakReason409JSONResponseBody1
+func (t *UpdateBreakReason409JSONResponseBody) MergeUpdateBreakReason409JSONResponseBody1(v UpdateBreakReason409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateBreakReason409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateBreakReason409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateChannel409JSONResponseBody as a ErrorResponse
+func (t UpdateChannel409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateChannel409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateChannel409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateChannel409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateChannel409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateChannel409JSONResponseBody1 returns the union data inside the UpdateChannel409JSONResponseBody as a UpdateChannel409JSONResponseBody1
+func (t UpdateChannel409JSONResponseBody) AsUpdateChannel409JSONResponseBody1() (UpdateChannel409JSONResponseBody1, error) {
+	var body UpdateChannel409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateChannel409JSONResponseBody1 overwrites any union data inside the UpdateChannel409JSONResponseBody as the provided UpdateChannel409JSONResponseBody1
+func (t *UpdateChannel409JSONResponseBody) FromUpdateChannel409JSONResponseBody1(v UpdateChannel409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateChannel409JSONResponseBody1 performs a merge with any union data inside the UpdateChannel409JSONResponseBody, using the provided UpdateChannel409JSONResponseBody1
+func (t *UpdateChannel409JSONResponseBody) MergeUpdateChannel409JSONResponseBody1(v UpdateChannel409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateChannel409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateChannel409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateQueue409JSONResponseBody as a ErrorResponse
+func (t UpdateQueue409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateQueue409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateQueue409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateQueue409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateQueue409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateQueue409JSONResponseBody1 returns the union data inside the UpdateQueue409JSONResponseBody as a UpdateQueue409JSONResponseBody1
+func (t UpdateQueue409JSONResponseBody) AsUpdateQueue409JSONResponseBody1() (UpdateQueue409JSONResponseBody1, error) {
+	var body UpdateQueue409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateQueue409JSONResponseBody1 overwrites any union data inside the UpdateQueue409JSONResponseBody as the provided UpdateQueue409JSONResponseBody1
+func (t *UpdateQueue409JSONResponseBody) FromUpdateQueue409JSONResponseBody1(v UpdateQueue409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateQueue409JSONResponseBody1 performs a merge with any union data inside the UpdateQueue409JSONResponseBody, using the provided UpdateQueue409JSONResponseBody1
+func (t *UpdateQueue409JSONResponseBody) MergeUpdateQueue409JSONResponseBody1(v UpdateQueue409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateQueue409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateQueue409JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsErrorResponse returns the union data inside the UpdateSkill409JSONResponseBody as a ErrorResponse
+func (t UpdateSkill409JSONResponseBody) AsErrorResponse() (ErrorResponse, error) {
+	var body ErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorResponse overwrites any union data inside the UpdateSkill409JSONResponseBody as the provided ErrorResponse
+func (t *UpdateSkill409JSONResponseBody) FromErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorResponse performs a merge with any union data inside the UpdateSkill409JSONResponseBody, using the provided ErrorResponse
+func (t *UpdateSkill409JSONResponseBody) MergeErrorResponse(v ErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpdateSkill409JSONResponseBody1 returns the union data inside the UpdateSkill409JSONResponseBody as a UpdateSkill409JSONResponseBody1
+func (t UpdateSkill409JSONResponseBody) AsUpdateSkill409JSONResponseBody1() (UpdateSkill409JSONResponseBody1, error) {
+	var body UpdateSkill409JSONResponseBody1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateSkill409JSONResponseBody1 overwrites any union data inside the UpdateSkill409JSONResponseBody as the provided UpdateSkill409JSONResponseBody1
+func (t *UpdateSkill409JSONResponseBody) FromUpdateSkill409JSONResponseBody1(v UpdateSkill409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateSkill409JSONResponseBody1 performs a merge with any union data inside the UpdateSkill409JSONResponseBody, using the provided UpdateSkill409JSONResponseBody1
+func (t *UpdateSkill409JSONResponseBody) MergeUpdateSkill409JSONResponseBody1(v UpdateSkill409JSONResponseBody1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateSkill409JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateSkill409JSONResponseBody) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

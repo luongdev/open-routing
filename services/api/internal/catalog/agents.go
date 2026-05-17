@@ -16,7 +16,7 @@
 //     third would break Pitfall 5 atomicity.
 //
 //   - D-66 — UPDATE returning 0 rows is ambiguous between 404 and 409.
-//     GetAgent runs inside the same tx so the probe sees
+//     GetAgentByIdAnyVersion runs inside the same tx so the probe sees
 //     the rolled-back state, then D-56 flushes the cache on the 409 path
 //     to prevent a stale read masking the conflict on the client retry.
 //
@@ -81,6 +81,17 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 		}}, nil
 	}
 
+	// Phase 04.1 Layer 1 (D04_1-19, RESEARCH §Pitfall 1) — oapi-codegen v2 does
+	// NOT enforce OpenAPI `pattern` regexes. The handler is the single source
+	// of truth for code-format validation. Fires BEFORE proficiency / any DB
+	// call so a malformed code surfaces as 400 invalid_body cleanly.
+	if !ValidateCodeFormat(req.Body.Code) {
+		return api.CreateAgent400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error:  api.ErrorCodeInvalidBody,
+			Reason: "invalid_code_format",
+		}}, nil
+	}
+
 	// Codex C1 iter 3 — Layer 2 proficiency check BEFORE any DB call.
 	if req.Body.Skills != nil {
 		if badIdx, valid := validateProficiencyRange(*req.Body.Skills); !valid {
@@ -114,13 +125,14 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 	row, err := qtx.InsertAgent(ctx, generated.InsertAgentParams{
 		ID:         pgUUID(id),
 		OrgID:      pgUUID(orgID),
-		ExternalID: req.Body.ExternalId,
+		Code:       req.Body.Code,
+		ExternalID: req.Body.ExternalId, // *string post-04.1 (column nullable).
 		Name:       req.Body.Name,
 		Email:      string(req.Body.Email),
 		Enabled:    enabled,
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "agent")
+		status, code, reason := MapPgError(err, "agent")
 		switch status {
 		case 409:
 			// Pitfall 2 — CreateAgent409 is a oneOf union. Build via the
@@ -370,7 +382,7 @@ func (h *Handlers) ListAgents(ctx context.Context, req api.ListAgentsRequestObje
 // Codex C4: the version-checked UPDATE and optional skills replace share
 // one tx — a failed skills replace rolls the agent row write back too.
 // D-66: 0 rows from the version-checked UPDATE is ambiguous between 404
-// (no row) and 409 (version mismatch). GetAgent runs in the
+// (no row) and 409 (version mismatch). GetAgentByIdAnyVersion runs in the
 // same tx so the probe sees the rolled-back state; the 409 path flushes
 // the cache (D-56) so a stale read can't mask the conflict on retry.
 func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestObject) (api.UpdateAgentResponseObject, error) {
@@ -386,6 +398,18 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 		}}, nil
 	}
 	agentID := uuid.UUID(req.Id)
+
+	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE the
+	// transaction begins so a malformed PATCH gets 400, not 422. Layer 2
+	// (immutability) fires inside the tx after fetching the stored row.
+	if req.Body.Code != nil {
+		if !ValidateCodeFormat(*req.Body.Code) {
+			return api.UpdateAgent400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error:  api.ErrorCodeInvalidBody,
+				Reason: "invalid_code_format",
+			}}, nil
+		}
+	}
 
 	// Codex C1 iter 3 — Layer 2 proficiency check BEFORE any DB call.
 	if req.Body.Skills != nil {
@@ -415,6 +439,39 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 
 	qtx := generated.New(tx)
 
+	// Phase 04.1 Layer 2 (D04_1-20, RESEARCH §Common Operation 5) — immutability
+	// gate. When req.Body.Code != nil we fetch the stored row pre-UPDATE so we
+	// (a) hold a tx-local view while we compare it to the requested code and
+	// (b) reuse that same row in the post-UPDATE 0-row branch instead of a
+	// second GetAgentByIdAnyVersion probe. `stored` is nil when the PATCH
+	// body omitted `code` (Branch 2) — in that case the existing Phase 3
+	// post-UPDATE flow handles 404/409 disambiguation unchanged.
+	var stored *generated.Agent
+	if req.Body.Code != nil {
+		s, perr := qtx.GetAgentByIdAnyVersion(ctx, generated.GetAgentByIdAnyVersionParams{
+			ID:    pgUUID(agentID),
+			OrgID: pgUUID(orgID),
+		})
+		if errors.Is(perr, pgx.ErrNoRows) {
+			return api.UpdateAgent404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+				Error: api.ErrorCodeNotFound, Reason: "agent_not_found",
+			}}, nil
+		}
+		if perr != nil {
+			h.deps.Logger.ErrorContext(ctx, "load stored agent for immutability check", "err", perr)
+			return api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error: api.ErrorCodeInternal, Reason: "load_stored_failed",
+			}}, nil
+		}
+		stored = &s
+		if !validateImmutableCode(stored.Code, *req.Body.Code) {
+			return api.UpdateAgent422JSONResponse(api.ErrorResponse{
+				Error:  api.ErrorCodeImmutableField,
+				Reason: "code",
+			}), nil
+		}
+	}
+
 	// Codex C3 — pass nil for omitted fields; COALESCE preserves the
 	// existing column. Email is *openapi_types.Email aliased to *string.
 	var emailStr *string
@@ -434,42 +491,79 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 		ID:              pgUUID(agentID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through. The SQL CASE expression
+		// treats: nil → preserve (omitted), empty string → NULL (clear),
+		// non-empty → new value. Pre-fix the handler omitted ExternalID
+		// entirely so the SQL COALESCE always preserved the existing value
+		// and clients literally could not PATCH external_id.
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		Email:           emailStr,
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 0 rows — disambiguate 404 vs 409 inside the same tx.
-		cur, perr := qtx.GetAgent(ctx, generated.GetAgentParams{
-			ID:    pgUUID(agentID),
-			OrgID: pgUUID(orgID),
-		})
-		if errors.Is(perr, pgx.ErrNoRows) {
-			return api.UpdateAgent404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
-				Error: api.ErrorCodeNotFound, Reason: "agent_not_found",
-			}}, nil
-		}
-		if perr != nil {
-			h.deps.Logger.ErrorContext(ctx, "update agent disambiguate", "err", perr)
-			return api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-				Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
-			}}, nil
+		//
+		// Phase 04.1 (D04_1-20): when `stored != nil` we already proved the
+		// row exists via the pre-UPDATE Layer 2 fetch — 0 rows here means
+		// version mismatch. Skip the redundant GetAgentByIdAnyVersion probe.
+		// Otherwise (Branch 2, Code absent from body), run the existing
+		// post-UPDATE probe so the 404/409 distinction is unchanged from
+		// Phase 3.
+		var cur generated.Agent
+		if stored != nil {
+			cur = *stored
+		} else {
+			s2, perr := qtx.GetAgentByIdAnyVersion(ctx, generated.GetAgentByIdAnyVersionParams{
+				ID:    pgUUID(agentID),
+				OrgID: pgUUID(orgID),
+			})
+			if errors.Is(perr, pgx.ErrNoRows) {
+				return api.UpdateAgent404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+					Error: api.ErrorCodeNotFound, Reason: "agent_not_found",
+				}}, nil
+			}
+			if perr != nil {
+				h.deps.Logger.ErrorContext(ctx, "update agent disambiguate", "err", perr)
+				return api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+					Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
+				}}, nil
+			}
+			cur = s2
 		}
 		// 409 — defer Rollback runs (no UPDATE landed). D-56 cache DEL
 		// so a stale cached value can never mask the conflict.
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "agents", agentID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "agents", agentID), "err", delErr)
 		}
-		return api.UpdateAgent409JSONResponse{
+		// Phase 5 fix H1 — UpdateAgent409 is now a oneOf union to share the
+		// HTTP status code between version_conflict (CAT-08) and
+		// duplicate_external_id (PATCH-time UNIQUE collision). The version-
+		// conflict branch builds via FromUpdateAgent409JSONResponseBody1
+		// (the allOf VersionConflictErrorResponse + Current member).
+		var body api.UpdateAgent409JSONResponseBody
+		_ = body.FromUpdateAgent409JSONResponseBody1(api.UpdateAgent409JSONResponseBody1{
 			Current: mapAgent(cur, nil),
-			Error:   api.UpdateAgent409JSONResponseBodyErrorVersionConflict,
+			Error:   api.UpdateAgent409JSONResponseBody1ErrorVersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateAgent409JSONResponse(body), nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "agent")
-		if status == 422 {
+		// Phase 5 fix H1 — PATCH-time 23505 (duplicate_external_id) MUST
+		// surface as 409, not 500. MapPgError returns status=409 for
+		// duplicate_external_id (per Phase 04.1 D04_1-21 constraint-name
+		// introspect); pre-fix the handler only branched on 422 and let 409
+		// fall through to 500. The new branch builds the ErrorResponse
+		// member of the oneOf union.
+		status, code, reason := MapPgError(err, "agent")
+		switch status {
+		case 422:
 			return api.UpdateAgent422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateAgent409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateAgent409JSONResponse(body), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "update agent", "err", err)
 		return api.UpdateAgent500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
@@ -564,6 +658,7 @@ func mapAgent(row generated.Agent, skills []generated.ListSkillsForAgentRow) api
 	a := api.Agent{
 		Id:         api.UUIDv7(apiUUID(row.ID)),
 		OrgId:      api.UUIDv7(apiUUID(row.OrgID)),
+		Code:       row.Code,
 		ExternalId: row.ExternalID,
 		Name:       row.Name,
 		Email:      openapi_types.Email(row.Email),
@@ -594,6 +689,7 @@ func mapAgentListItem(row generated.Agent) api.AgentListItem {
 	return api.AgentListItem{
 		Id:         api.UUIDv7(apiUUID(row.ID)),
 		OrgId:      api.UUIDv7(apiUUID(row.OrgID)),
+		Code:       row.Code,
 		ExternalId: row.ExternalID,
 		Name:       row.Name,
 		Email:      openapi_types.Email(row.Email),

@@ -39,6 +39,7 @@ var tenantTables = map[string]struct{}{
 	"break_reasons": {}, // CAT-07
 	"agent_skills":  {}, // CAT-03 (junction; carries denormalized org_id per D-72)
 	"agent_states":  {}, // STATE-01 (Phase 4; denormalized org_id per D-78 — sweeper bypasses ctx-org and relies on this column)
+	"import_jobs":   {}, // IMP-06 (Phase 5; denormalized org_id per RESEARCH §Pattern 8 — sweeper bypasses ctx-org and relies on this column)
 }
 
 // SQLChecker memoizes the org_id-presence verdict for each unique SQL

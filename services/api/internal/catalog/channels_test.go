@@ -48,12 +48,18 @@ func postChannel(t testing.TB, th *TestHandlers, body api.CreateChannelRequest) 
 
 // makeChannelBody — minimal default; default_queue_id omitted so it's
 // nil unless the test overrides.
-func makeChannelBody(externalID, name, channelType string) api.CreateChannelRequest {
-	return api.CreateChannelRequest{
-		ExternalId:  externalID,
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 required).
+// externalID is now stored as *string (column nullable post-04.1).
+func makeChannelBody(code, externalID, name, channelType string) api.CreateChannelRequest {
+	body := api.CreateChannelRequest{
+		Code:        code,
 		Name:        name,
 		ChannelType: api.ChannelType(channelType),
 	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
 }
 
 // TestChannels_CreateThenGet — happy path + cache fill on first GET.
@@ -62,7 +68,7 @@ func TestChannels_CreateThenGet(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeChannelBody("ext-001", "Voice", "voice")
+	body := makeChannelBody("ch_001", "ext-001", "Voice", "voice")
 	c := postChannel(t, th, body)
 	require.Equal(t, 1, c.Version, "fresh channel version must be 1")
 	require.True(t, c.Enabled)
@@ -106,7 +112,7 @@ func TestChannels_VersionConflict(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-vc", "Chat", "chat"))
+	c := postChannel(t, th, makeChannelBody("ch_vc", "ext-vc", "Chat", "chat"))
 	newName := "Chat v2"
 
 	bad := api.UpdateChannelRequest{Version: 99, Name: &newName}
@@ -139,7 +145,7 @@ func TestChannels_SoftDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-del", "Email", "email"))
+	c := postChannel(t, th, makeChannelBody("ch_del", "ext-del", "Email", "email"))
 
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -166,7 +172,7 @@ func TestChannels_SoftDelete_IncludeDisabled(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-del2", "Gone", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_del2", "ext-del2", "Gone", "voice"))
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
@@ -195,7 +201,7 @@ func TestChannels_Cursor(t *testing.T) {
 	const total = 60
 	ids := make(map[uuid.UUID]struct{}, total)
 	for i := 0; i < total; i++ {
-		body := makeChannelBody(fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Channel%03d", i), "voice")
+		body := makeChannelBody(fmt.Sprintf("ch_%03d", i), fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Channel%03d", i), "voice")
 		c := postChannel(t, th, body)
 		ids[uuid.UUID(c.Id)] = struct{}{}
 		time.Sleep(1 * time.Millisecond)
@@ -249,9 +255,9 @@ func TestChannels_NameSearch(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	postChannel(t, th, makeChannelBody("ext-1", "Alpha", "voice"))
-	postChannel(t, th, makeChannelBody("ext-2", "Alphabet", "chat"))
-	postChannel(t, th, makeChannelBody("ext-3", "Beta", "email"))
+	postChannel(t, th, makeChannelBody("ch_1", "ext-1", "Alpha", "voice"))
+	postChannel(t, th, makeChannelBody("ch_2", "ext-2", "Alphabet", "chat"))
+	postChannel(t, th, makeChannelBody("ch_3", "ext-3", "Beta", "email"))
 
 	q := url.Values{"name": {"al"}}
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, channelPath(th.OrgID), q)
@@ -271,7 +277,7 @@ func TestChannels_CacheInvalidationOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-cache", "CC", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_cache", "ext-cache", "CC", "voice"))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "channels", uuid.UUID(c.Id))
@@ -298,7 +304,7 @@ func TestChannels_CacheInvalidationOnDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-cd", "CD", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_cd", "ext-cd", "CD", "voice"))
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cacheKey := cache.Key(th.OrgID, "channels", uuid.UUID(c.Id))
@@ -323,7 +329,8 @@ func TestChannels_DefaultQueueId_HappyPath(t *testing.T) {
 	queueID := seedQueueForOrg(t, th, ctx, th.OrgID, "primary")
 	qUUID := api.UUIDv7(queueID)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-link",
+		Code:           "ch_link",
+		ExternalId:     strPtr("ext-link"),
 		Name:           "Linked",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -349,7 +356,8 @@ func TestChannels_DefaultQueueId_NotFound(t *testing.T) {
 
 	bogusUUID := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-bogus",
+		Code:           "ch_bogus",
+		ExternalId:     strPtr("ext-bogus"),
 		Name:           "Bogus",
 		ChannelType:    "voice",
 		DefaultQueueId: &bogusUUID,
@@ -373,7 +381,8 @@ func TestChannels_Create_UnknownQueueId_422(t *testing.T) {
 
 	bogusUUID := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-unk",
+		Code:           "ch_unk",
+		ExternalId:     strPtr("ext-unk"),
 		Name:           "Unknown",
 		ChannelType:    "chat",
 		DefaultQueueId: &bogusUUID,
@@ -402,7 +411,8 @@ func TestChannels_DefaultQueueId_Disabled(t *testing.T) {
 
 	qUUID := api.UUIDv7(queueID)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-dis",
+		Code:           "ch_dis",
+		ExternalId:     strPtr("ext-dis"),
 		Name:           "PointingDisabled",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -429,7 +439,8 @@ func TestChannels_DefaultQueueId_CrossOrg(t *testing.T) {
 
 	qUUID := api.UUIDv7(queueB)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-cross",
+		Code:           "ch_cross",
+		ExternalId:     strPtr("ext-cross"),
 		Name:           "CrossOrg",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -456,7 +467,8 @@ func TestChannels_CrossOrgQueueReject_422(t *testing.T) {
 
 	qUUID := api.UUIDv7(queueB)
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-alias",
+		Code:           "ch_alias",
+		ExternalId:     strPtr("ext-alias"),
 		Name:           "AliasCross",
 		ChannelType:    "voice",
 		DefaultQueueId: &qUUID,
@@ -476,7 +488,7 @@ func TestChannels_UpdateChannelInvalidReference(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-upd", "Plain", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_upd", "ext-upd", "Plain", "voice"))
 	bogus := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.UpdateChannelRequest{Version: 1, DefaultQueueId: &bogus}
 	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), body)
@@ -505,7 +517,7 @@ func TestChannels_Update_QueueDisabledInSameOrg_422(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-upd-dis", "Updish", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_upd_dis", "ext-upd-dis", "Updish", "voice"))
 	queueID := seedQueueForOrg(t, th, ctx, th.OrgID, "to-soft-delete")
 	respDel, _ := httpDELETE(t, th.HTTP, th.OrgID, queueDetailPath(th.OrgID, queueID))
 	require.Equal(t, http.StatusNoContent, respDel.StatusCode)
@@ -528,7 +540,7 @@ func TestChannels_CrossOrgGet404(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-cog", "InOrgA", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_cog", "ext-cog", "InOrgA", "voice"))
 
 	orgB := uuid.Must(uuid.NewV7())
 	resp, raw := httpGET(t, th.HTTP, orgB, channelDetailPath(orgB, uuid.UUID(c.Id)), nil)
@@ -546,7 +558,7 @@ func TestChannels_ChannelTypeRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	c := postChannel(t, th, makeChannelBody("ext-ct", "Rotates", "voice"))
+	c := postChannel(t, th, makeChannelBody("ch_ct", "ext-ct", "Rotates", "voice"))
 	require.Equal(t, api.ChannelType("voice"), c.ChannelType)
 
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(c.Id)), nil)
@@ -604,7 +616,8 @@ func TestChannels_InvalidReference(t *testing.T) {
 
 	bogusUUID := api.UUIDv7(uuid.Must(uuid.NewV7()))
 	body := api.CreateChannelRequest{
-		ExternalId:     "ext-ir",
+		Code:           "ch_ir",
+		ExternalId:     strPtr("ext-ir"),
 		Name:           "AliasIR",
 		ChannelType:    "voice",
 		DefaultQueueId: &bogusUUID,
@@ -615,4 +628,186 @@ func TestChannels_InvalidReference(t *testing.T) {
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
 	require.Equal(t, api.ErrorCodeInvalidReference, e.Error)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+// ---------------------------------------------------------------------------
+
+// TestChannels_MissingCode_Returns400 — Layer 1 rejects empty code.
+// Channels.go has Layer 1 BEFORE the D-76 default_queue_id FK probe, so
+// the regex fires regardless of any FK column state.
+func TestChannels_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("", "", "Voice", "voice") // empty code
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestChannels_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
+// (org_id, code) fires; MapPgError returns duplicate_code.
+func TestChannels_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_voice", "ext-ch-001", "Voice", "voice")
+	_ = postChannel(t, th, body)
+
+	body2 := makeChannelBody("channel_voice", "ext-ch-002", "Voice2", "voice")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestChannels_DuplicateExternalId_Returns409_DuplicateExternalId — partial
+// UNIQUE on (org_id, external_id) fires; MapPgError returns duplicate_external_id.
+func TestChannels_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_dx_001", "ext-ch-001", "First", "voice")
+	_ = postChannel(t, th, body)
+
+	body2 := makeChannelBody("channel_dx_002", "ext-ch-001", "Second", "chat")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestChannels_PatchSameCode_Returns200 — PATCH with same code is a no-op.
+func TestChannels_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_same_001", "ext-ch-same", "Plain", "voice")
+	created := postChannel(t, th, body)
+
+	sameCode := "channel_same_001"
+	newName := "Plain v2"
+	patchBody := api.UpdateChannelRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.Channel
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestChannels_PatchDifferentCode_Returns422_ImmutableField — Layer 2 rejects.
+func TestChannels_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_diff_001", "ext-ch-diff", "Email1", "email")
+	created := postChannel(t, th, body)
+
+	newCode := "channel_diff_002"
+	patchBody := api.UpdateChannelRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestChannels_PatchInvalidCodeFormat_Returns400 — Layer 1 fires first.
+func TestChannels_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_bad_001", "ext-ch-bad", "Bad", "voice")
+	created := postChannel(t, th, body)
+
+	badCode := "has spaces" // space → fails regex
+	patchBody := api.UpdateChannelRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestChannels_TwoNullExternalIds_NoConflict — IDENT-02.
+func TestChannels_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeChannelBody("channel_null_001", "", "First", "voice")
+	_ = postChannel(t, th, body)
+
+	body2 := makeChannelBody("channel_null_002", "", "Second", "chat")
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, channelPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — two NULL external_ids must coexist", string(raw))
+}
+
+// TestChannels_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. See agents_test.go for rationale.
+func TestChannels_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	_ = postChannel(t, th, makeChannelBody("channel_h1_a", "ext-ch-h1-001", "First", "voice"))
+	b := postChannel(t, th, makeChannelBody("channel_h1_b", "ext-ch-h1-002", "Second", "chat"))
+
+	dup := "ext-ch-h1-001"
+	patchBody := api.UpdateChannelRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestChannels_PatchClearExternalId_NullsTheField — Phase 5 fix H2.
+func TestChannels_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postChannel(t, th, makeChannelBody("channel_h2_a", "ext-ch-h2-bind", "First", "voice"))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-ch-h2-bind", *a.ExternalId, "precondition")
+
+	clear := ""
+	patchBody := api.UpdateChannelRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, channelDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "H2 body=%s", string(raw))
+	var updated api.Channel
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: empty-string sentinel must null external_id")
 }

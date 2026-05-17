@@ -1,0 +1,5 @@
+code,name,email
+emp_partial_001,Alice,alice@example.com
+emp_partial_002,Bob,bob@example.com
+INVALID_UPPER,Charlie,charlie@example.com
+emp_partial_004,Dave,dave@example.com

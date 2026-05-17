@@ -104,3 +104,29 @@ WHERE agent_id = $1
   AND status   = 'WrapUp'
   AND wrapup_until < NOW()
 RETURNING agent_id, org_id, status, state_version;
+
+-- name: InsertAgentStateOnConflictNothing :exec
+-- Phase 5 bulk import — D5-18 + Phase 4 Hazard 7 carry-forward: seed
+-- state for NEW agents only; re-imports MUST NOT regress the state
+-- machine to Offline. Every NEW agent created via UpsertAgentByCode
+-- (Phase 04.1 Plan 03) needs an agent_states row to satisfy Phase 4
+-- Hazard 7 (IsRoutable queries fail with NULL state); a re-import of an
+-- existing agent already HAS the row and must preserve whatever state
+-- the state machine has reached (Engaged / WrapUp / etc).
+--
+-- *** SEPARATE QUERY — NOT a modification of InsertAgentState (line 1).
+-- The original Phase 4 InsertAgentState :one is UNCONDITIONAL by design
+-- (D-93: called from catalog.CreateAgent inside an OrgTx where the
+-- agent INSERT just succeeded so no agent_states row can exist yet).
+-- Adding ON CONFLICT to that query would silently change Phase 4
+-- CreateAgent semantics and break the atomic-rollback assertion in
+-- agent_states_test.go. Phase 5 authors this as a separate sqlc query
+-- so Phase 4 callers are unaffected (T-05-03-04 mitigation).
+--
+-- :exec (NOT :one) — on conflict, no row is returned. The Phase 5 row
+-- processor doesn't need to read state back; only the contract that
+-- the row exists when this query completes (whether INSERT'd fresh by
+-- this call or pre-existing from a prior import / Phase 4 CreateAgent).
+INSERT INTO agent_states (agent_id, org_id, status, state_version)
+VALUES ($1, $2, $3, 1)
+ON CONFLICT (agent_id) DO NOTHING;

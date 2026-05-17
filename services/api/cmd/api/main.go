@@ -48,6 +48,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/imports"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
 	"github.com/luongdev/open-routing/services/api/internal/telemetry"
@@ -163,34 +164,72 @@ func run() int {
 		slog.ErrorContext(ctx, "state server start", "err", err)
 		return 1
 	}
-	// Shutdown order (LIFO):
+	// Shutdown order (LIFO) — note the additional importer.Stop step
+	// introduced below for Phase 5:
 	//   1. http.Server.Shutdown drains in-flight HTTP requests
-	//   2. stateServer.Stop drains sweeper goroutine + cancels AfterFunc timers
+	//   2. importer.Stop drains the import crash-recovery sweep goroutine
+	//      (Phase 5 D5-11) — must precede pool.Close because the sweep
+	//      issues UPDATEs against the still-open pool
+	//   3. stateServer.Stop drains sweeper goroutine + cancels AfterFunc timers
 	//      (must precede pool.Close — sweeper UPDATEs need the pool open)
-	//   3. rdb.Close + pool.Close + telemetry shutdown
+	//   4. rdb.Close + pool.Close + telemetry shutdown
 	defer stateServer.Stop()
 
-	// ApiHandlers composite — D-70 forward-compat seam activated for Phase 4.
-	// catalog.Handlers contributes 41 methods (CRUD for 6 entities + scaffold);
-	// state.Server contributes 2 status methods. The two embed sets are
-	// disjoint — Go's method-set resolution merges them cleanly. Pitfall 1
-	// is avoided by naming the state type Server (not Handlers).
+	// (8.6) imports.Importer — Phase 5 composite activation (RESEARCH §F3).
+	// Named Importer (not Server) to avoid the Go duplicate-anonymous-field
+	// constraint with *state.Server in the ApiHandlers composite below.
+	// Reuses the same catalogCache instance so import write paths hit the
+	// same per-entity Redis keys as the catalog CRUD path (cache.Del per
+	// succeeded row inside processChunk's post-commit hook).
+	importer := imports.New(imports.Deps{
+		OrgDB:  orgDB,
+		Cache:  catalogCache,
+		Logger: slog.Default(),
+	}, imports.WithClock(clockwork.NewRealClock()))
+
+	// Synchronous startup sweep — guarantees no stuck pending import job
+	// survives a restart (D5-11). Failure aborts process startup so
+	// kubernetes restarts with a fresh attempt (matches stateServer
+	// startup contract above).
+	if err := importer.Start(ctx); err != nil {
+		slog.ErrorContext(ctx, "imports importer start", "err", err)
+		return 1
+	}
+	// Deferred LIFO position: registered AFTER stateServer.Stop's defer,
+	// so importer.Stop runs FIRST during shutdown (LIFO ordering of
+	// deferred calls). Both must precede pool.Close because both sweepers
+	// issue UPDATEs against the open pool.
+	defer importer.Stop()
+
+	// ApiHandlers composite — D-70 forward-compat seam activated for Phase 4,
+	// extended in Phase 5 (D-89). Three-embed shape:
+	//
+	//   - catalog.Handlers contributes 41 methods (CRUD for 6 entities + scaffold).
+	//   - state.Server contributes 2 agent-state status methods.
+	//   - imports.Importer contributes BulkImportCatalog + GetImportJob
+	//     (Phase 5 — Plan 05-06 added the method bodies).
+	//
+	// All three embed sets are disjoint — Go's method-set resolution merges
+	// them cleanly. Pitfall 1 is avoided by giving each type a distinct
+	// name (Handlers / Server / Importer; per RESEARCH §F3).
 	type ApiHandlers struct {
 		*catalog.Handlers
 		*state.Server
+		*imports.Importer
 	}
 	// Compile-time guarantee that the COMPOSITE satisfies the full
 	// StrictServerInterface. If this line fails to compile, either:
 	//  (a) the OpenAPI spec gained an endpoint with no implementation, OR
-	//  (b) one of the embedded types lost a method (e.g., catalog/notimpl.go
-	//      lost a stub it shouldn't have).
-	// In Phase 4 this assertion replaces the one removed from
-	// catalog/handlers.go (catalog alone no longer satisfies the full interface).
+	//  (b) one of the embedded types lost a method.
+	// Phase 5 ALSO depends on this assertion: deleting catalog/notimpl.go
+	// removed catalog.Handlers's BulkImportCatalog + GetImportJob 501 stubs,
+	// and the composite now picks them up from imports.Importer instead.
 	var _ api.StrictServerInterface = (*ApiHandlers)(nil)
 
 	apiHandlers := &ApiHandlers{
 		Handlers: catalogHandlers,
 		Server:   stateServer,
+		Importer: importer,
 	}
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).

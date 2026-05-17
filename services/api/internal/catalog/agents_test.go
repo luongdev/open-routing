@@ -62,10 +62,12 @@ func seedSkill(t testing.TB, th *TestHandlers, ctx context.Context, name string)
 	// bare pool so we don't have to thread ctx through OrgContext for a
 	// trivial seed.
 	id := uuid.Must(uuid.NewV7())
+	ext := "ext-" + name
 	_, err := q.InsertSkill(ctx, generated.InsertSkillParams{
 		ID:         pgUUID(id),
 		OrgID:      pgUUID(th.OrgID),
-		ExternalID: "ext-" + name,
+		Code:       "skill_" + sanitizeForCode(name), // Phase 04.1: required column.
+		ExternalID: &ext,                              // *string post-04.1 (nullable column).
 		Name:       name,
 		SkillType:  "language",
 		Enabled:    true,
@@ -98,13 +100,23 @@ func postAgent(t testing.TB, th *TestHandlers, body api.CreateAgentRequest) api.
 }
 
 // makeAgentBody is a one-line constructor for a sensible default request body.
-func makeAgentBody(externalID, name string, skills *[]api.AgentSkillAssignment) api.CreateAgentRequest {
-	return api.CreateAgentRequest{
-		ExternalId: externalID,
-		Name:       name,
-		Email:      openapi_types.Email(name + "@example.test"),
-		Skills:     skills,
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 — `code` is
+// required and immutable on Create). `externalID` is now *string under the
+// hood because the column is nullable post-04.1; the helper takes a string
+// for caller convenience and converts via strPtr internally. Empty string
+// means "no external_id" (the helper sends nil — the Plan 05 test suite
+// will exercise the nil/empty distinction explicitly).
+func makeAgentBody(code, externalID, name string, skills *[]api.AgentSkillAssignment) api.CreateAgentRequest {
+	body := api.CreateAgentRequest{
+		Code:  code,
+		Name:  name,
+		Email: openapi_types.Email(name + "@example.test"),
+		Skills: skills,
 	}
+	if externalID != "" {
+		body.ExternalId = strPtr(externalID)
+	}
+	return body
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +133,7 @@ func TestAgents_CreateThenGet(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	// POST → 201
-	body := makeAgentBody("ext-001", "Alice", nil)
+	body := makeAgentBody("emp_001", "ext-001", "Alice", nil)
 	a := postAgent(t, th, body)
 	require.Equal(t, 1, a.Version, "fresh agent version must be 1")
 	require.True(t, a.Enabled, "fresh agent must default to enabled=true")
@@ -151,22 +163,38 @@ func TestAgents_CreateThenGet(t *testing.T) {
 	require.True(t, th.Miniredis.Exists(cacheKey), "cache key still present on second GET")
 }
 
+// TestAgents_CreateDuplicateExternalID_IncludesRequestID — Phase 04.1 rewrite
+// (resolves Plan 04 Hazard #1). Two POSTs with DISTINCT codes but SAME
+// `external_id` deterministically hit the partial UNIQUE index
+// `ix_agents_org_external_id`, so MapPgError introspects the constraint name
+// and returns ErrorCodeDuplicateExternalId / "duplicate_external_id". The
+// `X-Request-Id` header propagation contract (D-35) is preserved across
+// the wire-shape change. Test name accurately describes the assertion: the
+// external_id collision branch.
 func TestAgents_CreateDuplicateExternalID_IncludesRequestID(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	body := makeAgentBody("ext-duplicate", "Dupe", nil)
+	body := makeAgentBody("emp_dup_a", "ext-duplicate", "DupeA", nil)
 	_ = postAgent(t, th, body)
 
-	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
+	// Distinct code, SAME external_id → forces the (org_id, external_id)
+	// partial unique index to fire (deterministic, not order-dependent).
+	// Name uses no spaces so makeAgentBody's name-derived email is valid.
+	body2 := makeAgentBody("emp_dup_b", "ext-duplicate", "DupeB", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body2)
 	require.Equalf(t, http.StatusConflict, resp.StatusCode, "want 409, body=%s", string(raw))
 	require.NotEmpty(t, resp.Header.Get("X-Request-Id"))
 
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
-	require.Equal(t, api.ErrorCodeVersionConflict, e.Error)
-	require.Equal(t, "external_id_collision", e.Reason)
+	// Phase 04.1 (D04_1-21): same external_id, distinct codes → partial
+	// unique index `ix_agents_org_external_id` fires; MapPgError returns
+	// ErrorCodeDuplicateExternalId (camelcase `Id` lock — Plan 03 Task 3
+	// line 572).
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
 	require.NotNil(t, e.RequestId, "409 body must include request_id")
 	require.Equal(t, resp.Header.Get("X-Request-Id"), e.RequestId.String())
 }
@@ -194,7 +222,7 @@ func TestAgents_VersionConflict(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-002", "Bob", nil))
+	a := postAgent(t, th, makeAgentBody("emp_002", "ext-002", "Bob", nil))
 	newName := "Bob v2"
 
 	// First PATCH with wrong version → 409.
@@ -231,7 +259,7 @@ func TestAgents_SoftDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-del", "Carol", nil))
+	a := postAgent(t, th, makeAgentBody("emp_del", "ext-del", "Carol", nil))
 
 	// DELETE → 204
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)))
@@ -262,7 +290,7 @@ func TestAgents_SoftDelete_IncludeDisabled(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-del2", "Dave", nil))
+	a := postAgent(t, th, makeAgentBody("emp_del2", "ext-del2", "Dave", nil))
 	resp, _ := httpDELETE(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
@@ -293,7 +321,7 @@ func TestAgents_Cursor(t *testing.T) {
 	const total = 60
 	ids := make(map[uuid.UUID]struct{}, total)
 	for i := 0; i < total; i++ {
-		body := makeAgentBody(fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Agent%03d", i), nil)
+		body := makeAgentBody(fmt.Sprintf("emp_%03d", i), fmt.Sprintf("ext-%03d", i), fmt.Sprintf("Agent%03d", i), nil)
 		a := postAgent(t, th, body)
 		ids[uuid.UUID(a.Id)] = struct{}{}
 		// Tiny pause so UUIDv7 timestamps differ by at least a microsecond
@@ -356,9 +384,9 @@ func TestAgents_NameSearch(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	postAgent(t, th, makeAgentBody("ext-alice", "Alice", nil))
-	postAgent(t, th, makeAgentBody("ext-alpine", "Alpine", nil))
-	postAgent(t, th, makeAgentBody("ext-bob", "Bob", nil))
+	postAgent(t, th, makeAgentBody("emp_alice", "ext-alice", "Alice", nil))
+	postAgent(t, th, makeAgentBody("emp_alpine", "ext-alpine", "Alpine", nil))
+	postAgent(t, th, makeAgentBody("emp_bob", "ext-bob", "Bob", nil))
 
 	q := url.Values{"name": {"al"}}
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, agentPath(th.OrgID), q)
@@ -379,7 +407,7 @@ func TestAgents_CacheInvalidationOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-cache", "Eve", nil))
+	a := postAgent(t, th, makeAgentBody("emp_cache", "ext-cache", "Eve", nil))
 	// Warm the cache.
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -411,7 +439,7 @@ func TestAgents_CacheInvalidationOnDelete(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-cache-del", "Frank", nil))
+	a := postAgent(t, th, makeAgentBody("emp_cache_del", "ext-cache-del", "Frank", nil))
 	// Warm cache.
 	resp, _ := httpGET(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -444,7 +472,7 @@ func TestAgents_SkillsReplace(t *testing.T) {
 		{SkillId: api.UUIDv7(s1), Proficiency: 5},
 		{SkillId: api.UUIDv7(s2), Proficiency: 7},
 	}
-	a := postAgent(t, th, makeAgentBody("ext-skill", "Skiller", &initial))
+	a := postAgent(t, th, makeAgentBody("emp_skill", "ext-skill", "Skiller", &initial))
 
 	// GET → both skills present.
 	resp, raw := httpGET(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), nil)
@@ -480,7 +508,7 @@ func TestAgents_SkillsReplace_UnknownSkill(t *testing.T) {
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	a := postAgent(t, th, makeAgentBody("ext-unknown", "Hank", nil))
+	a := postAgent(t, th, makeAgentBody("emp_unknown", "ext-unknown", "Hank", nil))
 	unknown := uuid.Must(uuid.NewV7())
 	replace := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(unknown), Proficiency: 5},
@@ -513,7 +541,7 @@ func TestAgents_OutOfRangeProficiency_422(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	s1 := seedSkill(t, th, ctx, "spanish")
-	a := postAgent(t, th, makeAgentBody("ext-proficiency", "Iris", nil))
+	a := postAgent(t, th, makeAgentBody("emp_proficiency", "ext-proficiency", "Iris", nil))
 
 	bad := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 11}, // out of [1..10] range
@@ -538,7 +566,7 @@ func TestAgents_SkillsReplace_OutOfRangeProficiency_422(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	s1 := seedSkill(t, th, ctx, "italian")
-	a := postAgent(t, th, makeAgentBody("ext-proficiency-2", "Jack", nil))
+	a := postAgent(t, th, makeAgentBody("emp_proficiency_2", "ext-proficiency-2", "Jack", nil))
 
 	bad := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 0}, // below range
@@ -566,7 +594,7 @@ func TestAgents_Create_OutOfRangeProficiency_422(t *testing.T) {
 	bad := []api.AgentSkillAssignment{
 		{SkillId: api.UUIDv7(s1), Proficiency: 11},
 	}
-	body := makeAgentBody("ext-create-422", "Kira", &bad)
+	body := makeAgentBody("emp_create_422", "ext-create-422", "Kira", &bad)
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
 	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
@@ -593,7 +621,7 @@ func TestAgents_Create_UnknownSkillId_422(t *testing.T) {
 		{SkillId: api.UUIDv7(unknown), Proficiency: 5},
 	}
 	const externalID = "ext-create-422-unknown"
-	body := makeAgentBody(externalID, "Liam", &bad)
+	body := makeAgentBody("emp_create_422_unknown", externalID, "Liam", &bad)
 
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
 	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
@@ -632,7 +660,7 @@ func TestAgents_Create_DuplicateSkillId_422(t *testing.T) {
 		{SkillId: api.UUIDv7(s1), Proficiency: 5},
 		{SkillId: api.UUIDv7(s1), Proficiency: 7},
 	}
-	body := makeAgentBody("ext-create-dup", "Mia", &dup)
+	body := makeAgentBody("emp_create_dup", "ext-create-dup", "Mia", &dup)
 	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
 	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode,
 		"want 422 invalid_value, body=%s", string(raw))
@@ -703,7 +731,7 @@ func TestAgents_CrossOrgGet404(t *testing.T) {
 	cleanCatalogTables(t, ctx)
 
 	// Agent created in orgA (th.OrgID).
-	a := postAgent(t, th, makeAgentBody("ext-cross", "Mara", nil))
+	a := postAgent(t, th, makeAgentBody("emp_cross", "ext-cross", "Mara", nil))
 
 	// orgB — fresh UUIDv7 — issues a GET with the SAME id.
 	orgB := uuid.Must(uuid.NewV7())
@@ -713,4 +741,215 @@ func TestAgents_CrossOrgGet404(t *testing.T) {
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
 	require.Equal(t, api.ErrorCodeNotFound, e.Error)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+// ---------------------------------------------------------------------------
+
+// TestAgents_MissingCode_Returns400 — POST with body Code = "" (empty)
+// triggers Layer 1 (regex rejects empty). Asserts 400 invalid_body /
+// reason="invalid_code_format". Locks D04_1-05 (empty code is invalid).
+func TestAgents_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("", "", "Alice", nil) // empty code
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestAgents_DuplicateCode_Returns409_DuplicateCode — POST with existing
+// code → 409 ErrorCode=duplicate_code (NOT version_conflict). Locks the
+// SIMPLICITY-REVIEW MED bug fix (RESEARCH §Pitfall 3 + Plan 04 errors.go).
+func TestAgents_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("emp_001", "ext-hr-001", "Alice", nil)
+	_ = postAgent(t, th, body)
+
+	// Same code, different external_id → 409 duplicate_code.
+	body2 := makeAgentBody("emp_001", "ext-hr-002", "AliceDup", nil)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestAgents_DuplicateExternalId_Returns409_DuplicateExternalId — POST
+// with a FRESH code BUT existing external_id → 409 duplicate_external_id
+// (NOT duplicate_code). Asserts the constraint-name introspect path
+// distinguishes the two collision flavors. (Plan 04 errors.go.)
+func TestAgents_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("emp_dx_001", "ext-hr-001", "Alice", nil)
+	_ = postAgent(t, th, body)
+
+	body2 := makeAgentBody("emp_dx_002", "ext-hr-001", "AliceDup", nil) // fresh code, dup external_id
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error) // camelcase Id (locked by Plan 03 Task 3 line 572)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestAgents_PatchSameCode_Returns200 — PATCH with code === stored.Code
+// is a no-op success (Layer 1 passes regex; Layer 2 passes equality;
+// UPDATE proceeds with non-code fields).
+func TestAgents_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("emp_same_001", "ext-same-001", "Alice", nil)
+	created := postAgent(t, th, body)
+
+	// PATCH with the same code + a different name.
+	sameCode := "emp_same_001"
+	newName := "Alice2"
+	patchBody := api.UpdateAgentRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.Agent
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestAgents_PatchDifferentCode_Returns422_ImmutableField — PATCH with
+// a different (valid) code → 422 with ErrorCode=immutable_field.
+// Locks D04_1-02 immutability. (Plan 04 validateImmutableCode + Layer 2.)
+func TestAgents_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("emp_diff_001", "ext-diff-001", "Alice", nil)
+	created := postAgent(t, th, body)
+
+	newCode := "emp_diff_002"
+	patchBody := api.UpdateAgentRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestAgents_PatchInvalidCodeFormat_Returns400 — PATCH with malformed
+// code → 400 invalid_body. Layer 1 fires BEFORE Layer 2 immutability.
+// Locks Pitfall 4 — empty/UPPER/hyphen all hit Layer 1.
+func TestAgents_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("emp_bad_001", "ext-bad-001", "Alice", nil)
+	created := postAgent(t, th, body)
+
+	badCode := "UPPER" // fails regex
+	patchBody := api.UpdateAgentRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestAgents_TwoNullExternalIds_NoConflict — IDENT-02 (VALIDATION map).
+// external_id is nullable; two rows in same org both omitting external_id
+// must coexist. Locks the partial unique index `ix_agents_org_external_id
+// WHERE external_id IS NOT NULL` semantics (Plan 01 + RESEARCH §Pattern 1).
+func TestAgents_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeAgentBody("emp_null_001", "", "Alice", nil) // empty external_id → handler passes nil → NULL in DB
+	_ = postAgent(t, th, body)
+
+	body2 := makeAgentBody("emp_null_002", "", "Bob", nil) // also NULL external_id
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, agentPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode, "body=%s — two NULL external_ids must coexist", string(raw))
+}
+
+// TestAgents_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. PATCH that supplies an external_id already bound to
+// another agent in the org MUST surface as HTTP 409 with
+// ErrorCode=duplicate_external_id. Pre-fix the handler only branched on
+// 422 and let MapPgError's 409 status fall through to a 500, poisoning
+// 5xx metrics for a client-correctable error.
+func TestAgents_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	// Two distinct rows: row A claims ext-h1-001; row B (target of the
+	// PATCH) starts with a different external_id.
+	_ = postAgent(t, th, makeAgentBody("emp_h1_a", "ext-h1-001", "Alice", nil))
+	b := postAgent(t, th, makeAgentBody("emp_h1_b", "ext-h1-002", "Bob", nil))
+
+	// PATCH row B's external_id to row A's value → partial UNIQUE on
+	// (org_id, external_id) fires (23505) → handler must return 409
+	// duplicate_external_id (post-fix), NOT 500 internal.
+	dup := "ext-h1-001"
+	patchBody := api.UpdateAgentRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestAgents_PatchClearExternalId_NullsTheField — Phase 5 fix H2. PATCH
+// with external_id=""  (empty-string sentinel) MUST clear the persisted
+// column to SQL NULL. Pre-fix the SQL used COALESCE(narg, col) which
+// preserved the existing value whenever the SQL parameter was NULL —
+// and since oapi-codegen renders both omitted and explicit-null as nil
+// pointer, clients literally could not clear external_id via PATCH.
+func TestAgents_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postAgent(t, th, makeAgentBody("emp_h2_a", "ext-h2-bind", "Alice", nil))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-h2-bind", *a.ExternalId, "precondition: external_id is bound")
+
+	// PATCH with empty-string sentinel → expect external_id=NULL.
+	clear := ""
+	patchBody := api.UpdateAgentRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, agentDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode,
+		"H2: PATCH external_id=\"\" must return 200; body=%s", string(raw))
+	var updated api.Agent
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: PATCH external_id=\"\" must null the column")
 }

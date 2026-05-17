@@ -6,7 +6,7 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 
 ## Milestone
 
-**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 2/7 phases complete; Phase 3 is current focus.
+**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 5/7 phases complete (Phase 04.1 + Phase 5 shipped 2026-05-17); Phase 6 is current focus.
 
 ## Phases
 
@@ -21,7 +21,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift. (completed 2026-05-16)
 - [x] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads. (completed 2026-05-16)
 - [x] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper. (completed 2026-05-17)
-- [ ] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning.
+- [x] **Phase 04.1: Catalog Identity Normalization (INSERTED)** - Introduce universal user-facing `code` (TEXT NOT NULL, UNIQUE per org) on all 6 primary catalog entities. Demote `external_id` to optional with partial unique. Drop `break_reasons.UNIQUE (org_id, name)`. Updates migration 000002 (still editable per D-61), OpenAPI contract, sqlc queries, 6 CRUD handlers, and tests. Unblocks Phase 5 import keyed on `code`. (completed 2026-05-17)
+- [x] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities keyed on `code`, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning. (completed 2026-05-17)
 - [ ] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support.
 - [ ] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped.
 
@@ -201,20 +202,92 @@ Plans:
 
 ---
 
+### Phase 04.1: catalog-identity-normalization (INSERTED)
+
+**Goal:** A single canonical user-facing identifier `code` exists on all 6 primary catalog entities (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`). `code` is the upsert key for bulk import (Phase 5) and the cross-reference target for nested relationships. `external_id` is demoted to an optional integration-mapping field. After this phase, generic file imports and DSL references use `code`; v0.2 external sync can layer `external_source` onto the optional `external_id` without contract churn.
+**Depends on:** Phase 4
+**Requirements**: IDENT-01, IDENT-02, IDENT-03, IDENT-04, IDENT-05, IDENT-06, IDENT-07, IDENT-08
+**Success Criteria** (what must be TRUE):
+
+  1. Every primary catalog table has a `code TEXT NOT NULL` column with `UNIQUE (org_id, code)`; the existing `UNIQUE (org_id, external_id) NOT NULL` constraint is replaced by `external_id TEXT NULL` with partial unique `WHERE external_id IS NOT NULL` on `agents`, `skills`, `queues`, `channels`. `adapters` and `break_reasons` gain both new columns; `break_reasons.UNIQUE (org_id, name)` is dropped.
+  2. `POST /v1/orgs/{org_id}/{entity}` with a body missing `code` returns HTTP 400; a body whose `code` collides with an existing row in the same org returns HTTP 409 with `ErrorCode=duplicate_code`. `PATCH` requests attempting to mutate `code` are rejected.
+  3. `GET /v1/orgs/{org_id}/break_reasons/{id}` returns both `code` and `name`; renaming `name` does not change the URL or break any cross-reference; the entity remains addressable by its stable `code`.
+  4. The two-org isolation test suite passes with `code`-keyed fixtures; every CRUD endpoint exercises both `code` collisions (409) and `external_id` collisions (409 distinct error code) within a single org and across orgs.
+  5. `go generate ./...` and `pnpm gen:api` produce no diff against committed code (CONTRACT-04 maintained); OpenAPI 3.0 spec lint passes; `task gen` cleanly regenerates `server.gen.go` and `types.gen.go` with the new `code` field on all 6 entity schemas.
+  6. Migration 000002 (still editable per D-61) is amended in place — no migration 003 is added; `task db:reset` rebuilds the schema cleanly from a Phase 1 baseline.
+
+**Plans**: 6 plans
+Plans:
+
+**Wave 0** *(2 plans in parallel — different files, no cross-dep)*
+
+- [ ] 04.1-01-PLAN.md — Migration 000002 amend (up + down): add code TEXT NOT NULL on 6 entities + UNIQUE(org_id, code) + demote external_id to TEXT NULL with partial unique + drop break_reasons.UNIQUE(org_id, name) + idempotent row_number backfill (IDENT-01, IDENT-02, IDENT-03, IDENT-07)
+- [ ] 04.1-02-PLAN.md — OpenAPI yaml deltas: 3 new ErrorCode enum values (duplicate_code, duplicate_external_id, immutable_field) + Identity Model info.description link + code on 6 entity + 1 ListItem + 6 Create*Request + 6 Update*Request + new CreateAdapter 409 + new Update* 422 responses (IDENT-01..06)
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 04.1-03-PLAN.md — sqlc query authoring (6 files: code in InsertX/ListX/UpdateX RETURNING; new GetXByCode + UpsertXByCode) + codecheck.go + codecheck_test.go (validateCodeFormat + validateImmutableCode helpers) + task gen regen of Go server stubs + sqlc structs + TS client (IDENT-04, IDENT-05)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04.1-04-PLAN.md — Handler refactor: fix mapPgError constraint-name introspection in errors.go (fixes Phase 3 SIMPLICITY-REVIEW MED) + project Code in mappers.go + 6 entity handlers gain Layer 1 + Layer 2 + new 409/422 paths + CreateAdapter 409 wrapper + break_reasons drops name_collision (IDENT-01, IDENT-04, IDENT-06)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04.1-05-PLAN.md — Per-entity test suites: 43 new tests across 6 _test.go files (6 standard per entity + TestBreakReasons_DuplicateName_NoConflict) + isolation fixtures rewrite to regex-compliant codes + TestCatalog_CrossOrgSameCode_BothSucceed + NEW migration_idempotent_test.go (IDENT-01..08)
+
+**Wave 4** *(blocked on Wave 3 — sequential, includes human checkpoint)*
+
+- [ ] 04.1-06-PLAN.md — Phase gate: task gen drift check + task test + task lint + task db:reset smoke + cross-AI peer review (Codex + Gemini in parallel per CLAUDE.md HARD RULE) synthesized into 04.1-REVIEW.md + Phase 5 amend checklist (D04_1-25) + human checkpoint approval (IDENT-01..08)
+
+**Branch**: `gsd/phase-04-5-catalog-identity-normalization`
+**Source review**: `.planning/phases/03-catalog-crud-go/03-CATALOG-IDENTITY-REVIEW.md` + `03-CATALOG-IDENTITY-REVIEW-RESPONSE.md` (cross-AI peer-review consensus)
+
 ### Phase 5: Bulk Import (Go)
 
 **Goal**: An org admin can seed or update any of the six catalog entities in bulk via a single synchronous import endpoint that handles JSON and CSV, tolerates partial row failures, and persists session results for polling.
-**Depends on**: Phase 3
+**Depends on**: Phase 3, Phase 04.1 (catalog identity contract — imports key on `code`, not `external_id`)
 **Requirements**: IMP-01, IMP-02, IMP-03, IMP-04, IMP-05, IMP-06, IMP-07, IMP-08
 **Success Criteria** (what must be TRUE):
 
-  1. `POST /v1/orgs/{org_id}/catalog/import?entity={type}` accepts a JSON or CSV body for any of the 6 entity types and upserts rows keyed by `(org_id, external_id)`; running the same payload twice produces no duplicates.
+  1. `POST /v1/orgs/{org_id}/catalog/import?entity={type}` accepts a JSON or CSV body for any of the 6 entity types and upserts rows keyed by `(org_id, code)`; running the same payload twice produces no duplicates. *(Updated post Phase 04.1 — was `(org_id, external_id)`.)*
   2. A CSV body containing a UTF-8 BOM, Windows CRLF line endings, and fields with embedded commas, quoted newlines, and escaped quotes is parsed without error or data corruption using Go's `encoding/csv` with explicit BOM handling.
   3. A batch where some rows fail and some succeed returns HTTP 207 with `{ succeeded: [ids], failed: [{row, field, message}] }`; valid rows are persisted even when the same batch contains invalid rows.
   4. A request body exceeding 50 MB or 500 rows returns HTTP 413 with a message pointing to the v0.2 async pathway; a CSV request missing `?schema_version=v0.1` returns HTTP 400 listing supported versions.
   5. `GET /v1/orgs/{org_id}/imports/{id}` returns the full import session (total_rows, succeeded_rows, failed_rows, errors JSONB) for any previously completed import, persisted in the `import_jobs` table.
 
-**Plans**: TBD
+**Plans**: 8 plans
+Plans:
+
+**Wave 0** *(2 plans in parallel — disjoint files)*
+
+- [ ] 05-01-PLAN.md — OpenAPI yaml deltas (6 Import*Request + IdempotencyKeyHeader + ImportJob.status enum + BulkImportResult.idempotent_replay + description rewrites to code) + migration 000003 (import_jobs table + 3 indexes) + sqlcheck tenantTables["import_jobs"] + task gen no-drift commit (IMP-01, IMP-03, IMP-04, IMP-05, IMP-06, IMP-07, IMP-08)
+- [ ] 05-02-PLAN.md — Export catalog.ValidateCodeFormat + catalog.MapPgError (rename pass across 7 catalog handler files) + (*OrgTx).BeginSavepoint(ctx) on internal/db/orgdb.go + middleware.BodyLimit (chi factory with Content-Length pre-flight + http.MaxBytesReader wrap) + ≥ 5 bodylimit_test cases (IMP-07)
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 05-03-PLAN.md — sqlc queries: NEW import_jobs.sql (5 queries: InsertImportJob, FinaliseImportJob, GetImportJob, LookupImportJobByIdempotencyKey, SweepCrashedImportJobs) + APPEND MergeAgentSkill :exec to agent_skills.sql + APPEND InsertAgentStateOnConflictNothing :exec to agent_states.sql + APPEND ResolveSkillCodes :many to skills.sql + task gen regen (IMP-03, IMP-06)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 05-04-PLAN.md — internal/imports/ package scaffold: doc.go + handlers.go (Importer struct + Start/Stop lifecycle mirroring state.Server) + coerce.go (D5-01..D5-08 typed pipeline) + parser_json.go (reMarshalAs[T any] F1 helper) + parser_csv.go (stripBOM + newCSVReader) + header.go (entityRegistry + validateHeader) + mappers.go + errors.go (rowError + wrapPgError) + jobs.go (createJob + finaliseJob) + idempotency.go (lookupIdempotentReplay + rehydrateBulkImportResult) + sweep.go (safetySweep + startupSweep verbatim from state/ttl.go) + main_test.go + testutil_test.go + sweep_test.go (≥ 4 clockwork-backed cases) + exhaustive unit tests for coerce/parser_csv/parser_json/header (IMP-02, IMP-04, IMP-06, IMP-08)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 05-05-PLAN.md — Per-entity row processors: row_agent.go (Layer 1 + UpsertAgentByCode + InsertAgentStateOnConflictNothing + MergeAgentSkill loop) + row_skill.go + row_queue.go + row_channel.go (D-76 FK code-lookup probe) + row_adapter.go (JSONB passthrough) + row_break_reason.go + chunk.go (outerTx + per-row savepoint + ResolveSkillCodes batched once + POST-COMMIT cache.Del) + 7 paired _test.go (≥ 24 row processor tests + ≥ 5 chunk integration tests) (IMP-01, IMP-03, IMP-04, IMP-05)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 05-06-PLAN.md — Top-level handlers: handler_import.go (BulkImportCatalog + importJSON + importCSV + runImportPipeline) + handler_get_job.go (GetImportJob) + ≥ 11 unit dispatch tests + ApiHandlers composite update in cmd/api/main.go (third embed *imports.Importer; LIFO Start/Stop) + DELETE services/api/internal/catalog/notimpl.go + BodyLimit middleware injection in server.NewMux + 3 server chain-ordering tests (IMP-01, IMP-02, IMP-04, IMP-05, IMP-06, IMP-07, IMP-08)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 05-07-PLAN.md — Integration tests: testutil HTTP helpers extension + entity × format matrix (≥ 12 happy + ≥ 6 error) + windows-excel-agents.csv (UTF-8 BOM + CRLF + embedded quotes — Pitfall 1 mandatory) + invalid-utf8.csv + oversized-501-rows + idempotency_test (≥ 5 IdempotencyKey + ≥ 1 NoIdempotencyKey double-run) + jobs_test (≥ 3 GetImportJob + ≥ 2 FinaliseJob) + isolation/imports_test (cross-org probes incl. TestImport_CrossOrgSameCode_BothSucceed mirror of Phase 04.1) + isolation/imports_migration_idempotent_test (000003 replay) — total ≥ 35 new test cases (IMP-01..IMP-08)
+
+**Wave 6** *(blocked on Wave 5 — includes human checkpoint)*
+
+- [ ] 05-08-PLAN.md — Phase gate: task gen drift check + task test + task lint + task db:reset smoke + COMBINED cross-AI peer review (Codex + Gemini in parallel per CLAUDE.md HARD RULE — orchestrator override: covers BOTH Phase 04.1 + Phase 5 diff in a single pass to satisfy 04.1 Plan 06 deferred review) synthesized into 05-REVIEW.md + human checkpoint approval + STATE.md advancement (IMP-01..IMP-08)
+
 **Branch**: `gsd/phase-05-bulk-import`
 
 ---
@@ -269,7 +342,7 @@ Plans:
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
 | 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
-| 5. Bulk Import (Go) | 0/TBD | Not started | - |
+| 5. Bulk Import (Go) | 0/8 | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
 

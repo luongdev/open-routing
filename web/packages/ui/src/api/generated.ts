@@ -109,7 +109,7 @@ export interface paths {
         put?: never;
         /**
          * Create an agent
-         * @description Creates a new agent in the org. The server mints a UUIDv7 `id`. `external_id` must be unique within the org (FOUND-06). Skills can be provided at creation time via the `skills` array.
+         * @description Creates a new agent in the org. The server mints a UUIDv7 `id`. `code` is required and must be unique within the org; `external_id` is optional and unique within the org when set. Skills can be provided at creation time via the `skills` array.
          */
         post: operations["CreateAgent"];
         delete?: never;
@@ -571,9 +571,21 @@ export interface paths {
          *     field names. BOM handling: UTF-8 BOM is stripped automatically (IMP-02).
          *     Line endings: CRLF and LF both accepted (IMP-02).
          *
-         *     **Upsert semantics:** Rows are upserted keyed by `(org_id, external_id)`
-         *     — existing rows update fields, new rows insert. Running the same input
-         *     twice produces no duplicates (IMP-03).
+         *     **Upsert semantics:** Rows are upserted keyed by `(org_id, code)` —
+         *     the universal user-facing canonical identifier introduced by Phase 04.1
+         *     (D04_1-01). Existing rows update fields, new rows insert. Running the
+         *     same input twice produces no duplicates (IMP-03). `external_id` is
+         *     supported as an optional integration-mapping field on every
+         *     `Import*Request` (mutable per D04_1-07) but is NOT the upsert key.
+         *
+         *     **Idempotency:** Clients MAY pass an `Idempotency-Key` UUIDv7 header to
+         *     make a POST retry-safe. A repeated request with the same key in the
+         *     same org returns the persisted prior result with `idempotent_replay:
+         *     true` (D5-13 / D5-27). Note: in v0.1 the replay response carries an
+         *     empty `succeeded` array because the server stores only counters +
+         *     errors JSONB — original succeeded IDs are not reconstructable. Callers
+         *     that need full replay should use the non-idempotent path or wait for
+         *     v0.2.
          *
          *     **Size limits:** Maximum 50 MB body and 500 rows (IMP-07). Oversized
          *     requests return HTTP 413 (request_too_large_use_async_pathway) before
@@ -647,9 +659,13 @@ export interface components {
          * @description Closed enum of machine-readable error codes (D-36, D-75, ROADMAP Phase 3
          *     criterion 4). Clients branch on this value — never on `reason` or HTTP
          *     status alone.
+         *
+         *     Phase 04.1 added `duplicate_code`, `duplicate_external_id`, and
+         *     `immutable_field` to support the universal `code` identity model
+         *     (D04_1-16, D04_1-20).
          * @enum {string}
          */
-        ErrorCode: "invalid_body" | "invalid_id" | "not_found" | "internal" | "version_conflict" | "cross_org" | "invalid_org_id" | "invalid_transition" | "import_failed" | "rate_limited" | "invalid_reference" | "invalid_value";
+        ErrorCode: "invalid_body" | "invalid_id" | "not_found" | "internal" | "version_conflict" | "cross_org" | "duplicate_code" | "duplicate_external_id" | "invalid_org_id" | "invalid_transition" | "import_failed" | "immutable_field" | "rate_limited" | "invalid_reference" | "invalid_value";
         /**
          * @description Canonical error envelope (D-35). Present on every 4xx/5xx response.
          *     `request_id` is omitted on bypass routes that run before the RequestID
@@ -737,10 +753,23 @@ export interface components {
             /** @description The org this agent belongs to. */
             org_id: components["schemas"]["UUIDv7"];
             /**
-             * @description Caller-assigned stable identifier for sync/import (e.g. HR system employee ID). Unique within the org. `UNIQUE (org_id, external_id)`.
-             * @example EMP-0042
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example emp_0042
              */
-            external_id: string;
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /**
              * @description Display name of the agent.
              * @example Alice Nguyen
@@ -779,8 +808,24 @@ export interface components {
         AgentListItem: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example EMP-0042 */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example emp_0042
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /** @example Alice Nguyen */
             name: string;
             /**
@@ -806,10 +851,17 @@ export interface components {
         /** @description Request body for creating an agent. */
         CreateAgentRequest: {
             /**
-             * @description Caller-assigned stable identifier. Must be unique within the org.
-             * @example EMP-0042
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example emp_0042
              */
-            external_id: string;
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /**
              * @description Display name.
              * @example Alice Nguyen
@@ -831,6 +883,29 @@ export interface components {
         };
         /** @description Request body for updating an agent. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateAgentRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example emp_0042
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
+             * @example HR-EMP-0042
+             */
+            external_id?: string | null;
             /** @example Alice Nguyen */
             name?: string;
             /**
@@ -851,8 +926,24 @@ export interface components {
         Skill: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example SKILL-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example skill_voice_tier1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-SKILL-VOICE
+             */
+            external_id?: string | null;
             /** @example Billing Support */
             name: string;
             /**
@@ -881,8 +972,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateSkillRequest: {
-            /** @example SKILL-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example skill_voice_tier1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example HR-SKILL-VOICE
+             */
+            external_id?: string | null;
             /** @example Billing Support */
             name: string;
             /** @example Handle billing inquiries and payment disputes. */
@@ -893,6 +994,29 @@ export interface components {
             enabled: boolean;
         };
         UpdateSkillRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example skill_voice_tier1
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
+             * @example HR-SKILL-VOICE
+             */
+            external_id?: string | null;
             /** @example Billing Support */
             name?: string;
             description?: string | null;
@@ -909,8 +1033,24 @@ export interface components {
         Queue: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example QUEUE-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example queue_billing
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example CRM-Q-BILLING
+             */
+            external_id?: string | null;
             /** @example Billing Queue */
             name: string;
             /** @description Channel types this queue accepts (e.g. ["voice", "chat"]). */
@@ -941,8 +1081,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateQueueRequest: {
-            /** @example QUEUE-BILLING */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example queue_billing
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example CRM-Q-BILLING
+             */
+            external_id?: string | null;
             /** @example Billing Queue */
             name: string;
             channel_types: components["schemas"]["ChannelType"][];
@@ -954,6 +1104,29 @@ export interface components {
             enabled: boolean;
         };
         UpdateQueueRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example queue_billing
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
+             * @example CRM-Q-BILLING
+             */
+            external_id?: string | null;
             name?: string;
             channel_types?: components["schemas"]["ChannelType"][];
             priority?: number;
@@ -974,8 +1147,24 @@ export interface components {
         Channel: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
-            /** @example CHAN-VOICE-MAIN */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example channel_voice_primary
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example CRM-CH-VOICE
+             */
+            external_id?: string | null;
             /** @example Main Voice Channel */
             name: string;
             channel_type: components["schemas"]["ChannelType"];
@@ -1000,8 +1189,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateChannelRequest: {
-            /** @example CHAN-VOICE-MAIN */
-            external_id: string;
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example channel_voice_primary
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example CRM-CH-VOICE
+             */
+            external_id?: string | null;
             /** @example Main Voice Channel */
             name: string;
             channel_type: components["schemas"]["ChannelType"];
@@ -1011,6 +1210,29 @@ export interface components {
         };
         /** @description Request body for updating a channel. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateChannelRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example channel_voice_primary
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
+             * @example CRM-CH-VOICE
+             */
+            external_id?: string | null;
             /**
              * @description Current optimistic-lock version. Mismatch → HTTP 409.
              * @example 1
@@ -1025,6 +1247,24 @@ export interface components {
         Adapter: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example adapter_freeswitch_dc1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example MDM-ADAPTER-FS-DC1
+             */
+            external_id?: string | null;
             /**
              * @description Display name for this adapter configuration.
              * @example FreeSWITCH Bridge - DC1
@@ -1064,6 +1304,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateAdapterRequest: {
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example adapter_freeswitch_dc1
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example MDM-ADAPTER-FS-DC1
+             */
+            external_id?: string | null;
             /** @example FreeSWITCH Bridge - DC1 */
             name: string;
             /** @example freeswitch */
@@ -1077,6 +1329,29 @@ export interface components {
         };
         /** @description Request body for updating an adapter. Include `version` from the last GET response for optimistic concurrency (CAT-08). */
         UpdateAdapterRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example adapter_freeswitch_dc1
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
+             * @example MDM-ADAPTER-FS-DC1
+             */
+            external_id?: string | null;
             /**
              * @description Current optimistic-lock version. Mismatch → HTTP 409.
              * @example 1
@@ -1094,6 +1369,24 @@ export interface components {
         BreakReason: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
+            /**
+             * @description User-facing canonical identifier (D04_1-01). Required, immutable
+             *     after create. Composite UNIQUE (org_id, code). Used as the upsert
+             *     key for bulk import (Phase 5) and cross-reference target for
+             *     nested relationships and future DSL references.
+             * @example break_lunch
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system
+             *     (HR, CRM, etc.). Used for sync mapping only — NOT the upsert
+             *     key for bulk import (use `code` for that). Partial unique
+             *     within an org when present. v0.1 supports at most one
+             *     external source per entity per org; multi-source
+             *     disambiguation deferred to v0.2 via `external_source TEXT`.
+             * @example HR-BREAK-LUNCH
+             */
+            external_id?: string | null;
             /**
              * @description Display label shown on the agent desktop.
              * @example Lunch
@@ -1125,6 +1418,18 @@ export interface components {
             readonly updated_at: string;
         };
         CreateBreakReasonRequest: {
+            /**
+             * @description User-facing canonical identifier. Required on create, immutable
+             *     after (passing a different code in PATCH returns HTTP 422 with
+             *     ErrorCode=immutable_field).
+             * @example break_lunch
+             */
+            code: string;
+            /**
+             * @description Optional caller-assigned identifier from an external system. See entity schema.
+             * @example HR-BREAK-LUNCH
+             */
+            external_id?: string | null;
             /** @example Lunch */
             name: string;
             /** @example false */
@@ -1135,6 +1440,29 @@ export interface components {
             enabled: boolean;
         };
         UpdateBreakReasonRequest: {
+            /**
+             * @description Must equal the stored value (immutable post-create in v0.1, D04_1-02).
+             *     Passing a different value returns HTTP 422 with
+             *     ErrorCode=immutable_field. The field is accepted in the PATCH
+             *     body to preserve symmetry with the Create*Request shape; absent
+             *     or matching values are no-ops. Rename support deferred to v0.2.
+             * @example break_lunch
+             */
+            code?: string;
+            /**
+             * @description Mutable external-system mapping (D04_1-07). Pass a non-empty
+             *     string to (re)bind to an external row; pass an empty string
+             *     `""` to CLEAR the binding (server sets external_id to SQL NULL);
+             *     omit the field to leave the existing binding unchanged. Phase 5
+             *     fix H2 — `null` JSON values are indistinguishable from omission
+             *     in the current oapi-codegen pointer encoding (both decode to a
+             *     nil `*string`), so the empty-string sentinel is the documented
+             *     v0.1 way to clear. A future v0.2 release may add a tri-state
+             *     wrapper that allows literal `null` to clear, at which point the
+             *     empty-string sentinel will be deprecated but still honoured.
+             * @example HR-BREAK-LUNCH
+             */
+            external_id?: string | null;
             name?: string;
             routable?: boolean;
             display_order?: number;
@@ -1270,12 +1598,22 @@ export interface components {
             succeeded: components["schemas"]["UUIDv7"][];
             /** @description Structured errors for each failed row. Empty when all rows succeed. */
             failed: components["schemas"]["BulkImportFailedRow"][];
+            /**
+             * @description True when this response is a persisted prior result returned because the client repeated the Idempotency-Key (D5-13). False or absent on a first-time POST. v0.1 KNOWN LIMITATION: when true, `succeeded` is always an empty array because the server stores only counters; rely on `failed[]` for forensics (see operation description).
+             * @default false
+             */
+            readonly idempotent_replay: boolean | null;
         };
         /** @description A persisted import job record (IMP-06). Created by the import endpoint; queryable via `GET /v1/orgs/{org_id}/imports/{id}`. */
         ImportJob: {
             id: components["schemas"]["UUIDv7"];
             org_id: components["schemas"]["UUIDv7"];
             entity_type: components["schemas"]["ImportEntityType"];
+            /**
+             * @description Lifecycle of the import (D5-26). `pending` — the row was created before processing began; in v0.1 callers normally observe only `completed` or `failed` because the request is synchronous. `failed` may be set by the crash-recovery sweep (D5-11) when a process restart leaves a pending row stranded.
+             * @enum {string}
+             */
+            status: "pending" | "completed" | "failed";
             /** @example 100 */
             total_rows: number;
             /** @example 97 */
@@ -1289,6 +1627,102 @@ export interface components {
              * @example 2026-05-15T00:00:00Z
              */
             readonly created_at: string;
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=adapters`. `config`
+         *     is a free-form JSONB blob passed through to storage with no
+         *     validation (D-72 Phase 3 contract).
+         */
+        ImportAdapterRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            adapter_type: string;
+            /** @description Free-form vendor configuration; no fixed schema. */
+            config?: {
+                [key: string]: unknown;
+            };
+            /** @default true */
+            enabled: boolean;
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=agents`. Mirror of
+         *     CreateAgentRequest with FK references by `code` instead of UUID.
+         *     `external_id` is optional integration-mapping (mutable per D04_1-07).
+         */
+        ImportAgentRequest: {
+            /** @example emp_0042 */
+            code: string;
+            /** @example HR-EMP-0042 */
+            external_id?: string | null;
+            /** @example Mai Linh */
+            name: string;
+            /**
+             * Format: email
+             * @example mai@example.com
+             */
+            email: string;
+            /** @default true */
+            enabled: boolean;
+            /** @description Skill assignments referenced by `skill_code`. MERGE semantics (D5-18) — existing assignments not in this list are LEFT INTACT; proficiency for codes present in this list is set to the value supplied (D5-19 import wins). Skill removal via import is deferred to v0.2. */
+            skills?: {
+                skill_code: string;
+                proficiency: number;
+            }[];
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=break_reasons`.
+         *     `name` is a mutable display label (Phase 04.1 dropped
+         *     UNIQUE(org_id, name) — IDENT-03).
+         */
+        ImportBreakReasonRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            /** @default true */
+            routable: boolean;
+            /** @default 0 */
+            display_order: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        /**
+         * @description Phase 5 (IMP-01) per-row JSON shape for `entity=channels`. FK
+         *     `default_queue_code` references an existing queue by code; cross-row
+         *     FK probe is performed in the same chunk transaction.
+         */
+        ImportChannelRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            channel_type: string;
+            default_queue_code?: string | null;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Phase 5 (IMP-01) per-row JSON shape for `entity=queues`. */
+        ImportQueueRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            /** @description Multi-valued — in CSV use pipe-delimited per D5-04 (`voice|chat`); in JSON use the array form. */
+            channel_types: string[];
+            /** @default 5 */
+            priority: number;
+            /** @default 0 */
+            acw_sec: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Phase 5 (IMP-01) per-row JSON shape for `entity=skills`. */
+        ImportSkillRequest: {
+            code: string;
+            external_id?: string | null;
+            name: string;
+            description?: string | null;
+            skill_type: string;
+            /** @default true */
+            enabled: boolean;
         };
         /** @description Liveness check response (D-17). */
         HealthResponse: {
@@ -1416,6 +1850,8 @@ export interface components {
         OrgIdPath: components["schemas"]["UUIDv7"];
         /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
         EntityIdPath: components["schemas"]["UUIDv7"];
+        /** @description Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe (D5-13). A repeated request with the same key in the same org returns the persisted prior result with `idempotent_replay: true` (D5-27). Optional — absent header means a fresh job row is created each call. */
+        IdempotencyKeyHeader: string;
         /** @description Import job UUIDv7 returned by the POST /catalog/import endpoint. */
         ImportJobIdPath: components["schemas"]["UUIDv7"];
         /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
@@ -1602,7 +2038,14 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id` within the org, or optimistic concurrency conflict (version mismatch, CAT-08). On version mismatch the body includes the current server-side record. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). For agents only, an optimistic
+             *     concurrency conflict on PATCH may also surface here (CAT-08,
+             *     ErrorCode=version_conflict). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1733,24 +2176,35 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch. Body contains the current server-side agent record (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (CAT-08, D-37, ErrorCode=version_conflict)
+             *     with the current server-side agent record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another agent in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1 — UPDATE 23505
+             *     previously surfaced as 500 instead of 409). Clients should branch
+             *     on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Agent"];
-                    };
+                    });
                 };
             };
             /**
-             * @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, ROADMAP Phase 3 CRIT 4). Two flavors share this status: (a) `invalid_reference` — a `skills[].skill_id` references a skill
-             *         that does not exist in the caller's org (CAT-03, PUT-semantics
-             *         replacement).
-             *     (b) `invalid_value` — a `skills[].proficiency` value is outside
-             *         the inclusive range 1-10.
-             *     The `field` slot in ErrorResponse identifies which request body path failed (e.g. `skills[0].proficiency`).
+             * @description Business-rule violation. ErrorCode disambiguates: (a)
+             *     `immutable_field` — PATCH attempted to change a field that is
+             *     immutable in v0.1 (e.g., `code`; rename support deferred to
+             *     v0.2 per D04_1-02); (b) `invalid_reference` — a `skills[].skill_id`
+             *     references a skill that does not exist in the caller's org
+             *     (CAT-03, PUT-semantics replacement); (c) `invalid_value` — a
+             *     `skills[].proficiency` value is outside the inclusive range
+             *     1-10. The `field` slot in ErrorResponse identifies which
+             *     request body path failed (e.g. `code` or `skills[0].proficiency`).
              */
             422: {
                 headers: {
@@ -1931,7 +2385,12 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id` within the org. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2047,15 +2506,35 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side skill record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another skill in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Skill"];
-                    };
+                    });
+                };
+            };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             500: components["responses"]["InternalServerError"];
@@ -2137,7 +2616,12 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id`. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2253,15 +2737,35 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side queue record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another queue in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Queue"];
-                    };
+                    });
+                };
+            };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             500: components["responses"]["InternalServerError"];
@@ -2343,7 +2847,12 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Duplicate `external_id`. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Clients should branch on
+             *     ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2468,18 +2977,33 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch. Body contains the current server-side channel record (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side channel record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another channel in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Channel"];
-                    };
+                    });
                 };
             };
-            /** @description Semantically invalid request — structurally valid JSON that fails a business-rule check (D-75, D-76). For UpdateChannel: the supplied `default_queue_id` does not exist (or is disabled) in the caller's org. Returns `ErrorCode=invalid_reference`. The `field` slot in ErrorResponse identifies which request body path failed (e.g. `default_queue_id`). */
+            /**
+             * @description Business-rule violation. ErrorCode disambiguates: (a)
+             *     `immutable_field` — PATCH attempted to change a field that is
+             *     immutable in v0.1 (e.g., `code`; rename support deferred to
+             *     v0.2 per D04_1-02); (b) `invalid_reference` — the supplied
+             *     `default_queue_id` does not exist (or is disabled) in the
+             *     caller's org. The `field` slot in ErrorResponse identifies
+             *     which request body path failed (e.g. `code` or `default_queue_id`).
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2567,6 +3091,21 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Phase 04.1 added these
+             *     uniqueness constraints to adapters — pre-04.1 adapters had only
+             *     PRIMARY KEY(id) uniqueness so 23505 was impossible.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -2674,15 +3213,35 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch. Body contains the current server-side adapter record (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side adapter record returned in `current`,
+             *     OR a uniqueness collision raised by a PATCH that supplied an
+             *     external_id already bound to another adapter in the org
+             *     (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients should
+             *     branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["Adapter"];
-                    };
+                    });
+                };
+            };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             500: components["responses"]["InternalServerError"];
@@ -2764,7 +3323,14 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description UNIQUE(org_id, name) collision — the supplied name already exists in this org. Wave 5 cross-AI review: 23505 surfaced as 500 was poisoning 5xx metrics for a client-correctable error. */
+            /**
+             * @description Duplicate `code` within the org (ErrorCode=duplicate_code), or
+             *     duplicate `external_id` within the org when set
+             *     (ErrorCode=duplicate_external_id). Phase 04.1 dropped the
+             *     previous `UNIQUE(org_id, name)` constraint and replaced it
+             *     with the universal `(org_id, code)` identity model (D04_1-09).
+             *     Clients should branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2880,15 +3446,35 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
-            /** @description Version mismatch (D-37). */
+            /**
+             * @description Optimistic-concurrency conflict (D-37, ErrorCode=version_conflict)
+             *     with the current server-side break_reason record returned in
+             *     `current`, OR a uniqueness collision raised by a PATCH that
+             *     supplied an external_id already bound to another break_reason in
+             *     the org (ErrorCode=duplicate_external_id; Phase 5 fix H1). Clients
+             *     should branch on ErrorCode, not parse the description text.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                    "application/json": components["schemas"]["ErrorResponse"] | (components["schemas"]["VersionConflictErrorResponse"] & {
                         current?: components["schemas"]["BreakReason"];
-                    };
+                    });
+                };
+            };
+            /**
+             * @description Business-rule violation: `code` is immutable post-create
+             *     (D04_1-02); PATCH attempting to change it returns
+             *     ErrorCode=immutable_field. Rename support deferred to v0.2.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             500: components["responses"]["InternalServerError"];
@@ -2902,7 +3488,10 @@ export interface operations {
                 /** @description CSV schema version for import validation (IMP-08). Required when `Content-Type: text/csv`. Mismatched version returns HTTP 400 with supported versions listed. Example: `v0.1`. */
                 schema_version?: components["parameters"]["SchemaVersionQuery"];
             };
-            header?: never;
+            header?: {
+                /** @description Client-generated UUIDv7 (RFC 9562 §5.7) used to make POST retry-safe (D5-13). A repeated request with the same key in the same org returns the persisted prior result with `idempotent_replay: true` (D5-27). Optional — absent header means a fresh job row is created each call. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
+            };
             path: {
                 /**
                  * @description Organization UUIDv7. Present in the path for REST semantics. The

@@ -301,13 +301,18 @@ func cleanStateTables(t testing.TB, ctx context.Context, pool *pgxpool.Pool, org
 
 // seedAgent inserts an agents row via direct INSERT (bypasses CreateAgent
 // handler — keeps Wave 2 tests independent of Wave 4 composite wiring).
+// Phase 04.1: InsertAgentParams gained a required `Code` field and `ExternalID`
+// flipped to `*string` (the column is nullable post-04.1). Helper derives a
+// regex-compliant code from the externalID slug for backwards compatibility.
 func seedAgent(t testing.TB, pool *pgxpool.Pool, orgID, agentID uuid.UUID, externalID, name string) {
 	t.Helper()
 	q := generated.New(pool)
+	ext := externalID
 	_, err := q.InsertAgent(ctx(t), generated.InsertAgentParams{
 		ID:         pgUUIDv(agentID),
 		OrgID:      pgUUIDv(orgID),
-		ExternalID: externalID,
+		Code:       "emp_" + sanitizeForCode(externalID), // Phase 04.1: required.
+		ExternalID: &ext,                                  // *string post-04.1.
 		Name:       name,
 		Email:      externalID + "@test.example",
 		Enabled:    true,
@@ -326,12 +331,17 @@ func seedAgent(t testing.TB, pool *pgxpool.Pool, orgID, agentID uuid.UUID, exter
 
 // seedBreakReason inserts a break_reasons row directly. routable parameter
 // controls the STATE-10 IsRoutable input.
+// Phase 04.1: InsertBreakReasonParams gained a required `Code` field and a
+// new optional `ExternalID *string` field (the column was added by Plan 01).
+// Helper derives a regex-compliant code from the name.
 func seedBreakReason(t testing.TB, pool *pgxpool.Pool, orgID, id uuid.UUID, name string, routable bool) {
 	t.Helper()
 	q := generated.New(pool)
 	_, err := q.InsertBreakReason(ctx(t), generated.InsertBreakReasonParams{
 		ID:           pgUUIDv(id),
 		OrgID:        pgUUIDv(orgID),
+		Code:         "break_" + sanitizeForCode(name), // Phase 04.1: required.
+		ExternalID:   nil,                              // Phase 04.1: optional, NULL.
 		Name:         name,
 		Routable:     routable,
 		DisplayOrder: 0,
@@ -458,4 +468,28 @@ func doJSON(t testing.TB, srv *httptest.Server, method string, orgID uuid.UUID, 
 	raw, err := io.ReadAll(resp.Body)
 	require.NoError(t, err, "httpHelper: ReadAll")
 	return resp, raw
+}
+
+// sanitizeForCode converts an arbitrary string into a valid `code` per the
+// D04_1-03 regex (`^[a-z][a-z0-9_]{0,63}$`). Used by Phase 04.1 seed helpers
+// so they can derive a unique code from a display name / external_id slug
+// without hand-crafting it per call site. Truncates at 60 chars to keep the
+// entire code <= 64 once a domain prefix is prepended.
+func sanitizeForCode(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s) && len(out) < 60; i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			out = append(out, c+('a'-'A'))
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			out = append(out, c)
+		default:
+			out = append(out, '_')
+		}
+	}
+	if len(out) == 0 || out[0] < 'a' || out[0] > 'z' {
+		out = append([]byte{'r'}, out...)
+	}
+	return string(out)
 }

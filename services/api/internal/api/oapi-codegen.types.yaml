@@ -2,9 +2,17 @@
 # D-42: types-only flavor → types.gen.go
 # Generates components.schemas DTO structs.
 # Run via: go generate ./internal/api/... (see gen.go)
+#
+# Phase 5 (05-01): set skip-prune=true so the 6 Import*Request schemas
+# (ImportAgentRequest, ImportSkillRequest, ImportQueueRequest,
+# ImportChannelRequest, ImportAdapterRequest, ImportBreakReasonRequest)
+# emit even though they are not $ref'd from any request body — the request
+# body uses `items: {}` per RESEARCH §F2 (oapi-codegen v2 cannot
+# accessor-emit `oneOf` request bodies; the handler dispatches per-row by
+# `?entity=` and re-marshals each `interface{}` into the typed struct).
 package: api
 output: types.gen.go
 generate:
   models: true
 output-options:
-  skip-prune: false
+  skip-prune: true

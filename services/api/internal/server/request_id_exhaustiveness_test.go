@@ -78,9 +78,11 @@ func assertID(t *testing.T, result any, typeName string) {
 		require.NotNil(t, r.RequestId, "%s", typeName)
 		require.Equal(t, expectedID, *r.RequestId)
 	case api.UpdateAdapter409JSONResponse:
-		// Phase 3 OQ-1/A4 — VersionConflict variant; RequestId is a direct field.
-		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
-		require.Equal(t, expectedID, *r.RequestId)
+		// Phase 5 fix H1: now a oneOf union.
+		v, err := r.AsUpdateAdapter409JSONResponseBody1()
+		require.NoError(t, err, "%s: unmarshal VersionConflict union member", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.ListAdapters500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.CreateAdapter400JSONResponse:
@@ -132,9 +134,12 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.UpdateAgent404JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateAgent409JSONResponse:
-		// VersionConflictErrorResponse variant — RequestId is a direct field.
-		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
-		require.Equal(t, expectedID, *r.RequestId)
+		// Phase 5 fix H1: now a oneOf union — RequestId lives inside the
+		// VersionConflict member (UpdateAgent409JSONResponseBody1).
+		v, err := r.AsUpdateAgent409JSONResponseBody1()
+		require.NoError(t, err, "%s: unmarshal VersionConflict union member", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.UpdateAgent422JSONResponse:
 		// Phase 3 D-75 + ROADMAP CRIT 4 — flat ErrorResponse alias covering
 		// both invalid_reference (skills[].skill_id FK) and invalid_value
@@ -202,9 +207,11 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.UpdateBreakReason404JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateBreakReason409JSONResponse:
-		// VersionConflictErrorResponse — has its own RequestId.
-		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
-		require.Equal(t, expectedID, *r.RequestId)
+		// Phase 5 fix H1: now a oneOf union.
+		v, err := r.AsUpdateBreakReason409JSONResponseBody1()
+		require.NoError(t, err, "%s: unmarshal VersionConflict union member", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.UpdateBreakReason500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 
@@ -249,9 +256,11 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.UpdateChannel404JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateChannel409JSONResponse:
-		// Phase 3 OQ-1/A4 — VersionConflict variant; RequestId is a direct field.
-		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
-		require.Equal(t, expectedID, *r.RequestId)
+		// Phase 5 fix H1: now a oneOf union.
+		v, err := r.AsUpdateChannel409JSONResponseBody1()
+		require.NoError(t, err, "%s: unmarshal VersionConflict union member", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.UpdateChannel422JSONResponse:
 		// Phase 3 D-75 — flat ErrorResponse alias for invalid_reference
 		// (default_queue_id FK miss).
@@ -296,9 +305,11 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.UpdateQueue404JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateQueue409JSONResponse:
-		// VersionConflictErrorResponse — has its own RequestId.
-		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
-		require.Equal(t, expectedID, *r.RequestId)
+		// Phase 5 fix H1: now a oneOf union.
+		v, err := r.AsUpdateQueue409JSONResponseBody1()
+		require.NoError(t, err, "%s: unmarshal VersionConflict union member", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.UpdateQueue500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 
@@ -330,9 +341,11 @@ func assertID(t *testing.T, result any, typeName string) {
 	case api.UpdateSkill404JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 	case api.UpdateSkill409JSONResponse:
-		// VersionConflictErrorResponse — has its own RequestId.
-		require.NotNil(t, r.RequestId, "%s: RequestId must be set after injection", typeName)
-		require.Equal(t, expectedID, *r.RequestId)
+		// Phase 5 fix H1: now a oneOf union.
+		v, err := r.AsUpdateSkill409JSONResponseBody1()
+		require.NoError(t, err, "%s: unmarshal VersionConflict union member", typeName)
+		require.NotNil(t, v.RequestId, "%s: RequestId must be set after injection", typeName)
+		require.Equal(t, expectedID, *v.RequestId)
 	case api.UpdateSkill500JSONResponse:
 		require.NotNil(t, r.RequestId, "%s", typeName)
 
@@ -368,6 +381,50 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 	var createAgent409 api.CreateAgent409JSONResponseBody
 	require.NoError(t, createAgent409.FromErrorResponse(e))
 
+	// Phase 5 fix H1 — Update*409 are now oneOf unions (VersionConflict +
+	// Current OR ErrorResponse for duplicate_external_id). Build a
+	// VersionConflict union member for each entity so the existing
+	// "version_conflict" assertion exercises the inject helper's
+	// allOf-branch path. Agent.Email is openapi_types.Email which fails
+	// MarshalJSON regex validation when empty — supply a syntactically
+	// valid stub email so the union member round-trips cleanly.
+	var updateAgent409 api.UpdateAgent409JSONResponseBody
+	require.NoError(t, updateAgent409.FromUpdateAgent409JSONResponseBody1(api.UpdateAgent409JSONResponseBody1{
+		Current: api.Agent{Email: "stub@example.com"},
+		Error:   api.UpdateAgent409JSONResponseBody1ErrorVersionConflict,
+		Reason:  "stale",
+	}))
+	var updateSkill409 api.UpdateSkill409JSONResponseBody
+	require.NoError(t, updateSkill409.FromUpdateSkill409JSONResponseBody1(api.UpdateSkill409JSONResponseBody1{
+		Current: api.Skill{},
+		Error:   api.VersionConflict,
+		Reason:  "stale",
+	}))
+	var updateQueue409 api.UpdateQueue409JSONResponseBody
+	require.NoError(t, updateQueue409.FromUpdateQueue409JSONResponseBody1(api.UpdateQueue409JSONResponseBody1{
+		Current: api.Queue{},
+		Error:   api.UpdateQueue409JSONResponseBody1ErrorVersionConflict,
+		Reason:  "stale",
+	}))
+	var updateChannel409 api.UpdateChannel409JSONResponseBody
+	require.NoError(t, updateChannel409.FromUpdateChannel409JSONResponseBody1(api.UpdateChannel409JSONResponseBody1{
+		Current: api.Channel{},
+		Error:   api.UpdateChannel409JSONResponseBody1ErrorVersionConflict,
+		Reason:  "stale",
+	}))
+	var updateAdapter409 api.UpdateAdapter409JSONResponseBody
+	require.NoError(t, updateAdapter409.FromUpdateAdapter409JSONResponseBody1(api.UpdateAdapter409JSONResponseBody1{
+		Current: api.Adapter{},
+		Error:   api.UpdateAdapter409JSONResponseBody1ErrorVersionConflict,
+		Reason:  "stale",
+	}))
+	var updateBreakReason409 api.UpdateBreakReason409JSONResponseBody
+	require.NoError(t, updateBreakReason409.FromUpdateBreakReason409JSONResponseBody1(api.UpdateBreakReason409JSONResponseBody1{
+		Current: api.BreakReason{},
+		Error:   api.UpdateBreakReason409JSONResponseBody1ErrorVersionConflict,
+		Reason:  "stale",
+	}))
+
 	tests := []struct {
 		name  string
 		input any
@@ -392,8 +449,10 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetAdapter500JSONResponse", api.GetAdapter500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateAdapter400JSONResponse", api.UpdateAdapter400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateAdapter404JSONResponse", api.UpdateAdapter404JSONResponse{NotFoundJSONResponse: nfResp}},
-		// Phase 3 OQ-1/A4: VersionConflict variant — struct with Current Adapter.
-		{"UpdateAdapter409JSONResponse", api.UpdateAdapter409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 5 fix H1: VersionConflict variant of the Update*409 oneOf
+		// union. The inject helper probes for `current` to select the
+		// allOf branch.
+		{"UpdateAdapter409JSONResponse", api.UpdateAdapter409JSONResponse(updateAdapter409)},
 		{"UpdateAdapter500JSONResponse", api.UpdateAdapter500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// Agents
@@ -413,7 +472,8 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetAgent500JSONResponse", api.GetAgent500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateAgent400JSONResponse", api.UpdateAgent400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateAgent404JSONResponse", api.UpdateAgent404JSONResponse{NotFoundJSONResponse: nfResp}},
-		{"UpdateAgent409JSONResponse", api.UpdateAgent409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 5 fix H1: VersionConflict variant of the oneOf union.
+		{"UpdateAgent409JSONResponse", api.UpdateAgent409JSONResponse(updateAgent409)},
 		// Phase 3 D-75 + ROADMAP CRIT 4: flat ErrorResponse alias covering both
 		// invalid_reference and invalid_value paths for skills[].
 		{"UpdateAgent422JSONResponse", api.UpdateAgent422JSONResponse(e)},
@@ -442,7 +502,8 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetBreakReason500JSONResponse", api.GetBreakReason500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateBreakReason400JSONResponse", api.UpdateBreakReason400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateBreakReason404JSONResponse", api.UpdateBreakReason404JSONResponse{NotFoundJSONResponse: nfResp}},
-		{"UpdateBreakReason409JSONResponse", api.UpdateBreakReason409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 5 fix H1: VersionConflict variant of the oneOf union.
+		{"UpdateBreakReason409JSONResponse", api.UpdateBreakReason409JSONResponse(updateBreakReason409)},
 		{"UpdateBreakReason500JSONResponse", api.UpdateBreakReason500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// BulkImport
@@ -467,8 +528,8 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetChannel500JSONResponse", api.GetChannel500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateChannel400JSONResponse", api.UpdateChannel400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateChannel404JSONResponse", api.UpdateChannel404JSONResponse{NotFoundJSONResponse: nfResp}},
-		// Phase 3 OQ-1/A4: VersionConflict variant — struct with Current Channel.
-		{"UpdateChannel409JSONResponse", api.UpdateChannel409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 5 fix H1: VersionConflict variant of the oneOf union.
+		{"UpdateChannel409JSONResponse", api.UpdateChannel409JSONResponse(updateChannel409)},
 		// Phase 3 D-75: flat ErrorResponse alias for invalid_reference
 		// (default_queue_id FK miss).
 		{"UpdateChannel422JSONResponse", api.UpdateChannel422JSONResponse(e)},
@@ -493,7 +554,8 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetQueue500JSONResponse", api.GetQueue500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateQueue400JSONResponse", api.UpdateQueue400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateQueue404JSONResponse", api.UpdateQueue404JSONResponse{NotFoundJSONResponse: nfResp}},
-		{"UpdateQueue409JSONResponse", api.UpdateQueue409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 5 fix H1: VersionConflict variant of the oneOf union.
+		{"UpdateQueue409JSONResponse", api.UpdateQueue409JSONResponse(updateQueue409)},
 		{"UpdateQueue500JSONResponse", api.UpdateQueue500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 
 		// Skills
@@ -510,7 +572,8 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 		{"GetSkill500JSONResponse", api.GetSkill500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 		{"UpdateSkill400JSONResponse", api.UpdateSkill400JSONResponse{BadRequestJSONResponse: bResp}},
 		{"UpdateSkill404JSONResponse", api.UpdateSkill404JSONResponse{NotFoundJSONResponse: nfResp}},
-		{"UpdateSkill409JSONResponse", api.UpdateSkill409JSONResponse{Error: "version_conflict", Reason: "stale"}},
+		// Phase 5 fix H1: VersionConflict variant of the oneOf union.
+		{"UpdateSkill409JSONResponse", api.UpdateSkill409JSONResponse(updateSkill409)},
 		{"UpdateSkill500JSONResponse", api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: iResp}},
 	}
 

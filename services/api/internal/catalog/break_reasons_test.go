@@ -38,8 +38,14 @@ func postBreakReason(t testing.TB, th *TestHandlers, body api.CreateBreakReasonR
 	return br
 }
 
+// Phase 04.1: signature gained leading `code string` arg (D04_1-03 — required).
+// break_reasons pre-04.1 had no external_id column; post-04.1 it gains both
+// `code` (required) and `external_id` (optional, nullable). The legacy helper
+// did not take a code; callers now derive a unique code from the name via
+// sanitizeForCode to keep the per-test fixture concise.
 func makeBreakReasonBody(name string, routable bool, displayOrder int) api.CreateBreakReasonRequest {
 	return api.CreateBreakReasonRequest{
+		Code:         "break_" + sanitizeForCode(name),
 		Name:         name,
 		Routable:     routable,
 		DisplayOrder: displayOrder,
@@ -377,24 +383,27 @@ func TestBreakReasons_DisplayOrder(t *testing.T) {
 	require.Equal(t, br1.Id, list.Items[2].Id)
 }
 
-// UNIQUE(org_id, name) collision surfaces as 409 (Wave 5 review — was
-// 500). Spec was amended to declare a 409 response so this client-
-// correctable error doesn't poison 5xx metrics.
-func TestBreakReasons_NameUniqueCollision(t *testing.T) {
+// TestBreakReasons_DuplicateName_NoConflict — Phase 04.1 (IDENT-03 + D-CTX).
+// Plan 01 dropped the legacy UNIQUE(org_id, name) constraint; the canonical
+// identifier moved to `code`. Two break_reasons in the same org may share
+// the same display name as long as their codes differ. Replaces the
+// pre-04.1 TestBreakReasons_NameUniqueCollision (which expected 409
+// name_collision). This is the 8th bonus test for break_reasons (D04_1-23
+// + Plan 05 must_haves).
+func TestBreakReasons_DuplicateName_NoConflict(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
 	cleanCatalogTables(t, ctx)
 
-	_ = postBreakReason(t, th, makeBreakReasonBody("Lunch", false, 10))
+	body := makeBreakReasonBodyWithCode("break_lunch", "", "Lunch", false, 10)
+	_ = postBreakReason(t, th, body)
 
-	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID),
-		makeBreakReasonBody("Lunch", true, 20))
-	require.Equalf(t, http.StatusConflict, resp.StatusCode,
-		"second POST with same name must surface 409 name_collision, body=%s", string(raw))
-	var e api.ErrorResponse
-	require.NoError(t, json.Unmarshal(raw, &e))
-	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
-	require.Equal(t, "name_collision", e.Reason)
+	// Same name "Lunch", different code → must succeed (IDENT-03 dropped
+	// UNIQUE(org_id, name)).
+	body2 := makeBreakReasonBodyWithCode("break_lunch_2", "", "Lunch", true, 20)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — duplicate name with distinct code must succeed post Phase 04.1 (IDENT-03 dropped UNIQUE(org_id, name))", string(raw))
 }
 
 // TestBreakReasons_CrossOrgGet404 — FOUND-08 inline isolation canary.
@@ -427,4 +436,195 @@ func TestBreakReasons_BadCursor(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &e))
 	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
 	require.Equal(t, "bad_cursor", e.Reason)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 04.1 — 7 standard tests (D04_1-23 + VALIDATION IDENT-02).
+//
+// break_reasons pre-04.1 had UNIQUE(org_id, name) and NO external_id column.
+// Plan 01 dropped UNIQUE(name), added `code` (required) + `external_id`
+// (nullable). The 8th bonus test (TestBreakReasons_DuplicateName_NoConflict)
+// lives in place of the old TestBreakReasons_NameUniqueCollision above.
+//
+// makeBreakReasonBody derives Code from name via sanitizeForCode; the
+// makeBreakReasonBodyWithCode variant fixes Code explicitly (Plan 04
+// SUMMARY Hazard #3) so the tests can mutate it in isolation.
+// ---------------------------------------------------------------------------
+
+// TestBreakReasons_MissingCode_Returns400 — Layer 1 rejects empty code.
+func TestBreakReasons_MissingCode_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("", "", "EmptyCode", false, 10)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID), body)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestBreakReasons_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
+// (org_id, code) fires; MapPgError returns duplicate_code.
+func TestBreakReasons_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("break_training", "ext-br-001", "Training", false, 30)
+	_ = postBreakReason(t, th, body)
+
+	body2 := makeBreakReasonBodyWithCode("break_training", "ext-br-002", "Training2", true, 31)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateCode, e.Error)
+	require.Equal(t, "duplicate_code", e.Reason)
+}
+
+// TestBreakReasons_DuplicateExternalId_Returns409_DuplicateExternalId — partial
+// UNIQUE on (org_id, external_id) fires; external_id is NEW for break_reasons
+// in Phase 04.1.
+func TestBreakReasons_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("break_dx_001", "ext-br-001", "First", false, 40)
+	_ = postBreakReason(t, th, body)
+
+	body2 := makeBreakReasonBodyWithCode("break_dx_002", "ext-br-001", "Second", false, 41)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestBreakReasons_PatchSameCode_Returns200 — PATCH with same code is a no-op.
+func TestBreakReasons_PatchSameCode_Returns200(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("break_same_001", "ext-br-same", "Lunch", false, 10)
+	created := postBreakReason(t, th, body)
+
+	sameCode := "break_same_001"
+	newName := "Lunch v2"
+	patchBody := api.UpdateBreakReasonRequest{
+		Version: created.Version,
+		Code:    &sameCode,
+		Name:    &newName,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body=%s", string(raw))
+	var updated api.BreakReason
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Equal(t, sameCode, updated.Code)
+	require.Equal(t, newName, updated.Name)
+}
+
+// TestBreakReasons_PatchDifferentCode_Returns422_ImmutableField — Layer 2 rejects.
+func TestBreakReasons_PatchDifferentCode_Returns422_ImmutableField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("break_diff_001", "ext-br-diff", "Coffee", true, 20)
+	created := postBreakReason(t, th, body)
+
+	newCode := "break_diff_002"
+	patchBody := api.UpdateBreakReasonRequest{
+		Version: created.Version,
+		Code:    &newCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusUnprocessableEntity, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeImmutableField, e.Error)
+	require.Equal(t, "code", e.Reason)
+}
+
+// TestBreakReasons_PatchInvalidCodeFormat_Returns400 — Layer 1 fires first.
+func TestBreakReasons_PatchInvalidCodeFormat_Returns400(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("break_bad_001", "ext-br-bad", "Bad", false, 50)
+	created := postBreakReason(t, th, body)
+
+	badCode := "Coffee.Break" // dot → fails regex (only a-z0-9_)
+	patchBody := api.UpdateBreakReasonRequest{
+		Version: created.Version,
+		Code:    &badCode,
+	}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(created.Id)), patchBody)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeInvalidBody, e.Error)
+	require.Equal(t, "invalid_code_format", e.Reason)
+}
+
+// TestBreakReasons_TwoNullExternalIds_NoConflict — IDENT-02. external_id is
+// NEW for break_reasons in Phase 04.1; the partial unique index allows two NULLs.
+func TestBreakReasons_TwoNullExternalIds_NoConflict(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	body := makeBreakReasonBodyWithCode("break_null_001", "", "First", false, 60)
+	_ = postBreakReason(t, th, body)
+
+	body2 := makeBreakReasonBodyWithCode("break_null_002", "", "Second", true, 61)
+	resp, raw := httpPOST(t, th.HTTP, th.OrgID, breakReasonPath(th.OrgID), body2)
+	require.Equalf(t, http.StatusCreated, resp.StatusCode,
+		"body=%s — two NULL external_ids must coexist", string(raw))
+}
+
+// TestBreakReasons_PatchDuplicateExternalId_Returns409_DuplicateExternalId —
+// Phase 5 fix H1. See agents_test.go for rationale.
+func TestBreakReasons_PatchDuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	_ = postBreakReason(t, th, makeBreakReasonBodyWithCode("break_h1_a", "ext-br-h1-001", "First", false, 100))
+	b := postBreakReason(t, th, makeBreakReasonBodyWithCode("break_h1_b", "ext-br-h1-002", "Second", false, 101))
+
+	dup := "ext-br-h1-001"
+	patchBody := api.UpdateBreakReasonRequest{Version: b.Version, ExternalId: &dup}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(b.Id)), patchBody)
+	require.Equalf(t, http.StatusConflict, resp.StatusCode,
+		"H1: PATCH dup external_id must return 409, not 500; body=%s", string(raw))
+	var e api.ErrorResponse
+	require.NoError(t, json.Unmarshal(raw, &e))
+	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
+	require.Equal(t, "duplicate_external_id", e.Reason)
+}
+
+// TestBreakReasons_PatchClearExternalId_NullsTheField — Phase 5 fix H2.
+func TestBreakReasons_PatchClearExternalId_NullsTheField(t *testing.T) {
+	th := newTestHandlers(t)
+	ctx := context.Background()
+	cleanCatalogTables(t, ctx)
+
+	a := postBreakReason(t, th, makeBreakReasonBodyWithCode("break_h2_a", "ext-br-h2-bind", "First", false, 102))
+	require.NotNil(t, a.ExternalId)
+	require.Equal(t, "ext-br-h2-bind", *a.ExternalId, "precondition")
+
+	clear := ""
+	patchBody := api.UpdateBreakReasonRequest{Version: a.Version, ExternalId: &clear}
+	resp, raw := httpPATCH(t, th.HTTP, th.OrgID, breakReasonDetailPath(th.OrgID, uuid.UUID(a.Id)), patchBody)
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "H2 body=%s", string(raw))
+	var updated api.BreakReason
+	require.NoError(t, json.Unmarshal(raw, &updated))
+	require.Nil(t, updated.ExternalId, "H2: empty-string sentinel must null external_id")
 }

@@ -5,7 +5,7 @@
 //
 // Locked patterns inherited from agents.go:
 //
-//   - D-66 — version-checked UPDATE 0-row → GetSkill
+//   - D-66 — version-checked UPDATE 0-row → GetSkillByIdAnyVersion
 //     inside the same tx to disambiguate 404 (no row) vs 409 (version
 //     mismatch). 409 path also cache.Dels (D-56) so a stale cached
 //     value can never mask a conflict on retry.
@@ -47,6 +47,15 @@ func (h *Handlers) CreateSkill(ctx context.Context, req api.CreateSkillRequestOb
 		}}, nil
 	}
 
+	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
+	// because oapi-codegen v2 does NOT auto-enforce the OpenAPI `pattern`.
+	if !ValidateCodeFormat(req.Body.Code) {
+		return api.CreateSkill400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error:  api.ErrorCodeInvalidBody,
+			Reason: "invalid_code_format",
+		}}, nil
+	}
+
 	id := uuid.Must(uuid.NewV7())
 	enabled := derefOr(req.Body.Enabled, true)
 
@@ -54,18 +63,22 @@ func (h *Handlers) CreateSkill(ctx context.Context, req api.CreateSkillRequestOb
 	row, err := q.InsertSkill(ctx, generated.InsertSkillParams{
 		ID:          pgUUID(id),
 		OrgID:       pgUUID(orgID),
-		ExternalID:  req.Body.ExternalId,
+		Code:        req.Body.Code,
+		ExternalID:  req.Body.ExternalId, // *string post-04.1 (column nullable).
 		Name:        req.Body.Name,
 		Description: req.Body.Description,
 		SkillType:   req.Body.SkillType,
 		Enabled:     enabled,
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "skill")
+		status, code, reason := MapPgError(err, "skill")
 		if status == 409 {
-			// CreateSkill409 is a FLAT ErrorResponse (Pitfall 2).
+			// CreateSkill409 is a FLAT ErrorResponse (Pitfall 2). Phase 04.1
+			// — `reason` comes from MapPgError and is now either
+			// "duplicate_code" or "duplicate_external_id" depending on the
+			// constraint that fired.
 			return api.CreateSkill409JSONResponse(api.ErrorResponse{
-				Error: code, Reason: "external_id_collision",
+				Error: code, Reason: reason,
 			}), nil
 		}
 		h.deps.Logger.ErrorContext(ctx, "create skill insert", "err", err)
@@ -235,7 +248,7 @@ func (h *Handlers) ListSkills(ctx context.Context, req api.ListSkillsRequestObje
 }
 
 // UpdateSkill — PATCH /v1/orgs/{org_id}/skills/{id} (CAT-02, CAT-08).
-// D-66: 0-row version-checked UPDATE → disambiguate via GetSkill
+// D-66: 0-row version-checked UPDATE → disambiguate via GetSkillByIdAnyVersion
 // in the same tx. 409 path also cache.Dels (D-56).
 func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestObject) (api.UpdateSkillResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
@@ -251,12 +264,55 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 	}
 	skillID := uuid.UUID(req.Id)
 
+	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
+	// DB call so a malformed PATCH gets 400, not 422.
+	if req.Body.Code != nil {
+		if !ValidateCodeFormat(*req.Body.Code) {
+			return api.UpdateSkill400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+				Error:  api.ErrorCodeInvalidBody,
+				Reason: "invalid_code_format",
+			}}, nil
+		}
+	}
+
 	// Single-table entity: no junction to coordinate, so no BeginTx
 	// wrapper. The atomic version-checked UPDATE + a follow-up SELECT for
 	// D-66 disambiguation are safe without an enclosing tx — MVCC at the
 	// row level is sufficient. Wave 5 review aligned this with the
 	// queues/channels/adapters template.
 	q := generated.New(h.deps.OrgDB)
+
+	// Phase 04.1 Layer 2 (D04_1-20) — immutability gate. When req.Body.Code
+	// is present, fetch the stored row first so we (a) gate the UPDATE on
+	// `stored.Code == requested` and (b) reuse the same row in the
+	// post-UPDATE 0-row branch instead of a second probe. `stored` is nil
+	// when the PATCH omitted `code` — Phase 3's post-UPDATE flow runs.
+	var stored *generated.Skill
+	if req.Body.Code != nil {
+		s, perr := q.GetSkillByIdAnyVersion(ctx, generated.GetSkillByIdAnyVersionParams{
+			ID:    pgUUID(skillID),
+			OrgID: pgUUID(orgID),
+		})
+		if errors.Is(perr, pgx.ErrNoRows) {
+			return api.UpdateSkill404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+				Error: api.ErrorCodeNotFound, Reason: "skill_not_found",
+			}}, nil
+		}
+		if perr != nil {
+			h.deps.Logger.ErrorContext(ctx, "load stored skill for immutability check", "err", perr)
+			return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error: api.ErrorCodeInternal, Reason: "load_stored_failed",
+			}}, nil
+		}
+		stored = &s
+		if !validateImmutableCode(stored.Code, *req.Body.Code) {
+			return api.UpdateSkill422JSONResponse(api.ErrorResponse{
+				Error:  api.ErrorCodeImmutableField,
+				Reason: "code",
+			}), nil
+		}
+	}
+
 	expectedVersion, ok := int32Checked(req.Body.Version)
 	if !ok {
 		return api.UpdateSkill400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
@@ -267,39 +323,66 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		ID:              pgUUID(skillID),
 		OrgID:           pgUUID(orgID),
 		ExpectedVersion: expectedVersion,
+		// Phase 5 fix H2: pass external_id through. nil → preserve,
+		// empty-string → NULL (clear), non-empty → new value. See
+		// agents.go UpdateAgent for full rationale.
+		ExternalID:      req.Body.ExternalId,
 		Name:            req.Body.Name,
 		Description:     req.Body.Description,
 		SkillType:       req.Body.SkillType,
 		Enabled:         req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		cur, perr := q.GetSkill(ctx, generated.GetSkillParams{
-			ID:    pgUUID(skillID),
-			OrgID: pgUUID(orgID),
-		})
-		if errors.Is(perr, pgx.ErrNoRows) {
-			return api.UpdateSkill404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
-				Error: api.ErrorCodeNotFound, Reason: "skill_not_found",
-			}}, nil
-		}
-		if perr != nil {
-			h.deps.Logger.ErrorContext(ctx, "update skill disambiguate", "err", perr)
-			return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
-				Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
-			}}, nil
+		// Phase 04.1: reuse `stored` if pre-UPDATE fetch already ran
+		// (Branch 1: req.Body.Code != nil). Otherwise probe (Branch 2).
+		var cur generated.Skill
+		if stored != nil {
+			cur = *stored
+		} else {
+			s2, perr := q.GetSkillByIdAnyVersion(ctx, generated.GetSkillByIdAnyVersionParams{
+				ID:    pgUUID(skillID),
+				OrgID: pgUUID(orgID),
+			})
+			if errors.Is(perr, pgx.ErrNoRows) {
+				return api.UpdateSkill404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{
+					Error: api.ErrorCodeNotFound, Reason: "skill_not_found",
+				}}, nil
+			}
+			if perr != nil {
+				h.deps.Logger.ErrorContext(ctx, "update skill disambiguate", "err", perr)
+				return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+					Error: api.ErrorCodeInternal, Reason: "disambiguation_failed",
+				}}, nil
+			}
+			cur = s2
 		}
 		// D-56 — cache DEL on 409 so a stale value can't mask the conflict.
 		if delErr := h.deps.Cache.Del(ctx, cache.Key(orgID, "skills", skillID)); delErr != nil {
 			h.deps.Logger.WarnContext(ctx, "cache del failed (409 path)", "key", cache.Key(orgID, "skills", skillID), "err", delErr)
 		}
-		return api.UpdateSkill409JSONResponse{
+		// Phase 5 fix H1 — UpdateSkill409 is now a oneOf union (see
+		// agents.go for the version_conflict vs duplicate_external_id
+		// rationale).
+		var body api.UpdateSkill409JSONResponseBody
+		_ = body.FromUpdateSkill409JSONResponseBody1(api.UpdateSkill409JSONResponseBody1{
 			Current: mapSkill(cur),
 			Error:   api.VersionConflict,
 			Reason:  "version_mismatch",
-		}, nil
+		})
+		return api.UpdateSkill409JSONResponse(body), nil
 	}
 	if err != nil {
-		_, code, reason := mapPgError(err, "skill")
+		// Phase 5 fix H1 — PATCH-time duplicate_external_id must surface as
+		// 409 (not 500). See agents.go for the rationale.
+		status, code, reason := MapPgError(err, "skill")
+		switch status {
+		case 422:
+			return api.UpdateSkill422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
+		case 409:
+			var body api.UpdateSkill409JSONResponseBody
+			_ = body.FromErrorResponse(api.ErrorResponse{Error: code, Reason: reason})
+			return api.UpdateSkill409JSONResponse(body), nil
+		}
 		h.deps.Logger.ErrorContext(ctx, "update skill", "err", err)
 		return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
 			Error: code, Reason: reason,
@@ -356,6 +439,7 @@ func mapSkill(row generated.Skill) api.Skill {
 	return api.Skill{
 		Id:          api.UUIDv7(apiUUID(row.ID)),
 		OrgId:       api.UUIDv7(apiUUID(row.OrgID)),
+		Code:        row.Code,
 		ExternalId:  row.ExternalID,
 		Name:        row.Name,
 		Description: desc,

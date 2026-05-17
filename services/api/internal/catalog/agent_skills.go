@@ -46,7 +46,7 @@ func validateProficiencyRange(assignments []api.AgentSkillAssignment) (badIdx in
 // validateNoDuplicateSkills rejects duplicate skill_ids in a single
 // request body. Without this guard a duplicate falls through to
 // InsertAgentSkill and hits the agent_skills UNIQUE constraint, which
-// mapPgError translates to 409 version_conflict — the WRONG code for a
+// MapPgError translates to 409 version_conflict — the WRONG code for a
 // malformed request body (Wave 4 cross-AI review).
 func validateNoDuplicateSkills(assignments []api.AgentSkillAssignment) (dupIdx int, ok bool) {
 	seen := make(map[uuid.UUID]struct{}, len(assignments))
@@ -69,7 +69,7 @@ func validateNoDuplicateSkills(assignments []api.AgentSkillAssignment) (dupIdx i
 // nil return → success. Non-nil result categorises the wire shape:
 // ErrorCodeInternal → 500 (caller's defer Rollback handles cleanup);
 // ErrorCodeInvalidReference → 422 (unknown / cross-org skill_id);
-// other 422-class codes from mapPgError surface as 422 verbatim
+// other 422-class codes from MapPgError surface as 422 verbatim
 // (defence-in-depth for FK + CHECK races between probe and INSERT).
 func (h *Handlers) replaceAgentSkills(
 	ctx context.Context,
@@ -126,7 +126,7 @@ func (h *Handlers) replaceAgentSkills(
 			OrgID:       pgUUID(orgID),
 			Proficiency: mustInt32(a.Proficiency),
 		}); err != nil {
-			status, code, reason := mapPgError(err, "agent_skill")
+			status, code, reason := MapPgError(err, "agent_skill")
 			if status == 422 {
 				return &api.ErrorResponse{Error: code, Reason: reason}
 			}

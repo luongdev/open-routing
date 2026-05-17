@@ -7,6 +7,18 @@
 -- Drop order is reverse-dependency: agent_skills first (would carry the join
 -- references if FKs existed), then the entity tables. No DB FKs exist (D-76)
 -- so the order is documentation-only — every DROP would succeed in isolation.
+--
+-- Phase 04.1 note: the down migration intentionally drops all catalog
+-- tables rather than reversing the Phase 04.1 column/constraint changes
+-- column-by-column. Rationale (D04_1-12, RESEARCH §Pitfall 11):
+--   * v0.1 testing uses `task db:reset` (drop DB, recreate, re-apply
+--     migrations from scratch) — down migration is documentation-only.
+--   * A column-additive down (drop code, restore external_id NOT NULL +
+--     UNIQUE(org_id, external_id), restore break_reasons.UNIQUE(org_id, name))
+--     would fail on any post-04.1 row with NULL external_id — the table
+--     drop sidesteps the problem.
+--   * The Phase 1 _scaffold table is recreated at the end so a Phase 1
+--     baseline is restored cleanly (D-77 carry-forward).
 
 BEGIN;
 
