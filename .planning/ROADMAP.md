@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation & Polyglot Monorepo** - Bootstrap the Go + pnpm polyglot monorepo with org-isolation infrastructure: `services/api` Go skeleton with chi + pgx + slog + OTel, orgDB wrapper, PostgreSQL 17 + Redis via Docker Compose, golang-migrate, pnpm workspace stub, GitHub Actions CI, and the two-org isolation integration test proving zero data leakage. (completed 2026-05-15)
 - [x] **Phase 2: OpenAPI Contract & Codegen** - Define `openapi/openapi.yaml` covering all v0.1 endpoints, wire oapi-codegen (Go server stubs) and openapi-typescript (TS client), and add a CI check that fails on any codegen drift. (completed 2026-05-16)
 - [x] **Phase 3: Catalog CRUD (Go)** - sqlc queries and golang-migrate migrations for all 6 entities, chi handlers generated from the OpenAPI spec, soft-delete, version-locking with HTTP 409, cursor pagination, name search, and Redis cache for hot-path reads. (completed 2026-05-16)
-- [ ] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper.
+- [x] **Phase 4: Agent State Machine (Go)** - Domain transition matrix in `services/api/internal/domain`, `agent_states` DB table, PATCH status endpoint with HTTP 409 on invalid transitions, Break→break_reason guard, post_interaction_state, server-owned WrapUp TTL goroutine, and IsRoutable helper. (completed 2026-05-17)
 - [ ] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning.
 - [ ] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support.
 - [ ] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped.
@@ -195,7 +195,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04-06-PLAN.md — D-94 cross-org isolation suite + 5 acceptance tests + cross-AI peer review (Codex + Gemini parallel per CLAUDE.md HARD RULE)
+- [x] 04-06-PLAN.md — D-94 cross-org isolation suite + 5 acceptance tests + cross-AI peer review (Codex + Gemini parallel per CLAUDE.md HARD RULE)
 
 **Branch**: `gsd/phase-04-agent-state-machine-go`
 
@@ -268,7 +268,7 @@ Plans:
 | 1. Foundation & Polyglot Monorepo | 11/11 | Complete   | 2026-05-15 |
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
-| 4. Agent State Machine (Go) | 5/6 | In Progress|  |
+| 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
 | 5. Bulk Import (Go) | 0/TBD | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |

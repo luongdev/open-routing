@@ -52,16 +52,16 @@
 
 ### Agent State Model
 
-- [ ] **STATE-01**: System persists an `agent_states` row per agent with `status ∈ {Ready, NotReady, Break, Engaged, WrapUp, Offline}`.
-- [ ] **STATE-02**: `PATCH /agents/{id}/status` accepts agent-initiated transitions: NotReady↔Ready, Ready→Break, Break→Ready, Break→NotReady, WrapUp→Ready, WrapUp→NotReady.
-- [ ] **STATE-03**: Transitions not in the allowed matrix (e.g. Engaged→NotReady) return HTTP 409 with body `{"from", "to", "error": "invalid_transition"}`.
-- [ ] **STATE-04**: `Ready → Break` transitions require a `break_reason_id` that exists in the same org's `break_reasons` table; missing or cross-org reason ids return HTTP 422.
-- [ ] **STATE-05**: `Engaged` state carries an `engaged_channel ∈ {voice, chat, email}` value; system-initiated `Ready → Engaged` transitions require `engaged_channel` as a parameter.
-- [ ] **STATE-06**: Agent can set `post_interaction_state ∈ {ready, not_ready}` while Engaged; the system applies it as the target of the next post-WrapUp transition.
-- [ ] **STATE-07**: WrapUp has a server-owned TTL (`wrapup_until` column); a Go background goroutine fires the WrapUp → `post_interaction_state` transition on expiry, independent of client connectivity.
-- [ ] **STATE-08**: Every state mutation increments a monotonic `state_version` integer used by the UI to detect stale events.
-- [ ] **STATE-09**: System-initiated `Offline → NotReady` fires on login event; system-initiated `* → Offline` fires on logout or session timeout.
-- [ ] **STATE-10**: `IsRoutable(state AgentState) bool` helper in `services/api/internal/domain` returns `true` only when `status == Ready` OR (`status == Break` AND the associated break reason has `routable=true`).
+- [x] **STATE-01**: System persists an `agent_states` row per agent with `status ∈ {Ready, NotReady, Break, Engaged, WrapUp, Offline}`.
+- [x] **STATE-02**: `PATCH /agents/{id}/status` accepts agent-initiated transitions: NotReady↔Ready, Ready→Break, Break→Ready, Break→NotReady, WrapUp→Ready, WrapUp→NotReady.
+- [x] **STATE-03**: Transitions not in the allowed matrix (e.g. Engaged→NotReady) return HTTP 409 with body `{"from", "to", "error": "invalid_transition"}`.
+- [x] **STATE-04**: `Ready → Break` transitions require a `break_reason_id` that exists in the same org's `break_reasons` table; missing or cross-org reason ids return HTTP 422.
+- [x] **STATE-05**: `Engaged` state carries an `engaged_channel ∈ {voice, chat, email}` value; system-initiated `Ready → Engaged` transitions require `engaged_channel` as a parameter.
+- [x] **STATE-06**: Agent can set `post_interaction_state ∈ {ready, not_ready}` while Engaged; the system applies it as the target of the next post-WrapUp transition.
+- [x] **STATE-07**: WrapUp has a server-owned TTL (`wrapup_until` column); a Go background goroutine fires the WrapUp → `post_interaction_state` transition on expiry, independent of client connectivity.
+- [x] **STATE-08**: Every state mutation increments a monotonic `state_version` integer used by the UI to detect stale events.
+- [x] **STATE-09**: System-initiated `Offline → NotReady` fires on login event; system-initiated `* → Offline` fires on logout or session timeout.
+- [x] **STATE-10**: `IsRoutable(state AgentState) bool` helper in `services/api/internal/domain` returns `true` only when `status == Ready` OR (`status == Break` AND the associated break reason has `routable=true`).
 
 ### Bulk Import
 
@@ -213,16 +213,16 @@ Explicitly excluded. Documented to prevent scope creep.
 | CAT-09 | Phase 3 | Pending |
 | CAT-10 | Phase 3 | Pending |
 | CAT-11 | Phase 3 | Pending |
-| STATE-01 | Phase 4 | Pending |
-| STATE-02 | Phase 4 | Pending |
-| STATE-03 | Phase 4 | Pending |
-| STATE-04 | Phase 4 | Pending |
-| STATE-05 | Phase 4 | Pending |
-| STATE-06 | Phase 4 | Pending |
-| STATE-07 | Phase 4 | Pending |
-| STATE-08 | Phase 4 | Pending |
-| STATE-09 | Phase 4 | Pending |
-| STATE-10 | Phase 4 | Pending |
+| STATE-01 | Phase 4 | Complete |
+| STATE-02 | Phase 4 | Complete |
+| STATE-03 | Phase 4 | Complete |
+| STATE-04 | Phase 4 | Complete |
+| STATE-05 | Phase 4 | Complete |
+| STATE-06 | Phase 4 | Complete |
+| STATE-07 | Phase 4 | Complete |
+| STATE-08 | Phase 4 | Complete |
+| STATE-09 | Phase 4 | Complete |
+| STATE-10 | Phase 4 | Complete |
 | IMP-01 | Phase 5 | Pending |
 | IMP-02 | Phase 5 | Pending |
 | IMP-03 | Phase 5 | Pending |

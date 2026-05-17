@@ -4,14 +4,14 @@ milestone: v0.1
 milestone_name: Catalog Foundation
 status: executing
 stopped_at: Phase 4 planned (6 waves, cross-AI READY WITH FIXES applied)
-last_updated: "2026-05-17T03:16:57.783Z"
-last_activity: 2026-05-17 -- Phase 04 execution started
+last_updated: "2026-05-17T05:04:04.214Z"
+last_activity: 2026-05-17
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 33
-  completed_plans: 28
-  percent: 43
+  completed_plans: 34
+  percent: 57
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-16)
 ## Current Position
 
 Phase: 04 (agent-state-machine-go) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 04
-Last activity: 2026-05-17 -- Phase 04 execution started
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-05-17
 
-Progress: [███-------] 29% (2/7 phases complete)
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [███-------] 29% (2/7 phases complete)
 - Trend: —
 
 | Phase 01-foundation-polyglot-monorepo P09 | 2 | 4 tasks | 4 files |
+| Phase 04 P06 | 180 | 9 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Key decisions affecting 
 - Browser workers deferred to v0.2 (no offline, no push notification dedup, no client-side CSV preview)
 - No XState in v0.1; pure Go transition table in `services/api/internal/domain`
 - OpenAPI contract scaffold in Phase 2, before any endpoint implementation in Phase 3
+- [Phase 04]: agentEnabledCheck at app layer; TOCTOU race deferred to Phase 5 AUTH phase
+- [Phase 04]: COALESCE engaged_channel (preserve system-set) + explicit PIS assignment (nil clears stale) enforces STATE-05/STATE-06
+- [Phase 04]: per-org DELETE replaces global TRUNCATE in cleanStateTables for parallel test isolation
 
 ### Pending Todos
 
@@ -95,9 +99,9 @@ From research/SUMMARY.md gaps to address during implementation:
 
 ## Session Continuity
 
-Last session: 2026-05-17T02:55:57.066Z
+Last session: 2026-05-17T05:04:04.208Z
 Stopped at: Phase 4 planned (6 waves, cross-AI READY WITH FIXES applied)
-Resume file: .planning/phases/04-agent-state-machine-go/04-01-PLAN.md
+Resume file: None
 
 ## Phase 3 — Decision Coverage Override (2026-05-16)
 
