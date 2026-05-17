@@ -256,7 +256,38 @@ Plans:
   4. A request body exceeding 50 MB or 500 rows returns HTTP 413 with a message pointing to the v0.2 async pathway; a CSV request missing `?schema_version=v0.1` returns HTTP 400 listing supported versions.
   5. `GET /v1/orgs/{org_id}/imports/{id}` returns the full import session (total_rows, succeeded_rows, failed_rows, errors JSONB) for any previously completed import, persisted in the `import_jobs` table.
 
-**Plans**: TBD
+**Plans**: 8 plans
+Plans:
+
+**Wave 0** *(2 plans in parallel — disjoint files)*
+
+- [ ] 05-01-PLAN.md — OpenAPI yaml deltas (6 Import*Request + IdempotencyKeyHeader + ImportJob.status enum + BulkImportResult.idempotent_replay + description rewrites to code) + migration 000003 (import_jobs table + 3 indexes) + sqlcheck tenantTables["import_jobs"] + task gen no-drift commit (IMP-01, IMP-03, IMP-04, IMP-05, IMP-06, IMP-07, IMP-08)
+- [ ] 05-02-PLAN.md — Export catalog.ValidateCodeFormat + catalog.MapPgError (rename pass across 7 catalog handler files) + (*OrgTx).BeginSavepoint(ctx) on internal/db/orgdb.go + middleware.BodyLimit (chi factory with Content-Length pre-flight + http.MaxBytesReader wrap) + ≥ 5 bodylimit_test cases (IMP-07)
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 05-03-PLAN.md — sqlc queries: NEW import_jobs.sql (5 queries: InsertImportJob, FinaliseImportJob, GetImportJob, LookupImportJobByIdempotencyKey, SweepCrashedImportJobs) + APPEND MergeAgentSkill :exec to agent_skills.sql + APPEND InsertAgentStateOnConflictNothing :exec to agent_states.sql + APPEND ResolveSkillCodes :many to skills.sql + task gen regen (IMP-03, IMP-06)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 05-04-PLAN.md — internal/imports/ package scaffold: doc.go + handlers.go (Importer struct + Start/Stop lifecycle mirroring state.Server) + coerce.go (D5-01..D5-08 typed pipeline) + parser_json.go (reMarshalAs[T any] F1 helper) + parser_csv.go (stripBOM + newCSVReader) + header.go (entityRegistry + validateHeader) + mappers.go + errors.go (rowError + wrapPgError) + jobs.go (createJob + finaliseJob) + idempotency.go (lookupIdempotentReplay + rehydrateBulkImportResult) + sweep.go (safetySweep + startupSweep verbatim from state/ttl.go) + main_test.go + testutil_test.go + sweep_test.go (≥ 4 clockwork-backed cases) + exhaustive unit tests for coerce/parser_csv/parser_json/header (IMP-02, IMP-04, IMP-06, IMP-08)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 05-05-PLAN.md — Per-entity row processors: row_agent.go (Layer 1 + UpsertAgentByCode + InsertAgentStateOnConflictNothing + MergeAgentSkill loop) + row_skill.go + row_queue.go + row_channel.go (D-76 FK code-lookup probe) + row_adapter.go (JSONB passthrough) + row_break_reason.go + chunk.go (outerTx + per-row savepoint + ResolveSkillCodes batched once + POST-COMMIT cache.Del) + 7 paired _test.go (≥ 24 row processor tests + ≥ 5 chunk integration tests) (IMP-01, IMP-03, IMP-04, IMP-05)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 05-06-PLAN.md — Top-level handlers: handler_import.go (BulkImportCatalog + importJSON + importCSV + runImportPipeline) + handler_get_job.go (GetImportJob) + ≥ 11 unit dispatch tests + ApiHandlers composite update in cmd/api/main.go (third embed *imports.Importer; LIFO Start/Stop) + DELETE services/api/internal/catalog/notimpl.go + BodyLimit middleware injection in server.NewMux + 3 server chain-ordering tests (IMP-01, IMP-02, IMP-04, IMP-05, IMP-06, IMP-07, IMP-08)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 05-07-PLAN.md — Integration tests: testutil HTTP helpers extension + entity × format matrix (≥ 12 happy + ≥ 6 error) + windows-excel-agents.csv (UTF-8 BOM + CRLF + embedded quotes — Pitfall 1 mandatory) + invalid-utf8.csv + oversized-501-rows + idempotency_test (≥ 5 IdempotencyKey + ≥ 1 NoIdempotencyKey double-run) + jobs_test (≥ 3 GetImportJob + ≥ 2 FinaliseJob) + isolation/imports_test (cross-org probes incl. TestImport_CrossOrgSameCode_BothSucceed mirror of Phase 04.1) + isolation/imports_migration_idempotent_test (000003 replay) — total ≥ 35 new test cases (IMP-01..IMP-08)
+
+**Wave 6** *(blocked on Wave 5 — includes human checkpoint)*
+
+- [ ] 05-08-PLAN.md — Phase gate: task gen drift check + task test + task lint + task db:reset smoke + COMBINED cross-AI peer review (Codex + Gemini in parallel per CLAUDE.md HARD RULE — orchestrator override: covers BOTH Phase 04.1 + Phase 5 diff in a single pass to satisfy 04.1 Plan 06 deferred review) synthesized into 05-REVIEW.md + human checkpoint approval + STATE.md advancement (IMP-01..IMP-08)
+
 **Branch**: `gsd/phase-05-bulk-import`
 
 ---
@@ -311,7 +342,7 @@ Plans:
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
 | 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
-| 5. Bulk Import (Go) | 0/TBD | Not started | - |
+| 5. Bulk Import (Go) | 0/8 | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/TBD | Not started | - |
 | 7. Web Component Embed Bundle | 0/TBD | Not started | - |
 
