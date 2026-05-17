@@ -39,7 +39,9 @@ into `openapi.yaml` — schema extensions to existing components are allowed
 - `openapi.yaml` schema additions:
   `ImportAgentRequest`, `ImportSkillRequest`, `ImportQueueRequest`,
   `ImportChannelRequest`, `ImportAdapterRequest`, `ImportBreakReasonRequest`
-  (mirror `Create*Request` but reference FKs by `external_id`); add
+  (mirror `Create*Request` but reference FKs by `code` — the universal
+  user-facing identifier introduced by Phase 04.1 / D04_1-01; `external_id`
+  remains as optional integration-mapping metadata per D04_1-07); add
   `status` enum to `ImportJob`; add optional `Idempotency-Key` header
   parameter to the `BulkImportCatalog` operation. Run `task gen` and commit
   generated diff.
@@ -196,39 +198,56 @@ into `openapi.yaml` — schema extensions to existing components are allowed
   `ImportSkillRequest`, `ImportQueueRequest`, `ImportChannelRequest`,
   `ImportAdapterRequest`, `ImportBreakReasonRequest`. Each mirrors its
   `Create*Request` BUT references FK relationships by the target
-  entity's `external_id` (a human-readable caller-assigned code) instead
-  of by `id` (server-minted UUIDv7). Rationale: "tư duy humanable" —
-  admins coming from external systems don't have Open Routing UUIDs;
-  they have their own stable codes (HR system employee_id, CRM
-  skill_code, etc.). Forcing UUIDs would make CSV imports impossible
-  without a pre-import lookup pass.
+  entity's `code` (the universal user-facing canonical identifier per
+  Phase 04.1 / D04_1-01) instead of by `id` (server-minted UUIDv7).
+  Rationale: "tư duy humanable" — admins coming from external systems
+  don't have Open Routing UUIDs; they have their own stable codes.
+  Phase 04.1 promoted `code` from a per-entity convention to a universal
+  contract (composite `UNIQUE (org_id, code)` across all 6 catalog
+  entities), making it the natural upsert key. `external_id` remains
+  supported on `Create*Request` as optional integration-mapping metadata
+  (D04_1-07), but the Phase 5 import upsert key is `code` via
+  `UpsertXByCode` (authored in Phase 04.1 Plan 03). Forcing UUIDs would
+  make CSV imports impossible without a pre-import lookup pass.
 - **D5-16:** **JSON agent imports support nested `skills[]`.**
-  `ImportAgentRequest.skills: [{skill_external_id: "SKILL_VOICE",
-  proficiency: 7}, ...]`. Per row: lookup `(org_id, skill_external_id)`
+  `ImportAgentRequest.skills: [{skill_code: "skill_voice",
+  proficiency: 7}, ...]`. Per row: lookup `(org_id, skill_code)`
   → skill UUID. Unknown skill → per-row failure
-  `{field: "skills[0].skill_external_id", reason: "unknown_skill"}` —
+  `{field: "skills[0].skill_code", reason: "unknown_skill"}` —
   the agent itself does NOT import; the whole row fails (skills are
-  intrinsic to a complete agent record). Note: this is a stricter
-  decision than "import the agent without skills"; admins can re-run
-  after creating the missing skill.
+  intrinsic to a complete agent record). Note: `skill_code` values
+  follow Phase 04.1's regex `^[a-z][a-z0-9_]{0,63}$` (D04_1-03); illegal
+  token shape → per-row failure
+  `{field: "skills[N].skill_code", reason: "invalid_code_format"}`
+  (handler validates via `validateCodeFormat` from Phase 04.1 Plan 03).
+  Re-running after creating the missing skill is the documented
+  recovery path.
 - **D5-17:** **CSV agent imports support skills via a single `skills`
-  column with `CODE:prof|CODE:prof` syntax.** Example cell:
-  `"SKILL_VOICE:7|SKILL_CHAT:9|SKILL_EMAIL:5"`. Pipeline: trim →
-  split by D5-04 separator priority → for each token, split on `:` →
-  validate `[code, prof]`. Missing `:` or non-int proficiency →
-  per-row `reason: invalid_skill_token`. Same `unknown_skill`
-  resolution rule as D5-16. Document the convention in CSV column
-  description.
+  column with `code:prof|code:prof` syntax.** Example cell:
+  `"skill_voice:7|skill_chat:9|skill_email:5"` (lowercase per Phase 04.1
+  D04_1-03 regex). Pipeline: trim → split by D5-04 separator priority →
+  for each token, split on `:` → validate `[code, prof]`. Missing `:` →
+  per-row `reason: invalid_skill_token`. Non-int proficiency →
+  `reason: invalid_skill_token`. Token whose `code` part fails the
+  `^[a-z][a-z0-9_]{0,63}$` regex → `reason: invalid_code_format` (handler
+  reuses `validateCodeFormat` from Phase 04.1 Plan 03). Same
+  `unknown_skill` resolution rule as D5-16. Document the lowercase
+  convention in the CSV column description AND in the admin
+  import-screen UI copy (Phase 6).
 - **D5-18:** **Skill merge semantics on agent update (PATCH-like, NOT
-  PUT).** When an import row updates an existing agent (`external_id`
-  matches), the `skills` array MERGES into the agent's existing
-  `agent_skills` join rows — existing skills NOT in the import payload
-  are LEFT INTACT. This is a documented divergence from
-  `UpdateAgentRequest` (which replaces the whole set, per Phase 2
-  OQ-1A). Rationale: bulk imports often arrive partial (HR system
-  exports a delta); preserving existing assignments avoids unintended
-  skill loss. **Trade-off:** admins cannot REMOVE a skill via import
-  — they must use UI or the dedicated agent PATCH API.
+  PUT).** When an import row updates an existing agent (matched by
+  `code` via `UpsertAgentByCode` from Phase 04.1 Plan 03), the `skills`
+  array MERGES into the agent's existing `agent_skills` join rows —
+  existing skills NOT in the import payload are LEFT INTACT. This is a
+  documented divergence from `UpdateAgentRequest` (which replaces the
+  whole set, per Phase 2 OQ-1A). Rationale: bulk imports often arrive
+  partial (HR system exports a delta); preserving existing assignments
+  avoids unintended skill loss. **Trade-off:** admins cannot REMOVE a
+  skill via import — they must use UI or the dedicated agent PATCH API.
+  **Phase 04.1 alignment:** `code` is immutable post-create (D04_1-02);
+  `external_id` may be added or rebound on update via
+  `ImportAgentRequest.external_id` (optional field) — admins can use the
+  import to attach a new external-system binding to a code-keyed agent.
 - **D5-19:** **Proficiency conflict on existing skill → import value wins.**
   SQL: `INSERT INTO agent_skills (agent_id, skill_id, proficiency)
   VALUES (...) ON CONFLICT (agent_id, skill_id) DO UPDATE SET
@@ -289,12 +308,25 @@ flows the new shapes to `server.gen.go` and `types.gen.go`):
   `ImportAgentRequest`, `ImportSkillRequest`, `ImportQueueRequest`,
   `ImportChannelRequest`, `ImportAdapterRequest`,
   `ImportBreakReasonRequest`. Each mirrors `Create*Request` with FK
-  fields swapped to `*_external_id` (string). `ImportAgentRequest` also
-  carries `skills: [{skill_external_id, proficiency}]`. Update the
-  `BulkImportCatalog` `requestBody.content.application/json` schema
-  from `items: {}` to `oneOf: [<6 schemas>]` (or per-entity discriminator
-  — planner picks; `oneOf` is the OAS 3.0-compatible path since the
-  spec was downgraded from 3.1).
+  fields swapped to `*_code` (string, regex `^[a-z][a-z0-9_]{0,63}$`
+  per Phase 04.1 D04_1-03). Concretely: replace each
+  `agent_external_id`, `skill_external_id`, `queue_external_id`,
+  `channel_external_id`, `adapter_external_id`,
+  `break_reason_external_id` with `agent_code`, `skill_code`,
+  `queue_code`, `channel_code`, `adapter_code`, `break_reason_code`
+  respectively. `ImportAgentRequest` also carries
+  `skills: [{skill_code, proficiency}]` (was
+  `{skill_external_id, proficiency}`). Each Import*Request retains an
+  optional `external_id` field for integration-mapping (mutable per
+  D04_1-07; not the FK target). Update the `BulkImportCatalog`
+  `requestBody.content.application/json` schema from `items: {}` to
+  `oneOf: [<6 schemas>]` (or per-entity discriminator — planner picks;
+  `oneOf` is the OAS 3.0-compatible path since the spec was downgraded
+  from 3.1). **Note (oapi-codegen oneOf concern):** Phase 5's
+  05-RESEARCH.md flagged that oapi-codegen v2 has limitations with
+  oneOf in strict-server mode; the planner must address this
+  (per-entity discriminator may be necessary). This is independent of
+  the identity-model rename.
 - **D5-26:** Extend `ImportJob` schema with
   `status: { type: string, enum: [pending, completed, failed] }`
   (required). Forward-compat with v0.2 async; v0.1 returns
@@ -455,10 +487,16 @@ flows the new shapes to `server.gen.go` and `types.gen.go`):
     orgDB wrapper; Phase 5 integration test MUST include the two-org
     isolation case for `import_jobs` (POST as org A, assert org B's
     GET returns 404).
-  - **4.4 (`external_id` Collisions During Bulk Import)** — covered by
-    Phase 3's schema `UNIQUE (org_id, external_id)` per entity.
+  - **4.4 (`code` Collisions During Bulk Import)** — covered by
+    Phase 04.1's schema `UNIQUE (org_id, code)` per entity (D04_1-01).
     Phase 5's integration test asserts org A and org B can both
-    import the same `external_id` values without conflict.
+    import the same `code` values without conflict (cross-org
+    isolation; mirrors Phase 04.1 Plan 05's
+    `TestCatalog_CrossOrgSameCode_BothSucceed` in
+    `services/api/test/isolation/catalog_test.go`). The legacy
+    `(org_id, external_id)` constraint was demoted to a partial unique
+    index `WHERE external_id IS NOT NULL` (D04_1-06) and is enforced
+    only when a row carries an explicit external-system mapping.
 - `.planning/research/SUMMARY.md` §Bulk Import (v0.1 Scope) — context
   on the sync-only / partial-success / fast-csv (now Go `encoding/csv`)
   decision lineage.
@@ -546,17 +584,22 @@ flows the new shapes to `server.gen.go` and `types.gen.go`):
 ### Integration Points
 - **Phase 3 (Catalog CRUD)** — Phase 5 depends on Phase 3's entity tables
   and per-entity write helpers. Phase 3 SHOULD expose:
-  - `repo.{Agent,Skill,...}.UpsertByExternalID(ctx, OrgDB, params)` —
-    Phase 5's row processor calls this; Phase 3 owns the per-entity
-    validation, the `(org_id, external_id)` upsert SQL, and the Redis
-    cache invalidation (per CAT-11). If Phase 3 does NOT expose
-    upsert helpers (only Create/Update REST handlers), Phase 5 must
-    author parallel SQL — flagged for planner.
-  - `repo.Skill.ResolveExternalIDs(ctx, OrgDB, codes []string) →
+  - `repo.{Agent,Skill,...}.UpsertByCode(ctx, OrgDB, params)` —
+    Phase 5's row processor calls this. Phase 04.1 Plan 03 AUTHORED the
+    `UpsertXByCode` sqlc queries for all 6 entities
+    (`INSERT ... ON CONFLICT (org_id, code) DO UPDATE SET ... RETURNING *`);
+    Phase 5 invokes them. Phase 3 owns the per-entity validation;
+    Phase 04.1 owns the upsert SQL; Phase 3's Redis cache invalidation
+    (per CAT-11) is reused — the import call site invokes the same
+    write helper.
+  - `repo.Skill.ResolveCodes(ctx, OrgDB, codes []string) →
     map[string]uuid.UUID, []string unknown` — Phase 5's nested skill
-    resolver (D5-16, D5-17) batches lookups.
+    resolver (D5-16, D5-17) batches lookups via Phase 04.1's
+    `GetSkillByCode` query primitive (Plan 03).
   - Phase 5 strongly REQUESTS Phase 3 author both helpers; if Phase 3
-    plan doesn't include them, Phase 5 plan must.
+    plan doesn't include them, Phase 5 plan must (NOTE: Phase 04.1
+    Plan 03 already authored `UpsertXByCode` + `GetXByCode` — this
+    request is satisfied as of Phase 04.1 merge).
 - **Phase 4 (Agent State Machine)** — minimal coupling. Phase 5
   imports do NOT create `agent_states` rows (those are created by
   Phase 4's first state transition or by a default-state trigger at
@@ -574,8 +617,13 @@ flows the new shapes to `server.gen.go` and `types.gen.go`):
 ## Specific Ideas
 
 - **"Tư duy humanable"** — user emphasised: any field admins type into
-  CSV/JSON should reference entities by their human-readable code
-  (`external_id`), not server-minted UUIDs. Drove D5-15..D5-17.
+  CSV/JSON should reference entities by their human-readable code,
+  not server-minted UUIDs. Phase 04.1 promoted `code` from a per-entity
+  convention to a universal contract (D04_1-01, composite
+  `UNIQUE (org_id, code)` across all 6 catalog entities) — this is the
+  canonical identifier Phase 5 imports reference. `external_id` remains
+  supported as optional integration-mapping metadata (D04_1-07).
+  Drove D5-15..D5-17.
 - **Preprocessing pipeline before validation** — user explicitly called
   out: "khi biết kiểu trong db thì nên quyết định trước là có trim,
   lower, split, ... trước không rồi mới process tiếp. Như vậy đỡ được
