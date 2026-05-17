@@ -27,10 +27,15 @@ import "regexp"
 // RE2 → no ReDoS risk on the bounded `{0,63}` quantifier.
 var codeFormat = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
-// validateCodeFormat returns true iff s matches D04_1-03 strict format.
+// ValidateCodeFormat returns true iff s matches D04_1-03 strict format.
 // Empty string returns false (D04_1-05 — empty code is invalid).
 // Handlers map false → 400 invalid_body / reason="invalid_code_format".
-func validateCodeFormat(s string) bool {
+//
+// Exported in Phase 5 Wave 0 so internal/imports/ can reuse this regex
+// without duplicating the D04_1-03 source-of-truth. Per-row CSV/JSON
+// import validators consume it for the `code` field plus skill_code
+// tokens in nested agent skills (D5-16, D5-17).
+func ValidateCodeFormat(s string) bool {
 	return codeFormat.MatchString(s)
 }
 
@@ -40,7 +45,7 @@ func validateCodeFormat(s string) bool {
 // / field="code". Empty `requested` means the PATCH did not touch the
 // field; we accept it as no-op.
 //
-// Note: handlers MUST call validateCodeFormat(requested) BEFORE this so
+// Note: handlers MUST call ValidateCodeFormat(requested) BEFORE this so
 // a malformed PATCH like `"code": "UPPER"` gets 400 invalid_body, not 422.
 func validateImmutableCode(stored, requested string) bool {
 	return requested == "" || requested == stored

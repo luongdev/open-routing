@@ -49,7 +49,7 @@ func (h *Handlers) CreateSkill(ctx context.Context, req api.CreateSkillRequestOb
 
 	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
 	// because oapi-codegen v2 does NOT auto-enforce the OpenAPI `pattern`.
-	if !validateCodeFormat(req.Body.Code) {
+	if !ValidateCodeFormat(req.Body.Code) {
 		return api.CreateSkill400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error:  api.ErrorCodeInvalidBody,
 			Reason: "invalid_code_format",
@@ -71,10 +71,10 @@ func (h *Handlers) CreateSkill(ctx context.Context, req api.CreateSkillRequestOb
 		Enabled:     enabled,
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "skill")
+		status, code, reason := MapPgError(err, "skill")
 		if status == 409 {
 			// CreateSkill409 is a FLAT ErrorResponse (Pitfall 2). Phase 04.1
-			// — `reason` comes from mapPgError and is now either
+			// — `reason` comes from MapPgError and is now either
 			// "duplicate_code" or "duplicate_external_id" depending on the
 			// constraint that fired.
 			return api.CreateSkill409JSONResponse(api.ErrorResponse{
@@ -267,7 +267,7 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
 	// DB call so a malformed PATCH gets 400, not 422.
 	if req.Body.Code != nil {
-		if !validateCodeFormat(*req.Body.Code) {
+		if !ValidateCodeFormat(*req.Body.Code) {
 			return api.UpdateSkill400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error:  api.ErrorCodeInvalidBody,
 				Reason: "invalid_code_format",
@@ -363,7 +363,7 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "skill")
+		status, code, reason := MapPgError(err, "skill")
 		if status == 422 {
 			return api.UpdateSkill422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}

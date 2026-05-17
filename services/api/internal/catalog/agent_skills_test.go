@@ -184,7 +184,7 @@ func TestAgentSkills_CrossOrgSkillId(t *testing.T) {
 
 // TestAgentSkills_DBErrorPathFKRace simulates the FK race the helper
 // defends against: probe sees a skill enabled, then the row is hard-deleted
-// before INSERT runs. mapPgError translates 23503 to 422 invalid_reference
+// before INSERT runs. MapPgError translates 23503 to 422 invalid_reference
 // so a TOCTOU window cannot regress to 500.
 func TestAgentSkills_DBErrorPathFKRace(t *testing.T) {
 	th := newTestHandlers(t)

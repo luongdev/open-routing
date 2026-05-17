@@ -425,7 +425,7 @@ func TestQueues_MissingCode_Returns400(t *testing.T) {
 }
 
 // TestQueues_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
-// (org_id, code) fires; mapPgError returns duplicate_code.
+// (org_id, code) fires; MapPgError returns duplicate_code.
 func TestQueues_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()
@@ -444,7 +444,7 @@ func TestQueues_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
 }
 
 // TestQueues_DuplicateExternalId_Returns409_DuplicateExternalId — partial
-// UNIQUE on (org_id, external_id) fires; mapPgError returns duplicate_external_id.
+// UNIQUE on (org_id, external_id) fires; MapPgError returns duplicate_external_id.
 func TestQueues_DuplicateExternalId_Returns409_DuplicateExternalId(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()

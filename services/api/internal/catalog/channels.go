@@ -50,7 +50,7 @@ func (h *Handlers) CreateChannel(ctx context.Context, req api.CreateChannelReque
 
 	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
 	// BEFORE the D-76 FK probe so a malformed code never wastes a DB round-trip.
-	if !validateCodeFormat(req.Body.Code) {
+	if !ValidateCodeFormat(req.Body.Code) {
 		return api.CreateChannel400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error:  api.ErrorCodeInvalidBody,
 			Reason: "invalid_code_format",
@@ -98,7 +98,7 @@ func (h *Handlers) CreateChannel(ctx context.Context, req api.CreateChannelReque
 		Enabled:        derefOr(req.Body.Enabled, true),
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "channel")
+		status, code, reason := MapPgError(err, "channel")
 		switch status {
 		case 409:
 			return api.CreateChannel409JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
@@ -287,7 +287,7 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
 	// DB call (incl. the D-76 FK probe) so a malformed PATCH gets 400, not 422.
 	if req.Body.Code != nil {
-		if !validateCodeFormat(*req.Body.Code) {
+		if !ValidateCodeFormat(*req.Body.Code) {
 			return api.UpdateChannel400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error:  api.ErrorCodeInvalidBody,
 				Reason: "invalid_code_format",
@@ -408,7 +408,7 @@ func (h *Handlers) UpdateChannel(ctx context.Context, req api.UpdateChannelReque
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "channel")
+		status, code, reason := MapPgError(err, "channel")
 		if status == 422 {
 			return api.UpdateChannel422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}

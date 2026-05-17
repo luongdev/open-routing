@@ -16,7 +16,7 @@
 //   - CAT-10 — cursor + LIMIT N+1; ?include_disabled=true → IncludingDisabled.
 //   - Phase 04.1 (D04_1-21): 23505 from UNIQUE(org_id, code) or
 //     ix_break_reasons_org_external_id → 409 with duplicate_code /
-//     duplicate_external_id (via mapPgError constraint-name introspect).
+//     duplicate_external_id (via MapPgError constraint-name introspect).
 //     FLAT ErrorResponse wrapper (Pitfall 10).
 package catalog
 
@@ -51,7 +51,7 @@ func (h *Handlers) CreateBreakReason(ctx context.Context, req api.CreateBreakRea
 	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
 	// because oapi-codegen v2 does NOT auto-enforce the OpenAPI `pattern`.
 	// break_reasons previously had no `code` column — Phase 04.1 makes it required.
-	if !validateCodeFormat(req.Body.Code) {
+	if !ValidateCodeFormat(req.Body.Code) {
 		return api.CreateBreakReason400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error:  api.ErrorCodeInvalidBody,
 			Reason: "invalid_code_format",
@@ -79,13 +79,13 @@ func (h *Handlers) CreateBreakReason(ctx context.Context, req api.CreateBreakRea
 		Enabled:      enabled,
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "break_reason")
+		status, code, reason := MapPgError(err, "break_reason")
 		if status == 409 {
 			// Phase 04.1 — pre-04.1 the 409 reason was hardcoded to a
 			// fixed name-collision string because UNIQUE(org_id, name) was the
 			// only constraint. Plan 01 dropped that constraint; the new
 			// uniqueness is on (org_id, code) and the partial
-			// (org_id, external_id). mapPgError now returns the
+			// (org_id, external_id). MapPgError now returns the
 			// duplicate_code / duplicate_external_id reason directly via
 			// constraint-name introspection (see errors.go D04_1-21).
 			return api.CreateBreakReason409JSONResponse(api.ErrorResponse{
@@ -278,7 +278,7 @@ func (h *Handlers) UpdateBreakReason(ctx context.Context, req api.UpdateBreakRea
 	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
 	// DB call so a malformed PATCH gets 400, not 422.
 	if req.Body.Code != nil {
-		if !validateCodeFormat(*req.Body.Code) {
+		if !ValidateCodeFormat(*req.Body.Code) {
 			return api.UpdateBreakReason400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error:  api.ErrorCodeInvalidBody,
 				Reason: "invalid_code_format",
@@ -381,7 +381,7 @@ func (h *Handlers) UpdateBreakReason(ctx context.Context, req api.UpdateBreakRea
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "break_reason")
+		status, code, reason := MapPgError(err, "break_reason")
 		if status == 422 {
 			return api.UpdateBreakReason422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}
