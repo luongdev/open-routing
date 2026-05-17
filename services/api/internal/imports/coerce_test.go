@@ -74,6 +74,15 @@ func TestParseInt(t *testing.T) {
 		{name: "empty", raw: "", wantErr: ErrInvalidInt},
 		{name: "only_whitespace", raw: "   ", wantErr: ErrInvalidInt},
 		{name: "stray_letters_after_digit", raw: "7px", wantErr: ErrInvalidInt},
+		// Phase 5 fix L3 — int32 range. INT4 columns reject values
+		// outside int32; pre-fix the silent int → int32 cast in the
+		// row processor would overflow without surfacing the field.
+		{name: "L3_int32_max", raw: "2147483647", wantValue: 2147483647},
+		{name: "L3_int32_min", raw: "-2147483648", wantValue: -2147483648},
+		{name: "L3_above_int32_max", raw: "2147483648", wantErr: ErrInvalidInt},
+		{name: "L3_below_int32_min", raw: "-2147483649", wantErr: ErrInvalidInt},
+		{name: "L3_wildly_large", raw: "999999999999", wantErr: ErrInvalidInt},
+		{name: "L3_wildly_negative", raw: "-999999999999", wantErr: ErrInvalidInt},
 	}
 	for _, tc := range cases {
 		tc := tc

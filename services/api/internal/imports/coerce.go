@@ -100,6 +100,16 @@ func parseBool(raw string) (bool, error) {
 // logger.
 //
 // Empty string → ErrInvalidInt. Non-numeric → ErrInvalidInt.
+//
+// Phase 5 fix L3: int32-range bounds check. The catalog INT4 columns
+// (priority, acw_sec, display_order, etc) accept only INT32 values; a
+// CSV cell containing e.g. `999999999999` (12 digits) would coerce to
+// a Go int (64-bit on most platforms) and then silently truncate at
+// the int32 cast in the row processor. The L3 fix surfaces values
+// outside [math.MinInt32, math.MaxInt32] as ErrInvalidInt at the
+// coerce step — the columnSpec.coerce error path then attaches the
+// offending column name (e.g., `priority`) as the field-level error,
+// matching the D5-07 / M3 / M4 field-precision contract.
 func parseInt(raw string) (int, bool, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -110,6 +120,14 @@ func parseInt(raw string) (int, bool, error) {
 		return 0, false, ErrInvalidInt
 	}
 	truncated := math.Trunc(f)
+	// L3 — int32 range check. The downstream sqlc-generated query
+	// params for INT4 columns are int32; passing a value outside the
+	// int32 range would either overflow at cast time (silent corruption)
+	// or be rejected by Postgres with 22003 (numeric_value_out_of_range)
+	// which surfaces as a generic merge error without the field name.
+	if truncated < math.MinInt32 || truncated > math.MaxInt32 {
+		return 0, false, ErrInvalidInt
+	}
 	return int(truncated), truncated != f, nil
 }
 
