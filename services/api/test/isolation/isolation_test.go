@@ -154,6 +154,10 @@ func TestBypass_Docs_LoadsOpenAPISpec(t *testing.T) {
 		"/docs must serve HTML content-type, got %q", resp.Header.Get("Content-Type"))
 	require.Contains(t, string(body), "/openapi.yaml",
 		"/docs HTML must reference /openapi.yaml so the viewer can fetch the spec")
+	require.Contains(t, string(body), "window.location.origin",
+		"/docs HTML must configure Scalar with the current origin so Test Request URLs do not contain a double slash")
+	require.Contains(t, string(body), "servers",
+		"/docs HTML must override Scalar servers for same-origin Test Request support")
 }
 
 func TestBypass_Readyz_Returns200WhenHealthy(t *testing.T) {
