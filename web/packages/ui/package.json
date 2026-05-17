@@ -4,7 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./src/api/index.ts",
+    "./components": "./src/components/index.ts",
+    "./components/shell": "./src/components/shell/index.ts",
+    "./locales/locale-codes.js": "./src/locales/locale-codes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
