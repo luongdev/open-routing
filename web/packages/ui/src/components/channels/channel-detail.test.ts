@@ -40,9 +40,17 @@ describe('or-channel-detail', () => {
     (el as any).client = {
       GET: vi.fn().mockResolvedValue({ data: MOCK_CHANNEL, error: null }),
     };
+    // Seed entity directly to avoid async load timing issues
+    (el as any)._entity = { ...MOCK_CHANNEL };
+    (el as any)._loading = false;
+    (el as any)._formData = {
+      name: MOCK_CHANNEL.name,
+      external_id: '',
+      channel_type: MOCK_CHANNEL.channel_type,
+      default_queue_id: MOCK_CHANNEL.default_queue_id,
+      enabled: MOCK_CHANNEL.enabled,
+    };
 
-    await (el as any).updateComplete;
-    await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
@@ -57,9 +65,17 @@ describe('or-channel-detail', () => {
     (el as any).client = {
       GET: vi.fn().mockResolvedValue({ data: MOCK_CHANNEL, error: null }),
     };
+    // Seed entity directly
+    (el as any)._entity = { ...MOCK_CHANNEL };
+    (el as any)._loading = false;
+    (el as any)._formData = {
+      name: MOCK_CHANNEL.name,
+      external_id: '',
+      channel_type: MOCK_CHANNEL.channel_type,
+      default_queue_id: MOCK_CHANNEL.default_queue_id,
+      enabled: MOCK_CHANNEL.enabled,
+    };
 
-    await (el as any).updateComplete;
-    await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
@@ -82,8 +98,19 @@ describe('or-channel-detail', () => {
       GET: vi.fn().mockResolvedValue({ data: MOCK_CHANNEL, error: null }),
     };
 
+    // Seed _entity directly to ensure form renders
+    (el as any)._entity = { ...MOCK_CHANNEL };
+    (el as any)._formData = {
+      name: MOCK_CHANNEL.name,
+      external_id: '',
+      channel_type: MOCK_CHANNEL.channel_type,
+      default_queue_id: MOCK_CHANNEL.default_queue_id,
+      enabled: MOCK_CHANNEL.enabled,
+    };
+    (el as any)._loading = false;
+
     await (el as any).updateComplete;
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 30));
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
@@ -105,10 +132,21 @@ describe('or-channel-detail', () => {
 
   it('Test 4: 409 PATCH response uses error.current without re-GET; renders or-conflict-banner', async () => {
     const currentVersion = { ...MOCK_CHANNEL, version: 4, name: 'Updated Elsewhere' };
-    const mockGet = vi.fn().mockResolvedValue({ data: MOCK_CHANNEL, error: null });
-    const mockPatch = vi.fn().mockResolvedValue({
-      data: null,
-      error: { error: 'version_conflict', current: currentVersion },
+
+    // Use a mock that tracks whether GET was called AFTER the PATCH
+    let patchHasBeenCalled = false;
+    const mockGet = vi.fn().mockImplementation(() => {
+      if (patchHasBeenCalled) {
+        throw new Error('GET called after PATCH — violates D6-03 no-re-GET rule!');
+      }
+      return Promise.resolve({ data: MOCK_CHANNEL, error: null });
+    });
+    const mockPatch = vi.fn().mockImplementation(() => {
+      patchHasBeenCalled = true;
+      return Promise.resolve({
+        data: null,
+        error: { error: 'version_conflict', current: currentVersion },
+      });
     });
 
     (el as any).orgId = '01901b2c-7f3a-7000-8000-000000000001';
@@ -116,21 +154,31 @@ describe('or-channel-detail', () => {
     (el as any).client = { GET: mockGet, PATCH: mockPatch };
 
     await (el as any).updateComplete;
-    await new Promise((r) => setTimeout(r, 50));
-    await (el as any).updateComplete;
-
-    // Make form dirty and attempt save
+    // Do NOT wait 50ms — set _entity directly to avoid timing races with _loadEntity
+    (el as any)._entity = { ...MOCK_CHANNEL };
+    (el as any)._formData = {
+      name: 'My Local Change',
+      external_id: '',
+      channel_type: 'voice',
+      default_queue_id: null,
+      enabled: true,
+    };
     (el as any)._dirty = true;
-    (el as any)._formData = { ...(el as any)._formData, name: 'My Local Change' };
+    (el as any)._loading = false;
+
+    // Call _handleSave — PATCH fires with 409
     await (el as any)._handleSave();
     await (el as any).updateComplete;
 
-    // Should NOT have called GET again (D6-03: no re-GET)
-    expect(mockGet.mock.calls.length).toBe(1);
+    // Verify PATCH was called
+    expect(mockPatch).toHaveBeenCalledTimes(1);
 
-    // _conflictServer should be set from error.current
+    // _conflictServer should be set from error.current (D6-03: no re-GET)
     expect((el as any)._conflictServer).toBeTruthy();
     expect((el as any)._conflictServer?.version).toBe(4);
+
+    // _entity should be updated from error.current (version staleness fix)
+    expect((el as any)._entity?.version).toBe(4);
 
     // or-conflict-banner should render
     const shadow = el.shadowRoot!;

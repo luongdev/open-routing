@@ -44,6 +44,11 @@ import '../break-reasons/break-reason-list.js';
 import '../break-reasons/break-reason-detail.js';
 import '../break-reasons/break-reason-form.js';
 
+// Wave 4: Channels entity + queue-picker primitive (Plan 06-10)
+import '../channels/channel-list.js';
+import '../channels/channel-detail.js';
+import '../channels/channel-form.js';
+
 /** UUIDv7 regex per D6-13 and CONTEXT.md. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -282,20 +287,23 @@ export class OrCatalogShell extends LitElement {
       render: () => html`<div class="placeholder-wave" data-route="queue-detail">Queue Detail — coming in Wave 3 (Plan 06-08)</div>`,
     },
     {
-      // Channels — placeholder for Wave 4 (Plan 06-10)
+      // Channels — wired in Wave 4 (Plan 06-10)
       path: '/orgs/:org_id/channels',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="channels">Channels — coming in Wave 4 (Plan 06-10)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-channel-list .orgId=${org_id ?? ''} .client=${this._client!}></or-channel-list>`,
     },
     {
       path: '/orgs/:org_id/channels/new',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="channels-new">Channel Create — coming in Wave 4 (Plan 06-10)</div>`,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-channel-form .orgId=${org_id ?? ''} .client=${this._client!}></or-channel-form>`,
     },
     {
       path: '/orgs/:org_id/channels/:id',
       enter: this._orgRouteEnter,
-      render: () => html`<div class="placeholder-wave" data-route="channel-detail">Channel Detail — coming in Wave 4 (Plan 06-10)</div>`,
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-channel-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-channel-detail>`,
     },
     {
       // Adapters — placeholder for Wave 3 (Plan 06-11)
