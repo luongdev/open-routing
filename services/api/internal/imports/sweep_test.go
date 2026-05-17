@@ -201,7 +201,11 @@ func TestImportSweep_RunSweepPastDue_DirectInvocation(t *testing.T) {
 	cleanImportTables(t, ctx, th.Pool, th.OrgID)
 
 	past := time.Now().Add(-25 * time.Hour)
-	jobID := seedPendingImportJob(t, ctx, th.Pool, th.OrgID, "agents", past)
+	// Seed an initial past-due row so the Importer's startupSweep has
+	// something to find (drains the startup-side path before we exercise
+	// the per-tick runSweepPastDue directly). The seeded ID is not
+	// inspected; the row is re-cleaned and re-seeded below.
+	_ = seedPendingImportJob(t, ctx, th.Pool, th.OrgID, "agents", past)
 
 	// Start the Importer so its internal ctx is initialised (required
 	// by runSweepPastDue's context.WithTimeout(s.ctx, ...) call).
@@ -212,7 +216,7 @@ func TestImportSweep_RunSweepPastDue_DirectInvocation(t *testing.T) {
 	// called. Insert a fresh past-due row to exercise runSweepPastDue
 	// directly.
 	cleanImportTables(t, ctx, th.Pool, th.OrgID)
-	jobID = seedPendingImportJob(t, ctx, th.Pool, th.OrgID, "agents", past)
+	jobID := seedPendingImportJob(t, ctx, th.Pool, th.OrgID, "agents", past)
 
 	// Invoke the per-tick body directly.
 	th.I.runSweepPastDue()

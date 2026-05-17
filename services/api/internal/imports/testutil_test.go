@@ -417,6 +417,10 @@ func getImportJob(
 
 // getImportJobAsOrg is like getImportJob but sends X-Org-Id of a
 // DIFFERENT org (orgB) to probe cross-org isolation (FOUND-08).
+//
+//nolint:unused // retained for future cross-org isolation tests;
+// the analog in test/isolation/imports_test.go covers the current
+// FOUND-08 surface and uses a different signature.
 func getImportJobAsOrg(
 	t testing.TB,
 	th *TestImports,
@@ -507,6 +511,10 @@ func decodeImportJob(t testing.TB, body []byte) api.ImportJob {
 
 // extractFirstSucceededID returns the first succeeded[] UUID from a
 // 200/207 response. Asserts at least one row succeeded.
+//
+//nolint:unused // retained for future tests that need the persisted
+// UUID for follow-up GET assertions; current Plan 05-07 tests assert
+// shape via decodeBulkImportResult directly.
 func extractFirstSucceededID(t testing.TB, body []byte) uuid.UUID {
 	t.Helper()
 	r := decodeBulkImportResult(t, body)

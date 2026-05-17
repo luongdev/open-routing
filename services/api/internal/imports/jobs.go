@@ -52,7 +52,10 @@ func (s *Importer) createJob(
 		ID:             pgUUID(id),
 		OrgID:          pgUUID(orgID),
 		EntityType:     string(entity),
-		TotalRows:      int32(totalRows),
+		// totalRows is hard-bounded at 500 by D5-22 (handler rejects
+		// payloads > 500 rows before calling createJob). int → int32 is
+		// safe — annotated to suppress gosec G115 false positive.
+		TotalRows:      int32(totalRows), //nolint:gosec // bounded ≤ 500 by D5-22
 		IdempotencyKey: idempotencyKey,
 	}); err != nil {
 		return uuid.Nil, fmt.Errorf("imports: insert job: %w", err)
@@ -79,10 +82,13 @@ func (s *Importer) finaliseJob(
 	errorsJSON []byte,
 ) error {
 	q := generated.New(s.deps.OrgDB)
+	// succeeded + failed each ≤ totalRows ≤ 500 (D5-22 bound enforced
+	// in handler before chunk loop). int → int32 is safe — annotated
+	// to suppress gosec G115 false positive.
 	_, err := q.FinaliseImportJob(ctx, generated.FinaliseImportJobParams{
 		Status:        string(status),
-		SucceededRows: int32(succeeded),
-		FailedRows:    int32(failed),
+		SucceededRows: int32(succeeded), //nolint:gosec // bounded ≤ 500 by D5-22
+		FailedRows:    int32(failed),    //nolint:gosec // bounded ≤ 500 by D5-22
 		Errors:        errorsJSON,
 		ID:            pgUUID(jobID),
 		OrgID:         pgUUID(orgID),
