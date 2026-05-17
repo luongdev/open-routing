@@ -26,6 +26,8 @@ export default [
       '**/.turbo/**',
       // Pattern S1: generated code follows generator-only discipline — no lint
       'packages/ui/src/api/generated.ts',
+      // ajv standalone output: // @ts-nocheck JS-style code; not conformant to ESLint rules
+      'packages/ui/src/validators/**',
     ],
   },
 ];

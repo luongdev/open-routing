@@ -152,14 +152,22 @@ export function createImporter(deps: ImportCatalogDeps) {
       headers['Idempotency-Key'] = args.idempotencyKey;
     }
 
-    const url = `${deps.baseURL}/v1/orgs/${orgId}/catalog/import?${params.toString()}`;
+    // Strip trailing slash to avoid double-slash if baseURL ends with /
+    const base = deps.baseURL.replace(/\/$/, '');
+    const url = `${base}/v1/orgs/${encodeURIComponent(orgId)}/catalog/import?${params.toString()}`;
     const resp = await f(url, { method: 'POST', headers, body: args.body });
 
     // Parse body regardless of status (used in both success and error paths)
     const data = await resp.json().catch(() => ({}));
 
-    // 207 is a partial success — treat the same as 200 (caller inspects failed[])
-    if (resp.status >= 400 && resp.status !== 207) {
+    // 200 — all rows succeeded; 207 — partial success; 422 — all rows failed.
+    // All three return BulkImportResult (per openapi.yaml responses section).
+    // The caller inspects failed[] to render the failure table.
+    // 400, 413, 500, etc. are error responses — throw ImportError.
+    if (resp.status === 200 || resp.status === 207 || resp.status === 422) {
+      return data as BulkImportResult;
+    }
+    if (resp.status >= 400) {
       throw new ImportError(resp.status, data);
     }
 

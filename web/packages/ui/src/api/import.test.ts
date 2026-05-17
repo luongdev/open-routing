@@ -48,7 +48,7 @@ describe('createImporter', () => {
       body: '{}',
       contentType: 'application/json',
     });
-    const [_url, init] = mockFetch.mock.calls[0]!;
+    const [, init] = mockFetch.mock.calls[0]!;
     const headers = new Headers(init?.headers);
     expect(headers.get('X-Org-Id')).toBe(ORG_ID);
   });
@@ -65,7 +65,7 @@ describe('createImporter', () => {
       body: 'code,name,email\nalice,Alice,alice@example.com',
       contentType: 'text/csv',
     });
-    const [_url, init] = mockFetch.mock.calls[0]!;
+    const [, init] = mockFetch.mock.calls[0]!;
     const headers = new Headers(init?.headers);
     expect(headers.get('Content-Type')).toBe('text/csv');
   });
@@ -82,7 +82,7 @@ describe('createImporter', () => {
       body: '[{"code":"skill_voice","name":"Voice"}]',
       contentType: 'application/json',
     });
-    const [_url, init] = mockFetch.mock.calls[0]!;
+    const [, init] = mockFetch.mock.calls[0]!;
     const headers = new Headers(init?.headers);
     expect(headers.get('Content-Type')).toBe('application/json');
   });
@@ -130,7 +130,7 @@ describe('createImporter', () => {
       contentType: 'application/json',
       idempotencyKey: 'key-123',
     });
-    const [_url1, init1] = mockFetch.mock.calls[0]!;
+    const [, init1] = mockFetch.mock.calls[0]!;
     expect(new Headers(init1?.headers).get('Idempotency-Key')).toBe('key-123');
 
     // Without idempotency key
@@ -139,7 +139,7 @@ describe('createImporter', () => {
       body: '{}',
       contentType: 'application/json',
     });
-    const [_url2, init2] = mockFetch.mock.calls[1]!;
+    const [, init2] = mockFetch.mock.calls[1]!;
     expect(new Headers(init2?.headers).get('Idempotency-Key')).toBeNull();
   });
 
@@ -177,6 +177,27 @@ describe('createImporter', () => {
       contentType: 'application/json',
     });
     expect(result.succeeded).toHaveLength(1);
+    expect(result.failed).toHaveLength(1);
+  });
+
+  // Test 5c — response 422 → returns BulkImportResult (all rows failed; OpenAPI contract)
+  it('returns BulkImportResult for 422 (all rows failed)', async () => {
+    const allFailedResult = {
+      succeeded: [],
+      failed: [{ row: 1, error: 'import_failed', reason: 'duplicate code' }],
+    };
+    const fetch422 = makeFetch(422, allFailedResult);
+    const importer = createImporter({
+      baseURL: BASE_URL,
+      getOrgId: () => ORG_ID,
+      fetchImpl: fetch422,
+    });
+    const result = await importer({
+      entity: 'agents',
+      body: '{}',
+      contentType: 'application/json',
+    });
+    expect(result.succeeded).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
   });
 
