@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "typecheck": {
-      "dependsOn": ["^typecheck"],
+      "dependsOn": ["^typecheck", "gen:api"],
       "outputs": []
     },
     "lint": {
@@ -10,7 +10,21 @@
     },
     "gen:api": {
       "inputs": ["../../../openapi/openapi.yaml"],
-      "outputs": ["src/api/generated.ts"]
+      "outputs": ["src/api/generated.ts"],
+      "cache": true
+    },
+    "gen:validators": {
+      "inputs": ["../../../openapi/openapi.yaml"],
+      "outputs": ["src/validators/*.ts"],
+      "cache": true
+    },
+    "build:locales": {
+      "dependsOn": ["gen:api"],
+      "outputs": ["src/locales/**"]
+    },
+    "build": {
+      "dependsOn": ["^typecheck", "gen:api", "gen:validators"],
+      "outputs": ["dist/**"]
     }
   }
 }
