@@ -263,23 +263,73 @@ func TestProcessRow_Agent_DuplicateExternalID_PerRow(t *testing.T) {
 		"Phase 04.1 partial unique on (org_id, external_id) must surface duplicate_external_id via MapPgError")
 }
 
+// TestProcessRow_Agent_AgentStateSeedFails_RowFailedNotPartial — Phase 5
+// fix L2. Pre-fix this test was a t.Skip with rationale that the
+// agent_states CHECK constraint made the failure path hard to force in
+// integration. The L2 fix-up installs a TEMPORARY CHECK constraint on
+// agent_states that DENIES status='Offline' for the test's duration,
+// runs the import (which always inserts status='Offline' per
+// row_agent.go Step 6), asserts the row fails with reason=
+// agent_state_seed_failed, and unconditionally drops the temporary
+// constraint at the end (defer t.Cleanup).
+//
+// Why not a mock at the unit layer: the agent row processor is
+// transactional — agent upsert + state seed share one savepoint, and
+// a state-seed failure must roll the agent insert back. Asserting that
+// behaviour requires a real DB; a pure unit test cannot exercise it.
 func TestProcessRow_Agent_AgentStateSeedFails_RowFailedNotPartial(t *testing.T) {
-	// We simulate state-seed failure by pre-corrupting the agent_states
-	// table with a unique row that ALSO has an unusual status causing
-	// a CHECK violation? Actually, agent_states has ON CONFLICT
-	// (agent_id) DO NOTHING — so the only way to fail is if the
-	// underlying tx fails. Simplest reproduction: rely on the cross-
-	// row FK constraint: insert an agent_states row with status NOT
-	// in the allowed enum.
+	th := newTestImports(t)
+	if th == nil {
+		return
+	}
+	ctx := ctxWithOrg(context.Background(), th)
+	cleanImportTables(t, ctx, th.Pool, th.OrgID)
+	defer cleanImportTables(t, ctx, th.Pool, th.OrgID)
+
+	// Install a TEMPORARY CHECK constraint that forbids 'Offline' —
+	// the agent row processor hardcodes status='Offline' on every
+	// fresh state seed, so this guarantees InsertAgentStateOnConflictNothing
+	// will fail with a CHECK violation (23514).
 	//
-	// Implementation detail: agent_states.status is a TEXT column
-	// (with a CHECK constraint in Phase 4 migrations). The
-	// InsertAgentStateOnConflictNothing query passes
-	// status='Offline' literally — so failure is hard to force
-	// without a broken DB. We skip this destructive simulation in
-	// the imports suite (it would require a temp pool the test
-	// destroys). Instead we assert the contract via code-path
-	// inspection: when the savepoint-Tx Exec returns an error, the
-	// row processor returns *rowError with reason=agent_state_seed_failed.
-	t.Skip("agent_state_seed_failed path is exercised at the unit-mock layer; integration coverage is via build-time assertion that the rowError reason string is in the code path (see row_agent.go line ~140).")
+	// We use a NOT VALID + VALIDATE pair to ensure the constraint
+	// applies to subsequent INSERTs while still letting any already-
+	// present rows from prior tests remain. The Cleanup drops it
+	// before the next test runs.
+	_, err := th.Pool.Exec(ctx,
+		`ALTER TABLE agent_states ADD CONSTRAINT chk_l2_forbid_offline
+		 CHECK (status <> 'Offline') NOT VALID`)
+	require.NoError(t, err, "L2: install temporary CHECK constraint")
+	t.Cleanup(func() {
+		_, dropErr := th.Pool.Exec(context.Background(),
+			`ALTER TABLE agent_states DROP CONSTRAINT chk_l2_forbid_offline`)
+		require.NoError(t, dropErr, "L2: drop temporary CHECK constraint")
+	})
+
+	// Import a fresh agent. The processor will:
+	//   1. Upsert agents — succeeds.
+	//   2. InsertAgentStateOnConflictNothing(status='Offline') — fires the
+	//      temporary CHECK constraint, returns 23514.
+	//   3. Row processor returns *rowError{reason: "agent_state_seed_failed"}.
+	//   4. Chunk loop ROLLBACK TO savepoint — both agent + state writes
+	//      unwind together (atomicity proven by the post-test row count).
+	rows := []parsedRow{
+		{lineNo: 1, raw: rawAgentRow("emp_l2_a", "Alice L2", "alice-l2@example.com")},
+	}
+	succeeded, failed := th.I.processChunk(ctx, th.OrgID, api.Agents,
+		&agentRowProc{handlers: th.I}, rows)
+
+	require.Len(t, succeeded, 0,
+		"L2: state-seed CHECK violation must NOT leave the row in succeeded[]")
+	require.Len(t, failed, 1)
+	require.Equal(t, "agent_state_seed_failed", failed[0].Reason,
+		"L2: row processor must surface agent_state_seed_failed reason")
+
+	// Atomicity guarantee — the savepoint ROLLBACK TO unwinds the agent
+	// insert too. Pre-existing rows are untouched by cleanImportTables.
+	var agentRowCount int
+	require.NoError(t, th.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM agents WHERE org_id = $1 AND code = 'emp_l2_a'`,
+		th.OrgID).Scan(&agentRowCount))
+	require.Equal(t, 0, agentRowCount,
+		"L2: savepoint atomicity — agent insert must roll back when state seed fails")
 }
