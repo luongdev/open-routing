@@ -7,13 +7,19 @@
 //
 // Translations:
 //   - pgx.ErrNoRows          → 404 / not_found         / "{entity}_not_found"
-//   - pgconn 23505 (UNIQUE)  → 409 / version_conflict  / "external_id_collision"
+//   - pgconn 23505 (UNIQUE)  → 409 / duplicate_code OR duplicate_external_id (Phase 04.1 — see below)
 //   - pgconn 23503 (FK)      → 422 / invalid_reference / "fk_violation"  (Wave 3 codex review)
 //   - pgconn 23514 (CHECK)   → 422 / invalid_value     / "check_violation" (Wave 3 codex review)
 //   - everything else        → 500 / internal          / "internal"
 //
-// 23505 is mapped to version_conflict because the catalog schema's
-// only application-level uniqueness constraints are external_id-style.
+// Phase 04.1 amendment (D04_1-21): 23505 now introspects pgErr.ConstraintName
+// to distinguish duplicate_code (suffix _org_id_code_key) from
+// duplicate_external_id (prefix ix_, suffix _org_external_id). The previous
+// Phase 3 mapping returned `version_conflict` for every 23505 regardless of
+// which constraint fired — flagged MED by 03-SIMPLICITY-REVIEW.md ("pg error
+// mapping hides entity-specific conflicts") and is fixed here as a side
+// effect.
+//
 // 23503 + 23514 paths are needed for Wave 4-5 entity handlers (e.g.,
 // channels.default_queue_id FK probe via D-76; agent_skills proficiency
 // CHECK as defense-in-depth backstop) — adding now so handler authors
@@ -23,6 +29,7 @@ package catalog
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -46,7 +53,26 @@ func mapPgError(err error, entity string) (int, api.ErrorCode, string) {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
-			return http.StatusConflict, api.ErrorCodeVersionConflict, "external_id_collision"
+			// Phase 04.1 (D04_1-21): introspect pgErr.ConstraintName so the
+			// handler-side 409 wire shape distinguishes "another row already
+			// owns this code" from "another row already binds this external_id".
+			// Plan 01 locked the constraint names: composite UNIQUE on
+			// (org_id, code) auto-names `<entity>_org_id_code_key`; the partial
+			// unique index on (org_id, external_id) is explicitly named
+			// `ix_<entity>_org_external_id`.
+			name := pgErr.ConstraintName
+			switch {
+			case strings.HasSuffix(name, "_org_id_code_key"):
+				return http.StatusConflict, api.ErrorCodeDuplicateCode, "duplicate_code"
+			case strings.HasPrefix(name, "ix_") && strings.HasSuffix(name, "_org_external_id"):
+				return http.StatusConflict, api.ErrorCodeDuplicateExternalId, "duplicate_external_id"
+			default:
+				// Defensive — a future constraint we forgot to map. Return 409
+				// with a generic reason so clients still see "4xx, retry with
+				// new values" instead of 5xx. The constraint name is in the
+				// reason for log-grep / observability.
+				return http.StatusConflict, api.ErrorCodeInvalidBody, "unique_violation:" + name
+			}
 		case "23503":
 			// FK violation. The handler-level D-76 probes (e.g.,
 			// QueueExistsAndEnabledInOrg) catch most cases before the

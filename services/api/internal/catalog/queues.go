@@ -391,6 +391,7 @@ func mapQueue(row generated.Queue) api.Queue {
 	return api.Queue{
 		Id:           api.UUIDv7(apiUUID(row.ID)),
 		OrgId:        api.UUIDv7(apiUUID(row.OrgID)),
+		Code:         row.Code,
 		ExternalId:   row.ExternalID,
 		Name:         row.Name,
 		ChannelTypes: cts,

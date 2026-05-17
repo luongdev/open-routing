@@ -365,6 +365,8 @@ func mapBreakReason(row generated.BreakReason) api.BreakReason {
 	return api.BreakReason{
 		Id:           api.UUIDv7(apiUUID(row.ID)),
 		OrgId:        api.UUIDv7(apiUUID(row.OrgID)),
+		Code:         row.Code,
+		ExternalId:   row.ExternalID,
 		Name:         row.Name,
 		Routable:     row.Routable,
 		DisplayOrder: int(row.DisplayOrder),

@@ -412,6 +412,8 @@ func mapAdapter(row generated.Adapter) (api.Adapter, error) {
 	return api.Adapter{
 		Id:          api.UUIDv7(apiUUID(row.ID)),
 		OrgId:       api.UUIDv7(apiUUID(row.OrgID)),
+		Code:        row.Code,
+		ExternalId:  row.ExternalID,
 		Name:        row.Name,
 		AdapterType: row.AdapterType,
 		Config:      &cfg,

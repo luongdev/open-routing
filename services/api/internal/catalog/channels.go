@@ -406,6 +406,7 @@ func mapChannel(row generated.Channel) api.Channel {
 	return api.Channel{
 		Id:             api.UUIDv7(apiUUID(row.ID)),
 		OrgId:          api.UUIDv7(apiUUID(row.OrgID)),
+		Code:           row.Code,
 		ExternalId:     row.ExternalID,
 		Name:           row.Name,
 		ChannelType:    api.ChannelType(row.ChannelType),

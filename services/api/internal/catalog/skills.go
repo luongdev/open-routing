@@ -356,6 +356,7 @@ func mapSkill(row generated.Skill) api.Skill {
 	return api.Skill{
 		Id:          api.UUIDv7(apiUUID(row.ID)),
 		OrgId:       api.UUIDv7(apiUUID(row.OrgID)),
+		Code:        row.Code,
 		ExternalId:  row.ExternalID,
 		Name:        row.Name,
 		Description: desc,

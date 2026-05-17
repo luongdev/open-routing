@@ -564,6 +564,7 @@ func mapAgent(row generated.Agent, skills []generated.ListSkillsForAgentRow) api
 	a := api.Agent{
 		Id:         api.UUIDv7(apiUUID(row.ID)),
 		OrgId:      api.UUIDv7(apiUUID(row.OrgID)),
+		Code:       row.Code,
 		ExternalId: row.ExternalID,
 		Name:       row.Name,
 		Email:      openapi_types.Email(row.Email),
@@ -594,6 +595,7 @@ func mapAgentListItem(row generated.Agent) api.AgentListItem {
 	return api.AgentListItem{
 		Id:         api.UUIDv7(apiUUID(row.ID)),
 		OrgId:      api.UUIDv7(apiUUID(row.OrgID)),
+		Code:       row.Code,
 		ExternalId: row.ExternalID,
 		Name:       row.Name,
 		Email:      openapi_types.Email(row.Email),
