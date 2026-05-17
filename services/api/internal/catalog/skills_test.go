@@ -412,7 +412,7 @@ func TestSkills_CrossOrgGet404(t *testing.T) {
 // TestSkills_ExternalIdCollision — Phase 04.1 rewrite (resolves Plan 04
 // Hazard #1). Two POSTs with DISTINCT codes but SAME `external_id`
 // deterministically hit the partial UNIQUE index `ix_skills_org_external_id`,
-// so mapPgError introspects the constraint name and returns
+// so MapPgError introspects the constraint name and returns
 // ErrorCodeDuplicateExternalId / "duplicate_external_id". Test name
 // accurately describes the assertion: the external_id collision branch.
 func TestSkills_ExternalIdCollision(t *testing.T) {
@@ -431,7 +431,7 @@ func TestSkills_ExternalIdCollision(t *testing.T) {
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
 	// Phase 04.1 (D04_1-21): same external_id, distinct codes → partial
-	// unique index fires; mapPgError returns ErrorCodeDuplicateExternalId.
+	// unique index fires; MapPgError returns ErrorCodeDuplicateExternalId.
 	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)
 	require.Equal(t, "duplicate_external_id", e.Reason)
 }

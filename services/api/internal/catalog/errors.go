@@ -1,6 +1,6 @@
 // errors.go — pgx/pgconn error → strict-server response triple.
 //
-// Every catalog handler that touches the DB calls mapPgError on the
+// Every catalog handler that touches the DB calls MapPgError on the
 // non-happy-path return to translate pgx errors into the locked
 // (httpStatus, ErrorCode, reason) triple, then wraps the triple in the
 // operation-specific *JSONResponse type.
@@ -37,7 +37,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/api"
 )
 
-// mapPgError translates a sqlc/pgx-returned error into the canonical
+// MapPgError translates a sqlc/pgx-returned error into the canonical
 // (httpStatus, ErrorCode, reason) triple. The handler then wraps the
 // triple in the operation-specific *JSONResponse type — this function
 // stays response-type-agnostic so it can be reused across all 6 entities.
@@ -45,7 +45,12 @@ import (
 // `entity` is the short slug ("agent", "skill", etc.) used to construct
 // the 404 reason ("{entity}_not_found"). It is NOT used for any other
 // branch — keeping the call sites uniform.
-func mapPgError(err error, entity string) (int, api.ErrorCode, string) {
+//
+// Exported in Phase 5 Wave 0 so internal/imports/ can reuse the same
+// constraint-name introspection (duplicate_code vs duplicate_external_id
+// vs version_conflict) when an import row's UpsertXByCode returns a pgx
+// error. Phase 5 imports never duplicate this logic.
+func MapPgError(err error, entity string) (int, api.ErrorCode, string) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return http.StatusNotFound, api.ErrorCodeNotFound, entity + "_not_found"
 	}

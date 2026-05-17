@@ -47,7 +47,7 @@ func (h *Handlers) CreateQueue(ctx context.Context, req api.CreateQueueRequestOb
 
 	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
 	// because oapi-codegen v2 does NOT auto-enforce the OpenAPI `pattern`.
-	if !validateCodeFormat(req.Body.Code) {
+	if !ValidateCodeFormat(req.Body.Code) {
 		return api.CreateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error:  api.ErrorCodeInvalidBody,
 			Reason: "invalid_code_format",
@@ -85,7 +85,7 @@ func (h *Handlers) CreateQueue(ctx context.Context, req api.CreateQueueRequestOb
 		Enabled:      derefOr(req.Body.Enabled, true),
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "queue")
+		status, code, reason := MapPgError(err, "queue")
 		if status == 409 {
 			return api.CreateQueue409JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}
@@ -272,7 +272,7 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
 	// DB call so a malformed PATCH gets 400, not 422.
 	if req.Body.Code != nil {
-		if !validateCodeFormat(*req.Body.Code) {
+		if !ValidateCodeFormat(*req.Body.Code) {
 			return api.UpdateQueue400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error:  api.ErrorCodeInvalidBody,
 				Reason: "invalid_code_format",
@@ -395,7 +395,7 @@ func (h *Handlers) UpdateQueue(ctx context.Context, req api.UpdateQueueRequestOb
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "queue")
+		status, code, reason := MapPgError(err, "queue")
 		if status == 422 {
 			return api.UpdateQueue422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}

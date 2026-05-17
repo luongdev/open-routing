@@ -31,7 +31,7 @@ func (h *Handlers) CreateAdapter(ctx context.Context, req api.CreateAdapterReque
 	// Phase 04.1 Layer 1 (D04_1-19) — handler enforces D04_1-03 code regex
 	// because oapi-codegen v2 does NOT auto-enforce the OpenAPI `pattern`.
 	// Adapters previously had no `code` column — Phase 04.1 makes it required.
-	if !validateCodeFormat(req.Body.Code) {
+	if !ValidateCodeFormat(req.Body.Code) {
 		return api.CreateAdapter400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error:  api.ErrorCodeInvalidBody,
 			Reason: "invalid_code_format",
@@ -73,14 +73,14 @@ func (h *Handlers) CreateAdapter(ctx context.Context, req api.CreateAdapterReque
 		Enabled:     enabled,
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "adapter")
+		status, code, reason := MapPgError(err, "adapter")
 		switch status {
 		case 409:
 			// Phase 04.1 (RESEARCH Pitfall 7) — adapters previously had NO 409
 			// response wrapper because the table had no unique key besides the
 			// PK. Plan 02 added the `code` UNIQUE and the partial `external_id`
 			// UNIQUE, and emitted a CreateAdapter409JSONResponse wrapper.
-			// `reason` comes from mapPgError ("duplicate_code" or
+			// `reason` comes from MapPgError ("duplicate_code" or
 			// "duplicate_external_id" depending on which constraint fired).
 			return api.CreateAdapter409JSONResponse(api.ErrorResponse{
 				Error: code, Reason: reason,
@@ -292,7 +292,7 @@ func (h *Handlers) UpdateAdapter(ctx context.Context, req api.UpdateAdapterReque
 	// Phase 04.1 Layer 1 (D04_1-19) — fail fast on malformed code BEFORE any
 	// DB call so a malformed PATCH gets 400, not 422.
 	if req.Body.Code != nil {
-		if !validateCodeFormat(*req.Body.Code) {
+		if !ValidateCodeFormat(*req.Body.Code) {
 			return api.UpdateAdapter400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error:  api.ErrorCodeInvalidBody,
 				Reason: "invalid_code_format",
@@ -407,7 +407,7 @@ func (h *Handlers) UpdateAdapter(ctx context.Context, req api.UpdateAdapterReque
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "adapter")
+		status, code, reason := MapPgError(err, "adapter")
 		if status == 422 {
 			return api.UpdateAdapter422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}

@@ -166,7 +166,7 @@ func TestAgents_CreateThenGet(t *testing.T) {
 // TestAgents_CreateDuplicateExternalID_IncludesRequestID — Phase 04.1 rewrite
 // (resolves Plan 04 Hazard #1). Two POSTs with DISTINCT codes but SAME
 // `external_id` deterministically hit the partial UNIQUE index
-// `ix_agents_org_external_id`, so mapPgError introspects the constraint name
+// `ix_agents_org_external_id`, so MapPgError introspects the constraint name
 // and returns ErrorCodeDuplicateExternalId / "duplicate_external_id". The
 // `X-Request-Id` header propagation contract (D-35) is preserved across
 // the wire-shape change. Test name accurately describes the assertion: the
@@ -190,7 +190,7 @@ func TestAgents_CreateDuplicateExternalID_IncludesRequestID(t *testing.T) {
 	var e api.ErrorResponse
 	require.NoError(t, json.Unmarshal(raw, &e))
 	// Phase 04.1 (D04_1-21): same external_id, distinct codes → partial
-	// unique index `ix_agents_org_external_id` fires; mapPgError returns
+	// unique index `ix_agents_org_external_id` fires; MapPgError returns
 	// ErrorCodeDuplicateExternalId (camelcase `Id` lock — Plan 03 Task 3
 	// line 572).
 	require.Equal(t, api.ErrorCodeDuplicateExternalId, e.Error)

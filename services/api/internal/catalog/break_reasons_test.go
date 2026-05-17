@@ -467,7 +467,7 @@ func TestBreakReasons_MissingCode_Returns400(t *testing.T) {
 }
 
 // TestBreakReasons_DuplicateCode_Returns409_DuplicateCode — composite UNIQUE on
-// (org_id, code) fires; mapPgError returns duplicate_code.
+// (org_id, code) fires; MapPgError returns duplicate_code.
 func TestBreakReasons_DuplicateCode_Returns409_DuplicateCode(t *testing.T) {
 	th := newTestHandlers(t)
 	ctx := context.Background()

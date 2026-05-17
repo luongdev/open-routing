@@ -1,5 +1,9 @@
-// codecheck_test.go — RED-phase tests for validateCodeFormat /
+// codecheck_test.go — RED-phase tests for ValidateCodeFormat /
 // validateImmutableCode (D04_1-03, D04_1-19, D04_1-20).
+//
+// Note: the lowercase form was exported to ValidateCodeFormat in Phase 5
+// Wave 0 so internal/imports/ can reuse the regex without duplicating
+// the D04_1-03 source-of-truth. Test bodies updated accordingly.
 //
 // Pure-function tests; no DB, no httptest, no testcontainer; runs under
 // `go test -short`. Mirrors cursor_test.go in shape (stdlib testing +
@@ -29,7 +33,7 @@ func TestValidateCodeFormat_Valid(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {
-			require.True(t, validateCodeFormat(c), "valid code %q must pass", c)
+			require.True(t, ValidateCodeFormat(c), "valid code %q must pass", c)
 		})
 	}
 }
@@ -57,7 +61,7 @@ func TestValidateCodeFormat_Invalid(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			require.False(t, validateCodeFormat(c.in), "invalid code %q must fail", c.in)
+			require.False(t, ValidateCodeFormat(c.in), "invalid code %q must fail", c.in)
 		})
 	}
 }

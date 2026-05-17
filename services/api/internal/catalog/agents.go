@@ -85,7 +85,7 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 	// NOT enforce OpenAPI `pattern` regexes. The handler is the single source
 	// of truth for code-format validation. Fires BEFORE proficiency / any DB
 	// call so a malformed code surfaces as 400 invalid_body cleanly.
-	if !validateCodeFormat(req.Body.Code) {
+	if !ValidateCodeFormat(req.Body.Code) {
 		return api.CreateAgent400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error:  api.ErrorCodeInvalidBody,
 			Reason: "invalid_code_format",
@@ -132,7 +132,7 @@ func (h *Handlers) CreateAgent(ctx context.Context, req api.CreateAgentRequestOb
 		Enabled:    enabled,
 	})
 	if err != nil {
-		status, code, reason := mapPgError(err, "agent")
+		status, code, reason := MapPgError(err, "agent")
 		switch status {
 		case 409:
 			// Pitfall 2 — CreateAgent409 is a oneOf union. Build via the
@@ -403,7 +403,7 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 	// transaction begins so a malformed PATCH gets 400, not 422. Layer 2
 	// (immutability) fires inside the tx after fetching the stored row.
 	if req.Body.Code != nil {
-		if !validateCodeFormat(*req.Body.Code) {
+		if !ValidateCodeFormat(*req.Body.Code) {
 			return api.UpdateAgent400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 				Error:  api.ErrorCodeInvalidBody,
 				Reason: "invalid_code_format",
@@ -537,7 +537,7 @@ func (h *Handlers) UpdateAgent(ctx context.Context, req api.UpdateAgentRequestOb
 		}, nil
 	}
 	if err != nil {
-		status, code, reason := mapPgError(err, "agent")
+		status, code, reason := MapPgError(err, "agent")
 		if status == 422 {
 			return api.UpdateAgent422JSONResponse(api.ErrorResponse{Error: code, Reason: reason}), nil
 		}
