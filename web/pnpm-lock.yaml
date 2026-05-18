@@ -72,6 +72,9 @@ importers:
       '@babel/plugin-proposal-decorators':
         specifier: ^7.29.0
         version: 7.29.0(@babel/core@7.29.0)
+      '@lit-labs/router':
+        specifier: ^0.1.4
+        version: 0.1.4
       '@open-routing/ui':
         specifier: workspace:*
         version: link:../../packages/ui
