@@ -12,18 +12,20 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 // Config holds every environment variable the API reads at startup.
 // Field order matches the .env.example template for grep-ability.
 type Config struct {
-	DatabaseURL    string // DATABASE_URL — required
-	RedisURL       string // REDIS_URL — required
-	OTelExporter   string // OTEL_EXPORTER — default "stdout"; accepts "otlp" (D-14)
-	OTLPEndpoint   string // OTEL_EXPORTER_OTLP_ENDPOINT — required when OTelExporter=="otlp" (D-14)
-	OTLPProtocol   string // OTEL_EXPORTER_OTLP_PROTOCOL — default "http/protobuf" (D-14)
-	ListenAddr     string // LISTEN_ADDR — default ":8080"
-	ValidationMode string // ORGDB_VALIDATION_MODE — default "panic"; accepts "error" (D-02)
+	DatabaseURL        string   // DATABASE_URL — required
+	RedisURL           string   // REDIS_URL — required
+	OTelExporter       string   // OTEL_EXPORTER — default "stdout"; accepts "otlp" (D-14)
+	OTLPEndpoint       string   // OTEL_EXPORTER_OTLP_ENDPOINT — required when OTelExporter=="otlp" (D-14)
+	OTLPProtocol       string   // OTEL_EXPORTER_OTLP_PROTOCOL — default "http/protobuf" (D-14)
+	ListenAddr         string   // LISTEN_ADDR — default ":8080"
+	ValidationMode     string   // ORGDB_VALIDATION_MODE — default "panic"; accepts "error" (D-02)
+	CORSAllowedOrigins []string // CORS_ALLOWED_ORIGINS — comma-separated list of origins (D7-16)
 }
 
 // Load reads every environment variable, validates defaults / enums, and
@@ -61,18 +63,30 @@ func Load() (*Config, error) {
 		errs = append(errs, fmt.Errorf("config: ORGDB_VALIDATION_MODE must be 'panic' or 'error', got %q", validationMode))
 	}
 
+	var corsAllowedOrigins []string
+	rawCORS := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if rawCORS != "" {
+		parts := strings.Split(rawCORS, ",")
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				corsAllowedOrigins = append(corsAllowedOrigins, trimmed)
+			}
+		}
+	}
+
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 
 	return &Config{
-		DatabaseURL:    databaseURL,
-		RedisURL:       redisURL,
-		OTelExporter:   otelExporter,
-		OTLPEndpoint:   otlpEndpoint,
-		OTLPProtocol:   otlpProtocol,
-		ListenAddr:     listenAddr,
-		ValidationMode: validationMode,
+		DatabaseURL:        databaseURL,
+		RedisURL:           redisURL,
+		OTelExporter:       otelExporter,
+		OTLPEndpoint:       otlpEndpoint,
+		OTLPProtocol:       otlpProtocol,
+		ListenAddr:         listenAddr,
+		ValidationMode:     validationMode,
+		CORSAllowedOrigins: corsAllowedOrigins,
 	}, nil
 }
 
