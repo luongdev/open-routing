@@ -414,6 +414,16 @@ export class OrCatalogShell extends LitElement {
           .client=${this._client!}
         ></or-import-result>`,
     },
+    {
+      // W0.0-03: Dev-only UI playground — no org scope, no UUIDv7 guard.
+      // Renders 13 component slots for downstream W0.0 plan verification.
+      path: '/playground',
+      enter: async () => {
+        await import('./playground-route.js');
+        return true;
+      },
+      render: () => html`<or-playground-route></or-playground-route>`,
+    },
   ]);
 
   override connectedCallback(): void {
@@ -439,6 +449,7 @@ export class OrCatalogShell extends LitElement {
 
     this.addEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.addEventListener('open-routing:navigate', this._handleNavigate);
+    this.addEventListener('open-routing:theme-change', this._handleThemeChange);
 
     setTimeout(() => {
       this._routes.goto(window.location.pathname);
@@ -449,6 +460,7 @@ export class OrCatalogShell extends LitElement {
     super.disconnectedCallback();
     this.removeEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.removeEventListener('open-routing:navigate', this._handleNavigate);
+    this.removeEventListener('open-routing:theme-change', this._handleThemeChange);
     if (this._handlePopState) {
       window.removeEventListener('popstate', this._handlePopState);
     }
@@ -490,6 +502,11 @@ export class OrCatalogShell extends LitElement {
   private _handleNavigate = (e: Event): void => {
     const { path } = (e as CustomEvent<{ path: string }>).detail;
     this._navigate(path);
+  };
+
+  private _handleThemeChange = (e: Event): void => {
+    const { theme } = (e as CustomEvent<{ theme: ThemeName }>).detail;
+    this.theme = theme;
   };
 
   private _handleOrgSelected = (e: Event): void => {
