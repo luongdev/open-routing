@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 interface AgentRow {
   id: string;
@@ -19,6 +20,12 @@ interface AgentRow {
   code: string;
   email: string;
   enabled: boolean;
+}
+
+interface BreakReason {
+  id: string;
+  name: string;
+  routable: boolean;
 }
 
 @customElement('or-agent-status-list')
@@ -126,6 +133,7 @@ export class OrAgentStatusList extends LitElement {
       padding: 40px;
       color: var(--or-color-text-muted, #737373);
     }
+
   `;
 
   @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
@@ -133,9 +141,15 @@ export class OrAgentStatusList extends LitElement {
 
   @state() private accessor _agents: AgentRow[] = [];
   @state() private accessor _agentsLoading = true;
+  @state() private accessor _loadError: string | null = null;
+  @state() private accessor _hasMore = false;
   @state() private accessor _statuses = new Map<string, AgentStatusResponse>();
   @state() private accessor _statusLoading = new Set<string>();
   @state() private accessor _transitioning = new Set<string>();
+  @state() private accessor _patchErrors = new Map<string, string>();
+  @state() private accessor _breakReasons: BreakReason[] = [];
+  @state() private accessor _breakReasonsLoading = false;
+  @state() private accessor _breakReasonsError: string | null = null;
   @state() private accessor _search = '';
 
   private _pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -154,23 +168,42 @@ export class OrAgentStatusList extends LitElement {
     }
   }
 
+  override updated(changedProps: Map<string, unknown>): void {
+    super.updated(changedProps);
+    if (changedProps.has('orgId')) {
+      this._breakReasons = [];
+      this._breakReasonsError = null;
+    }
+  }
+
   private async _loadAgents(): Promise<void> {
     if (!this.orgId || !this.client) return;
     this._agentsLoading = true;
+    this._loadError = null;
     try {
       const result = await this.client.GET('/v1/orgs/{org_id}/agents' as never, {
         params: { path: { org_id: this.orgId }, query: { limit: 100 } },
       } as never);
-      const { data } = result as { data: { items?: AgentRow[] } | null; error: unknown };
-      this._agents = data?.items ?? [];
+      const { data, error } = result as {
+        data: { items?: AgentRow[]; has_more?: boolean } | null;
+        error: unknown;
+      };
+      if (error || !data) {
+        this._loadError = 'Failed to load agents — check network connection.';
+        return;
+      }
+      this._agents = data.items ?? [];
+      this._hasMore = data.has_more ?? false;
       await this._refreshStatuses();
+    } catch {
+      this._loadError = 'Failed to load agents — check network connection.';
     } finally {
       this._agentsLoading = false;
     }
   }
 
   private async _refreshStatuses(): Promise<void> {
-    await Promise.all(this._agents.map(a => this._fetchStatus(a.id)));
+    await Promise.allSettled(this._agents.map(a => this._fetchStatus(a.id)));
   }
 
   private async _fetchStatus(agentId: string): Promise<void> {
@@ -180,11 +213,16 @@ export class OrAgentStatusList extends LitElement {
       const result = await this.client.GET('/v1/orgs/{org_id}/agents/{id}/status' as never, {
         params: { path: { org_id: this.orgId, id: agentId } },
       } as never);
-      const { data } = result as { data: AgentStatusResponse | null; error: unknown };
+      const { data, error } = result as { data: AgentStatusResponse | null; error: unknown };
+      if (error) return;
       if (data) {
-        const next = new Map(this._statuses);
-        next.set(agentId, data);
-        this._statuses = next;
+        const existing = this._statuses.get(agentId);
+        // Discard poll response if a newer version already written (patch race guard)
+        if (!existing || data.state_version >= existing.state_version) {
+          const next = new Map(this._statuses);
+          next.set(agentId, data);
+          this._statuses = next;
+        }
       }
     } finally {
       const next = new Set(this._statusLoading);
@@ -193,14 +231,45 @@ export class OrAgentStatusList extends LitElement {
     }
   }
 
-  private async _patch(agentId: string, to: AgentStatus, extra?: { force?: boolean }): Promise<void> {
+  private async _fetchBreakReasons(): Promise<void> {
+    if (this._breakReasonsLoading || this._breakReasons.length > 0 || !this.orgId || !this.client) return;
+    this._breakReasonsLoading = true;
+    this._breakReasonsError = null;
+    try {
+      const result = await this.client.GET('/v1/orgs/{org_id}/break-reasons' as never, {
+        params: { path: { org_id: this.orgId }, query: { include_disabled: false, limit: 100 } },
+      } as never);
+      const { data, error } = result as { data: { items?: BreakReason[] } | null; error: unknown };
+      if (error != null) {
+        this._breakReasonsError = 'Failed to load break reasons';
+        return;
+      }
+      this._breakReasons = data?.items ?? [];
+    } catch {
+      this._breakReasonsError = 'Failed to load break reasons';
+    } finally {
+      this._breakReasonsLoading = false;
+    }
+  }
+
+  private async _patch(agentId: string, to: AgentStatus, extra?: { force?: boolean; break_reason_id?: string }): Promise<void> {
     if (this._transitioning.has(agentId) || !this.client) return;
     this._transitioning = new Set([...this._transitioning, agentId]);
+    const errNext = new Map(this._patchErrors);
+    errNext.delete(agentId);
+    this._patchErrors = errNext;
     try {
-      await this.client.PATCH('/v1/orgs/{org_id}/agents/{id}/status' as never, {
+      const result = await this.client.PATCH('/v1/orgs/{org_id}/agents/{id}/status' as never, {
         params: { path: { org_id: this.orgId, id: agentId } },
         body: { to, ...extra },
       } as never);
+      const { error } = result as { error: { reason?: string } | null | undefined };
+      if (error != null) {
+        const next = new Map(this._patchErrors);
+        next.set(agentId, error?.reason ?? 'Status change failed');
+        this._patchErrors = next;
+        return;
+      }
       await this._fetchStatus(agentId);
     } finally {
       const next = new Set(this._transitioning);
@@ -229,6 +298,7 @@ export class OrAgentStatusList extends LitElement {
     const status = this._statuses.get(agent.id);
     const busy = this._transitioning.has(agent.id);
     const initialLoad = this._statusLoading.has(agent.id) && !status;
+    const patchErr = this._patchErrors.get(agent.id);
 
     if (initialLoad) {
       return html`<span class="loading-cell"><sl-spinner style="font-size:13px"></sl-spinner></span>`;
@@ -238,6 +308,8 @@ export class OrAgentStatusList extends LitElement {
 
     return html`
       <div class="actions-cell">
+        ${patchErr ? html`<span style="color:var(--sl-color-danger-600);font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${patchErr}</span>` : nothing}
+
         ${cur === 'NotReady' || cur === 'Break' ? html`
           <sl-button size="small" variant="primary" ?disabled=${busy}
             @click=${() => void this._patch(agent.id, 'Ready')}>
@@ -246,7 +318,32 @@ export class OrAgentStatusList extends LitElement {
           </sl-button>
         ` : nothing}
 
-        ${cur === 'Ready' || cur === 'Break' ? html`
+        ${cur === 'Ready' ? html`
+          <sl-button size="small" variant="default" ?disabled=${busy}
+            @click=${() => void this._patch(agent.id, 'NotReady')}>
+            Set Not Ready
+          </sl-button>
+          <sl-dropdown @sl-show=${() => void this._fetchBreakReasons()}>
+            <sl-button slot="trigger" size="small" variant="default" caret ?disabled=${busy}>
+              <sl-icon slot="prefix" name="pause-circle"></sl-icon>
+              Go on Break
+            </sl-button>
+            <sl-menu @sl-select=${(e: CustomEvent) => void this._patch(agent.id, 'Break', { break_reason_id: (e.detail.item as { value: string }).value })}>
+              ${this._breakReasonsLoading ? html`
+                <sl-menu-item disabled>
+                  <sl-spinner slot="prefix" style="font-size:13px"></sl-spinner>
+                  Loading…
+                </sl-menu-item>
+              ` : this._breakReasonsError ? html`
+                <sl-menu-item disabled style="color:var(--sl-color-danger-600)">${this._breakReasonsError}</sl-menu-item>
+              ` : this._breakReasons.map(r => html`
+                <sl-menu-item .value="${r.id}">${r.name}</sl-menu-item>
+              `)}
+            </sl-menu>
+          </sl-dropdown>
+        ` : nothing}
+
+        ${cur === 'Break' ? html`
           <sl-button size="small" variant="default" ?disabled=${busy}
             @click=${() => void this._patch(agent.id, 'NotReady')}>
             Set Not Ready
@@ -303,6 +400,21 @@ export class OrAgentStatusList extends LitElement {
           @click=${() => void this._refreshStatuses()}
         ></sl-icon-button>
       </div>
+
+      ${this._loadError ? html`
+        <sl-alert variant="danger" open style="margin-bottom:16px">
+          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          ${this._loadError}
+          <sl-button size="small" slot="footer" @click=${() => void this._loadAgents()}>Retry</sl-button>
+        </sl-alert>
+      ` : nothing}
+
+      ${this._hasMore ? html`
+        <sl-alert variant="warning" open style="margin-bottom:16px">
+          <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+          Showing first 100 agents only. Search filters this list — agents beyond the first 100 are not reachable here.
+        </sl-alert>
+      ` : nothing}
 
       ${this._agentsLoading
         ? html`
