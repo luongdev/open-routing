@@ -4,6 +4,7 @@
 .gemini
 GEMINI.md
 CLAUDE.md
+.mcp.json
 
 .DS_Store
 *._*
