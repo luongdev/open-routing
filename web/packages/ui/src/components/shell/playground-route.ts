@@ -2,6 +2,7 @@ import { LitElement, html, css, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { iconSlot } from './slots/icon.js';
 import { buttonSlot } from './slots/button.js';
+import { inputSlot } from './slots/input.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -16,6 +17,7 @@ interface SlotDef {
 
 const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
   button: buttonSlot,
+  input: inputSlot,
   icon: iconSlot,
 };
 

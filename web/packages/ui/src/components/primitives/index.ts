@@ -17,3 +17,5 @@ export type { IconName } from './icon-names.js';
 // Plan 07-w0-10: or-button Frankenstyle primitive
 export { OrButton } from './or-button.js';
 export type { ButtonVariant, ButtonSize } from './or-button.js';
+// Plan 07-w0-11: or-input Frankenstyle primitive
+export { OrInput } from './or-input.js';

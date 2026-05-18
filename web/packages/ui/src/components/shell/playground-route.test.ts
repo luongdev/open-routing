@@ -48,6 +48,14 @@ describe('OrPlaygroundRoute', () => {
     expect(buttons.length).toBeGreaterThan(0);
   });
 
+  it('input slot is wired with or-input elements', async () => {
+    await (el as any).updateComplete;
+    const inputSection = el.shadowRoot!.querySelector('section[data-component="input"]');
+    expect(inputSection).toBeTruthy();
+    const inputs = inputSection!.querySelectorAll('or-input');
+    expect(inputs.length).toBeGreaterThan(0);
+  });
+
   it('dispatches open-routing:theme-change event on Ember Dark click', async () => {
     await (el as any).updateComplete;
     const events: CustomEvent[] = [];
