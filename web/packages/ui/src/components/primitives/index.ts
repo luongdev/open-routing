@@ -13,3 +13,5 @@ export { OrQueuePicker } from './queue-picker.js';
 // W0.0-12: or-select wraps <select class="uk-select"> with Frankenstyle styling
 export { OrSelect } from './or-select.js';
 export type { SelectOption } from './or-select.js';
+// W0.0-13: or-card composable card with header/body/footer slots
+export { OrCard } from './or-card.js';
