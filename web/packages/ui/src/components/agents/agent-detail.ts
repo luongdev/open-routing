@@ -247,26 +247,26 @@ export class OrAgentDetail extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'entity-id' }) accessor entityId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
-  @property({ type: String, attribute: 'wrapup-until' }) accessor wrapupUntil: string | null = null;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'entity-id' }) entityId = '';
+  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String, attribute: 'wrapup-until' }) wrapupUntil: string | null = null;
 
   // --- Internal state ---
-  @state() private accessor _entity: Agent | null = null;
-  @state() private accessor _loading = false;
-  @state() private accessor _saving = false;
-  @state() private accessor _dirty = false;
-  @state() private accessor _conflictServer: Record<string, unknown> | null = null;
-  @state() private accessor _fieldErrors: Record<string, string> = {};
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _showSavedToast = false;
-  @state() private accessor _deleteConfirmOpen = false;
-  @state() private accessor _deleteConfirmName = '';
-  @state() private accessor _wrapupSecondsLeft: number | null = null;
-  @state() private accessor _assignedSkills: SkillRow[] = [];
-  @state() private accessor _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
-  @state() private accessor _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
+  @state() private _entity: Agent | null = null;
+  @state() private _loading = false;
+  @state() private _saving = false;
+  @state() private _dirty = false;
+  @state() private _conflictServer: Record<string, unknown> | null = null;
+  @state() private _fieldErrors: Record<string, string> = {};
+  @state() private _apiError: string | null = null;
+  @state() private _showSavedToast = false;
+  @state() private _deleteConfirmOpen = false;
+  @state() private _deleteConfirmName = '';
+  @state() private _wrapupSecondsLeft: number | null = null;
+  @state() private _assignedSkills: SkillRow[] = [];
+  @state() private _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
+  @state() private _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
 
   private _wrapupInterval: ReturnType<typeof setInterval> | null = null;
   private _form: Form = { name: '', email: '', external_id: '', enabled: true };

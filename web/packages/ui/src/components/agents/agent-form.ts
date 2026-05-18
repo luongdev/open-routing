@@ -185,24 +185,24 @@ export class OrAgentForm extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private accessor _currentStep = 0;
-  @state() private accessor _formData: FormData = {
+  @state() private _currentStep = 0;
+  @state() private _formData: FormData = {
     code: '',
     name: '',
     email: '',
     external_id: '',
     enabled: true,
   };
-  @state() private accessor _assignedSkills: SkillRow[] = [];
-  @state() private accessor _errors: Record<string, string> = {};
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _submitting = false;
-  @state() private accessor _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
-  @state() private accessor _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
+  @state() private _assignedSkills: SkillRow[] = [];
+  @state() private _errors: Record<string, string> = {};
+  @state() private _apiError: string | null = null;
+  @state() private _submitting = false;
+  @state() private _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
+  @state() private _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
   private _codeAutoFill = true;
 
   // --- Navigation ---

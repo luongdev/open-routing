@@ -200,10 +200,10 @@ export class OrCatalogShell extends LitElement {
     }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String }) accessor theme: ThemeName = 'or-light';
-  @property({ type: String }) accessor modules = '';
-  @property({ type: String }) accessor locale: 'en' | 'vi' = 'en';
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String }) theme: ThemeName = 'or-light';
+  @property({ type: String }) modules = '';
+  @property({ type: String }) locale: 'en' | 'vi' = 'en';
 
 
   // routingMode + routerAdapter — admin defaults to history (pretty URLs);
@@ -213,7 +213,7 @@ export class OrCatalogShell extends LitElement {
   // dep cycle (packages/ui → embed → ui). Shell hands Routes to adapter
   // via start(routes); no `_routes` cast in consumer.
   @property({ type: String, attribute: 'routing-mode' })
-  accessor routingMode: 'history' | 'hash' = 'history';
+  routingMode: 'history' | 'hash' = 'history';
 
   // Iteration-2 BLOCKER #1 — typed adapter injection seam.
   // Consumers (embed-element in apps/embed) assign this BEFORE flipping
@@ -221,23 +221,23 @@ export class OrCatalogShell extends LitElement {
   // firstUpdated. attribute: false because Custom Element attributes
   // can only carry strings; consumers set the property programmatically.
   @property({ attribute: false })
-  accessor routerAdapter: CatalogShellRouterAdapter | undefined = undefined;
+  routerAdapter: CatalogShellRouterAdapter | undefined = undefined;
 
-  @state() private accessor _sidebarOpen = false;
+  @state() private _sidebarOpen = false;
 
   /**
    * D6-09: current org_id parsed from URL. getOrgId() in createApiClient closes
    * over _currentOrgId (not a snapshot), so the client returns the latest value
    * without recreation on org change.
    */
-  @state() private accessor _currentOrgId = '';
+  @state() private _currentOrgId = '';
 
   /**
    * D6-09: single client instance for the lifetime of an org session.
    * Null before an org is selected (org-picker screen).
    * Replaced (not mutated) when org changes via org-picker or URL.
    */
-  @state() private accessor _client: ApiClient | null = null;
+  @state() private _client: ApiClient | null = null;
 
   /**
    * Shared enter() guard for all /orgs/:org_id/* routes (D6-13).

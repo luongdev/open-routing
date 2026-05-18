@@ -158,22 +158,22 @@ export class OrSkillDetail extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'entity-id' }) accessor entityId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'entity-id' }) entityId = '';
+  @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private accessor _entity: Skill | null = null;
-  @state() private accessor _loading = false;
-  @state() private accessor _saving = false;
-  @state() private accessor _dirty = false;
-  @state() private accessor _conflictServer: Record<string, unknown> | null = null;
-  @state() private accessor _fieldErrors: Record<string, string> = {};
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _showSavedToast = false;
-  @state() private accessor _deleteConfirmOpen = false;
-  @state() private accessor _deleteConfirmName = '';
-  @state() private accessor _discardDialogOpen = false;
+  @state() private _entity: Skill | null = null;
+  @state() private _loading = false;
+  @state() private _saving = false;
+  @state() private _dirty = false;
+  @state() private _conflictServer: Record<string, unknown> | null = null;
+  @state() private _fieldErrors: Record<string, string> = {};
+  @state() private _apiError: string | null = null;
+  @state() private _showSavedToast = false;
+  @state() private _deleteConfirmOpen = false;
+  @state() private _deleteConfirmName = '';
+  @state() private _discardDialogOpen = false;
 
   private _form: Form = { name: '', external_id: '', description: '', skill_type: '', enabled: true };
   private _savedToastTimeout?: ReturnType<typeof setTimeout>;

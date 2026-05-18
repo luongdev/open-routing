@@ -62,21 +62,21 @@ export class OpenRoutingCatalog extends LitElement {
     }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'api-base-url' }) accessor apiBaseUrl = '';
-  @property({ type: String }) accessor theme = '';
-  @property({ type: String }) accessor modules = '';
-  @property({ type: String }) accessor locale: 'en' | 'vi' = 'en';
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'api-base-url' }) apiBaseUrl = '';
+  @property({ type: String }) theme = '';
+  @property({ type: String }) modules = '';
+  @property({ type: String }) locale: 'en' | 'vi' = 'en';
 
-  @state() private accessor _client: ApiClient | null = null;
-  @state() private accessor _validationError: string | null = null;
-  @state() private accessor _authExpired: { requestId: string; path: string } | null = null;
-  @state() private accessor _parsedTheme: NamedTheme | Record<string, string> | '' = '';
+  @state() private _client: ApiClient | null = null;
+  @state() private _validationError: string | null = null;
+  @state() private _authExpired: { requestId: string; path: string } | null = null;
+  @state() private _parsedTheme: NamedTheme | Record<string, string> | '' = '';
 
   private _hashAdapter: HashRouterAdapter | null = null;
   
   @query('or-catalog-shell') 
-  private accessor _shellEl!: (HTMLElement & {
+  private _shellEl!: (HTMLElement & {
     routerAdapter?: CatalogShellRouterAdapter;
     routingMode?: 'history' | 'hash';
   }) | null;

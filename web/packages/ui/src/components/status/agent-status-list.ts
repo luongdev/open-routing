@@ -137,21 +137,21 @@ export class OrAgentStatusList extends LitElement {
 
   `;
 
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: Object }) client!: ApiClient;
 
-  @state() private accessor _agents: AgentRow[] = [];
-  @state() private accessor _agentsLoading = true;
-  @state() private accessor _loadError: string | null = null;
-  @state() private accessor _hasMore = false;
-  @state() private accessor _statuses = new Map<string, AgentStatusResponse>();
-  @state() private accessor _statusLoading = new Set<string>();
-  @state() private accessor _transitioning = new Set<string>();
-  @state() private accessor _patchErrors = new Map<string, string>();
-  @state() private accessor _breakReasons: BreakReason[] = [];
-  @state() private accessor _breakReasonsLoading = false;
-  @state() private accessor _breakReasonsError: string | null = null;
-  @state() private accessor _search = '';
+  @state() private _agents: AgentRow[] = [];
+  @state() private _agentsLoading = true;
+  @state() private _loadError: string | null = null;
+  @state() private _hasMore = false;
+  @state() private _statuses = new Map<string, AgentStatusResponse>();
+  @state() private _statusLoading = new Set<string>();
+  @state() private _transitioning = new Set<string>();
+  @state() private _patchErrors = new Map<string, string>();
+  @state() private _breakReasons: BreakReason[] = [];
+  @state() private _breakReasonsLoading = false;
+  @state() private _breakReasonsError: string | null = null;
+  @state() private _search = '';
 
   private _pollHandle: ReturnType<typeof setInterval> | null = null;
 

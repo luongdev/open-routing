@@ -99,7 +99,7 @@ describe('OrCatalogShell', () => {
     await new Promise(r => setTimeout(r, 0));
     
     expect(mockAdapter.start).toHaveBeenCalledTimes(1);
-    const routesArg = mockAdapter.start.mock.calls[0][0];
+    const routesArg = mockAdapter.start.mock.calls[0]![0];
     expect(routesArg.goto).toBeDefined();
     expect(routesArg.outlet).toBeDefined();
     expect(routesArg.link).toBeDefined();

@@ -106,19 +106,19 @@ export class OrCodeInput extends LitElement {
   `;
 
   /** Current value. Bound two-way via .value and @or-code-input events. */
-  @property({ type: String }) accessor value = '';
+  @property({ type: String }) value = '';
 
   /** Label displayed above the input. */
-  @property({ type: String }) accessor label = 'Code';
+  @property({ type: String }) label = 'Code';
 
   /** Helper text shown below the input (overridden when readonly=true). */
-  @property({ type: String }) accessor helperText = '';
+  @property({ type: String }) helperText = '';
 
   /** When true, input is disabled with lock icon (D04_1-02: immutable after create). */
-  @property({ type: Boolean }) accessor readonly = false;
+  @property({ type: Boolean }) readonly = false;
 
   /** When true, validation fails on empty value. */
-  @property({ type: Boolean }) accessor required = false;
+  @property({ type: Boolean }) required = false;
 
   /** Internal validation state — null means untouched (not yet validated). */
   private _validationState: boolean | null = null;

@@ -389,29 +389,29 @@ export class OrStatusPanel extends LitElement {
   `;
 
   // --- Public properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'agent-id' }) accessor agentId = '';
-  @property({ type: Object, attribute: false }) accessor client!: ApiClient;
-  @property({ type: Boolean }) accessor embedded = false;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'agent-id' }) agentId = '';
+  @property({ type: Object, attribute: false }) client!: ApiClient;
+  @property({ type: Boolean }) embedded = false;
 
   // --- Internal state ---
-  @state() private accessor _status: AgentStatusResponse | null = null;
-  @state() private accessor _loading = true;
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _lastKnownVersion = 0;
-  @state() private accessor _pollInterval: ReturnType<typeof setInterval> | null = null;
-  @state() private accessor _breakReasons: BreakReason[] = [];
-  @state() private accessor _breakReasonsLoading = false;
-  @state() private accessor _breakDropdownOpen = false;
-  @state() private accessor _selectedBreakReasonId: string | null = null;
-  @state() private accessor _forceExpanded = false;
-  @state() private accessor _selectedForceTarget: AgentStatus | null = null;
-  @state() private accessor _forceConfirmOpen = false;
-  @state() private accessor _wrapupSecondsLeft: number | null = null;
-  @state() private accessor _wrapupInterval: ReturnType<typeof setInterval> | null = null;
-  @state() private accessor _conflictError: { from: string; to: string } | null = null;
-  @state() private accessor _transitioning = false;
-  @state() private accessor _selectedPostInteractionState: 'ready' | 'not_ready' | null = null;
+  @state() private _status: AgentStatusResponse | null = null;
+  @state() private _loading = true;
+  @state() private _apiError: string | null = null;
+  @state() private _lastKnownVersion = 0;
+  @state() private _pollInterval: ReturnType<typeof setInterval> | null = null;
+  @state() private _breakReasons: BreakReason[] = [];
+  @state() private _breakReasonsLoading = false;
+  @state() private _breakDropdownOpen = false;
+  @state() private _selectedBreakReasonId: string | null = null;
+  @state() private _forceExpanded = false;
+  @state() private _selectedForceTarget: AgentStatus | null = null;
+  @state() private _forceConfirmOpen = false;
+  @state() private _wrapupSecondsLeft: number | null = null;
+  @state() private _wrapupInterval: ReturnType<typeof setInterval> | null = null;
+  @state() private _conflictError: { from: string; to: string } | null = null;
+  @state() private _transitioning = false;
+  @state() private _selectedPostInteractionState: 'ready' | 'not_ready' | null = null;
 
   // --- Lifecycle ---
 
