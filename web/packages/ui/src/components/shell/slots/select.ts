@@ -1,4 +1,4 @@
-import { html, TemplateResult } from 'lit';
+import { html, type TemplateResult } from 'lit';
 import '../../primitives/or-select.js';
 
 export const selectSlot: TemplateResult = html`
