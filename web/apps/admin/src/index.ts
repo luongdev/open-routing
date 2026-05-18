@@ -1,3 +1,5 @@
+import '@open-routing/ui/styles/frankenstyle.css';
+import '@open-routing/ui/components/hwc-bootstrap.js';
 import '@shoelace-style/shoelace/dist/themes/light.css';
 import { setBasePath } from '@shoelace-style/shoelace/dist/utilities/base-path.js';
 import { configureLocalization } from '@lit/localize';

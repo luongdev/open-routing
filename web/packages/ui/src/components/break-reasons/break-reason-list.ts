@@ -99,17 +99,17 @@ export class OrBreakReasonList extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private accessor _search = '';
-  @state() private accessor _cursor: string | null = null;
-  @state() private accessor _cursorStack: string[] = [];
-  @state() private accessor _includeDisabled = false;
-  @state() private accessor _limit = 25;
-  @state() private accessor _nextCursor: string | null = null;
-  @state() private accessor _hasMore = false;
+  @state() private _search = '';
+  @state() private _cursor: string | null = null;
+  @state() private _cursorStack: string[] = [];
+  @state() private _includeDisabled = false;
+  @state() private _limit = 25;
+  @state() private _nextCursor: string | null = null;
+  @state() private _hasMore = false;
 
   private _searchDebounce?: ReturnType<typeof setTimeout>;
 

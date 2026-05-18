@@ -22,30 +22,32 @@
   --sl-color-primary-950: #ffffff;
 
   /* ─── Shoelace semantic (lifted for dark contrast) ─── */
-  --sl-color-danger-500:  #f97066;
-  --sl-color-warning-500: #fdb022;
-  --sl-color-success-500: #32d583;
-  --sl-color-neutral-0:   #0a0a0a;
-  --sl-color-neutral-50:  #121212;  /* app shell — the 60% dominant in dark */
-  --sl-color-neutral-100: #1a1a1a;  /* sidebar — the 30% secondary in dark */
-  --sl-color-neutral-200: #262626;  /* hairlines */
-  --sl-color-neutral-300: #404040;
-  --sl-color-neutral-500: #a3a3a3;  /* secondary text */
-  --sl-color-neutral-700: #d4d4d4;  /* body text */
-  --sl-color-neutral-900: #f5f5f5;  /* headings */
+  --sl-color-danger-500:  #f87171;
+  --sl-color-warning-500: #fbbf24;
+  --sl-color-success-500: #34d399;
+  /* Zinc-tinted grays — subtle cool hue stops the palette looking "random grey" */
+  --sl-color-neutral-0:   #000000;
+  --sl-color-neutral-50:  #0d0d0f;  /* app shell base */
+  --sl-color-neutral-100: #18181b;  /* sidebar, topbar — one step elevated */
+  --sl-color-neutral-200: #27272a;  /* dividers, input borders */
+  --sl-color-neutral-300: #3f3f46;  /* stronger borders */
+  --sl-color-neutral-500: #71717a;  /* muted text / placeholder */
+  --sl-color-neutral-700: #b4b4bc;  /* body text */
+  --sl-color-neutral-900: #f0f0f2;  /* headings / strong text */
   --sl-color-neutral-1000:#ffffff;
 
   /* ─── Open Routing custom ─── */
   --or-color-app-bg:           var(--sl-color-neutral-50);
   --or-color-sidebar-bg:       var(--sl-color-neutral-100);
-  --or-color-topbar-bg:        var(--sl-color-neutral-50);
+  --or-color-topbar-bg:        var(--sl-color-neutral-100);
   --or-color-card-bg:          var(--sl-color-neutral-100);
   --or-color-card-border:      var(--sl-color-neutral-200);
   --or-color-text-body:        var(--sl-color-neutral-700);
   --or-color-text-strong:      var(--sl-color-neutral-900);
   --or-color-text-muted:       var(--sl-color-neutral-500);
   --or-color-text-on-primary:  var(--sl-color-neutral-900);
-  --or-color-conflict-bg:      #44331b;                            /* darkened amber */
+  --or-color-nav-active-bg:    rgba(79, 170, 178, 0.15);
+  --or-color-conflict-bg:      #44331b;
   --or-color-conflict-border:  #fdb022;
   --or-color-diff-removed:     #5b1d1d;
   --or-color-diff-added:       #1d4d2c;
@@ -53,9 +55,9 @@
   --or-color-code-fg:          var(--sl-color-primary-500);
   --or-color-focus-ring:       var(--sl-color-primary-500);
   --or-color-row-hover:        var(--sl-color-neutral-200);
-  --or-color-row-selected:     #143036;
+  --or-color-row-selected:     #0e2c31;
   --or-color-skeleton-base:    var(--sl-color-neutral-200);
   --or-color-skeleton-shimmer: var(--sl-color-neutral-300);
   --or-color-divider:          var(--sl-color-neutral-200);
-  --or-color-overlay-scrim:    rgb(0 0 0 / 0.6);
+  --or-color-overlay-scrim:    rgb(0 0 0 / 0.7);
 }

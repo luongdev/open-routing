@@ -222,4 +222,73 @@ test.describe('Admin SPA smoke test', () => {
     await page.waitForURL('**/', { timeout: 5_000 });
     await expect(page.locator('or-org-picker')).toBeAttached({ timeout: 5_000 });
   });
+
+  test('shell navigates to a second lazy route (skills) without chunk-not-found error', async ({ page }) => {
+    // D7-03 regression: after shell refactor, ALL lazy routes must
+    // resolve. This test loads the agents list (covered by previous
+    // test) and then navigates to /orgs/{id}/skills, which requires
+    // loading a SEPARATE lazy chunk.
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+    page.on('pageerror', (err) => {
+      consoleErrors.push(err.message);
+    });
+
+    await page.goto(`/orgs/${TEST_ORG_ID}/agents`);
+    await expect(page.locator('or-catalog-shell')).toBeAttached({ timeout: 10_000 });
+
+    // Wait for the agents list lazy chunk to resolve.
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('or-catalog-shell');
+      const shadow = shell?.shadowRoot;
+      return shadow?.querySelector('or-agent-list') !== null;
+    }, undefined, { timeout: 5_000 });
+
+    // Navigate to skills via direct URL — exercises a DIFFERENT lazy chunk.
+    await page.goto(`/orgs/${TEST_ORG_ID}/skills`);
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('or-catalog-shell');
+      const shadow = shell?.shadowRoot;
+      return shadow?.querySelector('or-skill-list') !== null;
+    }, undefined, { timeout: 5_000 });
+
+    // No console errors — lazy chunks resolved cleanly.
+    const chunkErrors = consoleErrors.filter((msg) =>
+      msg.includes('chunk') || msg.includes('Failed to fetch dynamically imported module'));
+    expect(chunkErrors).toEqual([]);
+  });
+
+  test('shell switches between 3 entity routes in sequence (lazy chunk caching)', async ({ page }) => {
+    // D7-03 + RESEARCH §3 lines 513-516: confirm switch-org / nav doesn't
+    // re-fetch chunks already loaded. Lazy import() promise is cached by
+    // the browser module system; sequential navigation should not
+    // trigger network for already-loaded chunks.
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+
+    await page.goto(`/orgs/${TEST_ORG_ID}/agents`);
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('or-catalog-shell');
+      return shell?.shadowRoot?.querySelector('or-agent-list') !== null;
+    }, undefined, { timeout: 5_000 });
+
+    await page.goto(`/orgs/${TEST_ORG_ID}/queues`);
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('or-catalog-shell');
+      return shell?.shadowRoot?.querySelector('or-queue-list') !== null;
+    }, undefined, { timeout: 5_000 });
+
+    await page.goto(`/orgs/${TEST_ORG_ID}/break-reasons`);
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('or-catalog-shell');
+      return shell?.shadowRoot?.querySelector('or-break-reason-list') !== null;
+    }, undefined, { timeout: 5_000 });
+
+    expect(consoleErrors.filter((e) => e.includes('chunk') || e.includes('Failed to fetch')))
+      .toEqual([]);
+  });
 });
