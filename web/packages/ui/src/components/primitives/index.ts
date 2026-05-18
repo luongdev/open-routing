@@ -14,3 +14,6 @@ export { OrQueuePicker } from './queue-picker.js';
 export { OrIcon } from './or-icon.js';
 export { ICON_NAMES } from './icon-names.js';
 export type { IconName } from './icon-names.js';
+// Plan 07-w0-18: or-switch and or-checkbox light DOM primitives
+export { OrSwitch } from './or-switch.js';
+export { OrCheckbox } from './or-checkbox.js';
