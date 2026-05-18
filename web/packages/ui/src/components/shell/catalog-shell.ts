@@ -18,13 +18,24 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { Routes } from '@lit-labs/router';
 import { orLight, orDark, orBrand, ALL_TOKEN_KEYS } from '../../themes/index.js';
 import type { ThemeName } from '../../themes/index.js';
+
+import type { Routes } from '@lit-labs/router';
+
+// Iteration-2 BLOCKER #1 — typed seam for hash-routing injection.
+// Defined in packages/ui so consumers (apps/embed) implement against
+// the contract without packages/ui needing a static dep on
+// @open-routing/embed. Symmetric coupling: shell hands its Routes
+// instance to adapter.start(routes); adapter never reaches into
+// shell. No workspace dep cycle.
+export interface CatalogShellRouterAdapter {
+  start(routes: Routes): void;
+  stop(): void;
+}
+
 import { createApiClient } from '../../api/client.js';
 import type { ApiClient } from '../../api/client.js';
 
 // Agent components (Wave 2, Plan 06-05) — wired to real routes in Plan 06-06.
-import '../agents/agent-list.js';
-import '../agents/agent-detail.js';
-import '../agents/agent-form.js';
 
 // Shoelace per-component imports (D6-08: tree-shaking required for Phase 7 70KB budget)
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -39,34 +50,15 @@ import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '../primitives/org-picker.js';
 
 // Wave 3: Break Reasons entity (Plan 06-09)
-import '../break-reasons/break-reason-list.js';
-import '../break-reasons/break-reason-detail.js';
-import '../break-reasons/break-reason-form.js';
 
 // Wave 4: Channels entity + queue-picker primitive (Plan 06-10)
-import '../channels/channel-list.js';
-import '../channels/channel-detail.js';
-import '../channels/channel-form.js';
 
 // Ship-fix (Codex review HIGH): wire Skills, Queues, Adapters routes that
 // were still rendering Wave-3 placeholders despite their components landing.
-import '../skills/skill-list.js';
-import '../skills/skill-detail.js';
-import '../skills/skill-form.js';
-import '../queues/queue-list.js';
-import '../queues/queue-detail.js';
-import '../queues/queue-form.js';
-import '../adapters/adapter-list.js';
-import '../adapters/adapter-detail.js';
-import '../adapters/adapter-form.js';
 
 // Wave 4: Status Panel (Plan 06-12)
-import '../status/status-panel.js';
-import '../status/agent-status-list.js';
 
 // Wave 4: Bulk Import (Plan 06-13)
-import '../imports/import-page.js';
-import '../imports/import-result.js';
 
 /** UUIDv7 regex per D6-13 and CONTEXT.md. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -215,6 +207,24 @@ export class OrCatalogShell extends LitElement {
   @property({ type: String }) accessor modules = '';
   @property({ type: String }) accessor locale: 'en' | 'vi' = 'en';
 
+
+  // routingMode + routerAdapter — admin defaults to history (pretty URLs);
+  // embed sets 'hash' via routing-mode attribute AND assigns routerAdapter
+  // (HashRouterAdapter instance) BEFORE the attribute flip. Iteration-2
+  // BLOCKER #1: typed-interface seam in packages/ui prevents a workspace
+  // dep cycle (packages/ui → embed → ui). Shell hands Routes to adapter
+  // via start(routes); no `_routes` cast in consumer.
+  @property({ type: String, attribute: 'routing-mode' })
+  accessor routingMode: 'history' | 'hash' = 'history';
+
+  // Iteration-2 BLOCKER #1 — typed adapter injection seam.
+  // Consumers (embed-element in apps/embed) assign this BEFORE flipping
+  // routingMode to 'hash'. Shell calls adapter.start(this._routes) in
+  // firstUpdated. attribute: false because Custom Element attributes
+  // can only carry strings; consumers set the property programmatically.
+  @property({ attribute: false })
+  accessor routerAdapter: CatalogShellRouterAdapter | undefined = undefined;
+
   @state() private accessor _sidebarOpen = false;
 
   /**
@@ -253,7 +263,37 @@ export class OrCatalogShell extends LitElement {
     return true;
   };
 
-  /** @lit-labs/router Routes — outlet() MUST stay in this component's render() per Pitfall 7. */
+
+  private async _composedEnter(
+    params: Record<string, string | undefined>,
+    loader: () => Promise<unknown>,
+    entity?: string,
+  ): Promise<boolean> {
+    // _orgRouteEnter MUST run FIRST — malformed UUIDv7 wastes a chunk fetch.
+    if (!(await this._orgRouteEnter(params))) return false;
+    // WARNING #6 — EMBED-06-b: when modules attribute is set and the
+    // entity is not in the CSV, redirect to the first allowed entity.
+    // Prevents direct-URL navigation past the sidebar filter.
+    if (entity && this.modules) {
+      const allowed = this.modules.split(',').map((s) => s.trim()).filter(Boolean);
+      if (allowed.length > 0 && !allowed.includes(entity)) {
+        const orgId = params.org_id ?? '';
+        void this._routes.goto('/orgs/' + orgId + '/' + allowed[0]);
+        return false;
+      }
+    }
+    await loader();
+    return true;
+  }
+
+  /** 
+   * @lit-labs/router Routes
+   * Lazy routes — D7-03 single-source shell across admin + embed (D7-02 eager baseline = chrome + 5 primitives only;
+   * entities split per route). _composedEnter runs _orgRouteEnter guard first (avoids chunk fetch on malformed UUID)
+   * then dynamic import for code splitting. @lit-labs/router goto() awaits the enter Promise
+   * (verified npm README + Lit discussion #3354).
+   * outlet() MUST stay in this component's render() per Pitfall 7.
+   */
   private _routes = new Routes(this, [
     {
       path: '/',
@@ -261,25 +301,25 @@ export class OrCatalogShell extends LitElement {
     },
     {
       path: '/orgs/:org_id/agents',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../agents/agent-list.js'), 'agents'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-agent-list .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-list>`,
     },
     {
       path: '/orgs/:org_id/agents/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../agents/agent-form.js'), 'agents'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-agent-form .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-form>`,
     },
     {
       path: '/orgs/:org_id/agents/status',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../status/agent-status-list.js'), 'status'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-agent-status-list .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-status-list>`,
     },
     {
       path: '/orgs/:org_id/agents/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../agents/agent-detail.js'), 'agents'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-agent-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-agent-detail>`,
     },
@@ -287,109 +327,109 @@ export class OrCatalogShell extends LitElement {
       // D6-12: status panel nested per-agent. Wired in Wave 5 (Plan 06-12).
       // enter: this._orgRouteEnter — UUIDv7 guard preserved (mirrors 06-09 BreakReasons pattern).
       path: '/orgs/:org_id/agents/:id/status',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../status/status-panel.js'), 'status'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-status-panel .orgId=${org_id ?? ''} .agentId=${id ?? ''} .client=${this._client!}></or-status-panel>`,
     },
     {
       // Skills (Plan 06-07) — wired by ship-fix
       path: '/orgs/:org_id/skills',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../skills/skill-list.js'), 'skills'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-skill-list .orgId=${org_id ?? ''} .client=${this._client!}></or-skill-list>`,
     },
     {
       path: '/orgs/:org_id/skills/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../skills/skill-form.js'), 'skills'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-skill-form .orgId=${org_id ?? ''} .client=${this._client!}></or-skill-form>`,
     },
     {
       path: '/orgs/:org_id/skills/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../skills/skill-detail.js'), 'skills'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-skill-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-skill-detail>`,
     },
     {
       // Queues (Plan 06-08) — wired by ship-fix
       path: '/orgs/:org_id/queues',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../queues/queue-list.js'), 'queues'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-queue-list .orgId=${org_id ?? ''} .client=${this._client!}></or-queue-list>`,
     },
     {
       path: '/orgs/:org_id/queues/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../queues/queue-form.js'), 'queues'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-queue-form .orgId=${org_id ?? ''} .client=${this._client!}></or-queue-form>`,
     },
     {
       path: '/orgs/:org_id/queues/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../queues/queue-detail.js'), 'queues'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-queue-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-queue-detail>`,
     },
     {
       // Channels — wired in Wave 4 (Plan 06-10)
       path: '/orgs/:org_id/channels',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../channels/channel-list.js'), 'channels'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-channel-list .orgId=${org_id ?? ''} .client=${this._client!}></or-channel-list>`,
     },
     {
       path: '/orgs/:org_id/channels/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => Promise.all([import('../channels/channel-form.js'), import('../primitives/queue-picker.js')]), 'channels'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-channel-form .orgId=${org_id ?? ''} .client=${this._client!}></or-channel-form>`,
     },
     {
       path: '/orgs/:org_id/channels/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../channels/channel-detail.js'), 'channels'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-channel-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-channel-detail>`,
     },
     {
       // Adapters (Plan 06-11) — wired by ship-fix
       path: '/orgs/:org_id/adapters',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../adapters/adapter-list.js'), 'adapters'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-adapter-list .orgId=${org_id ?? ''} .client=${this._client!}></or-adapter-list>`,
     },
     {
       path: '/orgs/:org_id/adapters/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../adapters/adapter-form.js'), 'adapters'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-adapter-form .orgId=${org_id ?? ''} .client=${this._client!}></or-adapter-form>`,
     },
     {
       path: '/orgs/:org_id/adapters/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../adapters/adapter-detail.js'), 'adapters'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-adapter-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-adapter-detail>`,
     },
     {
       // Break Reasons — wired in Wave 3 (Plan 06-09); client prop added here (Rule 2 fix)
       path: '/orgs/:org_id/break-reasons',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../break-reasons/break-reason-list.js'), 'break-reasons'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-break-reason-list .orgId=${org_id ?? ''} .client=${this._client!}></or-break-reason-list>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../break-reasons/break-reason-form.js'), 'break-reasons'),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-break-reason-form .orgId=${org_id ?? ''} .client=${this._client!}></or-break-reason-form>`,
     },
     {
       path: '/orgs/:org_id/break-reasons/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../break-reasons/break-reason-detail.js'), 'break-reasons'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-break-reason-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-break-reason-detail>`,
     },
     {
       // D6-12: Import POST flow (Plan 06-13). Wire real or-import-page.
       path: '/orgs/:org_id/imports/new',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../imports/import-page.js')),
       render: ({ org_id }: Record<string, string | undefined>) => {
         this._currentOrgId = org_id ?? '';
         return html`<or-import-page
@@ -402,7 +442,7 @@ export class OrCatalogShell extends LitElement {
     {
       // D6-12: Import GET historical result (Plan 06-13). Wire real or-import-result.
       path: '/orgs/:org_id/imports/:id',
-      enter: this._orgRouteEnter,
+      enter: (params) => this._composedEnter(params, () => import('../imports/import-result.js')),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-import-result
           .orgId=${org_id ?? ''}
@@ -411,6 +451,15 @@ export class OrCatalogShell extends LitElement {
         ></or-import-result>`,
     },
   ]);
+
+
+  override firstUpdated(_changed: PropertyValues): void {
+    if (this.routingMode === 'hash' && this.routerAdapter) {
+      this.routerAdapter.start(this._routes);
+    }
+  }
+
+
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -442,6 +491,9 @@ export class OrCatalogShell extends LitElement {
   }
 
   override disconnectedCallback(): void {
+    if (this.routerAdapter) {
+      this.routerAdapter.stop();
+    }
     super.disconnectedCallback();
     this.removeEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.removeEventListener('open-routing:navigate', this._handleNavigate);
@@ -497,6 +549,9 @@ export class OrCatalogShell extends LitElement {
   };
 
   override updated(changed: Map<string, unknown>): void {
+    if (changed.has('routingMode') && changed.get('routingMode') !== undefined) {
+      console.warn('[catalog-shell] routingMode changed after construction — admin sets once, embed sets once; behavior is undefined');
+    }
     if (changed.has('theme')) {
       this._applyTheme();
     }

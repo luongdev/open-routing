@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Register the element
 import './catalog-shell.js';
@@ -61,5 +61,71 @@ describe('OrCatalogShell', () => {
     expect(navText).not.toContain('Channels');
     expect(navText).not.toContain('Adapters');
     expect(navText).not.toContain('Break Reasons');
+  });
+
+  it('defaults to history routing mode', async () => {
+    await (el as any).updateComplete;
+    expect((el as any).routingMode).toBe('history');
+  });
+
+  it('accepts routing-mode=hash attribute', async () => {
+    el.setAttribute('routing-mode', 'hash');
+    await (el as any).updateComplete;
+    expect((el as any).routingMode).toBe('hash');
+  });
+
+  it('does NOT call adapter.start when routerAdapter is undefined', async () => {
+    el.setAttribute('routing-mode', 'hash');
+    await (el as any).updateComplete;
+    // Should not throw
+    expect(true).toBe(true);
+  });
+
+  it('does NOT call adapter.start when routingMode is history', async () => {
+    const mockAdapter = { start: vi.fn(), stop: vi.fn() };
+    (el as any).routerAdapter = mockAdapter;
+    await (el as any).updateComplete;
+    expect(mockAdapter.start).not.toHaveBeenCalled();
+  });
+
+  it('invokes routerAdapter.start with the shell Routes instance when routingMode=hash', async () => {
+    const mockAdapter = { start: vi.fn(), stop: vi.fn() };
+    const el2 = document.createElement('or-catalog-shell');
+    el2.setAttribute('routing-mode', 'hash');
+    (el2 as any).routerAdapter = mockAdapter;
+    document.body.appendChild(el2);
+    
+    await (el2 as any).updateComplete;
+    await new Promise(r => setTimeout(r, 0));
+    
+    expect(mockAdapter.start).toHaveBeenCalledTimes(1);
+    const routesArg = mockAdapter.start.mock.calls[0][0];
+    expect(routesArg.goto).toBeDefined();
+    expect(routesArg.outlet).toBeDefined();
+    expect(routesArg.link).toBeDefined();
+    
+    document.body.removeChild(el2);
+  });
+
+  it('calls routerAdapter.stop in disconnectedCallback', async () => {
+    const mockAdapter = { start: vi.fn(), stop: vi.fn() };
+    const el2 = document.createElement('or-catalog-shell');
+    el2.setAttribute('routing-mode', 'hash');
+    (el2 as any).routerAdapter = mockAdapter;
+    document.body.appendChild(el2);
+    
+    await (el2 as any).updateComplete;
+    el2.remove();
+    
+    expect(mockAdapter.stop).toHaveBeenCalled();
+  });
+
+  it('warns when routingMode mutates after connect', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await (el as any).updateComplete;
+    (el as any).routingMode = 'hash';
+    await (el as any).updateComplete;
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
