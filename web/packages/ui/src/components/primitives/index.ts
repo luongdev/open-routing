@@ -10,3 +10,6 @@ export { OrFormWizard } from './form-wizard.js';
 export type { OrFormWizardStep } from './form-wizard.js';
 // Plan 06-10: queue-picker primitive (shared with channels + future status panel)
 export { OrQueuePicker } from './queue-picker.js';
+// W0.0-14: or-badge status pill
+export { OrBadge } from './or-badge.js';
+export type { BadgeVariant } from './or-badge.js';
