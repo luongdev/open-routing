@@ -45,6 +45,7 @@
   --or-color-text-strong:      var(--sl-color-neutral-900);
   --or-color-text-muted:       var(--sl-color-neutral-500);
   --or-color-text-on-primary:  #ffffff;
+  --or-color-nav-active-bg:    rgba(13, 139, 150, 0.1);
   --or-color-conflict-bg:      #fef3c7;
   --or-color-conflict-border:  #f59e0b;
   --or-color-diff-removed:     #fecaca;

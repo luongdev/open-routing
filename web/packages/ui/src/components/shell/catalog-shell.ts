@@ -202,6 +202,7 @@ export class OrCatalogShell extends LitElement {
       flex: 1;
       overflow-y: auto;
       padding: 32px 32px 24px;
+      background: var(--or-color-app-bg, #fff);
     }
     .placeholder-wave {
       color: var(--or-color-text-muted, #888);
