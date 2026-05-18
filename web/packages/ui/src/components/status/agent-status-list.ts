@@ -114,6 +114,7 @@ export class OrAgentStatusList extends LitElement {
       white-space: nowrap;
     }
 
+
     .actions-cell {
       display: flex;
       align-items: center;
@@ -194,7 +195,7 @@ export class OrAgentStatusList extends LitElement {
       }
       this._agents = data.items ?? [];
       this._hasMore = data.has_more ?? false;
-      await this._refreshStatuses();
+      await Promise.allSettled([this._refreshStatuses(), this._fetchBreakReasons()]);
     } catch {
       this._loadError = 'Failed to load agents — check network connection.';
     } finally {
@@ -284,12 +285,20 @@ export class OrAgentStatusList extends LitElement {
     );
   }
 
-  private _renderStatusPill(status: AgentStatus) {
-    const s = STATUS_PILL_STYLES[status] ?? STATUS_PILL_STYLES.Offline;
+  private _renderStatusPill(statusResp: AgentStatusResponse) {
+    const s = STATUS_PILL_STYLES[statusResp.status] ?? STATUS_PILL_STYLES.Offline;
+    const label = statusResp.status === 'NotReady' ? 'Not Ready'
+      : statusResp.status === 'WrapUp' ? 'Wrap Up'
+      : statusResp.status;
+    const breakName = statusResp.break_reason_name
+      ?? (statusResp.break_reason_id
+        ? this._breakReasons.find(r => r.id === statusResp.break_reason_id)?.name
+        : undefined);
+    const pillLabel = statusResp.status === 'Break' && breakName ? breakName : label;
     return html`
       <span class="status-pill" style="background:${s.bg};color:${s.text};">
         <sl-icon name="${s.icon}" style="font-size:10px"></sl-icon>
-        ${status === 'NotReady' ? 'Not Ready' : status === 'WrapUp' ? 'Wrap Up' : status}
+        ${pillLabel}
       </span>
     `;
   }
@@ -324,20 +333,23 @@ export class OrAgentStatusList extends LitElement {
             Set Not Ready
           </sl-button>
           <sl-dropdown @sl-show=${() => void this._fetchBreakReasons()}>
-            <sl-button slot="trigger" size="small" variant="default" caret ?disabled=${busy}>
-              <sl-icon slot="prefix" name="pause-circle"></sl-icon>
+            <sl-button slot="trigger" size="small" variant="default" ?disabled=${busy}>
               Go on Break
             </sl-button>
-            <sl-menu @sl-select=${(e: CustomEvent) => void this._patch(agent.id, 'Break', { break_reason_id: (e.detail.item as { value: string }).value })}>
+            <sl-menu style="--sl-font-size-medium:13px">
               ${this._breakReasonsLoading ? html`
                 <sl-menu-item disabled>
-                  <sl-spinner slot="prefix" style="font-size:13px"></sl-spinner>
+                  <sl-spinner slot="prefix" style="font-size:12px"></sl-spinner>
                   Loading…
                 </sl-menu-item>
               ` : this._breakReasonsError ? html`
-                <sl-menu-item disabled style="color:var(--sl-color-danger-600)">${this._breakReasonsError}</sl-menu-item>
+                <sl-menu-item disabled>${this._breakReasonsError}</sl-menu-item>
               ` : this._breakReasons.map(r => html`
-                <sl-menu-item .value="${r.id}">${r.name}</sl-menu-item>
+                <sl-menu-item @click=${() => void this._patch(agent.id, 'Break', { break_reason_id: r.id })}>
+                  <sl-icon slot="prefix" name="pause-circle"
+                    style="color:var(--sl-color-warning-600,#b54708)"></sl-icon>
+                  ${r.name}
+                </sl-menu-item>
               `)}
             </sl-menu>
           </sl-dropdown>
@@ -353,7 +365,6 @@ export class OrAgentStatusList extends LitElement {
         ${cur === 'Offline' ? html`
           <sl-button size="small" variant="default" ?disabled=${busy}
             @click=${() => void this._patch(agent.id, 'Ready', { force: true })}>
-            <sl-icon slot="prefix" name="check-circle"></sl-icon>
             Force Ready
           </sl-button>
         ` : nothing}
@@ -448,7 +459,7 @@ export class OrAgentStatusList extends LitElement {
                       <td>
                         ${isLoadingStatus
                           ? html`<sl-spinner style="font-size:13px"></sl-spinner>`
-                          : status ? this._renderStatusPill(status.status) : nothing}
+                          : status ? this._renderStatusPill(status) : nothing}
                       </td>
                       <td>${this._renderActions(agent)}</td>
                     </tr>
