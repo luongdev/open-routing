@@ -1,4 +1,5 @@
-import { html, TemplateResult } from 'lit';
+import { html } from 'lit';
+import type { TemplateResult } from 'lit';
 import '../../primitives/or-tabs.js';
 import type { Tab } from '../../primitives/or-tabs.js';
 

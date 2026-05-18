@@ -1,4 +1,4 @@
-import { LitElement, html, nothing, css } from 'lit';
+import { LitElement, html, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
 export type BadgeVariant = 'default' | 'success' | 'warning' | 'destructive' | 'info' | 'primary';
@@ -29,8 +29,6 @@ function ensureBadgeStyles(): void {
 
 @customElement('or-badge')
 export class OrBadge extends LitElement {
-  static override styles = css``;
-
   @property({ type: String }) variant: BadgeVariant = 'default';
   @property({ type: Boolean }) pill = false;
   @property({ type: Boolean }) dot = false;
@@ -53,7 +51,7 @@ export class OrBadge extends LitElement {
 
   override render() {
     return html`
-      <span class=${this.classes} role="status">
+      <span class=${this.classes}>
         ${this.dot ? nothing : html`<slot></slot>`}
       </span>
     `;

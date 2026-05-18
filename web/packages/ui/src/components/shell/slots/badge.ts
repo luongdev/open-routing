@@ -1,4 +1,5 @@
-import { html, TemplateResult } from 'lit';
+import { html } from 'lit';
+import type { TemplateResult } from 'lit';
 import '../../primitives/or-badge.js';
 
 export function badgeSlot(): TemplateResult {
