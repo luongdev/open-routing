@@ -114,11 +114,6 @@ export class OrAgentStatusList extends LitElement {
       white-space: nowrap;
     }
 
-    .break-reason-name {
-      font-size: 11px;
-      color: var(--sl-color-warning-600, #b54708);
-      margin-top: 2px;
-    }
 
     .actions-cell {
       display: flex;
@@ -299,16 +294,12 @@ export class OrAgentStatusList extends LitElement {
       ?? (statusResp.break_reason_id
         ? this._breakReasons.find(r => r.id === statusResp.break_reason_id)?.name
         : undefined);
+    const pillLabel = statusResp.status === 'Break' && breakName ? breakName : label;
     return html`
-      <div>
-        <span class="status-pill" style="background:${s.bg};color:${s.text};">
-          <sl-icon name="${s.icon}" style="font-size:10px"></sl-icon>
-          ${label}
-        </span>
-        ${statusResp.status === 'Break' && breakName ? html`
-          <div class="break-reason-name">${breakName}</div>
-        ` : nothing}
-      </div>
+      <span class="status-pill" style="background:${s.bg};color:${s.text};">
+        <sl-icon name="${s.icon}" style="font-size:10px"></sl-icon>
+        ${pillLabel}
+      </span>
     `;
   }
 
