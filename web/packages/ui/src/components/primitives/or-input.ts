@@ -15,6 +15,9 @@ export class OrInput extends LitElement {
   @property({ type: String, attribute: 'error-text' }) errorText = '';
   @property({ type: String }) size: 'sm' | 'md' | 'lg' = 'md';
 
+  // Stable fallback ID generated once per instance — avoids broken label/input association on re-renders
+  private readonly _fallbackId = Math.random().toString(36).slice(2, 10);
+
   // Light DOM — Frankenstyle uk-input and uk-form-* classes resolve from global stylesheet
   override createRenderRoot() { return this; }
 
@@ -29,10 +32,6 @@ export class OrInput extends LitElement {
     const sizeClass = sizeMap[this.size] ?? '';
     const errorClass = this.errorText ? 'uk-form-danger' : '';
     return [base, sizeClass, errorClass].filter(Boolean).join(' ');
-  }
-
-  private _inputId(): string {
-    return `or-input-${this.name || Math.random().toString(36).slice(2, 10)}`;
   }
 
   private onInput(e: Event): void {
@@ -54,7 +53,7 @@ export class OrInput extends LitElement {
   }
 
   override render() {
-    const inputId = this._inputId();
+    const inputId = this.name ? `or-input-${this.name}` : `or-input-${this._fallbackId}`;
     return html`
       <div class="uk-form-controls">
         ${this.label ? html`<label class="uk-form-label" for=${inputId}>${this.label}</label>` : nothing}
@@ -77,7 +76,7 @@ export class OrInput extends LitElement {
           <slot name="suffix"></slot>
         </div>
         ${this.errorText
-          ? html`<div class="uk-form-help uk-text-danger">${this.errorText}</div>`
+          ? html`<div class="uk-form-help" style="color:var(--uk-danger, var(--sl-color-danger-500, #d92d20))">${this.errorText}</div>`
           : this.helperText
           ? html`<div class="uk-form-help">${this.helperText}</div>`
           : nothing}

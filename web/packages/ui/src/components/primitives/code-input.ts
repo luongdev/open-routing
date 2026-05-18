@@ -74,6 +74,9 @@ export class OrCodeInput extends LitElement {
 
     if (!this.value && !this.required) {
       this._validationState = null;
+      // Clear any previously set customValidity so browsers don't block submit with stale message
+      const orInput = this.querySelector('or-input') as OrInput | null;
+      orInput?.setCustomValidity('');
       this.requestUpdate();
       return true;
     }
