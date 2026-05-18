@@ -185,11 +185,12 @@ func TestMain(m *testing.M) {
 	// dev/test contract from D-02 — a missing org_id filter at the SQL layer
 	// surfaces immediately rather than being masked.
 	cfg := &config.Config{
-		DatabaseURL:    "n/a",
-		RedisURL:       "n/a",
-		OTelExporter:   "stdout",
-		ListenAddr:     ":0",
-		ValidationMode: "panic",
+		DatabaseURL:        "n/a",
+		RedisURL:           "n/a",
+		OTelExporter:       "stdout",
+		ListenAddr:         ":0",
+		ValidationMode:     "panic",
+		CORSAllowedOrigins: []string{"https://example.com"},
 	}
 	orgDB := db.NewOrgDB(sharedPool, db.NewSQLChecker(), db.ValidationPanic)
 
