@@ -1,15 +1,12 @@
 // Phase 6 Plan 04: <or-code-input> — validates Phase 04.1 universal code field.
 // Regex: ^[a-z][a-z0-9_]{0,63}$ (D04_1-03: starts with lowercase letter, max 64 chars).
-// Wraps sl-input with setCustomValidity enforcement (WHATWG Constraint Validation API).
-// Read-only state (D04_1-02): disabled sl-input + lock icon + override helper text.
-// Per-component Shoelace imports (D6-08).
+// Read-only state (D04_1-02): disabled input + lock indicator + override helper text.
+// Plan 07-w0-11: Refactored to use or-input internally, light DOM.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import './or-input.js';
+import type { OrInput } from './or-input.js';
 
 /**
  * CODE_PATTERN enforces Phase 04.1 D04_1-03:
@@ -51,16 +48,6 @@ export const CODE_ERROR_MSG =
 /**
  * <or-code-input> — validated code field input component.
  *
- * Used on all Create forms where the `code` field is the universal entity identifier.
- * On detail/edit forms, set readonly=true to render as disabled with lock icon and
- * immutability message (D04_1-02: code is immutable post-create).
- *
- * Methods:
- *   - validate(): boolean — run validation, set setCustomValidity, return true/false
- *
- * Events:
- *   - 'or-code-input' CustomEvent<{ value: string; valid: boolean }> on every change
- *
  * Usage (create form):
  *   <or-code-input label="Code" required></or-code-input>
  *
@@ -69,83 +56,27 @@ export const CODE_ERROR_MSG =
  */
 @customElement('or-code-input')
 export class OrCodeInput extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-    }
+  // Light DOM — inherits Frankenstyle uk-* classes from global stylesheet (W0.0-11)
+  override createRenderRoot() { return this; }
 
-    .input-wrapper {
-      position: relative;
-    }
-
-    sl-input {
-      width: 100%;
-    }
-
-    /* Valid state — override Shoelace's default for consistency */
-    sl-input[data-valid="true"]::part(base) {
-      border-color: var(--sl-color-success-500, #027a48);
-    }
-
-    /* Invalid state */
-    sl-input[data-valid="false"]::part(base) {
-      border-color: var(--sl-color-danger-500, #d92d20);
-    }
-
-    .helper-text {
-      font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-      margin-top: 4px;
-    }
-
-    .helper-text.error {
-      color: var(--sl-color-danger-500, #d92d20);
-    }
-
-    .readonly-notice {
-      font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-      margin-top: 4px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .readonly-notice sl-icon {
-      font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-    }
-  `;
-
-  /** Current value. Bound two-way via .value and @or-code-input events. */
   @property({ type: String }) value = '';
-
-  /** Label displayed above the input. */
   @property({ type: String }) label = 'Code';
-
-  /** Helper text shown below the input (overridden when readonly=true). */
   @property({ type: String }) helperText = '';
-
-  /** When true, input is disabled with lock icon (D04_1-02: immutable after create). */
+  // D04_1-02: immutable after create
   @property({ type: Boolean }) readonly = false;
-
-  /** When true, validation fails on empty value. */
   @property({ type: Boolean }) required = false;
 
   /** Internal validation state — null means untouched (not yet validated). */
   private _validationState: boolean | null = null;
 
-  /**
-   * Validate the current value against CODE_PATTERN.
-   * Also calls setCustomValidity on the sl-input's internal native input.
-   * @returns true if valid, false if invalid
-   */
   validate(): boolean {
     if (this.readonly) return true;
 
-    // Empty value is only an error when required=true; otherwise it's valid-until-populated.
     if (!this.value && !this.required) {
-      this._validationState = null; // Reset to untouched state — not invalid, not valid
+      this._validationState = null;
+      // Clear any previously set customValidity so browsers don't block submit with stale message
+      const orInput = this.querySelector('or-input') as OrInput | null;
+      orInput?.setCustomValidity('');
       this.requestUpdate();
       return true;
     }
@@ -153,24 +84,16 @@ export class OrCodeInput extends LitElement {
     const valid = CODE_PATTERN.test(this.value);
     this._validationState = valid;
 
-    // Set custom validity on the sl-input to integrate with browser form validation
-    const slInput = this.shadowRoot?.querySelector('sl-input') as (HTMLElement & {
-      setCustomValidity?: (msg: string) => void;
-    }) | null;
-
-    if (slInput?.setCustomValidity) {
-      slInput.setCustomValidity(valid ? '' : CODE_ERROR_MSG);
-    }
+    const orInput = this.querySelector('or-input') as OrInput | null;
+    orInput?.setCustomValidity(valid ? '' : CODE_ERROR_MSG);
 
     this.requestUpdate();
     return valid;
   }
 
-  private _handleInput(e: Event): void {
-    const target = e.target as HTMLInputElement;
-    this.value = target.value;
+  private _handleInput(e: CustomEvent<{ value: string }>): void {
+    this.value = e.detail.value;
 
-    // Re-validate on change if we've already validated once (live feedback)
     if (this._validationState !== null) {
       this.validate();
     }
@@ -184,61 +107,43 @@ export class OrCodeInput extends LitElement {
     );
   }
 
-  private _handleBlur(): void {
-    // Validate on blur so user sees feedback after leaving the field
+  private _handleChange(): void {
+    // or-change fires on blur — validate to show feedback
     this.validate();
   }
 
   override render() {
+    const showError = this._validationState === false;
+
     if (this.readonly) {
       return html`
-        <div class="input-wrapper">
-          <sl-input
-            label=${this.label}
-            value=${this.value}
-            disabled
-            aria-label=${this.label}
-          >
-            <sl-icon slot="suffix" name="lock"></sl-icon>
-          </sl-input>
-          <div class="readonly-notice">
-            <sl-icon name="info-circle"></sl-icon>
-            Code cannot be changed after create.
-          </div>
+        <or-input
+          label=${this.label}
+          .value=${this.value}
+          .readonly=${true}
+          .disabled=${true}
+          aria-label=${this.label}
+        >
+          <span slot="suffix" aria-hidden="true" style="font-size:12px;">&#x1F512;</span>
+        </or-input>
+        <div style="font-size:12px; color:var(--or-color-text-muted, #737373); margin-top:4px;">
+          Code cannot be changed after create.
         </div>
       `;
     }
 
-    const showError = this._validationState === false;
-    const showSuccess = this._validationState === true;
-
     return html`
-      <div class="input-wrapper">
-        <sl-input
-          label=${this.label}
-          .value=${this.value}
-          ?required=${this.required}
-          data-valid=${this._validationState === null ? '' : String(!showError)}
-          placeholder="e.g. agent_voice_en"
-          aria-label=${this.label}
-          aria-invalid=${showError ? 'true' : 'false'}
-          aria-describedby="code-helper"
-          @sl-input=${this._handleInput}
-          @sl-blur=${this._handleBlur}
-        >
-          ${showSuccess ? html`<sl-icon slot="suffix" name="check-circle" style="color:var(--sl-color-success-500)"></sl-icon>` : ''}
-          ${showError ? html`<sl-icon slot="suffix" name="exclamation-circle" style="color:var(--sl-color-danger-500)"></sl-icon>` : ''}
-        </sl-input>
-
-        <div
-          id="code-helper"
-          class="helper-text ${showError ? 'error' : ''}"
-        >
-          ${showError
-            ? CODE_ERROR_MSG
-            : (this.helperText || 'Lowercase letters, digits, and underscores only. Cannot be changed after create.')}
-        </div>
-      </div>
+      <or-input
+        label=${this.label}
+        .value=${this.value}
+        ?required=${this.required}
+        placeholder="e.g. agent_voice_en"
+        error-text=${showError ? CODE_ERROR_MSG : ''}
+        helper-text=${showError ? '' : (this.helperText || 'Lowercase letters, digits, and underscores only. Cannot be changed after create.')}
+        aria-label=${this.label}
+        @or-input=${this._handleInput}
+        @or-change=${this._handleChange}
+      ></or-input>
     `;
   }
 }

@@ -32,13 +32,28 @@ describe('OrPlaygroundRoute', () => {
   });
 
   it.each([
-    ['button', '07-w0-10'],
     ['table', '07-w0-19'],
     ['sidebar', '07-w0-22'],
-  ])('slot %s references plan %s', async (id, plan) => {
+  ])('slot %s shows pending plan %s', async (id, plan) => {
     await (el as any).updateComplete;
     const slot = el.shadowRoot!.querySelector(`[data-component="${id}"]`);
     expect(slot?.textContent).toContain(plan);
+  });
+
+  it('button slot is wired with or-button elements', async () => {
+    await (el as any).updateComplete;
+    const buttonSection = el.shadowRoot!.querySelector('section[data-component="button"]');
+    expect(buttonSection).toBeTruthy();
+    const buttons = buttonSection!.querySelectorAll('or-button');
+    expect(buttons.length).toBeGreaterThan(0);
+  });
+
+  it('input slot is wired with or-input elements', async () => {
+    await (el as any).updateComplete;
+    const inputSection = el.shadowRoot!.querySelector('section[data-component="input"]');
+    expect(inputSection).toBeTruthy();
+    const inputs = inputSection!.querySelectorAll('or-input');
+    expect(inputs.length).toBeGreaterThan(0);
   });
 
   it('dispatches open-routing:theme-change event on Ember Dark click', async () => {
