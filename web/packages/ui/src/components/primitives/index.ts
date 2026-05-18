@@ -13,3 +13,6 @@ export { OrQueuePicker } from './queue-picker.js';
 // W0.0-14: or-badge status pill
 export { OrBadge } from './or-badge.js';
 export type { BadgeVariant } from './or-badge.js';
+// W0.0-16: or-tabs navigation
+export { OrTabs } from './or-tabs.js';
+export type { Tab } from './or-tabs.js';

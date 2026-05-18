@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { badgeSlot } from './slots/badge.js';
+import { tabsSlot } from './slots/tabs.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -22,7 +23,7 @@ const SLOTS: readonly SlotDef[] = [
   { id: 'card',            label: 'Card',              plan: '07-w0-13' },
   { id: 'badge',           label: 'Badge',             plan: '07-w0-14', render: badgeSlot },
   { id: 'dialog',          label: 'Dialog',            plan: '07-w0-15' },
-  { id: 'tabs',            label: 'Tabs',              plan: '07-w0-16' },
+  { id: 'tabs',            label: 'Tabs',              plan: '07-w0-16', render: tabsSlot },
   { id: 'icon',            label: 'Icon',              plan: '07-w0-17' },
   { id: 'switch-checkbox', label: 'Switch + Checkbox', plan: '07-w0-18' },
   { id: 'table',           label: 'Table',             plan: '07-w0-19' },
