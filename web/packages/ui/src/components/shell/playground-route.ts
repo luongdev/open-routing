@@ -6,6 +6,8 @@ import { buttonSlot } from './slots/button.js';
 import { inputSlot } from './slots/input.js';
 import { selectSlot } from './slots/select.js';
 import { cardSlot } from './slots/card.js';
+import { badgeSlot } from './slots/badge.js';
+import { tabsSlot } from './slots/tabs.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -16,6 +18,7 @@ interface SlotDef {
   id: string;
   label: string;
   plan: string;
+  render?: () => TemplateResult;
 }
 
 const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
@@ -28,19 +31,19 @@ const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
 };
 
 const SLOTS: readonly SlotDef[] = [
-  { id: 'button',          label: 'Button',           plan: '07-w0-10' },
-  { id: 'input',           label: 'Input',            plan: '07-w0-11' },
-  { id: 'select',          label: 'Select',           plan: '07-w0-12' },
-  { id: 'card',            label: 'Card',             plan: '07-w0-13' },
-  { id: 'badge',           label: 'Badge',            plan: '07-w0-14' },
-  { id: 'dialog',          label: 'Dialog',           plan: '07-w0-15' },
-  { id: 'tabs',            label: 'Tabs',             plan: '07-w0-16' },
-  { id: 'icon',            label: 'Icon',             plan: '07-w0-17' },
+  { id: 'button',          label: 'Button',            plan: '07-w0-10' },
+  { id: 'input',           label: 'Input',             plan: '07-w0-11' },
+  { id: 'select',          label: 'Select',            plan: '07-w0-12' },
+  { id: 'card',            label: 'Card',              plan: '07-w0-13' },
+  { id: 'badge',           label: 'Badge',             plan: '07-w0-14', render: badgeSlot },
+  { id: 'dialog',          label: 'Dialog',            plan: '07-w0-15' },
+  { id: 'tabs',            label: 'Tabs',              plan: '07-w0-16', render: tabsSlot },
+  { id: 'icon',            label: 'Icon',              plan: '07-w0-17' },
   { id: 'switch-checkbox', label: 'Switch + Checkbox', plan: '07-w0-18' },
-  { id: 'table',           label: 'Table',            plan: '07-w0-19' },
-  { id: 'toast',           label: 'Toast',            plan: '07-w0-20' },
-  { id: 'dropdown',        label: 'Dropdown',         plan: '07-w0-21' },
-  { id: 'sidebar',         label: 'Sidebar',          plan: '07-w0-22' },
+  { id: 'table',           label: 'Table',             plan: '07-w0-19' },
+  { id: 'toast',           label: 'Toast',             plan: '07-w0-20' },
+  { id: 'dropdown',        label: 'Dropdown',          plan: '07-w0-21' },
+  { id: 'sidebar',         label: 'Sidebar',           plan: '07-w0-22' },
 ];
 
 @customElement('or-playground-route')
@@ -142,6 +145,8 @@ export class OrPlaygroundRoute extends LitElement {
               <h3>${s.label}</h3>
               ${SLOT_CONTENT[s.id]
                 ? SLOT_CONTENT[s.id]
+                : s.render
+                ? s.render()
                 : html`<div class="playground-slot" data-component=${s.id}>${s.plan} pending</div>`}
             </section>
           `
