@@ -62,7 +62,7 @@ interface BreakReason {
 // Status pill color map (D6-V-18)
 // ---------------------------------------------------------------------------
 
-const STATUS_PILL_STYLES: Record<AgentStatus, { bg: string; text: string; icon: string }> = {
+export const STATUS_PILL_STYLES: Record<AgentStatus, { bg: string; text: string; icon: string }> = {
   Ready: {
     bg: 'var(--sl-color-primary-50, #f0fafa)',
     text: 'var(--sl-color-primary-700, #1a575f)',

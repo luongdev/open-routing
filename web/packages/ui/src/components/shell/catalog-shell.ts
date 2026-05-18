@@ -63,6 +63,7 @@ import '../adapters/adapter-form.js';
 
 // Wave 4: Status Panel (Plan 06-12)
 import '../status/status-panel.js';
+import '../status/agent-status-list.js';
 
 // Wave 4: Bulk Import (Plan 06-13)
 import '../imports/import-page.js';
@@ -275,7 +276,7 @@ export class OrCatalogShell extends LitElement {
       path: '/orgs/:org_id/agents/status',
       enter: this._orgRouteEnter,
       render: ({ org_id }: Record<string, string | undefined>) =>
-        html`<or-agent-list .orgId=${org_id ?? ''} .client=${this._client!} .statusMode=${true}></or-agent-list>`,
+        html`<or-agent-status-list .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-status-list>`,
     },
     {
       path: '/orgs/:org_id/agents/:id',
