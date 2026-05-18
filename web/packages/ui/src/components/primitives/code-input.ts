@@ -23,8 +23,20 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
  */
 export const CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 
+// Characters that NFD decomposition cannot strip (no base+combining form).
+const _NON_DECOMPOSABLE: Record<string, string> = {
+  đ: 'd', ð: 'd', ø: 'o', ł: 'l', æ: 'ae', œ: 'oe', þ: 'th', ß: 'ss',
+};
+const _NON_DECOMPOSABLE_RE = new RegExp(
+  `[${Object.keys(_NON_DECOMPOSABLE).join('')}]`,
+  'gi',
+);
+
 export function nameToCode(name: string): string {
   return name
+    .replace(_NON_DECOMPOSABLE_RE, (c) => _NON_DECOMPOSABLE[c.toLowerCase()] ?? c)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, '_')
     .replace(/_+/g, '_')
