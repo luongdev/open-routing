@@ -85,6 +85,13 @@ func NewMux(deps *Deps) http.Handler {
 	//     id from ctx on the way out.
 	r.Use(appmw.RequestID)
 
+	// CORS BEFORE OrgContext — cors.Handler short-circuits OPTIONS preflight
+	// (verified in go-chi/cors source, RESEARCH §1 finding 3). Inserting at
+	// chi root means preflight requests for both bypass routes (D-21:
+	// /healthz, /readyz, /metrics, /openapi.yaml, /docs) and /v1/* paths
+	// return 200 + CORS headers without requiring X-Org-Id (D7-16).
+	r.Use(appmw.NewCORS(deps.Config.CORSAllowedOrigins))
+
 	// (3) /metrics: Phase 1 stub — NOT in the generated spec; registered
 	//     separately as a bare chi route at root (D-21 bypass list).
 	r.Get("/metrics", MetricsHandler())

@@ -157,10 +157,10 @@ export class OrFormWizard extends LitElement {
   `;
 
   /** Steps definition. Array length determines single-step vs multi-step mode. */
-  @property({ type: Array }) accessor steps: OrFormWizardStep[] = [];
+  @property({ type: Array }) steps: OrFormWizardStep[] = [];
 
   /** Currently active step index (0-based). Parent may sync this via property. */
-  @property({ type: Number }) accessor currentStep = 0;
+  @property({ type: Number }) currentStep = 0;
 
   /**
    * When true, the wizard's built-in navigation buttons (Back/Next/Create) are hidden.
@@ -168,10 +168,10 @@ export class OrFormWizard extends LitElement {
    * which needs step-level validation before advancing). The stepper and slot content
    * still render; only the nav bar is suppressed.
    */
-  @property({ type: Boolean, attribute: 'hide-nav' }) accessor hideNav = false;
+  @property({ type: Boolean, attribute: 'hide-nav' }) hideNav = false;
 
   /** Internal dirty flag — user has entered data and may lose it on cancel. */
-  @state() private accessor _dirty = false;
+  @state() private _dirty = false;
 
   private get _isSingleStep(): boolean {
     return this.steps.length <= 1;

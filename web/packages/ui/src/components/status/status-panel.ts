@@ -27,7 +27,6 @@ import '@shoelace-style/shoelace/dist/components/radio/radio.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 
 // Primitives
@@ -336,6 +335,52 @@ export class OrStatusPanel extends LitElement {
       color: var(--or-color-text-muted, #737373);
       margin-bottom: 8px;
     }
+    /* Inline confirm panel — D7-04: <sl-dialog> has broken focus-trap inside nested Shadow DOM (shoelace#709, #1382). Embed mounts inside Shadow DOM, so this is replaced with an inline role=dialog + manual focus management. */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .confirm-panel {
+      background: var(--or-color-card-bg, #ffffff);
+      border: 1px solid var(--or-color-card-border, #d1d5db);
+      border-radius: var(--sl-border-radius-medium, 6px);
+      padding: 20px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    .confirm-title { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; }
+    .confirm-body { margin: 0 0 20px 0; }
+    .action-row { display: flex; gap: 8px; justify-content: flex-end; }
+    /* Inline confirm panel — D7-04: <sl-dialog> has broken focus-trap inside nested Shadow DOM (shoelace#709, #1382). Embed mounts inside Shadow DOM, so this is replaced with an inline role=dialog + manual focus management. */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .confirm-panel {
+      background: var(--or-color-card-bg, #ffffff);
+      border: 1px solid var(--or-color-card-border, #d1d5db);
+      border-radius: var(--sl-border-radius-medium, 6px);
+      padding: 20px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    .confirm-title { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; }
+    .confirm-body { margin: 0 0 20px 0; }
+    .action-row { display: flex; gap: 8px; justify-content: flex-end; }
+
+
 
     .break-current-label {
       font-weight: 500;
@@ -344,36 +389,56 @@ export class OrStatusPanel extends LitElement {
   `;
 
   // --- Public properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'agent-id' }) accessor agentId = '';
-  @property({ type: Object, attribute: false }) accessor client!: ApiClient;
-  @property({ type: Boolean }) accessor embedded = false;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'agent-id' }) agentId = '';
+  @property({ type: Object, attribute: false }) client!: ApiClient;
+  @property({ type: Boolean }) embedded = false;
 
   // --- Internal state ---
-  @state() private accessor _status: AgentStatusResponse | null = null;
-  @state() private accessor _loading = true;
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _lastKnownVersion = 0;
-  @state() private accessor _pollInterval: ReturnType<typeof setInterval> | null = null;
-  @state() private accessor _breakReasons: BreakReason[] = [];
-  @state() private accessor _breakReasonsLoading = false;
-  @state() private accessor _breakDropdownOpen = false;
-  @state() private accessor _selectedBreakReasonId: string | null = null;
-  @state() private accessor _forceExpanded = false;
-  @state() private accessor _selectedForceTarget: AgentStatus | null = null;
-  @state() private accessor _forceConfirmOpen = false;
-  @state() private accessor _wrapupSecondsLeft: number | null = null;
-  @state() private accessor _wrapupInterval: ReturnType<typeof setInterval> | null = null;
-  @state() private accessor _conflictError: { from: string; to: string } | null = null;
-  @state() private accessor _transitioning = false;
-  @state() private accessor _selectedPostInteractionState: 'ready' | 'not_ready' | null = null;
+  @state() private _status: AgentStatusResponse | null = null;
+  @state() private _loading = true;
+  @state() private _apiError: string | null = null;
+  @state() private _lastKnownVersion = 0;
+  @state() private _pollInterval: ReturnType<typeof setInterval> | null = null;
+  @state() private _breakReasons: BreakReason[] = [];
+  @state() private _breakReasonsLoading = false;
+  @state() private _breakDropdownOpen = false;
+  @state() private _selectedBreakReasonId: string | null = null;
+  @state() private _forceExpanded = false;
+  @state() private _selectedForceTarget: AgentStatus | null = null;
+  @state() private _forceConfirmOpen = false;
+  @state() private _wrapupSecondsLeft: number | null = null;
+  @state() private _wrapupInterval: ReturnType<typeof setInterval> | null = null;
+  @state() private _conflictError: { from: string; to: string } | null = null;
+  @state() private _transitioning = false;
+  @state() private _selectedPostInteractionState: 'ready' | 'not_ready' | null = null;
 
   // --- Lifecycle ---
+
+  private _onKeydown?: (e: KeyboardEvent) => void;
+
+  override updated(changed: Map<string, unknown>): void {
+    if (changed.has('_forceConfirmOpen') && this._forceConfirmOpen) {
+      this.setAttribute('aria-live', 'polite');
+      this.updateComplete.then(() => {
+        const btn = this.shadowRoot?.querySelector('.force-btn') as HTMLElement;
+        if (btn) btn.focus();
+      });
+    } else if (changed.has('_forceConfirmOpen') && !this._forceConfirmOpen) {
+      this.removeAttribute('aria-live');
+    }
+  }
 
   override connectedCallback(): void {
     super.connectedCallback();
     document.addEventListener('visibilitychange', this._handleVisibilityChange);
     this._startPolling();
+    this._onKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this._forceConfirmOpen) {
+        this._forceConfirmOpen = false;
+      }
+    };
+    document.addEventListener('keydown', this._onKeydown);
   }
 
   override disconnectedCallback(): void {
@@ -382,7 +447,10 @@ export class OrStatusPanel extends LitElement {
     if (this._pollInterval !== null) {
       clearInterval(this._pollInterval);
       this._pollInterval = null;
+      if (this._onKeydown) {
+      document.removeEventListener('keydown', this._onKeydown);
     }
+  }
     if (this._wrapupInterval !== null) {
       clearInterval(this._wrapupInterval);
       this._wrapupInterval = null;
@@ -914,29 +982,37 @@ export class OrStatusPanel extends LitElement {
       </div>
 
       <!-- Force confirmation dialog -->
-      <sl-dialog
-        label="Force transition?"
-        ?open=${this._forceConfirmOpen}
-        @sl-request-close=${() => { this._forceConfirmOpen = false; }}
-      >
-        <p>
-          Force transition to <strong>${this._selectedForceTarget}</strong>?
-          This bypasses the state machine and is logged at the server.
-        </p>
-        <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <sl-button
-            variant="default"
-            @click=${() => { this._forceConfirmOpen = false; }}
-          >Cancel</sl-button>
-          <sl-button
-            variant="warning"
-            @click=${() => void this._handleForceTransition()}
-          >
-            <sl-icon slot="prefix" name="exclamation-triangle"></sl-icon>
-            Force transition
-          </sl-button>
+      ${when(this._forceConfirmOpen, () => html`
+        <div class="confirm-overlay" role="presentation" @click=${() => { this._forceConfirmOpen = false; }}>
+          <div class="confirm-panel"
+               role="dialog"
+               aria-modal="true"
+               aria-labelledby="force-title"
+               @click=${(e: Event) => e.stopPropagation()}>
+            <h3 id="force-title" class="confirm-title">Force transition?</h3>
+            <p class="confirm-body">
+              Force transition to <strong>${this._selectedForceTarget}</strong>?
+              This bypasses the state machine and is logged at the server.
+            </p>
+            <div class="action-row">
+              <sl-button
+                variant="default"
+                size="small"
+                @click=${() => { this._forceConfirmOpen = false; }}
+              >Cancel</sl-button>
+              <sl-button
+                variant="warning"
+                size="small"
+                class="force-btn"
+                @click=${() => void this._handleForceTransition()}
+              >
+                <sl-icon slot="prefix" name="exclamation-triangle"></sl-icon>
+                Force transition
+              </sl-button>
+            </div>
+          </div>
         </div>
-      </sl-dialog>
+      `)}
     `;
   }
 

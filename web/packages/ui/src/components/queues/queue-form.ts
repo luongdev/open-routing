@@ -112,12 +112,12 @@ export class OrQueueForm extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private accessor _currentStep = 0;
-  @state() accessor _formData: QueueFormData = {
+  @state() private _currentStep = 0;
+  @state() _formData: QueueFormData = {
     code: '',
     name: '',
     external_id: '',
@@ -126,9 +126,9 @@ export class OrQueueForm extends LitElement {
     acw_sec: 0,
     enabled: true,
   };
-  @state() accessor _errors: Record<string, string> = {};
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _submitting = false;
+  @state() _errors: Record<string, string> = {};
+  @state() private _apiError: string | null = null;
+  @state() private _submitting = false;
   private _codeAutoFill = true;
 
   // --- Navigation ---

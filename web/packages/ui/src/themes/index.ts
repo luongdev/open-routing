@@ -9,7 +9,7 @@
  * Per UI-SPEC §2.2.
  */
 
-export type ThemeName = 'or-light' | 'or-dark' | 'or-brand';
+export type ThemeName = 'or-light' | 'or-dark' | 'or-brand' | 'ember-light' | 'ember-dark';
 
 /**
  * Theme is either a named preset or an arbitrary token map (Phase 7 embed will
@@ -54,6 +54,7 @@ export const orLight: Record<string, string> = {
   '--or-color-text-strong': 'var(--sl-color-neutral-900)',
   '--or-color-text-muted': 'var(--sl-color-neutral-500)',
   '--or-color-text-on-primary': '#ffffff',
+  '--or-color-nav-active-bg': 'rgba(43, 138, 147, 0.1)',
   '--or-color-conflict-bg': '#fef3c7',
   '--or-color-conflict-border': '#f59e0b',
   '--or-color-diff-removed': '#fecaca',
@@ -84,27 +85,28 @@ export const orDark: Record<string, string> = {
   '--sl-color-primary-800': '#d3f1f2',
   '--sl-color-primary-900': '#f0fafa',
   '--sl-color-primary-950': '#ffffff',
-  '--sl-color-danger-500': '#f97066',
-  '--sl-color-warning-500': '#fdb022',
-  '--sl-color-success-500': '#32d583',
-  '--sl-color-neutral-0': '#0a0a0a',
-  '--sl-color-neutral-50': '#121212',
-  '--sl-color-neutral-100': '#1a1a1a',
-  '--sl-color-neutral-200': '#262626',
-  '--sl-color-neutral-300': '#404040',
-  '--sl-color-neutral-500': '#a3a3a3',
-  '--sl-color-neutral-700': '#d4d4d4',
-  '--sl-color-neutral-900': '#f5f5f5',
+  '--sl-color-danger-500': '#f87171',
+  '--sl-color-warning-500': '#fbbf24',
+  '--sl-color-success-500': '#34d399',
+  '--sl-color-neutral-0':    '#000000',
+  '--sl-color-neutral-50':   '#0d0d0f',
+  '--sl-color-neutral-100':  '#18181b',
+  '--sl-color-neutral-200':  '#27272a',
+  '--sl-color-neutral-300':  '#3f3f46',
+  '--sl-color-neutral-500':  '#71717a',
+  '--sl-color-neutral-700':  '#b4b4bc',
+  '--sl-color-neutral-900':  '#f0f0f2',
   '--sl-color-neutral-1000': '#ffffff',
   '--or-color-app-bg': 'var(--sl-color-neutral-50)',
   '--or-color-sidebar-bg': 'var(--sl-color-neutral-100)',
-  '--or-color-topbar-bg': 'var(--sl-color-neutral-50)',
+  '--or-color-topbar-bg': 'var(--sl-color-neutral-100)',
   '--or-color-card-bg': 'var(--sl-color-neutral-100)',
   '--or-color-card-border': 'var(--sl-color-neutral-200)',
   '--or-color-text-body': 'var(--sl-color-neutral-700)',
   '--or-color-text-strong': 'var(--sl-color-neutral-900)',
   '--or-color-text-muted': 'var(--sl-color-neutral-500)',
   '--or-color-text-on-primary': 'var(--sl-color-neutral-900)',
+  '--or-color-nav-active-bg': 'rgba(79, 170, 178, 0.15)',
   '--or-color-conflict-bg': '#44331b',
   '--or-color-conflict-border': '#fdb022',
   '--or-color-diff-removed': '#5b1d1d',
@@ -113,11 +115,11 @@ export const orDark: Record<string, string> = {
   '--or-color-code-fg': 'var(--sl-color-primary-500)',
   '--or-color-focus-ring': 'var(--sl-color-primary-500)',
   '--or-color-row-hover': 'var(--sl-color-neutral-200)',
-  '--or-color-row-selected': '#143036',
+  '--or-color-row-selected': '#0e2c31',
   '--or-color-skeleton-base': 'var(--sl-color-neutral-200)',
   '--or-color-skeleton-shimmer': 'var(--sl-color-neutral-300)',
   '--or-color-divider': 'var(--sl-color-neutral-200)',
-  '--or-color-overlay-scrim': 'rgb(0 0 0 / 0.6)',
+  '--or-color-overlay-scrim': 'rgb(0 0 0 / 0.7)',
 };
 
 /**
@@ -157,6 +159,7 @@ export const orBrand: Record<string, string> = {
   '--or-color-text-strong': 'var(--sl-color-neutral-900)',
   '--or-color-text-muted': 'var(--sl-color-neutral-500)',
   '--or-color-text-on-primary': '#ffffff',
+  '--or-color-nav-active-bg': 'rgba(13, 139, 150, 0.1)',
   '--or-color-conflict-bg': '#fef3c7',
   '--or-color-conflict-border': '#f59e0b',
   '--or-color-diff-removed': '#fecaca',
@@ -173,6 +176,15 @@ export const orBrand: Record<string, string> = {
 };
 
 /**
+ * Ember themes delegate to CSS — the .dark class on <html> drives token
+ * overrides via ember-theme.css and compat-or-tokens.css. No inline
+ * style tokens needed; the shell's _applyTheme caller is responsible for
+ * toggling document.documentElement.classList.
+ */
+export const emberLight: Record<string, string> = {};
+export const emberDark: Record<string, string> = {};
+
+/**
  * Lookup map for named themes. Used by <or-catalog-shell>._applyTheme()
  * to resolve ThemeName → token map.
  */
@@ -180,6 +192,8 @@ export const THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
   'or-light': orLight,
   'or-dark': orDark,
   'or-brand': orBrand,
+  'ember-light': emberLight,
+  'ember-dark': emberDark,
 };
 
 /**
@@ -189,3 +203,11 @@ export const THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
 export const ALL_TOKEN_KEYS: readonly string[] = Array.from(
   new Set([...Object.keys(orLight), ...Object.keys(orDark), ...Object.keys(orBrand)])
 );
+
+/**
+ * Whether a theme name uses CSS-class-based dark mode (ember-dark toggles .dark on <html>).
+ * The shell must add/remove the class in addition to applying inline tokens.
+ */
+export function isDarkClassTheme(name: ThemeName): boolean {
+  return name === 'ember-dark';
+}

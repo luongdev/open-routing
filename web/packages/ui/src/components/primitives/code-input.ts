@@ -23,8 +23,20 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
  */
 export const CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 
+// Characters that NFD decomposition cannot strip (no base+combining form).
+const _NON_DECOMPOSABLE: Record<string, string> = {
+  đ: 'd', ð: 'd', ø: 'o', ł: 'l', æ: 'ae', œ: 'oe', þ: 'th', ß: 'ss',
+};
+const _NON_DECOMPOSABLE_RE = new RegExp(
+  `[${Object.keys(_NON_DECOMPOSABLE).join('')}]`,
+  'gi',
+);
+
 export function nameToCode(name: string): string {
   return name
+    .replace(_NON_DECOMPOSABLE_RE, (c) => _NON_DECOMPOSABLE[c.toLowerCase()] ?? c)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, '_')
     .replace(/_+/g, '_')
@@ -106,19 +118,19 @@ export class OrCodeInput extends LitElement {
   `;
 
   /** Current value. Bound two-way via .value and @or-code-input events. */
-  @property({ type: String }) accessor value = '';
+  @property({ type: String }) value = '';
 
   /** Label displayed above the input. */
-  @property({ type: String }) accessor label = 'Code';
+  @property({ type: String }) label = 'Code';
 
   /** Helper text shown below the input (overridden when readonly=true). */
-  @property({ type: String }) accessor helperText = '';
+  @property({ type: String }) helperText = '';
 
   /** When true, input is disabled with lock icon (D04_1-02: immutable after create). */
-  @property({ type: Boolean }) accessor readonly = false;
+  @property({ type: Boolean }) readonly = false;
 
   /** When true, validation fails on empty value. */
-  @property({ type: Boolean }) accessor required = false;
+  @property({ type: Boolean }) required = false;
 
   /** Internal validation state — null means untouched (not yet validated). */
   private _validationState: boolean | null = null;

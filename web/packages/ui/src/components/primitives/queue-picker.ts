@@ -59,16 +59,16 @@ export class OrQueuePicker extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
-  @property({ type: String }) accessor value: string | null = null;
-  @property({ type: String }) accessor placeholder = 'Select a queue';
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String }) value: string | null = null;
+  @property({ type: String }) placeholder = 'Select a queue';
 
   // --- Internal state ---
-  @state() private accessor _search = '';
-  @state() private accessor _queues: QueueItem[] = [];
-  @state() private accessor _hasMore = false;
-  @state() private accessor _nextCursor: string | null = null;
+  @state() private _search = '';
+  @state() private _queues: QueueItem[] = [];
+  @state() private _hasMore = false;
+  @state() private _nextCursor: string | null = null;
 
   private _searchDebounce?: ReturnType<typeof setTimeout>;
 

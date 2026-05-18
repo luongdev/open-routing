@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>React host (embed test)</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+      }
+    }
+  </script>
+  <style>
+    * { all: revert; box-sizing: border-box; }
+    body { font-family: serif; background: lime; color: red; }
+  </style>
+</head>
+<body>
+  <h1 style="font-size: 200%; color: purple;">Host CSS poison</h1>
+  <div id="root"></div>
+  <script type="module" src="/embed.js"></script>
+  <script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(
+      React.createElement('open-routing-catalog', {
+        'org-id': '01952a6b-1c00-7000-8000-000000000001',
+        'api-base-url': 'http://localhost:4173',
+        theme: 'or-light',
+        modules: 'agents,skills'
+      })
+    );
+  </script>
+</body>
+</html>
