@@ -323,24 +323,6 @@ export class OrAgentStatusList extends LitElement {
             @click=${() => void this._patch(agent.id, 'NotReady')}>
             Set Not Ready
           </sl-button>
-          <sl-dropdown @sl-show=${() => void this._fetchBreakReasons()}>
-            <sl-button slot="trigger" size="small" variant="default" caret ?disabled=${busy}>
-              <sl-icon slot="prefix" name="pause-circle"></sl-icon>
-              Go on Break
-            </sl-button>
-            <sl-menu @sl-select=${(e: CustomEvent) => void this._patch(agent.id, 'Break', { break_reason_id: (e.detail.item as { value: string }).value })}>
-              ${this._breakReasonsLoading ? html`
-                <sl-menu-item disabled>
-                  <sl-spinner slot="prefix" style="font-size:13px"></sl-spinner>
-                  Loading…
-                </sl-menu-item>
-              ` : this._breakReasonsError ? html`
-                <sl-menu-item disabled style="color:var(--sl-color-danger-600)">${this._breakReasonsError}</sl-menu-item>
-              ` : this._breakReasons.map(r => html`
-                <sl-menu-item .value="${r.id}">${r.name}</sl-menu-item>
-              `)}
-            </sl-menu>
-          </sl-dropdown>
         ` : nothing}
 
         ${cur === 'Break' ? html`
@@ -353,14 +335,30 @@ export class OrAgentStatusList extends LitElement {
         ${cur === 'Offline' ? html`
           <sl-button size="small" variant="default" ?disabled=${busy}
             @click=${() => void this._patch(agent.id, 'Ready', { force: true })}>
-            <sl-icon slot="prefix" name="check-circle"></sl-icon>
             Force Ready
           </sl-button>
         ` : nothing}
 
-        <sl-dropdown>
+        <sl-dropdown
+          @sl-show=${() => { if (cur === 'Ready') void this._fetchBreakReasons(); }}>
           <sl-icon-button slot="trigger" name="three-dots-vertical" label="More"></sl-icon-button>
           <sl-menu>
+            ${cur === 'Ready' ? html`
+              ${this._breakReasonsLoading ? html`
+                <sl-menu-item disabled>
+                  <sl-spinner slot="prefix" style="font-size:12px"></sl-spinner>
+                  Loading break reasons…
+                </sl-menu-item>
+              ` : this._breakReasonsError ? html`
+                <sl-menu-item disabled style="color:var(--sl-color-danger-600);font-size:12px">${this._breakReasonsError}</sl-menu-item>
+              ` : this._breakReasons.map(r => html`
+                <sl-menu-item @click=${() => void this._patch(agent.id, 'Break', { break_reason_id: r.id })}>
+                  <sl-icon slot="prefix" name="pause-circle"></sl-icon>
+                  ${r.name}
+                </sl-menu-item>
+              `)}
+              <sl-divider></sl-divider>
+            ` : nothing}
             <sl-menu-item @click=${() => this._navigate(`/orgs/${this.orgId}/agents/${agent.id}/status`)}>
               <sl-icon slot="prefix" name="activity"></sl-icon>
               Full status panel
