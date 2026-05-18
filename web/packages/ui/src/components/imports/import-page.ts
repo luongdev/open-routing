@@ -361,7 +361,7 @@ export class OrImportPage extends LitElement {
 
   private _validateFile(file: File): string | null {
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return 'File too large — maximum is 50 MB / 500 rows. Use the v0.2 async pathway for larger imports.';
+      return 'File too large — maximum is 50 MB. Use the v0.2 async pathway for larger imports.';
     }
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (this._selectedFormat === 'csv' && ext !== 'csv') {
@@ -486,7 +486,7 @@ export class OrImportPage extends LitElement {
           this._error = 'This file was generated against a different schema version; current is v0.1. Regenerate using the v0.1 export template.';
           this._errorType = 'schema';
         } else if (err.status === 413) {
-          this._error = 'Your file is too large. v0.1 supports up to 50 MB / 500 rows synchronously. See v0.2 async pathway docs for larger imports.';
+          this._error = 'Your file is too large. This endpoint supports up to 50 MB synchronously. Use the v0.2 async pathway for larger imports.';
           this._errorType = 'size';
         } else {
           this._error = `Import couldn't start (HTTP ${err.status}). Check your file format and try again.`;
@@ -585,7 +585,7 @@ export class OrImportPage extends LitElement {
             Drop a ${this._selectedFormat.toUpperCase()} file here, or
             <button class="browse-link" @click=${this._handleBrowseClick}>Browse</button>
             <br>
-            <small>Max 50 MB / 500 rows</small>
+            <small>Max 50 MB</small>
           </div>
         `
       }

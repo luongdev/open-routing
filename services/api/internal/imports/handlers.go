@@ -31,17 +31,15 @@ const (
 	// v0.1 docker-compose).
 	ImportBodyLimit = 50 << 20
 
-	// importRowLimit — D5-22 500-row hard cap. The streaming parsers
-	// (Wave 3) fail-fast at row 501 with HTTP 413 instead of reading
-	// to the end and counting. Locked here so the row processors and
-	// the handlers reference one constant.
-	importRowLimit = 500
+	// importRowLimit — sync-path row cap. Streaming parsers fail-fast
+	// beyond this limit with HTTP 413. Sized for a sync HTTP request;
+	// larger imports should use the v0.2 async pathway.
+	importRowLimit = 10_000
 
-	// chunkSize — D5-09 batched-savepoint chunk size. 500 ÷ 50 = at
-	// most 10 chunks per request; each chunk opens one transaction,
-	// applies 50 savepoints, then commits. Per-row failures rollback
-	// the savepoint; chunk failures rollback the chunk. Wave 3 owns
-	// the orchestrator (chunk.go).
+	// chunkSize — D5-09 batched-savepoint chunk size. Each chunk opens
+	// one transaction, applies up to 50 savepoints, then commits.
+	// Per-row failures rollback the savepoint; chunk failures rollback
+	// the chunk. Wave 3 owns the orchestrator (chunk.go).
 	chunkSize = 50
 )
 
