@@ -104,6 +104,7 @@ These test-infrastructure artifacts MUST exist before Wave 1 implementation begi
 - [ ] `web/apps/embed/e2e/specs/embed-modules-filter.spec.ts` — EMBED-06 + EMBED-03 filter stubs
 - [ ] `web/apps/embed/src/embed-element.test.ts` — Unit-test stub for `OpenRoutingCatalog` (happy-dom)
 - [ ] `web/apps/embed/src/hash-router-adapter.test.ts` — Unit-test stub for hash adapter
+- [ ] `web/apps/embed/src/locale.ts` — Type stub `export async function applyEmbedLocale(_raw: string): Promise<void> {}` — unblocks Plan 07-06 `tsc --noEmit` (TS2307 guard); overwritten by Plan 07-07
 - [ ] `web/apps/embed/.size-limit.json` — Declarative 70 KB gzipped budget for `dist/embed.js`
 - [ ] `services/api/internal/middleware/cors_test.go` — Unit tests for CORS middleware (origin allowlist, methods, headers)
 - [ ] `services/api/test/isolation/cors_preflight_test.go` — Integration: OPTIONS preflight to bypass + `/v1`
@@ -128,7 +129,7 @@ These test-infrastructure artifacts MUST exist before Wave 1 implementation begi
 
 - [ ] All EMBED-XX requirements have an `<automated>` verify command or a Wave 0 dependency listed above
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify (planner must check during plan creation)
-- [ ] Wave 0 covers all MISSING references (17 files listed)
+- [ ] Wave 0 covers all MISSING references (18 files listed)
 - [ ] No `watch`-mode flags on per-task commands (vitest `--run`, playwright `--headed=false`)
 - [ ] Feedback latency < 30s per task; < 5 min per wave
 - [ ] `nyquist_compliant: true` set in frontmatter once Wave 0 lands and Plan IDs are wired in

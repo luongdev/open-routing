@@ -13,7 +13,6 @@ export default defineConfig({
     target: 'esnext',
     rollupOptions: {
       output: {
-        // Rolldown (Vite 8) requires manualChunks as a function, not an object.
         manualChunks: (id: string) => {
           if (id.includes('@shoelace-style/shoelace')) return 'shoelace';
           if (

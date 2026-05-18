@@ -227,38 +227,38 @@ export class OrOrgPicker extends LitElement {
         <p class="wordmark">Open Routing</p>
         <p class="subtitle">Standalone admin console</p>
 
-        <label class="field-label" for="org-id-input">Organization ID</label>
-        <div class="input-wrapper">
-          <input
-            id="org-id-input"
-            class="native-input ${this._error ? 'has-error' : ''}"
-            type="text"
-            .value=${this._value}
-            placeholder="01901b2c-7f3a-7abc-8d4e-..."
-            aria-label="Organization ID"
-            aria-describedby="${this._error ? 'org-id-error' : 'org-id-helper'}"
-            @input=${(e: Event) => {
-              this._value = (e.target as HTMLInputElement).value;
-              // Clear error on input so user knows they can try again
-              if (this._error) this._error = '';
-            }}
-          />
-          ${this._error
-            ? html`<span id="org-id-error" class="validation-error">${this._error}</span>`
-            : html`<span id="org-id-helper" class="helper-text">
-                UUIDv7 format. Example: 01901b2c-7f3a-7abc-8d4e-&hellip;
-              </span>`
-          }
-        </div>
+        <form @submit=${(e: Event) => { e.preventDefault(); this._handleSubmit(); }}>
+          <label class="field-label" for="org-id-input">Organization ID</label>
+          <div class="input-wrapper">
+            <input
+              id="org-id-input"
+              class="native-input ${this._error ? 'has-error' : ''}"
+              type="text"
+              .value=${this._value}
+              placeholder="01901b2c-7f3a-7abc-8d4e-..."
+              aria-label="Organization ID"
+              aria-describedby="${this._error ? 'org-id-error' : 'org-id-helper'}"
+              @input=${(e: Event) => {
+                this._value = (e.target as HTMLInputElement).value;
+                if (this._error) this._error = '';
+              }}
+            />
+            ${this._error
+              ? html`<span id="org-id-error" class="validation-error">${this._error}</span>`
+              : html`<span id="org-id-helper" class="helper-text">
+                  UUIDv7 format. Example: 01901b2c-7f3a-7abc-8d4e-&hellip;
+                </span>`
+            }
+          </div>
 
-        <button
-          type="submit"
-          class="continue-btn"
-          ?disabled=${this._submitting}
-          @click=${this._handleSubmit}
-        >
-          ${this._submitting ? html`<sl-spinner style="font-size:1em"></sl-spinner>` : 'Continue'}
-        </button>
+          <button
+            type="submit"
+            class="continue-btn"
+            ?disabled=${this._submitting}
+          >
+            ${this._submitting ? html`<sl-spinner style="font-size:1em"></sl-spinner>` : 'Continue'}
+          </button>
+        </form>
 
         ${showLastUsed
           ? html`

@@ -23,7 +23,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 // Primitives
-import '../primitives/code-input.js';
+import { nameToCode } from '../primitives/code-input.js';
 import '../primitives/form-wizard.js';
 
 // Single step — stepper hidden (D6-17: simple entity single-step form)
@@ -117,6 +117,7 @@ export class OrSkillForm extends LitElement {
   @state() private accessor _errors: Record<string, string> = {};
   @state() private accessor _apiError: string | null = null;
   @state() private accessor _submitting = false;
+  private _codeAutoFill = true;
 
   // --- Navigation ---
 
@@ -207,6 +208,7 @@ export class OrSkillForm extends LitElement {
           .value=${this._formData.code}
           .required=${true}
           @or-code-input=${(e: CustomEvent) => {
+            this._codeAutoFill = false;
             this._formData = { ...this._formData, code: e.detail.value };
             if (this._errors['code']) {
               this._errors = { ...this._errors, code: '' };
@@ -228,7 +230,12 @@ export class OrSkillForm extends LitElement {
           .value=${this._formData.name}
           ?invalid=${!!this._errors['name']}
           @sl-input=${(e: Event) => {
-            this._formData = { ...this._formData, name: (e.target as HTMLInputElement).value };
+            const name = (e.target as HTMLInputElement).value;
+            this._formData = {
+              ...this._formData,
+              name,
+              ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
+            };
           }}
         ></sl-input>
         ${when(

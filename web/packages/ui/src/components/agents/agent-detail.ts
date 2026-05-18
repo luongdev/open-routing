@@ -713,6 +713,14 @@ export class OrAgentDetail extends LitElement {
         ${when(
           this._entity,
           () => html`
+            <sl-button
+              variant="default"
+              size="small"
+              @click=${() => this._navigate(`/orgs/${this.orgId}/agents/${this.entityId}/status`)}
+            >
+              <sl-icon slot="prefix" name="activity"></sl-icon>
+              Status
+            </sl-button>
             ${when(
               this._entity!.enabled,
               () => html`

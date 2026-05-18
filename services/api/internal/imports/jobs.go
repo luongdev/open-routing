@@ -52,10 +52,10 @@ func (s *Importer) createJob(
 		ID:             pgUUID(id),
 		OrgID:          pgUUID(orgID),
 		EntityType:     string(entity),
-		// totalRows is hard-bounded at 500 by D5-22 (handler rejects
-		// payloads > 500 rows before calling createJob). int → int32 is
+		// totalRows is hard-bounded at importRowLimit (handler rejects
+		// over-limit payloads before calling createJob). int → int32 is
 		// safe — annotated to suppress gosec G115 false positive.
-		TotalRows:      int32(totalRows), //nolint:gosec // bounded ≤ 500 by D5-22
+		TotalRows:      int32(totalRows), //nolint:gosec // bounded ≤ importRowLimit (10_000) — safe for int32
 		IdempotencyKey: idempotencyKey,
 	}); err != nil {
 		return uuid.Nil, fmt.Errorf("imports: insert job: %w", err)
@@ -90,13 +90,13 @@ func (s *Importer) finaliseJob(
 		return s.finaliseOverride(ctx, jobID, orgID, string(status), succeeded, failed, errorsJSON)
 	}
 	q := generated.New(s.deps.OrgDB)
-	// succeeded + failed each ≤ totalRows ≤ 500 (D5-22 bound enforced
-	// in handler before chunk loop). int → int32 is safe — annotated
-	// to suppress gosec G115 false positive.
+	// succeeded + failed each ≤ totalRows ≤ importRowLimit (10_000),
+	// enforced by handler before chunk loop. int → int32 is safe —
+	// annotated to suppress gosec G115 false positive.
 	_, err := q.FinaliseImportJob(ctx, generated.FinaliseImportJobParams{
 		Status:        string(status),
-		SucceededRows: int32(succeeded), //nolint:gosec // bounded ≤ 500 by D5-22
-		FailedRows:    int32(failed),    //nolint:gosec // bounded ≤ 500 by D5-22
+		SucceededRows: int32(succeeded), //nolint:gosec // bounded ≤ importRowLimit (10_000) — safe for int32
+		FailedRows:    int32(failed),    //nolint:gosec // bounded ≤ importRowLimit (10_000) — safe for int32
 		Errors:        errorsJSON,
 		ID:            pgUUID(jobID),
 		OrgID:         pgUUID(orgID),
