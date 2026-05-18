@@ -34,7 +34,6 @@ import '@shoelace-style/shoelace/dist/components/button-group/button-group.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/drawer/drawer.js';
 
 // Import primitives used in route renders (must be registered before outlet renders them)
 import '../primitives/org-picker.js';

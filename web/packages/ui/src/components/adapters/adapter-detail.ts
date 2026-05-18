@@ -22,7 +22,6 @@ import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 
 // Primitives
 import '../primitives/code-input.js';
@@ -99,6 +98,52 @@ export class OrAdapterDetail extends LitElement {
       color: var(--sl-color-danger-500, #d92d20);
       margin-top: 4px;
     }
+    /* Inline confirm panel — D7-04: <sl-dialog> has broken focus-trap inside nested Shadow DOM (shoelace#709, #1382). Embed mounts inside Shadow DOM, so this is replaced with an inline role=dialog + manual focus management. */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .confirm-panel {
+      background: var(--or-color-card-bg, #ffffff);
+      border: 1px solid var(--or-color-card-border, #d1d5db);
+      border-radius: var(--sl-border-radius-medium, 6px);
+      padding: 20px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    .confirm-title { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; }
+    .confirm-body { margin: 0 0 20px 0; }
+    .action-row { display: flex; gap: 8px; justify-content: flex-end; }
+    /* Inline confirm panel — D7-04: <sl-dialog> has broken focus-trap inside nested Shadow DOM (shoelace#709, #1382). Embed mounts inside Shadow DOM, so this is replaced with an inline role=dialog + manual focus management. */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .confirm-panel {
+      background: var(--or-color-card-bg, #ffffff);
+      border: 1px solid var(--or-color-card-border, #d1d5db);
+      border-radius: var(--sl-border-radius-medium, 6px);
+      padding: 20px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    .confirm-title { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; }
+    .confirm-body { margin: 0 0 20px 0; }
+    .action-row { display: flex; gap: 8px; justify-content: flex-end; }
+
+
 
     .toast-container {
       position: fixed;
@@ -149,9 +194,37 @@ export class OrAdapterDetail extends LitElement {
   }
 
   // --- Lifecycle ---
+  private _onKeydown?: (e: KeyboardEvent) => void;
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this._onKeydown) {
+      document.removeEventListener('keydown', this._onKeydown);
+    }
+  }
+
+  override updated(changed: Map<string, unknown>): void {
+    if (changed.has('_deleteConfirmOpen') && this._deleteConfirmOpen) {
+      this.setAttribute('aria-live', 'polite');
+      this.updateComplete.then(() => {
+        const input = this.shadowRoot?.querySelector('sl-input[aria-label^="Type"]') as HTMLElement;
+        if (input) input.focus();
+      });
+    } else if (changed.has('_deleteConfirmOpen') && !this._deleteConfirmOpen) {
+      this.removeAttribute('aria-live');
+    }
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     void this._loadEntity();
+    this._onKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this._deleteConfirmOpen) {
+        this._deleteConfirmOpen = false;
+        this._deleteConfirmName = '';
+      }
+    };
+    document.addEventListener('keydown', this._onKeydown);
   }
 
   // --- Private methods ---
@@ -425,38 +498,47 @@ export class OrAdapterDetail extends LitElement {
 
   private _renderDeleteDialog() {
     return html`
-      <sl-dialog
-        label="Delete adapter ${this._entity?.name ?? ''}?"
-        ?open=${this._deleteConfirmOpen}
-        @sl-request-close=${() => {
+      ${when(this._deleteConfirmOpen, () => html`
+        <div class="confirm-overlay" role="presentation" @click=${() => {
           this._deleteConfirmOpen = false;
           this._deleteConfirmName = '';
-        }}
-      >
-        <p>This is permanent and cannot be undone.</p>
-        <sl-input
-          placeholder="Type adapter name to confirm"
-          value=${this._deleteConfirmName}
-          @sl-input=${(e: Event) => {
-            this._deleteConfirmName = (e.target as HTMLInputElement).value;
-          }}
-          aria-label="Type adapter name to confirm deletion"
-        ></sl-input>
-        <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <sl-button
-            variant="default"
-            @click=${() => {
-              this._deleteConfirmOpen = false;
-              this._deleteConfirmName = '';
-            }}
-          >Cancel</sl-button>
-          <sl-button
-            variant="danger"
-            ?disabled=${!this._canDelete}
-            @click=${this._handleDelete}
-          >Delete</sl-button>
+        }}>
+          <div class="confirm-panel"
+               role="dialog"
+               aria-modal="true"
+               aria-labelledby="confirm-title"
+               @click=${(e: Event) => e.stopPropagation()}>
+            <h3 id="confirm-title" class="confirm-title">Delete adapter ${this._entity?.name ?? ''}?</h3>
+            <p class="confirm-body">This is permanent and cannot be undone.</p>
+            <div style="margin-bottom: 20px;">
+              <sl-input
+                placeholder="Type adapter name to confirm"
+                .value=${this._deleteConfirmName}
+                @sl-input=${(e: Event) => {
+                  this._deleteConfirmName = (e.target as HTMLInputElement).value;
+                }}
+                aria-label="Type adapter name to confirm deletion"
+              ></sl-input>
+            </div>
+            <div class="action-row">
+              <sl-button
+                variant="default"
+                size="small"
+                @click=${() => {
+                  this._deleteConfirmOpen = false;
+                  this._deleteConfirmName = '';
+                }}
+              >Cancel</sl-button>
+              <sl-button
+                variant="danger"
+                size="small"
+                ?disabled=${!this._canDelete}
+                @click=${this._handleDelete}
+              >Delete</sl-button>
+            </div>
+          </div>
         </div>
-      </sl-dialog>
+      `)}
     `;
   }
 
