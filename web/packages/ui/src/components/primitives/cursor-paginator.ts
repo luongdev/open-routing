@@ -67,19 +67,19 @@ export class OrCursorPaginator extends LitElement {
   `;
 
   /** Whether there's a next page (controls Next button disabled state). */
-  @property({ type: Boolean }) hasMore = false;
+  @property({ type: Boolean }) accessor hasMore = false;
 
   /**
    * Stack of cursors for previous pages (managed by parent component).
    * Previous button is disabled when this is empty.
    */
-  @property({ type: Array }) cursorStack: string[] = [];
+  @property({ type: Array }) accessor cursorStack: string[] = [];
 
   /** Current page size. */
-  @property({ type: Number }) limit = 25;
+  @property({ type: Number }) accessor limit = 25;
 
   /** Internal page display counter (increments on next, decrements on prev). */
-  @state() private _pageNum = 1;
+  @state() private accessor _pageNum = 1;
 
   private _handlePrev(): void {
     if (this.cursorStack.length === 0) return;

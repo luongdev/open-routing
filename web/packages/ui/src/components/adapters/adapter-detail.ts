@@ -113,22 +113,22 @@ export class OrAdapterDetail extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'entity-id' }) entityId = '';
-  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'entity-id' }) accessor entityId = '';
+  @property({ type: Object }) accessor client!: ApiClient;
 
   // --- Internal state ---
-  @state() private _entity: Adapter | null = null;
-  @state() private _loading = false;
-  @state() private _saving = false;
-  @state() private _dirty = false;
-  @state() private _conflictServer: Record<string, unknown> | null = null;
-  @state() private _fieldErrors: Record<string, string> = {};
-  @state() private _configError = '';
-  @state() private _apiError: string | null = null;
-  @state() private _showSavedToast = false;
-  @state() private _deleteConfirmOpen = false;
-  @state() private _deleteConfirmName = '';
+  @state() private accessor _entity: Adapter | null = null;
+  @state() private accessor _loading = false;
+  @state() private accessor _saving = false;
+  @state() private accessor _dirty = false;
+  @state() private accessor _conflictServer: Record<string, unknown> | null = null;
+  @state() private accessor _fieldErrors: Record<string, string> = {};
+  @state() private accessor _configError = '';
+  @state() private accessor _apiError: string | null = null;
+  @state() private accessor _showSavedToast = false;
+  @state() private accessor _deleteConfirmOpen = false;
+  @state() private accessor _deleteConfirmName = '';
 
   private _form: Form = {
     name: '',

@@ -181,19 +181,19 @@ export class OrConflictBanner extends LitElement {
   `;
 
   /** Conflict display mode: 'crud' for version_conflict, 'status' for invalid_transition. */
-  @property({ type: String }) mode: 'crud' | 'status' = 'crud';
+  @property({ type: String }) accessor mode: 'crud' | 'status' = 'crud';
 
   /**
    * For CRUD mode: the server's current entity data (from 409 `current` field per D-37).
    * For status mode: { from: string; to: string } (from 409 body per D-91).
    */
-  @property({ type: Object }) serverValue: Record<string, unknown> = {};
+  @property({ type: Object }) accessor serverValue: Record<string, unknown> = {};
 
   /** For CRUD mode: the user's pending edit data (what they were about to submit). */
-  @property({ type: Object }) userValue: Record<string, unknown> = {};
+  @property({ type: Object }) accessor userValue: Record<string, unknown> = {};
 
   /** Whether to show the diff section in CRUD mode (default: true). */
-  @property({ type: Boolean, attribute: 'show-diff' }) showDiff = true;
+  @property({ type: Boolean, attribute: 'show-diff' }) accessor showDiff = true;
 
   override connectedCallback(): void {
     super.connectedCallback();

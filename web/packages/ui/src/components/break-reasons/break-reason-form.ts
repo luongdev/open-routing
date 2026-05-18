@@ -102,12 +102,12 @@ export class OrBreakReasonForm extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: Object }) accessor client!: ApiClient;
 
   // --- Internal state ---
-  @state() private _currentStep = 0;
-  @state() _formData: FormData = {
+  @state() private accessor _currentStep = 0;
+  @state() accessor _formData: FormData = {
     code: '',
     name: '',
     external_id: '',
@@ -115,9 +115,9 @@ export class OrBreakReasonForm extends LitElement {
     display_order: '',     // required; empty = invalid
     enabled: true,
   };
-  @state() _errors: Record<string, string> = {};
-  @state() private _apiError: string | null = null;
-  @state() private _submitting = false;
+  @state() accessor _errors: Record<string, string> = {};
+  @state() private accessor _apiError: string | null = null;
+  @state() private accessor _submitting = false;
 
   // --- Navigation ---
 

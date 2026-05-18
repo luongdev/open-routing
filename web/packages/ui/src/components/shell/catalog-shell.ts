@@ -201,26 +201,26 @@ export class OrCatalogShell extends LitElement {
     }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String }) theme: ThemeName = 'or-light';
-  @property({ type: String }) modules = '';
-  @property({ type: String }) locale: 'en' | 'vi' = 'en';
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String }) accessor theme: ThemeName = 'or-light';
+  @property({ type: String }) accessor modules = '';
+  @property({ type: String }) accessor locale: 'en' | 'vi' = 'en';
 
-  @state() private _sidebarOpen = false;
+  @state() private accessor _sidebarOpen = false;
 
   /**
    * D6-09: current org_id parsed from URL. getOrgId() in createApiClient closes
    * over _currentOrgId (not a snapshot), so the client returns the latest value
    * without recreation on org change.
    */
-  @state() private _currentOrgId = '';
+  @state() private accessor _currentOrgId = '';
 
   /**
    * D6-09: single client instance for the lifetime of an org session.
    * Null before an org is selected (org-picker screen).
    * Replaced (not mutated) when org changes via org-picker or URL.
    */
-  @state() private _client: ApiClient | null = null;
+  @state() private accessor _client: ApiClient | null = null;
 
   /**
    * Shared enter() guard for all /orgs/:org_id/* routes (D6-13).
@@ -230,6 +230,7 @@ export class OrCatalogShell extends LitElement {
    */
   private _orgRouteEnter = async ({ org_id }: Record<string, string | undefined>): Promise<boolean> => {
     if (!UUIDV7_PATTERN.test(org_id ?? '')) {
+      window.history.pushState(null, '', '/');
       this._routes.goto('/');
       return false;
     }
@@ -415,6 +416,11 @@ export class OrCatalogShell extends LitElement {
 
     this.addEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.addEventListener('open-routing:navigate', this._handleNavigate);
+
+    // Force initial route match (workaround for @lit-labs/router initial load issue)
+    setTimeout(() => {
+      this._routes.goto(window.location.pathname + window.location.search);
+    }, 0);
   }
 
   override disconnectedCallback(): void {
@@ -448,15 +454,20 @@ export class OrCatalogShell extends LitElement {
 
   private _handleNavigate = (e: Event): void => {
     const { path } = (e as CustomEvent<{ path: string }>).detail;
+    window.history.pushState(null, '', path);
     this._routes.goto(path);
   };
 
   private _handleOrgSelected = (e: Event): void => {
     const { orgId } = (e as CustomEvent<{ orgId: string }>).detail;
+    console.log('OR-CATALOG-SHELL: Received open-routing:org-selected event!', orgId);
     this._currentOrgId = orgId;
     this.orgId = orgId;
     this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
-    this._routes.goto(`/orgs/${orgId}/agents`);
+    const path = `/orgs/${orgId}/agents`;
+    console.log('OR-CATALOG-SHELL: Navigating to', path);
+    window.history.pushState(null, '', path);
+    this._routes.goto(path);
   };
 
   override updated(changed: Map<string, unknown>): void {
@@ -558,6 +569,7 @@ export class OrCatalogShell extends LitElement {
             this._currentOrgId = '';
             this.orgId = '';
             this._client = null;
+            window.history.pushState(null, '', '/');
             this._routes.goto('/');
           }}
         >

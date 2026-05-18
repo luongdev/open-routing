@@ -140,12 +140,12 @@ export class OrOrgPicker extends LitElement {
   `;
 
   /** Pre-fill value — exposed as HTML attribute 'last-used-org-id'. */
-  @property({ type: String, attribute: 'last-used-org-id' }) lastUsedOrgId = '';
+  @property({ type: String, attribute: 'last-used-org-id' }) accessor lastUsedOrgId = '';
 
-  @state() private _value = '';
-  @state() private _error = '';
-  @state() private _submitting = false;
-  @state() private _lastUsedFromStorage = '';
+  @state() private accessor _value = '';
+  @state() private accessor _error = '';
+  @state() private accessor _submitting = false;
+  @state() private accessor _lastUsedFromStorage = '';
 
   override firstUpdated(): void {
     // Pre-fill from localStorage first, fall back to lastUsedOrgId property (D6-10).
@@ -252,6 +252,7 @@ export class OrOrgPicker extends LitElement {
         </div>
 
         <button
+          type="submit"
           class="continue-btn"
           ?disabled=${this._submitting}
           @click=${this._handleSubmit}

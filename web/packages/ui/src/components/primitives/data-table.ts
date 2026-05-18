@@ -172,16 +172,16 @@ export class OrDataTable extends LitElement {
   `;
 
   /** Column definitions. Order preserved. */
-  @property({ type: Array }) columns: OrDataTableColumn[] = [];
+  @property({ type: Array }) accessor columns: OrDataTableColumn[] = [];
 
   /** Row data. Each row object's keys correspond to column keys. */
-  @property({ type: Array }) rows: Record<string, unknown>[] = [];
+  @property({ type: Array }) accessor rows: Record<string, unknown>[] = [];
 
   /** Show loading skeleton rows instead of actual data. */
-  @property({ type: Boolean }) loading = false;
+  @property({ type: Boolean }) accessor loading = false;
 
   /** Number of skeleton rows to show while loading. */
-  @property({ type: Number }) skeletonRows = 5;
+  @property({ type: Number }) accessor skeletonRows = 5;
 
   private _dispatchRowClick(row: Record<string, unknown>): void {
     this.dispatchEvent(
