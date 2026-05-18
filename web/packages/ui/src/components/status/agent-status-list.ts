@@ -134,41 +134,6 @@ export class OrAgentStatusList extends LitElement {
       color: var(--or-color-text-muted, #737373);
     }
 
-    .break-picker {
-      margin-top: 8px;
-      padding: 10px 12px;
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: 6px;
-      background: var(--or-color-card-bg, #fff);
-      min-width: 220px;
-    }
-
-    .break-picker-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--or-color-text-body, #404040);
-      margin-bottom: 6px;
-    }
-
-    .break-reason-list {
-      list-style: none;
-      margin: 0 0 8px;
-      padding: 0;
-    }
-
-    .break-reason-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 2px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .break-picker-actions {
-      display: flex;
-      gap: 6px;
-    }
   `;
 
   @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
@@ -184,8 +149,6 @@ export class OrAgentStatusList extends LitElement {
   @state() private accessor _patchErrors = new Map<string, string>();
   @state() private accessor _breakReasons: BreakReason[] = [];
   @state() private accessor _breakReasonsLoading = false;
-  @state() private accessor _breakPickerAgentId: string | null = null;
-  @state() private accessor _selectedBreakReasonId: string | null = null;
   @state() private accessor _breakReasonsError: string | null = null;
   @state() private accessor _search = '';
 
@@ -261,7 +224,7 @@ export class OrAgentStatusList extends LitElement {
   }
 
   private async _fetchBreakReasons(): Promise<void> {
-    if (this._breakReasonsLoading || !this.orgId || !this.client) return;
+    if (this._breakReasonsLoading || this._breakReasons.length > 0 || !this.orgId || !this.client) return;
     this._breakReasonsLoading = true;
     this._breakReasonsError = null;
     try {
@@ -278,24 +241,6 @@ export class OrAgentStatusList extends LitElement {
       this._breakReasonsError = 'Failed to load break reasons';
     } finally {
       this._breakReasonsLoading = false;
-    }
-  }
-
-  private async _openBreakPicker(agentId: string): Promise<void> {
-    this._breakPickerAgentId = agentId;
-    this._selectedBreakReasonId = null;
-    if (this._breakReasons.length === 0) {
-      await this._fetchBreakReasons();
-    }
-  }
-
-  private async _confirmBreak(agentId: string): Promise<void> {
-    if (!this._selectedBreakReasonId) return;
-    await this._patch(agentId, 'Break', { break_reason_id: this._selectedBreakReasonId });
-    // Only close picker on success; leave it open so the user can retry on failure
-    if (!this._patchErrors.has(agentId)) {
-      this._breakPickerAgentId = null;
-      this._selectedBreakReasonId = null;
     }
   }
 
@@ -353,11 +298,9 @@ export class OrAgentStatusList extends LitElement {
 
     const cur = status?.status;
 
-    const pickerOpen = this._breakPickerAgentId === agent.id;
-
     return html`
-      <div class="actions-cell" style="flex-wrap:wrap">
-        ${patchErr ? html`<span style="color:var(--sl-color-danger-600);font-size:12px;width:100%">${patchErr}</span>` : nothing}
+      <div class="actions-cell">
+        ${patchErr ? html`<span style="color:var(--sl-color-danger-600);font-size:12px">${patchErr}</span>` : nothing}
 
         ${cur === 'NotReady' || cur === 'Break' ? html`
           <sl-button size="small" variant="primary" ?disabled=${busy}
@@ -372,11 +315,24 @@ export class OrAgentStatusList extends LitElement {
             @click=${() => void this._patch(agent.id, 'NotReady')}>
             Set Not Ready
           </sl-button>
-          <sl-button size="small" variant="default" ?disabled=${busy}
-            @click=${() => void this._openBreakPicker(agent.id)}>
-            <sl-icon slot="prefix" name="pause-circle"></sl-icon>
-            Go on Break
-          </sl-button>
+          <sl-dropdown @sl-show=${() => void this._fetchBreakReasons()}>
+            <sl-button slot="trigger" size="small" variant="default" caret ?disabled=${busy}>
+              <sl-icon slot="prefix" name="pause-circle"></sl-icon>
+              Go on Break
+            </sl-button>
+            <sl-menu @sl-select=${(e: CustomEvent) => void this._patch(agent.id, 'Break', { break_reason_id: (e.detail.item as { value: string }).value })}>
+              ${this._breakReasonsLoading ? html`
+                <sl-menu-item disabled>
+                  <sl-spinner slot="prefix" style="font-size:13px"></sl-spinner>
+                  Loading…
+                </sl-menu-item>
+              ` : this._breakReasonsError ? html`
+                <sl-menu-item disabled style="color:var(--sl-color-danger-600)">${this._breakReasonsError}</sl-menu-item>
+              ` : this._breakReasons.map(r => html`
+                <sl-menu-item value="${r.id}">${r.name}</sl-menu-item>
+              `)}
+            </sl-menu>
+          </sl-dropdown>
         ` : nothing}
 
         ${cur === 'Break' ? html`
@@ -408,44 +364,6 @@ export class OrAgentStatusList extends LitElement {
             </sl-menu-item>
           </sl-menu>
         </sl-dropdown>
-
-        ${pickerOpen ? html`
-          <div class="break-picker" style="width:100%">
-            <p class="break-picker-title">Pick a break reason</p>
-            ${this._breakReasonsLoading
-              ? html`<sl-spinner></sl-spinner>`
-              : this._breakReasonsError
-                ? html`
-                  <p style="color:var(--sl-color-danger-600);font-size:12px;margin:0 0 8px">${this._breakReasonsError}</p>
-                  <sl-button size="small" variant="text" @click=${() => void this._fetchBreakReasons()}>Retry</sl-button>
-                `
-                : html`
-              <ul class="break-reason-list">
-                ${this._breakReasons.map(r => html`
-                  <li class="break-reason-item">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%">
-                      <input type="radio" name="break-reason-${agent.id}" value="${r.id}"
-                        ?checked=${this._selectedBreakReasonId === r.id}
-                        @change=${() => { this._selectedBreakReasonId = r.id; }} />
-                      ${r.name}
-                    </label>
-                  </li>
-                `)}
-              </ul>
-              <div class="break-picker-actions">
-                <sl-button size="small" variant="text"
-                  @click=${() => { this._breakPickerAgentId = null; this._selectedBreakReasonId = null; }}>
-                  Cancel
-                </sl-button>
-                <sl-button size="small" variant="primary"
-                  ?disabled=${!this._selectedBreakReasonId || busy}
-                  @click=${() => void this._confirmBreak(agent.id)}>
-                  Confirm break
-                </sl-button>
-              </div>
-            `}
-          </div>
-        ` : nothing}
       </div>
     `;
   }
