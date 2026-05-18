@@ -4,5 +4,5 @@ const dest = 'public/shoelace/assets/icons';
 const src = resolve('node_modules/@shoelace-style/shoelace/dist/assets/icons');
 mkdirSync('public/shoelace/assets', { recursive: true });
 let exists = false;
-try { lstatSync(dest); exists = true; } catch { /* not present */ }
+try { lstatSync(dest); exists = true; } catch { /* */ }
 if (!exists) symlinkSync(src, dest, 'dir');

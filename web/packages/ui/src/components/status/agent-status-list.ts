@@ -186,6 +186,7 @@ export class OrAgentStatusList extends LitElement {
   @state() private accessor _breakReasonsLoading = false;
   @state() private accessor _breakPickerAgentId: string | null = null;
   @state() private accessor _selectedBreakReasonId: string | null = null;
+  @state() private accessor _breakReasonsError: string | null = null;
   @state() private accessor _search = '';
 
   private _pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -262,12 +263,19 @@ export class OrAgentStatusList extends LitElement {
   private async _fetchBreakReasons(): Promise<void> {
     if (this._breakReasonsLoading || !this.orgId || !this.client) return;
     this._breakReasonsLoading = true;
+    this._breakReasonsError = null;
     try {
       const result = await this.client.GET('/v1/orgs/{org_id}/break-reasons' as never, {
         params: { path: { org_id: this.orgId }, query: { include_disabled: false, limit: 100 } },
       } as never);
-      const { data } = result as { data: { items?: BreakReason[] } | null; error: unknown };
+      const { data, error } = result as { data: { items?: BreakReason[] } | null; error: unknown };
+      if (error) {
+        this._breakReasonsError = 'Failed to load break reasons';
+        return;
+      }
       this._breakReasons = data?.items ?? [];
+    } catch {
+      this._breakReasonsError = 'Failed to load break reasons';
     } finally {
       this._breakReasonsLoading = false;
     }
@@ -284,8 +292,11 @@ export class OrAgentStatusList extends LitElement {
   private async _confirmBreak(agentId: string): Promise<void> {
     if (!this._selectedBreakReasonId) return;
     await this._patch(agentId, 'Break', { break_reason_id: this._selectedBreakReasonId });
-    this._breakPickerAgentId = null;
-    this._selectedBreakReasonId = null;
+    // Only close picker on success; leave it open so the user can retry on failure
+    if (!this._patchErrors.has(agentId)) {
+      this._breakPickerAgentId = null;
+      this._selectedBreakReasonId = null;
+    }
   }
 
   private async _patch(agentId: string, to: AgentStatus, extra?: { force?: boolean; break_reason_id?: string }): Promise<void> {
@@ -299,8 +310,8 @@ export class OrAgentStatusList extends LitElement {
         params: { path: { org_id: this.orgId, id: agentId } },
         body: { to, ...extra },
       } as never);
-      const { error } = result as { error: { reason?: string } | null };
-      if (error) {
+      const { error } = result as { error: { reason?: string } | null | undefined };
+      if (error != null) {
         const next = new Map(this._patchErrors);
         next.set(agentId, error?.reason ?? 'Status change failed');
         this._patchErrors = next;
@@ -401,7 +412,14 @@ export class OrAgentStatusList extends LitElement {
         ${pickerOpen ? html`
           <div class="break-picker" style="width:100%">
             <p class="break-picker-title">Pick a break reason</p>
-            ${this._breakReasonsLoading ? html`<sl-spinner></sl-spinner>` : html`
+            ${this._breakReasonsLoading
+              ? html`<sl-spinner></sl-spinner>`
+              : this._breakReasonsError
+                ? html`
+                  <p style="color:var(--sl-color-danger-600);font-size:12px;margin:0 0 8px">${this._breakReasonsError}</p>
+                  <sl-button size="small" variant="text" @click=${() => void this._fetchBreakReasons()}>Retry</sl-button>
+                `
+                : html`
               <ul class="break-reason-list">
                 ${this._breakReasons.map(r => html`
                   <li class="break-reason-item">
