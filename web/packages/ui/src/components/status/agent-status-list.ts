@@ -114,6 +114,12 @@ export class OrAgentStatusList extends LitElement {
       white-space: nowrap;
     }
 
+    .break-reason-name {
+      font-size: 11px;
+      color: var(--sl-color-warning-600, #b54708);
+      margin-top: 2px;
+    }
+
     .actions-cell {
       display: flex;
       align-items: center;
@@ -284,13 +290,21 @@ export class OrAgentStatusList extends LitElement {
     );
   }
 
-  private _renderStatusPill(status: AgentStatus) {
-    const s = STATUS_PILL_STYLES[status] ?? STATUS_PILL_STYLES.Offline;
+  private _renderStatusPill(statusResp: AgentStatusResponse) {
+    const s = STATUS_PILL_STYLES[statusResp.status] ?? STATUS_PILL_STYLES.Offline;
+    const label = statusResp.status === 'NotReady' ? 'Not Ready'
+      : statusResp.status === 'WrapUp' ? 'Wrap Up'
+      : statusResp.status;
     return html`
-      <span class="status-pill" style="background:${s.bg};color:${s.text};">
-        <sl-icon name="${s.icon}" style="font-size:10px"></sl-icon>
-        ${status === 'NotReady' ? 'Not Ready' : status === 'WrapUp' ? 'Wrap Up' : status}
-      </span>
+      <div>
+        <span class="status-pill" style="background:${s.bg};color:${s.text};">
+          <sl-icon name="${s.icon}" style="font-size:10px"></sl-icon>
+          ${label}
+        </span>
+        ${statusResp.status === 'Break' && statusResp.break_reason_name ? html`
+          <div class="break-reason-name">${statusResp.break_reason_name}</div>
+        ` : nothing}
+      </div>
     `;
   }
 
@@ -323,6 +337,27 @@ export class OrAgentStatusList extends LitElement {
             @click=${() => void this._patch(agent.id, 'NotReady')}>
             Set Not Ready
           </sl-button>
+          <sl-dropdown @sl-show=${() => void this._fetchBreakReasons()}>
+            <sl-button slot="trigger" size="small" variant="default" ?disabled=${busy}>
+              Go on Break
+            </sl-button>
+            <sl-menu style="--sl-font-size-medium:13px">
+              ${this._breakReasonsLoading ? html`
+                <sl-menu-item disabled>
+                  <sl-spinner slot="prefix" style="font-size:12px"></sl-spinner>
+                  Loading…
+                </sl-menu-item>
+              ` : this._breakReasonsError ? html`
+                <sl-menu-item disabled>${this._breakReasonsError}</sl-menu-item>
+              ` : this._breakReasons.map(r => html`
+                <sl-menu-item @click=${() => void this._patch(agent.id, 'Break', { break_reason_id: r.id })}>
+                  <sl-icon slot="prefix" name="pause-circle"
+                    style="color:var(--sl-color-warning-600,#b54708)"></sl-icon>
+                  ${r.name}
+                </sl-menu-item>
+              `)}
+            </sl-menu>
+          </sl-dropdown>
         ` : nothing}
 
         ${cur === 'Break' ? html`
@@ -339,26 +374,9 @@ export class OrAgentStatusList extends LitElement {
           </sl-button>
         ` : nothing}
 
-        <sl-dropdown
-          @sl-show=${() => { if (cur === 'Ready') void this._fetchBreakReasons(); }}>
+        <sl-dropdown>
           <sl-icon-button slot="trigger" name="three-dots-vertical" label="More"></sl-icon-button>
           <sl-menu>
-            ${cur === 'Ready' ? html`
-              ${this._breakReasonsLoading ? html`
-                <sl-menu-item disabled>
-                  <sl-spinner slot="prefix" style="font-size:12px"></sl-spinner>
-                  Loading break reasons…
-                </sl-menu-item>
-              ` : this._breakReasonsError ? html`
-                <sl-menu-item disabled style="color:var(--sl-color-danger-600);font-size:12px">${this._breakReasonsError}</sl-menu-item>
-              ` : this._breakReasons.map(r => html`
-                <sl-menu-item @click=${() => void this._patch(agent.id, 'Break', { break_reason_id: r.id })}>
-                  <sl-icon slot="prefix" name="pause-circle"></sl-icon>
-                  ${r.name}
-                </sl-menu-item>
-              `)}
-              <sl-divider></sl-divider>
-            ` : nothing}
             <sl-menu-item @click=${() => this._navigate(`/orgs/${this.orgId}/agents/${agent.id}/status`)}>
               <sl-icon slot="prefix" name="activity"></sl-icon>
               Full status panel
@@ -446,7 +464,7 @@ export class OrAgentStatusList extends LitElement {
                       <td>
                         ${isLoadingStatus
                           ? html`<sl-spinner style="font-size:13px"></sl-spinner>`
-                          : status ? this._renderStatusPill(status.status) : nothing}
+                          : status ? this._renderStatusPill(status) : nothing}
                       </td>
                       <td>${this._renderActions(agent)}</td>
                     </tr>
