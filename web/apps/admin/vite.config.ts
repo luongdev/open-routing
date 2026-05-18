@@ -1,7 +1,18 @@
 import { defineConfig } from 'vite';
+import babel from '@rolldown/plugin-babel';
 
 export default defineConfig({
   appType: 'spa',
+  plugins: [
+    babel({
+      preset: () => ({
+        plugins: [['@babel/plugin-proposal-decorators', { version: '2023-11' }]]
+      }),
+      rolldown: {
+        filter: { code: '@' }
+      }
+    })
+  ],
   server: {
     proxy: {
       '/v1': 'http://localhost:8080',
