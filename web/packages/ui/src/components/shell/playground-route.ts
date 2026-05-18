@@ -8,6 +8,7 @@ import { selectSlot } from './slots/select.js';
 import { cardSlot } from './slots/card.js';
 import { badgeSlot } from './slots/badge.js';
 import { tabsSlot } from './slots/tabs.js';
+import { dialogSlot } from './slots/dialog.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -28,6 +29,11 @@ const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
   card: cardSlot,
   icon: iconSlot,
   'switch-checkbox': switchCheckboxSlot,
+};
+
+// Slots using render functions (need to be called to get fresh TemplateResult)
+const SLOT_RENDERS: Partial<Record<string, () => TemplateResult>> = {
+  dialog: dialogSlot,
 };
 
 const SLOTS: readonly SlotDef[] = [
@@ -145,6 +151,8 @@ export class OrPlaygroundRoute extends LitElement {
               <h3>${s.label}</h3>
               ${SLOT_CONTENT[s.id]
                 ? SLOT_CONTENT[s.id]
+                : SLOT_RENDERS[s.id]
+                ? SLOT_RENDERS[s.id]!()
                 : s.render
                 ? s.render()
                 : html`<div class="playground-slot" data-component=${s.id}>${s.plan} pending</div>`}

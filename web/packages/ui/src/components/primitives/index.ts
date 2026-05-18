@@ -32,3 +32,5 @@ export { OrBadge } from './or-badge.js';
 export type { BadgeVariant } from './or-badge.js';
 export { OrTabs } from './or-tabs.js';
 export type { Tab } from './or-tabs.js';
+// W0.0-15: or-dialog wrapping UIkit modal CSS pattern with built-in focus trap
+export { OrDialog } from './or-dialog.js';
