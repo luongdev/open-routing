@@ -543,9 +543,8 @@ export class OrCatalogShell extends LitElement {
       }
       const resolved = this._navPath(entry.path);
       const basePath = resolved.split('/').slice(0, 4).join('/');
-      // /status is always the terminal segment of a per-agent status route.
-      // Using endsWith prevents false matches on future paths like /some-status-thing.
-      const onStatusRoute = currentPath.endsWith('/status');
+      const onStatusRoute = currentPath.includes('/agents/') && currentPath.endsWith('/status')
+        || currentPath.endsWith('/agents/status');
       const isActive = entry.key === 'status'
         ? onStatusRoute
         : !!basePath && currentPath.startsWith(basePath) && !onStatusRoute;

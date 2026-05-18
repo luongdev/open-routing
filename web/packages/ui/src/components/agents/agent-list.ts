@@ -4,7 +4,7 @@
 // Per-component Shoelace imports for tree-shaking (D6-08).
 // ADMIN-04: only this.client.GET — never direct fetch().
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
@@ -278,11 +278,13 @@ export class OrAgentList extends LitElement {
   override render() {
     return html`
       <div class="page-header">
-        <h1 class="page-title">Agents</h1>
-        <sl-button
-          variant="primary"
-          @click=${() => this._navigate(`/orgs/${this.orgId}/agents/new`)}
-        >+ Create agent</sl-button>
+        <h1 class="page-title">${this.statusMode ? 'Agent Status' : 'Agents'}</h1>
+        ${this.statusMode ? nothing : html`
+          <sl-button
+            variant="primary"
+            @click=${() => this._navigate(`/orgs/${this.orgId}/agents/new`)}
+          >+ Create agent</sl-button>
+        `}
       </div>
 
       <div class="filter-row">
