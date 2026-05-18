@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en" target-language="vi" datatype="plaintext">
+    <body>
+      <!-- Vietnamese translations are populated by: pnpm --filter @open-routing/ui lit-localize extract -->
+      <!-- Then translated manually or via translation service, followed by: lit-localize build -->
+    </body>
+  </file>
+</xliff>

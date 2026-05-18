@@ -4,23 +4,50 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./src/api/index.ts",
+    "./api/import": "./src/api/import.ts",
+    "./components": "./src/components/index.ts",
+    "./components/agents": "./src/components/agents/index.ts",
+    "./components/skills": "./src/components/skills/index.ts",
+    "./components/queues": "./src/components/queues/index.ts",
+    "./components/channels": "./src/components/channels/index.ts",
+    "./components/adapters": "./src/components/adapters/index.ts",
+    "./components/break-reasons": "./src/components/break-reasons/index.ts",
+    "./components/status": "./src/components/status/index.ts",
+    "./components/imports": "./src/components/imports/index.ts",
+    "./components/shell": "./src/components/shell/index.ts",
+    "./components/primitives": "./src/components/primitives/index.ts",
+    "./validators": "./src/validators/index.ts",
+    "./themes": "./src/themes/index.ts",
+    "./locales/locale-codes.js": "./src/locales/locale-codes.ts",
+    "./locales/*.js": "./src/locales/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "test": "vitest run",
-    "gen:api": "openapi-typescript ../../../openapi/openapi.yaml -o src/api/generated.ts"
+    "gen:api": "openapi-typescript ../../../openapi/openapi.yaml -o src/api/generated.ts",
+    "gen:validators": "node scripts/gen-validators.mjs"
   },
   "dependencies": {
+    "@lit-labs/router": "^0.1.4",
+    "@lit/localize": "^0.12.2",
     "@lit/reactive-element": "^2.1.2",
     "@lit/task": "^1.0.0",
+    "@shoelace-style/shoelace": "^2.20.1",
     "lit": "^3.0.0",
     "openapi-fetch": "^0.13.0"
   },
   "devDependencies": {
+    "@lit/localize-tools": "^0.8.2",
     "@vitest/coverage-v8": "^3.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "happy-dom": "^20.9.0",
+    "js-yaml": "^4.1.1",
     "openapi-typescript": "^7.0.0",
+    "urlpattern-polyfill": "^10.1.0",
     "vitest": "^3.0.0"
   }
 }

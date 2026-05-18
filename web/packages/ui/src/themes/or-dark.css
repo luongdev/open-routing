@@ -1,0 +1,61 @@
+/*
+ * or-dark theme — CSS custom property token map.
+ * Per UI-SPEC §2.2 (or-dark section). D6-19 / D6-20.
+ *
+ * Matched dark variant. Same teal primary at a slightly lighter hue (-400 instead of -500)
+ * so it pops against the dark surface. "Calm dark" tone — not pure black,
+ * not pure white text; reads at a glance without eye fatigue.
+ */
+
+[data-or-theme="or-dark"] {
+  /* ─── Shoelace primary scale (teal, brighter so it sits on dark) ─── */
+  --sl-color-primary-50:  #0c2024;
+  --sl-color-primary-100: #173a3f;
+  --sl-color-primary-200: #18464c;
+  --sl-color-primary-300: #1a575f;
+  --sl-color-primary-400: #1f6e77;
+  --sl-color-primary-500: #4faab2;  /* dark-mode base — lighter so it reads on dark surface */
+  --sl-color-primary-600: #79c9ce;
+  --sl-color-primary-700: #aae0e2;
+  --sl-color-primary-800: #d3f1f2;
+  --sl-color-primary-900: #f0fafa;
+  --sl-color-primary-950: #ffffff;
+
+  /* ─── Shoelace semantic (lifted for dark contrast) ─── */
+  --sl-color-danger-500:  #f97066;
+  --sl-color-warning-500: #fdb022;
+  --sl-color-success-500: #32d583;
+  --sl-color-neutral-0:   #0a0a0a;
+  --sl-color-neutral-50:  #121212;  /* app shell — the 60% dominant in dark */
+  --sl-color-neutral-100: #1a1a1a;  /* sidebar — the 30% secondary in dark */
+  --sl-color-neutral-200: #262626;  /* hairlines */
+  --sl-color-neutral-300: #404040;
+  --sl-color-neutral-500: #a3a3a3;  /* secondary text */
+  --sl-color-neutral-700: #d4d4d4;  /* body text */
+  --sl-color-neutral-900: #f5f5f5;  /* headings */
+  --sl-color-neutral-1000:#ffffff;
+
+  /* ─── Open Routing custom ─── */
+  --or-color-app-bg:           var(--sl-color-neutral-50);
+  --or-color-sidebar-bg:       var(--sl-color-neutral-100);
+  --or-color-topbar-bg:        var(--sl-color-neutral-50);
+  --or-color-card-bg:          var(--sl-color-neutral-100);
+  --or-color-card-border:      var(--sl-color-neutral-200);
+  --or-color-text-body:        var(--sl-color-neutral-700);
+  --or-color-text-strong:      var(--sl-color-neutral-900);
+  --or-color-text-muted:       var(--sl-color-neutral-500);
+  --or-color-text-on-primary:  var(--sl-color-neutral-900);
+  --or-color-conflict-bg:      #44331b;                            /* darkened amber */
+  --or-color-conflict-border:  #fdb022;
+  --or-color-diff-removed:     #5b1d1d;
+  --or-color-diff-added:       #1d4d2c;
+  --or-color-code-bg:          var(--sl-color-neutral-200);
+  --or-color-code-fg:          var(--sl-color-primary-500);
+  --or-color-focus-ring:       var(--sl-color-primary-500);
+  --or-color-row-hover:        var(--sl-color-neutral-200);
+  --or-color-row-selected:     #143036;
+  --or-color-skeleton-base:    var(--sl-color-neutral-200);
+  --or-color-skeleton-shimmer: var(--sl-color-neutral-300);
+  --or-color-divider:          var(--sl-color-neutral-200);
+  --or-color-overlay-scrim:    rgb(0 0 0 / 0.6);
+}
