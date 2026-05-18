@@ -354,14 +354,34 @@ Plans:
   4. When the embed bundle receives an HTTP 401 response, it dispatches `open-routing:auth-expired` as a CustomEvent with `composed: true`, bubbling across the Shadow DOM boundary to the host document.
   5. The `modules` attribute filters navigation so only listed entity names appear; unlisted entities are absent from the route table and navigation — not just hidden by CSS.
 
-**Plans**: 13 plans
+**Plans**: 13 plans (+16 in Wave 0.0)
 Plans:
 
-**Wave 0** *(3 plans in parallel — disjoint files; scaffold + Go CORS + Shoelace audit)*
+**Wave 0.0** *(INSERTED 2026-05-18 — UI rewrite: drop Shoelace, adopt Frankenstyle v0.3.8 (Franken UI v3 rebrand) / Lit-based Hardened Web Components + Tailwind v4 + uk-* utility classes. Runs FIRST before Wave 0; existing Phase 7 work paused until W0.0 completes. Plan 07-03 becomes obsolete after W0.0-15.)*
+
+- [ ] 07-w0-01-PLAN.md — Install `frankenstyle@^0.3.8` (npm) + Tailwind v4 in `packages/ui` and `apps/admin`; import `frankenstyle-kit.css` + `hwc-components.iife.js` bundle; verify uk-* classes resolve
+- [ ] 07-w0-02-PLAN.md — Ember palette via Tailwind v4 `@theme` directives (OKLCh light + dark) — `--primary`, `--background`, `--foreground`, `--ring` etc.; existing `--or-color-*` aliased to new vars in compat layer
+- [ ] 07-w0-03-PLAN.md — `/playground` route in admin app: theme toggle (`<uk-theme-switcher>`), responsive grid, empty component slots; Ember reference screenshots saved to `apps/admin/src/playground/references/`
+- [ ] 07-w0-10-PLAN.md — `or-button` Lit wrapper around `.uk-btn` (variants default/primary/secondary/ghost/destructive; sizes sm/md/lg; states hover/focus/disabled/loading); playground entry; visual diff vs Ember ref
+- [ ] 07-w0-11-PLAN.md — `or-input` wrapper (.uk-input); update or-code-input to use or-input internally; playground entry covering all states
+- [ ] 07-w0-12-PLAN.md — `or-select` wrapper (uk-select markup); playground entry
+- [ ] 07-w0-13-PLAN.md — `or-card` wrapper (uk-card with header/body/footer slots); playground entry
+- [ ] 07-w0-14-PLAN.md — `or-badge` wrapper (uk-label variants default/success/warning/destructive/info); playground entry
+- [ ] 07-w0-15-PLAN.md — `or-dialog` wrapper around `<uk-modal>` (Franken UI focus trap built-in — supersedes Plan 07-03); update 7 detail components to use or-dialog; playground entry
+- [ ] 07-w0-16-PLAN.md — `or-tabs` wrapper (uk-tab); playground entry
+- [ ] 07-w0-17-PLAN.md — `or-icon` lucide SVG sprite (replaces sl-icon Bootstrap icons); playground entry showing 20 most-used icons
+- [ ] 07-w0-18-PLAN.md — `or-switch` + `or-checkbox` wrappers (uk-switch + uk-checkbox); single plan covers both; playground entries
+- [ ] 07-w0-19-PLAN.md — `or-table` wrapper (uk-table); update or-data-table to use or-table internally; playground entry
+- [ ] 07-w0-20-PLAN.md — `or-toast` wrapper (uk-notification); `notifyError(err)` helper for API errors; playground entry with all 4 variants
+- [ ] 07-w0-21-PLAN.md — `or-dropdown` wrapper (uk-dropdown); used for row-actions + user menu; playground entry
+- [ ] 07-w0-22-PLAN.md — `or-sidebar` (refactor catalog-shell sidebar — section headers CLINICAL/OPERATIONS/ADMIN/SYSTEM; active state; collapse toggle); playground entry
+- [ ] 07-w0-30-PLAN.md — Migration: search-and-replace all `sl-*` usages in 42 compound components → `or-*` or uk-classes; remove `@shoelace-style/shoelace` from dependencies; remove Vite include hacks; all existing tests still pass
+
+**Wave 0** *(3 plans in parallel — disjoint files; scaffold + Go CORS + Shoelace audit — Plan 07-03 obsoleted by W0.0-15)*
 
 - [ ] 07-01-PLAN.md — Embed package scaffold: package.json + tsconfig + vite.config.ts (library mode) + vitest.config.ts + test-setup.ts + index.html + playwright.config.ts (3-host matrix) + .size-limit.json + 4 e2e spec stubs + 3 stub hosts (react/vue/html with esm.sh CDN imports) + 2 unit test stubs + .gitignore (EMBED-01, EMBED-09, EMBED-10)
 - [ ] 07-02-PLAN.md — Go CORS middleware (go-chi/cors v1.2.2): cors.go + AllowedOriginsFromEnv parser + 12 unit tests + cors_preflight_test.go + cors_cross_origin_test.go (Phase 1 isolation suite extension) + CORSAllowedOrigins config field + Taskfile dev env default (CORS_ALLOWED_ORIGINS=*) + chi chain insert BEFORE OrgContext (EMBED-02, EMBED-10)
-- [ ] 07-03-PLAN.md — Shoelace <sl-dialog> audit + replace in 7 packages/ui components (agents/skills/queues/channels/adapters/break-reasons detail + status-panel) — inline role=dialog with manual Escape-key + focus management (D7-04: <sl-dialog> focus-trap broken in nested Shadow DOM per shoelace#709) (EMBED-04)
+- [ ] ~~07-03-PLAN.md~~ — OBSOLETE: superseded by 07-w0-15-PLAN.md (or-dialog wrapping uk-modal handles focus trap; standalone sl-dialog audit no longer needed)
 
 **Wave 1** *(blocked on Wave 0)*
 
