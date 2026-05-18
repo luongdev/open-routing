@@ -10,3 +10,7 @@ export { OrFormWizard } from './form-wizard.js';
 export type { OrFormWizardStep } from './form-wizard.js';
 // Plan 06-10: queue-picker primitive (shared with channels + future status panel)
 export { OrQueuePicker } from './queue-picker.js';
+// Plan 07-w0-17: or-icon wraps Frankenstyle uk-icon with typed icon names
+export { OrIcon } from './or-icon.js';
+export { ICON_NAMES } from './icon-names.js';
+export type { IconName } from './icon-names.js';
