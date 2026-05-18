@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HTML host (embed test)</title>
+  <style>
+    * { all: revert; box-sizing: border-box; }
+    body { font-family: serif; background: lime; color: red; }
+  </style>
+</head>
+<body>
+  <h1 style="font-size: 200%; color: purple;">Host CSS poison</h1>
+  <open-routing-catalog
+    org-id="01952a6b-1c00-7000-8000-000000000001"
+    api-base-url="http://localhost:4173"
+    theme="or-light"
+    modules="agents,skills">
+  </open-routing-catalog>
+  <script type="module" src="/embed.js"></script>
+</body>
+</html>
