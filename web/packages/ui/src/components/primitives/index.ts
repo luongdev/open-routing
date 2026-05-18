@@ -14,3 +14,6 @@ export { OrQueuePicker } from './queue-picker.js';
 export { OrIcon } from './or-icon.js';
 export { ICON_NAMES } from './icon-names.js';
 export type { IconName } from './icon-names.js';
+// Plan 07-w0-10: or-button Frankenstyle primitive
+export { OrButton } from './or-button.js';
+export type { ButtonVariant, ButtonSize } from './or-button.js';
