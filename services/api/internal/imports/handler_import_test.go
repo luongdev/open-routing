@@ -6,7 +6,7 @@
 //   - Idempotency-Key hit → replay returned.
 //   - No JSONBody + no Body → 400 unsupported_content_type.
 //   - CSV without/with-wrong schema_version → 400.
-//   - JSON over 500 rows → 413.
+//   - JSON over importRowLimit rows → 413.
 //   - CSV header-only (zero data rows) → 200 with empty arrays.
 //   - Status decisions (200 / 207 / 422) from real chunk loop results.
 //
@@ -154,14 +154,14 @@ func TestBulkImportCatalog_CSVWrongSchemaVersion_400(t *testing.T) {
 	require.True(t, strings.HasPrefix(r.Reason, "unsupported_schema_version"))
 }
 
-// TestBulkImportCatalog_JSONOversize501Rows_413 — JSONBody with 501
-// elements → 413 with the canonical reason. No DB touched.
-func TestBulkImportCatalog_JSONOversize501Rows_413(t *testing.T) {
+// TestBulkImportCatalog_JSONOversize10001Rows_413 — JSONBody with one row
+// over the importRowLimit → 413 with the canonical reason. No DB touched.
+func TestBulkImportCatalog_JSONOversize10001Rows_413(t *testing.T) {
 	t.Parallel()
 	imp := newDispatchOnlyImporter()
 	ctx := orgkey.SetOrgID(context.Background(), uuid.Must(uuid.NewV7()))
 
-	body := make([]interface{}, 501)
+	body := make([]interface{}, importRowLimit+1)
 	for i := range body {
 		body[i] = map[string]interface{}{"code": "a", "name": "b", "email": "c@d.com"}
 	}

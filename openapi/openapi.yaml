@@ -1973,7 +1973,7 @@ components:
 
     RequestEntityTooLarge:
       description: >
-        Request body exceeds the 50 MB / 500 row import limit (IMP-07).
+        Request body exceeds the 50 MB / 10,000 row import limit.
         Use the v0.2 async pathway for larger imports.
       content:
         application/json:
@@ -3346,7 +3346,7 @@ paths:
         that need full replay should use the non-idempotent path or wait for
         v0.2.
 
-        **Size limits:** Maximum 50 MB body and 500 rows (IMP-07). Oversized
+        **Size limits:** Maximum 50 MB body and 10,000 rows. Oversized
         requests return HTTP 413 (request_too_large_use_async_pathway) before
         import processing begins. The v0.2 async pathway will handle larger
         imports.
@@ -3394,13 +3394,13 @@ paths:
                 used because oapi-codegen v2 does not emit accessor helpers
                 for `oneOf` request bodies (verified — issue #1620).
               items: {}
-              maxItems: 500
+              maxItems: 10000
           text/csv:
             schema:
               type: string
               description: >
                 RFC 4180 CSV with header row. Field names match JSON field
-                names. UTF-8 with or without BOM. Max 500 rows (IMP-07).
+                names. UTF-8 with or without BOM. Max 10,000 rows.
       responses:
         "200":
           description: All rows imported successfully.
@@ -3513,4 +3513,4 @@ tags:
       user-facing canonical identifier introduced by Phase 04.1 (D04_1-01);
       `external_id` is supported as an optional integration-mapping field on
       every `Import*Request` (D04_1-07) but is NOT the upsert key. Returns
-      HTTP 207 on partial success. Capped at 50 MB / 500 rows in v0.1.
+      HTTP 207 on partial success. Capped at 50 MB / 10,000 rows in v0.1.

@@ -5,7 +5,7 @@
 //     BOM + CRLF + embedded comma + embedded RFC-4180-escaped quote round-
 //     trips through stripBOM + newCSVReader + UpsertAgentByCode.
 //   - D5-08 / IMP-02: invalid UTF-8 byte sequence returns 400 csv_not_utf8.
-//   - D5-21 / D5-22 / IMP-07: oversize row count (501) AND oversize body
+//   - D5-21 / IMP-07: oversize row count (importRowLimit+1) AND oversize body
 //     (51 MB) return 413 with the canonical reason.
 //   - IMP-08: missing or mismatched ?schema_version returns 400 listing
 //     supported versions.
@@ -86,10 +86,10 @@ func TestBulkImport_InvalidUTF8_400(t *testing.T) {
 	require.Contains(t, string(respBody), "csv_not_utf8")
 }
 
-// TestBulkImport_Oversize501Rows_413 — D5-22. Generate 501 CSV data rows
+// TestBulkImport_OversizeRows_413 — Generate importRowLimit+1 CSV data rows
 // programmatically (avoids checking in a giant file); POST → 413 with
 // the canonical reason.
-func TestBulkImport_Oversize501Rows_413(t *testing.T) {
+func TestBulkImport_OversizeRows_413(t *testing.T) {
 	th := newTestImports(t)
 	if th == nil {
 		return
@@ -100,14 +100,13 @@ func TestBulkImport_Oversize501Rows_413(t *testing.T) {
 
 	var buf bytes.Buffer
 	buf.WriteString("code,name,email\n")
-	for i := 1; i <= 501; i++ {
-		// Codes like emp_0001 ... emp_0501 (all valid per the regex).
-		fmt.Fprintf(&buf, "emp_%04d,Agent%d,a%d@example.com\n", i, i, i)
+	for i := 1; i <= importRowLimit+1; i++ {
+		fmt.Fprintf(&buf, "emp_%05d,Agent%d,a%d@example.com\n", i, i, i)
 	}
 
 	resp, respBody := postImportCSV(t, th, api.Agents, buf.Bytes())
 	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode,
-		"501 rows must produce 413 (D5-22 streaming cap); body=%s", string(respBody))
+		"%d rows must produce 413 (streaming cap); body=%s", importRowLimit+1, string(respBody))
 	require.Contains(t, string(respBody), "request_too_large_use_async_pathway")
 }
 
