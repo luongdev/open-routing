@@ -32,3 +32,7 @@ export { OrBadge } from './or-badge.js';
 export type { BadgeVariant } from './or-badge.js';
 export { OrTabs } from './or-tabs.js';
 export type { Tab } from './or-tabs.js';
+// W0.0-20: notify() imperative toast API + or-toast declarative element
+export { notify, notifyError } from './notify.js';
+export type { NotifyOptions, NotifyVariant, NotifyPosition } from './notify.js';
+export { OrToast } from './or-toast.js';
