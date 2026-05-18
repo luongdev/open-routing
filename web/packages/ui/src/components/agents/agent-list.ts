@@ -96,6 +96,7 @@ export class OrAgentList extends LitElement {
   // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
   @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: Boolean, attribute: 'status-mode' }) accessor statusMode = false;
 
   // --- Internal state ---
   @state() private accessor _search = '';
@@ -213,7 +214,10 @@ export class OrAgentList extends LitElement {
   private _handleRowClick(e: CustomEvent): void {
     const row = e.detail?.row as Agent | undefined;
     if (row?.id) {
-      this._navigate(`/orgs/${this.orgId}/agents/${row.id}`);
+      const dest = this.statusMode
+        ? `/orgs/${this.orgId}/agents/${row.id}/status`
+        : `/orgs/${this.orgId}/agents/${row.id}`;
+      this._navigate(dest);
     }
   }
 

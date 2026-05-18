@@ -89,9 +89,7 @@ const NAV_ENTRIES: readonly NavEntry[] = [
   { key: 'break-reasons', label: 'Break Reasons',  icon: 'pause-circle-fill', path: '/orgs/{orgId}/break-reasons' },
   { key: '__divider__',   label: '',               icon: '',                  path: '' },
   { key: 'imports',       label: 'Bulk Import',    icon: 'upload',            path: '/orgs/{orgId}/imports/new' },
-  // Agent Status nav links to the agents list (user selects an agent to view its status).
-  // D6-12: status route is per-agent /agents/:id/status — no standalone status list page.
-  { key: 'status',        label: 'Agent Status',   icon: 'circle-fill',       path: '/orgs/{orgId}/agents' },
+  { key: 'status',        label: 'Agent Status',   icon: 'circle-fill',       path: '/orgs/{orgId}/agents/status' },
 ] as const;
 
 /** Entries that always show regardless of modules filter (divider, imports, status). */
@@ -272,6 +270,12 @@ export class OrCatalogShell extends LitElement {
       enter: this._orgRouteEnter,
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-agent-form .orgId=${org_id ?? ''} .client=${this._client!}></or-agent-form>`,
+    },
+    {
+      path: '/orgs/:org_id/agents/status',
+      enter: this._orgRouteEnter,
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-agent-list .orgId=${org_id ?? ''} .client=${this._client!} .statusMode=${true}></or-agent-list>`,
     },
     {
       path: '/orgs/:org_id/agents/:id',
