@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 interface AgentRow {
   id: string;
@@ -133,6 +134,8 @@ export class OrAgentStatusList extends LitElement {
 
   @state() private accessor _agents: AgentRow[] = [];
   @state() private accessor _agentsLoading = true;
+  @state() private accessor _loadError: string | null = null;
+  @state() private accessor _hasMore = false;
   @state() private accessor _statuses = new Map<string, AgentStatusResponse>();
   @state() private accessor _statusLoading = new Set<string>();
   @state() private accessor _transitioning = new Set<string>();
@@ -157,20 +160,31 @@ export class OrAgentStatusList extends LitElement {
   private async _loadAgents(): Promise<void> {
     if (!this.orgId || !this.client) return;
     this._agentsLoading = true;
+    this._loadError = null;
     try {
       const result = await this.client.GET('/v1/orgs/{org_id}/agents' as never, {
         params: { path: { org_id: this.orgId }, query: { limit: 100 } },
       } as never);
-      const { data } = result as { data: { items?: AgentRow[] } | null; error: unknown };
-      this._agents = data?.items ?? [];
+      const { data, error } = result as {
+        data: { items?: AgentRow[]; has_more?: boolean } | null;
+        error: unknown;
+      };
+      if (error || !data) {
+        this._loadError = 'Failed to load agents — check network connection.';
+        return;
+      }
+      this._agents = data.items ?? [];
+      this._hasMore = data.has_more ?? false;
       await this._refreshStatuses();
+    } catch {
+      this._loadError = 'Failed to load agents — check network connection.';
     } finally {
       this._agentsLoading = false;
     }
   }
 
   private async _refreshStatuses(): Promise<void> {
-    await Promise.all(this._agents.map(a => this._fetchStatus(a.id)));
+    await Promise.allSettled(this._agents.map(a => this._fetchStatus(a.id)));
   }
 
   private async _fetchStatus(agentId: string): Promise<void> {
@@ -180,11 +194,16 @@ export class OrAgentStatusList extends LitElement {
       const result = await this.client.GET('/v1/orgs/{org_id}/agents/{id}/status' as never, {
         params: { path: { org_id: this.orgId, id: agentId } },
       } as never);
-      const { data } = result as { data: AgentStatusResponse | null; error: unknown };
+      const { data, error } = result as { data: AgentStatusResponse | null; error: unknown };
+      if (error) return;
       if (data) {
-        const next = new Map(this._statuses);
-        next.set(agentId, data);
-        this._statuses = next;
+        const existing = this._statuses.get(agentId);
+        // Discard poll response if a newer version already written (patch race guard)
+        if (!existing || data.state_version >= existing.state_version) {
+          const next = new Map(this._statuses);
+          next.set(agentId, data);
+          this._statuses = next;
+        }
       }
     } finally {
       const next = new Set(this._statusLoading);
@@ -201,6 +220,7 @@ export class OrAgentStatusList extends LitElement {
         params: { path: { org_id: this.orgId, id: agentId } },
         body: { to, ...extra },
       } as never);
+      // Re-fetch unconditionally — PATCH response may be 204 No Content
       await this._fetchStatus(agentId);
     } finally {
       const next = new Set(this._transitioning);
@@ -303,6 +323,21 @@ export class OrAgentStatusList extends LitElement {
           @click=${() => void this._refreshStatuses()}
         ></sl-icon-button>
       </div>
+
+      ${this._loadError ? html`
+        <sl-alert variant="danger" open style="margin-bottom:16px">
+          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          ${this._loadError}
+          <sl-button size="small" slot="footer" @click=${() => void this._loadAgents()}>Retry</sl-button>
+        </sl-alert>
+      ` : nothing}
+
+      ${this._hasMore ? html`
+        <sl-alert variant="warning" open style="margin-bottom:16px">
+          <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+          Showing first 100 agents. Use the search box to find agents not listed here.
+        </sl-alert>
+      ` : nothing}
 
       ${this._agentsLoading
         ? html`
