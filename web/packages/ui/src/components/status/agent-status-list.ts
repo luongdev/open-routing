@@ -139,6 +139,7 @@ export class OrAgentStatusList extends LitElement {
   @state() private accessor _statuses = new Map<string, AgentStatusResponse>();
   @state() private accessor _statusLoading = new Set<string>();
   @state() private accessor _transitioning = new Set<string>();
+  @state() private accessor _patchErrors = new Map<string, string>();
   @state() private accessor _search = '';
 
   private _pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -215,12 +216,21 @@ export class OrAgentStatusList extends LitElement {
   private async _patch(agentId: string, to: AgentStatus, extra?: { force?: boolean }): Promise<void> {
     if (this._transitioning.has(agentId) || !this.client) return;
     this._transitioning = new Set([...this._transitioning, agentId]);
+    const errNext = new Map(this._patchErrors);
+    errNext.delete(agentId);
+    this._patchErrors = errNext;
     try {
-      await this.client.PATCH('/v1/orgs/{org_id}/agents/{id}/status' as never, {
+      const result = await this.client.PATCH('/v1/orgs/{org_id}/agents/{id}/status' as never, {
         params: { path: { org_id: this.orgId, id: agentId } },
         body: { to, ...extra },
       } as never);
-      // Re-fetch unconditionally — PATCH response may be 204 No Content
+      const { error } = result as { error: { reason?: string } | null };
+      if (error) {
+        const next = new Map(this._patchErrors);
+        next.set(agentId, error?.reason ?? 'Status change failed');
+        this._patchErrors = next;
+        return;
+      }
       await this._fetchStatus(agentId);
     } finally {
       const next = new Set(this._transitioning);
@@ -249,6 +259,7 @@ export class OrAgentStatusList extends LitElement {
     const status = this._statuses.get(agent.id);
     const busy = this._transitioning.has(agent.id);
     const initialLoad = this._statusLoading.has(agent.id) && !status;
+    const patchErr = this._patchErrors.get(agent.id);
 
     if (initialLoad) {
       return html`<span class="loading-cell"><sl-spinner style="font-size:13px"></sl-spinner></span>`;
@@ -258,6 +269,8 @@ export class OrAgentStatusList extends LitElement {
 
     return html`
       <div class="actions-cell">
+        ${patchErr ? html`<span style="color:var(--sl-color-danger-600);font-size:12px">${patchErr}</span>` : nothing}
+
         ${cur === 'NotReady' || cur === 'Break' ? html`
           <sl-button size="small" variant="primary" ?disabled=${busy}
             @click=${() => void this._patch(agent.id, 'Ready')}>
@@ -335,7 +348,7 @@ export class OrAgentStatusList extends LitElement {
       ${this._hasMore ? html`
         <sl-alert variant="warning" open style="margin-bottom:16px">
           <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
-          Showing first 100 agents. Use the search box to find agents not listed here.
+          Showing first 100 agents only. Search filters this list — agents beyond the first 100 are not reachable here.
         </sl-alert>
       ` : nothing}
 
