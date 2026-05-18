@@ -64,13 +64,13 @@ interface BreakReason {
 
 export const STATUS_PILL_STYLES: Record<AgentStatus, { bg: string; text: string; icon: string }> = {
   Ready: {
-    bg: 'var(--sl-color-primary-50, #f0fafa)',
-    text: 'var(--sl-color-primary-700, #1a575f)',
+    bg: 'color-mix(in srgb, var(--sl-color-success-500, #12b76a) 14%, transparent)',
+    text: 'var(--sl-color-success-700, #027a48)',
     icon: 'circle-fill',
   },
   NotReady: {
-    bg: 'var(--sl-color-neutral-100, #f5f5f5)',
-    text: 'var(--or-color-text-strong, #171717)',
+    bg: 'color-mix(in srgb, var(--sl-color-danger-500, #f04438) 12%, transparent)',
+    text: 'var(--sl-color-danger-700, #b42318)',
     icon: 'dash-circle-fill',
   },
   Break: {
