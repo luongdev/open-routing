@@ -13,6 +13,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
@@ -118,6 +119,25 @@ export class OrDataTable extends LitElement {
       display: inline-block;
     }
 
+    /* Compact the action menu */
+    sl-menu {
+      min-width: 140px;
+    }
+
+    sl-menu-item::part(base) {
+      font-size: 13px;
+      padding: 6px 12px;
+    }
+
+    sl-menu-item[data-action="delete"]::part(base) {
+      color: var(--sl-color-danger-600, #c01048);
+    }
+
+    sl-menu-item[data-action="delete"]::part(base):hover {
+      background: var(--sl-color-danger-50, #fff1f3);
+      color: var(--sl-color-danger-700, #89123e);
+    }
+
     /* Loading state */
     .loading-container {
       display: flex;
@@ -134,15 +154,20 @@ export class OrDataTable extends LitElement {
     .skeleton-cell {
       height: 20px;
       border-radius: 4px;
-      background: var(--or-color-skeleton-base, #e5e5e5);
-      animation: shimmer 1.5s ease-in-out infinite;
+      background: linear-gradient(
+        90deg,
+        var(--or-color-skeleton-base, #e5e5e5) 0%,
+        var(--or-color-skeleton-highlight, #f0f0f0) 50%,
+        var(--or-color-skeleton-base, #e5e5e5) 100%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.4s linear infinite;
       flex: 1;
     }
 
     @keyframes shimmer {
-      0%   { opacity: 1; }
-      50%  { opacity: 0.4; }
-      100% { opacity: 1; }
+      0%   { background-position: 200% center; }
+      100% { background-position: -200% center; }
     }
 
     /* Empty state */
@@ -244,7 +269,8 @@ export class OrDataTable extends LitElement {
               <sl-icon slot="prefix" name="check-circle"></sl-icon>
               Enable
             </sl-menu-item>
-            <sl-menu-item variant="danger" @click=${(e: Event) => this._dispatchRowAction(row, 'delete', e)}>
+            <sl-divider></sl-divider>
+            <sl-menu-item data-action="delete" @click=${(e: Event) => this._dispatchRowAction(row, 'delete', e)}>
               <sl-icon slot="prefix" name="trash"></sl-icon>
               Delete
             </sl-menu-item>

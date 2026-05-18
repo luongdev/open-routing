@@ -1,9 +1,13 @@
-// Source: CONTEXT.md D6-09, D6-20, D6-21, D6-22
-// App bootstrap: configure i18n and register the shell component.
-// Shell component reads org_id from URL path and feeds it to the router.
+import '@shoelace-style/shoelace/dist/themes/light.css';
+import { setBasePath } from '@shoelace-style/shoelace/dist/utilities/base-path.js';
 import { configureLocalization } from '@lit/localize';
 import { sourceLocale, targetLocales } from '@open-routing/ui/locales/locale-codes.js';
-import '@open-routing/ui/components/shell'; // registers <or-catalog-shell>
+
+// Must run before the shell import so sl-icon connectedCallback sees the path.
+// Static imports are hoisted before module body code, so the shell is loaded
+// via dynamic import to guarantee ordering.
+setBasePath('/shoelace/');
+await import('@open-routing/ui/components/shell');
 
 type AppLocale = typeof sourceLocale | (typeof targetLocales)[number];
 const VALID_LOCALES: ReadonlySet<string> = new Set([sourceLocale, ...targetLocales]);

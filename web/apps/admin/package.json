@@ -10,7 +10,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "setup:icons": "node scripts/setup-icons.cjs",
+    "prepare": "node scripts/setup-icons.cjs"
   },
   "dependencies": {
     "@lit-labs/router": "^0.1.4",

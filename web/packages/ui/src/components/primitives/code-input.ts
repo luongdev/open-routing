@@ -23,6 +23,16 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
  */
 export const CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 
+export function nameToCode(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[^a-z]+/, '')
+    .replace(/_+$/, '')
+    .substring(0, 64);
+}
+
 export const CODE_ERROR_MSG =
   'Code must start with a lowercase letter and contain only lowercase letters, digits, and underscores (max 64 chars)';
 

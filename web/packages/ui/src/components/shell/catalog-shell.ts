@@ -13,7 +13,7 @@
 // - 'open-routing:navigate' events from entity components reach this._routes.goto().
 // - Switch org clears _client + _currentOrgId and navigates to '/'.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Routes } from '@lit-labs/router';
 import { orLight, orDark, orBrand, ALL_TOKEN_KEYS } from '../../themes/index.js';
@@ -183,6 +183,17 @@ export class OrCatalogShell extends LitElement {
     .nav-item:hover {
       background: var(--or-color-row-hover, #fafafa);
     }
+    .nav-item--active {
+      background: var(--or-color-nav-active-bg, rgba(43, 138, 147, 0.1));
+      color: var(--or-color-primary, #2b8a93);
+      font-weight: 500;
+    }
+    .nav-item--active:hover {
+      background: var(--or-color-nav-active-bg, rgba(43, 138, 147, 0.15));
+    }
+    .nav-item--active sl-icon {
+      color: var(--or-color-primary, #2b8a93);
+    }
     .nav-divider {
       height: 1px;
       background: var(--or-color-divider, #e5e5e5);
@@ -231,6 +242,7 @@ export class OrCatalogShell extends LitElement {
   private _orgRouteEnter = async ({ org_id }: Record<string, string | undefined>): Promise<boolean> => {
     if (!UUIDV7_PATTERN.test(org_id ?? '')) {
       window.history.pushState(null, '', '/');
+      this._syncOrgIdFromUrl();
       this._routes.goto('/');
       return false;
     }
@@ -411,15 +423,17 @@ export class OrCatalogShell extends LitElement {
     // D6-09: Parse initial org_id from URL path on first connect.
     this._syncOrgIdFromUrl();
 
-    this._handlePopState = () => { this._syncOrgIdFromUrl(); };
+    this._handlePopState = () => {
+      this._syncOrgIdFromUrl();
+      this._routes.goto(window.location.pathname);
+    };
     window.addEventListener('popstate', this._handlePopState);
 
     this.addEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.addEventListener('open-routing:navigate', this._handleNavigate);
 
-    // Force initial route match (workaround for @lit-labs/router initial load issue)
     setTimeout(() => {
-      this._routes.goto(window.location.pathname + window.location.search);
+      this._routes.goto(window.location.pathname);
     }, 0);
   }
 
@@ -435,6 +449,15 @@ export class OrCatalogShell extends LitElement {
   /** Popstate handler reference for cleanup on disconnectedCallback. */
   private _handlePopState: (() => void) | null = null;
 
+  private _navigate(path: string, replace = false): void {
+    if (replace) {
+      window.history.replaceState(null, '', path);
+    } else {
+      window.history.pushState(null, '', path);
+    }
+    this._routes.goto(path.split('?')[0] ?? path);
+  }
+
   /**
    * D6-09: Parse /orgs/:org_id/ segment from window.location.pathname.
    * The regex requires a trailing slash (all entity routes have one).
@@ -449,25 +472,24 @@ export class OrCatalogShell extends LitElement {
       if (!this._client) {
         this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
       }
+    } else {
+      this._currentOrgId = '';
+      this.orgId = '';
+      this._client = null;
     }
   }
 
   private _handleNavigate = (e: Event): void => {
     const { path } = (e as CustomEvent<{ path: string }>).detail;
-    window.history.pushState(null, '', path);
-    this._routes.goto(path);
+    this._navigate(path);
   };
 
   private _handleOrgSelected = (e: Event): void => {
     const { orgId } = (e as CustomEvent<{ orgId: string }>).detail;
-    console.log('OR-CATALOG-SHELL: Received open-routing:org-selected event!', orgId);
     this._currentOrgId = orgId;
     this.orgId = orgId;
     this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
-    const path = `/orgs/${orgId}/agents`;
-    console.log('OR-CATALOG-SHELL: Navigating to', path);
-    window.history.pushState(null, '', path);
-    this._routes.goto(path);
+    this._navigate(`/orgs/${orgId}/agents`);
   };
 
   override updated(changed: Map<string, unknown>): void {
@@ -510,14 +532,24 @@ export class OrCatalogShell extends LitElement {
   }
 
   private _renderNav() {
+    const currentPath = window.location.pathname;
     return this._visibleEntries().map((entry) => {
       if (entry.key === '__divider__') {
         return html`<div class="nav-divider" role="separator"></div>`;
       }
+      const resolved = this._navPath(entry.path);
+      const basePath = resolved.split('/').slice(0, 4).join('/');
+      // /status is always the terminal segment of a per-agent status route.
+      // Using endsWith prevents false matches on future paths like /some-status-thing.
+      const onStatusRoute = currentPath.endsWith('/status');
+      const isActive = entry.key === 'status'
+        ? onStatusRoute
+        : !!basePath && currentPath.startsWith(basePath) && !onStatusRoute;
       return html`
         <button
-          class="nav-item"
-          @click=${() => this._routes.goto(this._navPath(entry.path))}
+          class="nav-item ${isActive ? 'nav-item--active' : ''}"
+          @click=${() => this._navigate(resolved)}
+          aria-current=${isActive ? 'page' : nothing}
           aria-label="${entry.label}"
         >
           <sl-icon name="${entry.icon}"></sl-icon>
@@ -569,8 +601,7 @@ export class OrCatalogShell extends LitElement {
             this._currentOrgId = '';
             this.orgId = '';
             this._client = null;
-            window.history.pushState(null, '', '/');
-            this._routes.goto('/');
+            this._navigate('/');
           }}
         >
           Switch org
