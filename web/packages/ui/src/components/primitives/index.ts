@@ -36,3 +36,6 @@ export type { Tab } from './or-tabs.js';
 export { notify, notifyError } from './notify.js';
 export type { NotifyOptions, NotifyVariant, NotifyPosition } from './notify.js';
 export { OrToast } from './or-toast.js';
+// W0.0-21: or-dropdown menu popover with keyboard nav
+export { OrDropdown } from './or-dropdown.js';
+export type { DropdownItem } from './or-dropdown.js';

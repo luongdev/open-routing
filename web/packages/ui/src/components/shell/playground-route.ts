@@ -9,6 +9,7 @@ import { cardSlot } from './slots/card.js';
 import { badgeSlot } from './slots/badge.js';
 import { tabsSlot } from './slots/tabs.js';
 import { toastSlot } from './slots/toast.js';
+import { dropdownSlot } from './slots/dropdown.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -43,7 +44,7 @@ const SLOTS: readonly SlotDef[] = [
   { id: 'switch-checkbox', label: 'Switch + Checkbox', plan: '07-w0-18' },
   { id: 'table',           label: 'Table',             plan: '07-w0-19' },
   { id: 'toast',           label: 'Toast',             plan: '07-w0-20', render: toastSlot },
-  { id: 'dropdown',        label: 'Dropdown',          plan: '07-w0-21' },
+  { id: 'dropdown',        label: 'Dropdown',          plan: '07-w0-21', render: dropdownSlot },
   { id: 'sidebar',         label: 'Sidebar',           plan: '07-w0-22' },
 ];
 
