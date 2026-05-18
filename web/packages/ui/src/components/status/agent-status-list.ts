@@ -200,7 +200,7 @@ export class OrAgentStatusList extends LitElement {
       }
       this._agents = data.items ?? [];
       this._hasMore = data.has_more ?? false;
-      await this._refreshStatuses();
+      await Promise.allSettled([this._refreshStatuses(), this._fetchBreakReasons()]);
     } catch {
       this._loadError = 'Failed to load agents — check network connection.';
     } finally {
@@ -295,14 +295,18 @@ export class OrAgentStatusList extends LitElement {
     const label = statusResp.status === 'NotReady' ? 'Not Ready'
       : statusResp.status === 'WrapUp' ? 'Wrap Up'
       : statusResp.status;
+    const breakName = statusResp.break_reason_name
+      ?? (statusResp.break_reason_id
+        ? this._breakReasons.find(r => r.id === statusResp.break_reason_id)?.name
+        : undefined);
     return html`
       <div>
         <span class="status-pill" style="background:${s.bg};color:${s.text};">
           <sl-icon name="${s.icon}" style="font-size:10px"></sl-icon>
           ${label}
         </span>
-        ${statusResp.status === 'Break' && statusResp.break_reason_name ? html`
-          <div class="break-reason-name">${statusResp.break_reason_name}</div>
+        ${statusResp.status === 'Break' && breakName ? html`
+          <div class="break-reason-name">${breakName}</div>
         ` : nothing}
       </div>
     `;
