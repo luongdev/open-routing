@@ -587,7 +587,7 @@ export interface paths {
          *     that need full replay should use the non-idempotent path or wait for
          *     v0.2.
          *
-         *     **Size limits:** Maximum 50 MB body and 500 rows (IMP-07). Oversized
+         *     **Size limits:** Maximum 50 MB body and 10,000 rows. Oversized
          *     requests return HTTP 413 (request_too_large_use_async_pathway) before
          *     import processing begins. The v0.2 async pathway will handle larger
          *     imports.
@@ -1805,7 +1805,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description Request body exceeds the 50 MB / 500 row import limit (IMP-07). Use the v0.2 async pathway for larger imports. */
+        /** @description Request body exceeds the 50 MB / 10,000 row import limit. Use the v0.2 async pathway for larger imports. */
         RequestEntityTooLarge: {
             headers: {
                 [name: string]: unknown;
