@@ -148,15 +148,15 @@ export class OrChannelForm extends LitElement {
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: Object }) accessor client!: ApiClient;
 
   // Expose steps for test inspection
   _wizardSteps: OrFormWizardStep[] = WIZARD_STEPS;
 
   // --- Internal state ---
-  @state() _currentStep = 0;
-  @state() _formData: FormData = {
+  @state() accessor _currentStep = 0;
+  @state() accessor _formData: FormData = {
     code: '',
     name: '',
     external_id: '',
@@ -164,9 +164,9 @@ export class OrChannelForm extends LitElement {
     default_queue_id: null,
     enabled: true,
   };
-  @state() _errors: Record<string, string> = {};
-  @state() private _apiError: string | null = null;
-  @state() private _submitting = false;
+  @state() accessor _errors: Record<string, string> = {};
+  @state() private accessor _apiError: string | null = null;
+  @state() private accessor _submitting = false;
 
   // --- Navigation ---
 

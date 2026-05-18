@@ -319,28 +319,28 @@ export class OrImportPage extends LitElement {
     }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'base-url' }) baseURL = '';
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'base-url' }) accessor baseURL = '';
   /** Optional typed client — not used directly; createImporter() handles HTTP (ADMIN-04) */
-  @property({ attribute: false }) client: ApiClient | null = null;
+  @property({ attribute: false }) accessor client: ApiClient | null = null;
 
-  @state() private _step: 1 | 2 | 3 = 1;
-  @state() private _selectedEntity: CatalogEntity | null = null;
-  @state() private _selectedFormat: 'csv' | 'json' = 'csv';
-  @state() private _stagedFile: File | null = null;
-  @state() private _dragOver = false;
-  @state() private _fileError: string | null = null;
-  @state() private _useIdempotency = false;
-  @state() private _idempotencyKey: string | null = null;
-  @state() private _submitting = false;
-  @state() private _error: string | null = null;
-  @state() private _errorType: 'schema' | 'size' | 'generic' | null = null;
+  @state() private accessor _step: 1 | 2 | 3 = 1;
+  @state() private accessor _selectedEntity: CatalogEntity | null = null;
+  @state() private accessor _selectedFormat: 'csv' | 'json' = 'csv';
+  @state() private accessor _stagedFile: File | null = null;
+  @state() private accessor _dragOver = false;
+  @state() private accessor _fileError: string | null = null;
+  @state() private accessor _useIdempotency = false;
+  @state() private accessor _idempotencyKey: string | null = null;
+  @state() private accessor _submitting = false;
+  @state() private accessor _error: string | null = null;
+  @state() private accessor _errorType: 'schema' | 'size' | 'generic' | null = null;
   /**
    * Cross-AI fix: When BulkImportResult lacks an import_id (current Phase 5 contract),
    * render the result inline rather than navigating to /imports/{wrong-id}. Set after
    * a successful POST when no import_id is present in the response.
    */
-  @state() private _inlineResult: BulkImportResult | null = null;
+  @state() private accessor _inlineResult: BulkImportResult | null = null;
 
   /**
    * Factory for the importer function. Overridable in tests to inject a spy.

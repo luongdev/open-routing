@@ -47,23 +47,27 @@ test.describe('Admin SPA smoke test', () => {
       const shellShadow = shell?.shadowRoot;
       const picker = shellShadow?.querySelector('or-org-picker');
       const pickerShadow = picker?.shadowRoot;
-      // or-org-picker renders a form with an sl-input
-      const slInput = pickerShadow?.querySelector('sl-input');
-      if (slInput) {
-        (slInput as HTMLElement & { value?: string }).value = orgId;
-        slInput.dispatchEvent(new Event('sl-input', { bubbles: true, composed: true }));
-        slInput.dispatchEvent(new Event('sl-change', { bubbles: true, composed: true }));
+      // or-org-picker renders a native input
+      const nativeInput = pickerShadow?.querySelector('input');
+      if (nativeInput) {
+        nativeInput.value = orgId;
+        nativeInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        nativeInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       }
     }, TEST_ORG_ID);
 
     // Click the Continue button inside or-org-picker shadow root
     await page.evaluate(() => {
       const shell = document.querySelector('or-catalog-shell');
-      const shellShadow = shell?.shadowRoot;
-      const picker = shellShadow?.querySelector('or-org-picker');
-      const pickerShadow = picker?.shadowRoot;
-      const btn = pickerShadow?.querySelector('sl-button[variant="primary"], button[type="submit"]') as HTMLElement | null;
-      btn?.click();
+      const picker = shell?.shadowRoot?.querySelector('or-org-picker');
+      const btn = picker?.shadowRoot?.querySelector('.continue-btn') as HTMLElement | null;
+      if (btn) btn.click();
+      else console.error('Playwright: .continue-btn not found!');
+      
+      setTimeout(() => {
+        const err = picker?.shadowRoot?.querySelector('.validation-error');
+        if (err) console.error('Playwright Error found:', err.textContent);
+      }, 500);
     });
 
     // After submitting, shell should navigate to /orgs/:org_id/agents

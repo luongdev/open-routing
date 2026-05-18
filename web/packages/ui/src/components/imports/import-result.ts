@@ -330,13 +330,13 @@ export class OrImportResult extends LitElement {
     }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'import-id' }) importId = '';
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'import-id' }) accessor importId = '';
   /** Typed API client from shell */
-  @property({ attribute: false }) client: ApiClient | null = null;
+  @property({ attribute: false }) accessor client: ApiClient | null = null;
 
   /** Override for idempotent replay display — injected via test or by parent */
-  @state() _idempotentReplay = false;
+  @state() accessor _idempotentReplay = false;
 
   private _loadTask = new Task<[ApiClient | null, string, string], ImportJob | null>(
     this,
