@@ -36,7 +36,7 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: 'pnpm --filter @open-routing/embed preview',
+    command: 'pnpm --filter @open-routing/catalog-embed preview',
     url: 'http://localhost:4173',
     reuseExistingServer: true,
     timeout: 60_000
