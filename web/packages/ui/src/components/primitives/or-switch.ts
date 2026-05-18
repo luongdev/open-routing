@@ -10,6 +10,10 @@ export class OrSwitch extends LitElement {
   @property({ type: String }) label = '';
   @property({ type: String, attribute: 'helper-text' }) helperText = '';
 
+  // Stable per-instance ID — not derived from name to avoid duplicate-id when
+  // multiple switches share a form name (e.g., radio-like groups).
+  private readonly _id = `or-switch-${crypto.randomUUID().slice(0, 8)}`;
+
   override createRenderRoot() { return this; }
 
   private _onChange(e: Event): void {
@@ -20,7 +24,7 @@ export class OrSwitch extends LitElement {
   }
 
   override render() {
-    const id = `or-switch-${this.name || crypto.randomUUID().slice(0, 8)}`;
+    const id = this._id;
     return html`
       <label class="uk-flex uk-flex-middle" style="gap:8px; cursor:pointer;" for=${id}>
         <input
