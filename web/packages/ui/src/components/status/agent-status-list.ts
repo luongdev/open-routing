@@ -168,6 +168,14 @@ export class OrAgentStatusList extends LitElement {
     }
   }
 
+  override updated(changedProps: Map<string, unknown>): void {
+    super.updated(changedProps);
+    if (changedProps.has('orgId')) {
+      this._breakReasons = [];
+      this._breakReasonsError = null;
+    }
+  }
+
   private async _loadAgents(): Promise<void> {
     if (!this.orgId || !this.client) return;
     this._agentsLoading = true;
@@ -232,7 +240,7 @@ export class OrAgentStatusList extends LitElement {
         params: { path: { org_id: this.orgId }, query: { include_disabled: false, limit: 100 } },
       } as never);
       const { data, error } = result as { data: { items?: BreakReason[] } | null; error: unknown };
-      if (error) {
+      if (error != null) {
         this._breakReasonsError = 'Failed to load break reasons';
         return;
       }
@@ -300,7 +308,7 @@ export class OrAgentStatusList extends LitElement {
 
     return html`
       <div class="actions-cell">
-        ${patchErr ? html`<span style="color:var(--sl-color-danger-600);font-size:12px">${patchErr}</span>` : nothing}
+        ${patchErr ? html`<span style="color:var(--sl-color-danger-600);font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${patchErr}</span>` : nothing}
 
         ${cur === 'NotReady' || cur === 'Break' ? html`
           <sl-button size="small" variant="primary" ?disabled=${busy}
@@ -329,7 +337,7 @@ export class OrAgentStatusList extends LitElement {
               ` : this._breakReasonsError ? html`
                 <sl-menu-item disabled style="color:var(--sl-color-danger-600)">${this._breakReasonsError}</sl-menu-item>
               ` : this._breakReasons.map(r => html`
-                <sl-menu-item value="${r.id}">${r.name}</sl-menu-item>
+                <sl-menu-item .value="${r.id}">${r.name}</sl-menu-item>
               `)}
             </sl-menu>
           </sl-dropdown>
