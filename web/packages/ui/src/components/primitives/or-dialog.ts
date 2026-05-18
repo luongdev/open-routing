@@ -1,21 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
-// or-dialog uses Shadow DOM so :host styles can manage display/z-index
-// without polluting the light DOM. UIkit's .uk-modal CSS class is applied
-// to the inner overlay div — this keeps the focus trap and backdrop contained.
-
-const DIALOG_STYLES_ID = 'or-dialog-custom-styles';
-function ensureDialogStyles(): void {
-  if (document.getElementById(DIALOG_STYLES_ID)) return;
-  const style = document.createElement('style');
-  style.id = DIALOG_STYLES_ID;
-  style.textContent = `
-    or-dialog[open] { display: block !important; }
-  `;
-  document.head.appendChild(style);
-}
-
 @customElement('or-dialog')
 export class OrDialog extends LitElement {
   static override styles = css`
@@ -75,11 +60,6 @@ export class OrDialog extends LitElement {
 
   private _previouslyFocused: Element | null = null;
 
-  override connectedCallback(): void {
-    super.connectedCallback();
-    ensureDialogStyles();
-  }
-
   override updated(changed: Map<string, unknown>): void {
     if (!changed.has('open')) return;
     if (this.open) {
@@ -113,11 +93,12 @@ export class OrDialog extends LitElement {
   }
 
   private _focusFirst(): void {
-    if (!this.shadowRoot) return;
-    const focusable = this.shadowRoot.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    focusable?.focus();
+    const selector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    // Check slotted light DOM first — footer/header buttons live there
+    const slotted = this.querySelector<HTMLElement>(selector);
+    if (slotted) { slotted.focus(); return; }
+    // Fallback to shadow root focusables (e.g. close button if added)
+    this.shadowRoot?.querySelector<HTMLElement>(selector)?.focus();
   }
 
   private _dispatchOpen(): void {

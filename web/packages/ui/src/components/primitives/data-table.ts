@@ -3,7 +3,9 @@
 // Row context menu [⋮] uses sl-dropdown with Edit/Disable/Enable/Delete actions.
 // CSS uses design token variables from or-light/or-dark/or-brand themes (D6-19, D6-20).
 // Per-component Shoelace imports for tree-shaking (D6-08).
-// W0.0-19: table markup refactored to compose <or-table hover responsive>.
+// W0.0-19: table uses uk-table/uk-table-hover classes matching or-table's class map.
+// or-table element is registered here to keep custom element registration centralised
+// in the data-table bundle slice.
 
 import { LitElement, html, css, type TemplateResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
