@@ -4,6 +4,8 @@ import { iconSlot } from './slots/icon.js';
 import { switchCheckboxSlot } from './slots/switch-checkbox.js';
 import { buttonSlot } from './slots/button.js';
 import { inputSlot } from './slots/input.js';
+import { selectSlot } from './slots/select.js';
+import { cardSlot } from './slots/card.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -19,6 +21,8 @@ interface SlotDef {
 const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
   button: buttonSlot,
   input: inputSlot,
+  select: selectSlot,
+  card: cardSlot,
   icon: iconSlot,
   'switch-checkbox': switchCheckboxSlot,
 };

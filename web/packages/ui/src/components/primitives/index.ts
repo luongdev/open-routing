@@ -22,3 +22,8 @@ export { OrButton } from './or-button.js';
 export type { ButtonVariant, ButtonSize } from './or-button.js';
 // Plan 07-w0-11: or-input Frankenstyle primitive
 export { OrInput } from './or-input.js';
+// W0.0-12: or-select wraps <select class="uk-select"> with Frankenstyle styling
+export { OrSelect } from './or-select.js';
+export type { SelectOption } from './or-select.js';
+// W0.0-13: or-card composable card with header/body/footer slots
+export { OrCard } from './or-card.js';

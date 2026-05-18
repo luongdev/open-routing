@@ -56,6 +56,20 @@ describe('OrPlaygroundRoute', () => {
     expect(inputs.length).toBeGreaterThan(0);
   });
 
+  it('select slot is wired with or-select elements', async () => {
+    await (el as any).updateComplete;
+    const section = el.shadowRoot!.querySelector('section[data-component="select"]');
+    expect(section).toBeTruthy();
+    expect(section!.querySelectorAll('or-select').length).toBeGreaterThan(0);
+  });
+
+  it('card slot is wired with or-card elements', async () => {
+    await (el as any).updateComplete;
+    const section = el.shadowRoot!.querySelector('section[data-component="card"]');
+    expect(section).toBeTruthy();
+    expect(section!.querySelectorAll('or-card').length).toBeGreaterThan(0);
+  });
+
   it('dispatches open-routing:theme-change event on Ember Dark click', async () => {
     await (el as any).updateComplete;
     const events: CustomEvent[] = [];
