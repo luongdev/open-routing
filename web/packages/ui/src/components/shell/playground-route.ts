@@ -9,6 +9,7 @@ import { cardSlot } from './slots/card.js';
 import { badgeSlot } from './slots/badge.js';
 import { tabsSlot } from './slots/tabs.js';
 import { dialogSlot } from './slots/dialog.js';
+import { tableSlot } from './slots/table.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -34,6 +35,7 @@ const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
 // Slots using render functions (need to be called to get fresh TemplateResult)
 const SLOT_RENDERS: Partial<Record<string, () => TemplateResult>> = {
   dialog: dialogSlot,
+  table: tableSlot,
 };
 
 const SLOTS: readonly SlotDef[] = [

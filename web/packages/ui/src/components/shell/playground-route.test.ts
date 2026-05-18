@@ -32,12 +32,18 @@ describe('OrPlaygroundRoute', () => {
   });
 
   it.each([
-    ['table', '07-w0-19'],
     ['sidebar', '07-w0-22'],
   ])('slot %s shows pending plan %s', async (id, plan) => {
     await (el as any).updateComplete;
     const slot = el.shadowRoot!.querySelector(`[data-component="${id}"]`);
     expect(slot?.textContent).toContain(plan);
+  });
+
+  it('table slot is wired with or-table element (W0.0-19)', async () => {
+    await (el as any).updateComplete;
+    const section = el.shadowRoot!.querySelector('section[data-component="table"]');
+    expect(section).toBeTruthy();
+    expect(section!.querySelector('or-table')).toBeTruthy();
   });
 
   it('button slot is wired with or-button elements', async () => {

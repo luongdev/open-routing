@@ -34,3 +34,5 @@ export { OrTabs } from './or-tabs.js';
 export type { Tab } from './or-tabs.js';
 // W0.0-15: or-dialog wrapping UIkit modal CSS pattern with built-in focus trap
 export { OrDialog } from './or-dialog.js';
+// W0.0-19: or-table light DOM primitive wrapping uk-table
+export { OrTable } from './or-table.js';

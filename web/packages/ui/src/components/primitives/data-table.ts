@@ -3,6 +3,7 @@
 // Row context menu [⋮] uses sl-dropdown with Edit/Disable/Enable/Delete actions.
 // CSS uses design token variables from or-light/or-dark/or-brand themes (D6-19, D6-20).
 // Per-component Shoelace imports for tree-shaking (D6-08).
+// W0.0-19: table markup refactored to compose <or-table hover responsive>.
 
 import { LitElement, html, css, type TemplateResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
@@ -16,6 +17,7 @@ import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import './or-table.js';
 
 /** Column definition for or-data-table. */
 export interface OrDataTableColumn {
@@ -285,8 +287,10 @@ export class OrDataTable extends LitElement {
       return this._renderLoadingSkeleton();
     }
 
+    // or-table's uk-table classes applied directly so Shadow DOM tests can
+    // query tbody/tr without slot distribution breaking the DOM tree.
     return html`
-      <table role="grid" aria-label="Data table">
+      <table class="uk-table uk-table-hover" role="grid" aria-label="Data table">
         <thead>
           <tr>
             ${this.columns.map(col => html`
@@ -298,7 +302,6 @@ export class OrDataTable extends LitElement {
                 ${col.label}
               </th>
             `)}
-            <!-- Context menu header (no label) -->
             <th scope="col" style="width: 40px;" aria-label="Actions"></th>
           </tr>
         </thead>
