@@ -93,6 +93,9 @@ importers:
       lit:
         specifier: ^3.3.3
         version: 3.3.3
+      openapi-fetch:
+        specifier: ^0.13.8
+        version: 0.13.8
       size-limit:
         specifier: ^12.1.0
         version: 12.1.0

@@ -13,13 +13,11 @@
 // - 'open-routing:navigate' events from entity components reach this._routes.goto().
 // - Switch org clears _client + _currentOrgId and navigates to '/'.
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Routes } from '@lit-labs/router';
 import { orLight, orDark, orBrand, ALL_TOKEN_KEYS } from '../../themes/index.js';
 import type { ThemeName } from '../../themes/index.js';
-
-import type { Routes } from '@lit-labs/router';
 
 // Iteration-2 BLOCKER #1 — typed seam for hash-routing injection.
 // Defined in packages/ui so consumers (apps/embed) implement against
