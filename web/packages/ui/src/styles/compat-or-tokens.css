@@ -1,0 +1,32 @@
+:root, .dark {
+  --or-color-app-bg: var(--color-background);
+  --or-color-sidebar-bg: var(--color-card);
+  --or-color-topbar-bg: var(--color-card);
+  --or-color-card-bg: var(--color-card);
+  --or-color-card-border: var(--color-border);
+  --or-color-text-body: var(--color-foreground);
+  --or-color-text-strong: var(--color-foreground);
+  --or-color-text-muted: var(--color-muted-foreground);
+  --or-color-text-on-primary: var(--color-primary-foreground);
+  --or-color-nav-active-bg: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  --or-color-focus-ring: var(--color-ring);
+  --or-color-row-hover: var(--color-muted);
+  --or-color-row-selected: var(--color-accent);
+  --or-color-divider: var(--color-border);
+  --or-color-overlay-scrim: color-mix(in srgb, var(--color-background) 70%, transparent);
+  --or-color-code-bg: var(--color-muted);
+  --or-color-code-fg: var(--color-primary);
+  --or-color-skeleton-base: var(--color-muted);
+  --or-color-skeleton-shimmer: var(--color-accent);
+  --or-color-conflict-bg: oklch(0.95 0.10 80);
+  --or-color-conflict-border: oklch(0.70 0.18 70);
+  --or-color-diff-removed: oklch(0.88 0.08 25);
+  --or-color-diff-added: oklch(0.88 0.10 145);
+}
+
+.dark {
+  --or-color-conflict-bg: oklch(0.25 0.08 80);
+  --or-color-conflict-border: oklch(0.65 0.18 70);
+  --or-color-diff-removed: oklch(0.25 0.10 25);
+  --or-color-diff-added: oklch(0.25 0.12 145);
+}

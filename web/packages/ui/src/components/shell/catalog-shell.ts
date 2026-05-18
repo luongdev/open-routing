@@ -16,7 +16,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Routes } from '@lit-labs/router';
-import { orLight, orDark, orBrand, ALL_TOKEN_KEYS } from '../../themes/index.js';
+import { orLight, orDark, orBrand, ALL_TOKEN_KEYS, isDarkClassTheme } from '../../themes/index.js';
 import type { ThemeName } from '../../themes/index.js';
 
 // Iteration-2 BLOCKER #1 — typed seam for hash-routing injection.
@@ -90,10 +90,12 @@ const _THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
   'or-light': orLight,
   'or-dark': orDark,
   'or-brand': orBrand,
+  'ember-light': {},
+  'ember-dark': {},
 };
 
 /** Valid theme names for localStorage restore guard. */
-const VALID_THEME_NAMES: readonly ThemeName[] = ['or-light', 'or-dark', 'or-brand'];
+const VALID_THEME_NAMES: readonly ThemeName[] = ['or-light', 'or-dark', 'or-brand', 'ember-light', 'ember-dark'];
 
 /**
  * <or-catalog-shell> — top-level admin SPA shell.
@@ -564,6 +566,7 @@ export class OrCatalogShell extends LitElement {
     for (const [key, val] of Object.entries(tokens)) {
       this.style.setProperty(key, val);
     }
+    document.documentElement.classList.toggle('dark', isDarkClassTheme(this.theme));
     try {
       localStorage.setItem('or-theme', this.theme);
     } catch {

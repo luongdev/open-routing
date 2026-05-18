@@ -9,7 +9,7 @@
  * Per UI-SPEC §2.2.
  */
 
-export type ThemeName = 'or-light' | 'or-dark' | 'or-brand';
+export type ThemeName = 'or-light' | 'or-dark' | 'or-brand' | 'ember-light' | 'ember-dark';
 
 /**
  * Theme is either a named preset or an arbitrary token map (Phase 7 embed will
@@ -176,6 +176,15 @@ export const orBrand: Record<string, string> = {
 };
 
 /**
+ * Ember themes delegate to CSS — the .dark class on <html> drives token
+ * overrides via ember-theme.css and compat-or-tokens.css. No inline
+ * style tokens needed; the shell's _applyTheme caller is responsible for
+ * toggling document.documentElement.classList.
+ */
+export const emberLight: Record<string, string> = {};
+export const emberDark: Record<string, string> = {};
+
+/**
  * Lookup map for named themes. Used by <or-catalog-shell>._applyTheme()
  * to resolve ThemeName → token map.
  */
@@ -183,6 +192,8 @@ export const THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
   'or-light': orLight,
   'or-dark': orDark,
   'or-brand': orBrand,
+  'ember-light': emberLight,
+  'ember-dark': emberDark,
 };
 
 /**
@@ -192,3 +203,11 @@ export const THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
 export const ALL_TOKEN_KEYS: readonly string[] = Array.from(
   new Set([...Object.keys(orLight), ...Object.keys(orDark), ...Object.keys(orBrand)])
 );
+
+/**
+ * Whether a theme name uses CSS-class-based dark mode (ember-dark toggles .dark on <html>).
+ * The shell must add/remove the class in addition to applying inline tokens.
+ */
+export function isDarkClassTheme(name: ThemeName): boolean {
+  return name === 'ember-dark';
+}
