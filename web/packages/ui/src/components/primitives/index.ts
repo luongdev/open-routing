@@ -10,3 +10,6 @@ export { OrFormWizard } from './form-wizard.js';
 export type { OrFormWizardStep } from './form-wizard.js';
 // Plan 06-10: queue-picker primitive (shared with channels + future status panel)
 export { OrQueuePicker } from './queue-picker.js';
+// W0.0-12: or-select wraps <select class="uk-select"> with Frankenstyle styling
+export { OrSelect } from './or-select.js';
+export type { SelectOption } from './or-select.js';

@@ -1,5 +1,6 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, TemplateResult, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { selectSlot } from './slots/select.js';
 
 // <uk-theme-switcher> does not exist in Frankenstyle v0.3.8 — implemented inline.
 // Dispatches 'open-routing:theme-change' to the parent catalog-shell which owns
@@ -27,6 +28,10 @@ const SLOTS: readonly SlotDef[] = [
   { id: 'dropdown',        label: 'Dropdown',         plan: '07-w0-21' },
   { id: 'sidebar',         label: 'Sidebar',          plan: '07-w0-22' },
 ];
+
+const SLOT_CONTENT: Partial<Record<string, TemplateResult>> = {
+  select: selectSlot,
+};
 
 @customElement('or-playground-route')
 export class OrPlaygroundRoute extends LitElement {
@@ -125,7 +130,9 @@ export class OrPlaygroundRoute extends LitElement {
           (s) => html`
             <section class="slot" data-component=${s.id}>
               <h3>${s.label}</h3>
-              <div class="playground-slot" data-component=${s.id}>${s.plan} pending</div>
+              ${SLOT_CONTENT[s.id]
+                ? html`<div data-component=${s.id}>${SLOT_CONTENT[s.id]}</div>`
+                : html`<div class="playground-slot" data-component=${s.id}>${s.plan} pending</div>`}
             </section>
           `
         )}
