@@ -493,21 +493,55 @@ private _agentListRoute = {
 
 **Verified pattern signature** (from official Lit discussion #3354 + npm README): `enter` returns `Promise<boolean | undefined>`. Returning `false` rejects the route. Returning anything else (including undefined) accepts.
 
-**Routing-mode prop:**
+**Routing-mode prop + Iteration-2 BLOCKER #1 typed-interface seam:**
 
 ```typescript
+import type { Routes } from '@lit-labs/router';
+
+// Iteration-2 BLOCKER #1 — typed seam exported from packages/ui.
+// Consumer (apps/embed/embed-element.ts) implements + injects;
+// packages/ui has no dep on @open-routing/embed.
+export interface CatalogShellRouterAdapter {
+  start(routes: Routes): void;
+  stop(): void;
+}
+
 @property({ type: String, attribute: 'routing-mode' })
 accessor routingMode: 'history' | 'hash' = 'history';
 
-// In connectedCallback, after super.connectedCallback():
-if (this.routingMode === 'hash') {
-  this._hashAdapter = new HashRouterAdapter(this._routes);
-  this._hashAdapter.start();
+@property({ attribute: false })
+accessor routerAdapter: CatalogShellRouterAdapter | undefined = undefined;
+
+// In firstUpdated (NOT connectedCallback — Routes instance is constructed
+// at field-init time but the typed handoff lives in the post-render hook
+// so consumers can assign routerAdapter before flipping routingMode):
+override firstUpdated(_changed: PropertyValues): void {
+  if (this.routingMode === 'hash' && this.routerAdapter) {
+    this.routerAdapter.start(this._routes);
+  }
 }
 
 // In disconnectedCallback:
-this._hashAdapter?.stop();
+this.routerAdapter?.stop();
 ```
+
+Consumer side (apps/embed/src/embed-element.ts):
+```typescript
+override firstUpdated(_changed: PropertyValues): void {
+  const shellEl = this._shellEl;
+  if (!shellEl || this._hashAdapter) return;
+  this._hashAdapter = new HashRouterAdapter();          // parameterless
+  shellEl.routerAdapter = this._hashAdapter;            // assign BEFORE flip
+  shellEl.routingMode = 'hash';                          // triggers shell.firstUpdated
+}
+```
+
+HashRouterAdapter (apps/embed) does NOT have an `implements
+CatalogShellRouterAdapter` clause and does NOT import the interface —
+TS structural typing verifies the shape at the assignment site
+(`shellEl.routerAdapter = this._hashAdapter`). This keeps Plan 07-05
+with zero compile-time dep on packages/ui, preserving Wave 1 parallel
+placement with Plan 07-04.
 
 **Admin regression guard (D7-03 mandate):** After refactor, run Plan 06-06's Playwright smoke against admin to confirm:
 1. `/orgs/:id/agents` still loads (lazy chunk fetched, rendered)
@@ -698,9 +732,9 @@ export default defineConfig({
 });
 ```
 
-**Vite preview structure:** `pnpm vite preview` serves `dist/` by default. To also serve the static host HTML files, mount them as static under the same Vite preview by placing them in `apps/embed/public/hosts/{react,vue,html}/index.html`. Public files are copied to dist on build; preview serves them at `/hosts/...`. Alternatively, configure `preview: { ... }` in vite.config.ts to add extra static dirs.
+**Vite preview structure:** `pnpm vite preview` serves `dist/` by default. To also serve the static host HTML files, mount them as static under the same Vite preview by placing them in `apps/embed/e2e/hosts/{react,vue,html}/index.html`. Public files are copied to dist on build; preview serves them at `/hosts/...`. Alternatively, configure `preview: { ... }` in vite.config.ts to add extra static dirs.
 
-**Stub host HTML** (`apps/embed/public/hosts/react/index.html`):
+**Stub host HTML** (`apps/embed/e2e/hosts/react/index.html`):
 
 ```html
 <!DOCTYPE html>
@@ -781,7 +815,7 @@ export default defineConfig({
 | **Build artifacts / installed packages** | Phase 6 lazy-chunk file names (currently emit `embed-*.js`?) — Phase 7 IS the first emitter. No legacy artifacts | None — Phase 7 emits dist/embed.js fresh |
 | **Shoelace `<sl-dialog>` audit (D7-04 scope)** | **8 files** in `packages/ui` use `<sl-dialog>`: `adapters/adapter-detail.ts`, `agents/agent-detail.ts`, `break-reasons/break-reason-detail.ts`, `channels/channel-detail.ts`, `queues/queue-detail.ts`, `skills/skill-detail.ts` (2 instances), `status/status-panel.ts` | **Code edit per file.** `<sl-dialog>` does NOT portal to body (stays in parent shadow root) BUT focus-trap is broken inside nested shadow root per shoelace#709. Options: (a) replace `<sl-dialog>` with inline confirm panel pattern; (b) document broken focus-trap inside embed as acceptable for v0.1. Recommendation: **replace** — focus-trap matters for accessibility |
 | **Shoelace `<sl-tooltip>` audit (D7-04 scope)** | **15+ instances** across `packages/ui` components including `shell/catalog-shell.ts:530`, all entity *-list.ts and *-detail.ts files | **Code review per file.** `<sl-tooltip>` uses Floating UI; without `hoist` attribute it stays in parent shadow root (OK for isolation). With `hoist` it moves out. **Action: grep for `<sl-tooltip ... hoist`; replace those that hoist; leave non-hoisted alone.** Phase 7 verifies with Playwright |
-| **Shoelace `<sl-drawer>` audit** | Used in catalog-shell.ts for the mobile sidebar hamburger | `<sl-drawer>` is contained by default per Shoelace docs; verify it stays inside the shell's shadow root with Playwright |
+| **Shoelace `<sl-drawer>` audit** | Iteration-2 BLOCKER #2 correction: catalog-shell.ts does NOT actually render `<sl-drawer>` — the mobile sidebar uses `<nav class="sidebar">` + `_sidebarOpen` state with CSS media-query. The `<sl-drawer>` import at line ~37 was dead Phase 6 placeholder code. | Plan 07-03 Task 3 deletes the unused import (~3-5 KB freed); Plan 07-09 audits `<nav.sidebar>` on mobile viewport (NOT `<sl-drawer>`) |
 
 **Nothing found in category:** Stored data, Live service config, OS-registered state — all stated explicitly.
 

@@ -49,7 +49,7 @@ created: 2026-05-18
 | 7-W0-03 | Wave 0 | 0 | CORS infra | T-7-CORS-01 | CORS preflight short-circuits before OrgContext | backend | `go test ./services/api/internal/middleware -run CORS -short` | ❌ W0 | ⬜ pending |
 | 7-W0-04 | Wave 0 | 0 | EMBED-10 | — | Bundle budget gate exists | ci | `cat web/apps/embed/.size-limit.json && pnpm --filter @open-routing/embed size --json` | ❌ W0 | ⬜ pending |
 | 7-EMBED-01-a | embed-build | 1 | EMBED-01 | — | Single ES module ≤70 KB gzip | ci | `pnpm --filter @open-routing/embed build && pnpm --filter @open-routing/embed size` | ❌ W0 | ⬜ pending |
-| 7-EMBED-01-b | embed-build | 1 | EMBED-01 | — | `dist/embed.js` is a valid ES module | ci | `pnpm --filter @open-routing/embed build && node -e "import('./web/apps/embed/dist/embed.js')"` | ❌ W0 | ⬜ pending |
+| 7-EMBED-01-b | embed-build | 1 | EMBED-01 | — | `dist/embed.js` parses as a valid ES module (syntax-only check; bare-specifier dynamic imports for `@open-routing/ui` chunks + lit-localize cannot be resolved by Node so we do not actually import) | ci | `pnpm --filter @open-routing/embed build && pnpm exec esbuild --bundle=false --format=esm --log-level=silent web/apps/embed/dist/embed.js > /dev/null` | ❌ W0 | ⬜ pending |
 | 7-EMBED-01-c | embed-build | 1 | EMBED-01 | — | Lazy chunks emit per-entity (≥6) | ci | `pnpm --filter @open-routing/embed build && ls web/apps/embed/dist/embed-*.js \| wc -l` | ❌ W0 | ⬜ pending |
 | 7-EMBED-02-a | embed-element | 1 | EMBED-02 | T-7-02 | UUIDv7 `org-id` validated; error inline on malformed | unit | `pnpm --filter @open-routing/embed test embed-element.test.ts -t "invalid org-id"` | ❌ W1 | ⬜ pending |
 | 7-EMBED-02-b | embed-element | 1 | EMBED-02 | T-7-02 | `createApiClient.getOrgId()` reads attribute live; X-Org-Id on every call | unit | `pnpm --filter @open-routing/embed test embed-element.test.ts -t "X-Org-Id"` | ❌ W1 | ⬜ pending |
@@ -118,7 +118,7 @@ These test-infrastructure artifacts MUST exist before Wave 1 implementation begi
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Browser-back/forward inside embed hash routes (`history.back()` from inside embed) | EMBED-03, D7-05 | Playwright covers `hashchange` programmatically but real keyboard back/forward needs human in DevTools | Mount embed in `http://localhost:4173/e2e/hosts/html/`, navigate agents → skills, hit browser back, confirm shell renders agents list with no chunk error |
+| Browser-back/forward inside embed hash routes (`history.back()` from inside embed) | EMBED-03, D7-05 | Playwright covers `hashchange` programmatically but real keyboard back/forward needs human in DevTools | Mount embed in `http://localhost:4173/hosts/html/`, navigate agents → skills, hit browser back, confirm shell renders agents list with no chunk error |
 | Theme JSON live edit via DevTools (set `theme=` attribute by hand, confirm CSS custom properties update) | EMBED-05 | Tests cover `theme` parse on mount; live attribute mutation in DevTools is a manual smoke | In DevTools console: `document.querySelector('open-routing-catalog').setAttribute('theme', JSON.stringify({...}))`; confirm `:host` custom-property values update |
 | Real-world CDN-served bundle size (Brotli) vs CI gzip budget | EMBED-01 | size-limit measures gzip in CI; Brotli is what CDN actually serves (15–30% smaller per Cloudflare data) | After `pnpm --filter @open-routing/embed build`, run `brotli -c dist/embed.js \| wc -c` and confirm <60 KB |
 
