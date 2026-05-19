@@ -14,8 +14,11 @@ export class OrInput extends LitElement {
   @property({ type: String, attribute: 'helper-text' }) helperText = '';
   @property({ type: String, attribute: 'error-text' }) errorText = '';
   @property({ type: String }) size: 'sm' | 'md' | 'lg' = 'md';
+  /** Lucide icon name rendered inside the input, before the text. */
+  @property({ type: String, attribute: 'prefix-icon' }) prefixIcon = '';
+  /** Lucide icon name rendered inside the input, after the text. */
+  @property({ type: String, attribute: 'suffix-icon' }) suffixIcon = '';
 
-  // Stable fallback ID generated once per instance — avoids broken label/input association on re-renders
   private readonly _fallbackId = Math.random().toString(36).slice(2, 10);
 
   // Light DOM — Frankenstyle uk-input and uk-form-* classes resolve from global stylesheet
@@ -23,7 +26,6 @@ export class OrInput extends LitElement {
 
   private get inputClasses(): string {
     const base = 'uk-input';
-    // Frankenstyle size classes: small/medium/large (not sm/md/lg)
     const sizeMap: Record<string, string> = {
       sm: 'uk-form-small',
       md: '',
@@ -54,11 +56,25 @@ export class OrInput extends LitElement {
 
   override render() {
     const inputId = this.name ? `or-input-${this.name}` : `or-input-${this._fallbackId}`;
+    const hasPrefix = !!this.prefixIcon;
+    const hasSuffix = !!this.suffixIcon;
+    // Input must reserve room for the overlaid icons via padding so the text
+    // doesn't slide under them. Using inline style keeps this self-contained.
+    const inputStyle = `${hasPrefix ? 'padding-left:34px;' : ''}${hasSuffix ? 'padding-right:34px;' : ''}`;
+
     return html`
       <div class="uk-form-controls">
         ${this.label ? html`<label class="uk-form-label" for=${inputId}>${this.label}</label>` : nothing}
-        <div style="display:flex; align-items:center; gap:8px;">
-          <slot name="prefix"></slot>
+        <div style="position:relative;">
+          ${hasPrefix ? html`
+            <uk-icon
+              icon=${this.prefixIcon}
+              height="14"
+              width="14"
+              style="position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--muted-foreground); pointer-events:none;"
+              aria-hidden="true"
+            ></uk-icon>
+          ` : nothing}
           <input
             id=${inputId}
             type=${this.type}
@@ -69,14 +85,23 @@ export class OrInput extends LitElement {
             ?required=${this.required}
             ?readonly=${this.readonly}
             name=${this.name}
+            style=${inputStyle}
             aria-invalid=${this.errorText ? 'true' : 'false'}
             @input=${this.onInput}
             @blur=${this.onBlur}
           />
-          <slot name="suffix"></slot>
+          ${hasSuffix ? html`
+            <uk-icon
+              icon=${this.suffixIcon}
+              height="14"
+              width="14"
+              style="position:absolute; right:11px; top:50%; transform:translateY(-50%); color:var(--muted-foreground); pointer-events:none;"
+              aria-hidden="true"
+            ></uk-icon>
+          ` : nothing}
         </div>
         ${this.errorText
-          ? html`<div class="uk-form-help" style="color:var(--uk-danger, var(--sl-color-danger-500, #d92d20))">${this.errorText}</div>`
+          ? html`<div class="uk-form-help" style="color:var(--destructive)">${this.errorText}</div>`
           : this.helperText
           ? html`<div class="uk-form-help">${this.helperText}</div>`
           : nothing}

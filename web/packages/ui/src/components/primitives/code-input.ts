@@ -122,11 +122,10 @@ export class OrCodeInput extends LitElement {
           .value=${this.value}
           .readonly=${true}
           .disabled=${true}
+          suffix-icon="lock"
           aria-label=${this.label}
-        >
-          <span slot="suffix" aria-hidden="true" style="font-size:12px;">&#x1F512;</span>
-        </or-input>
-        <div style="font-size:12px; color:var(--or-color-text-muted, #737373); margin-top:4px;">
+        ></or-input>
+        <div style="font-size:12px; color:var(--muted-foreground); margin-top:4px;">
           Code cannot be changed after create.
         </div>
       `;
