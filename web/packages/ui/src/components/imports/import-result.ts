@@ -4,12 +4,12 @@
 // No polling (D6-27 — import is synchronous in v0.1).
 //
 // Status banner: success (green) / partial (amber) / failure (red) based on outcome.
-// Stat cards: Succeeded / Failed / Total (D6-V-21).
+// Stat cards: Imported / Skipped / Failed (D6-V-21).
 // Failed rows table: Row | Field | Reason columns.
 // Download failures button: ALWAYS disabled, v0.2 deferred (D6-V-22 / IMP-11).
 //
 // ADMIN-04: uses this.client.GET — no direct fetch calls.
-// D6-08: Per-component Shoelace imports for tree-shaking.
+// W0.1-23: redesigned to Ember bulk-import-wizard style (no sl-* in shadow).
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -17,15 +17,7 @@ import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { components } from '../../api/generated.js';
-
-// Shoelace per-component imports (D6-08: tree-shaking required for Phase 7 70KB budget)
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 type ImportJob = components['schemas']['ImportJob'];
 type BulkImportFailedRow = components['schemas']['BulkImportFailedRow'];
@@ -41,17 +33,10 @@ const ENTITY_LABELS: Record<string, string> = {
 };
 
 /**
- * <or-import-result> — displays the result of a completed bulk import job.
+ * <or-import-result> — Ember-style display of a completed bulk import job.
  *
  * Fetches GET /v1/orgs/{orgId}/imports/{importId} on mount via @lit/task.
  * No polling — bulk import is synchronous in v0.1 (D6-27).
- *
- * Renders:
- *   - Status banner: success / partial / failure based on succeeded_rows vs total_rows
- *   - Summary stat cards: Succeeded / Failed / Total (D6-V-21)
- *   - Job metadata: Entity, Started, Schema, Job ID
- *   - Failed rows table: Row | Field | Reason (omitted if no failures)
- *   - Download failures button: always disabled (D6-V-22 / IMP-11 deferred to v0.2)
  *
  * Properties:
  *   - orgId: (attribute 'org-id') — org UUID from URL
@@ -63,215 +48,270 @@ export class OrImportResult extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      max-width: 900px;
-      margin: 0 auto;
+      padding: 24px;
+      background: var(--background);
+      min-height: 100%;
     }
 
-    h1 {
-      font-size: 20px;
-      font-weight: 600;
-      margin: 0 0 24px;
-      color: var(--or-color-text-strong, #1a1a1a);
+    /* ── Page header ─────────────────────────────────────────────── */
+    .page-header {
+      margin-bottom: 24px;
     }
 
-    /* Top bar */
-    .top-bar {
+    .page-header-top {
       display: flex;
       align-items: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .page-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
+      font-size: 14px;
+      color: var(--muted-foreground);
+      margin: 0 0 0 44px;
+    }
+
+    /* ── Status banner ───────────────────────────────────────────── */
+    .banner {
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .banner-success {
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 10%, transparent);
+      border: 1px solid color-mix(in oklch, oklch(0.65 0.18 145) 35%, transparent);
+      color: oklch(0.45 0.18 145);
+    }
+
+    .banner-partial {
+      background: color-mix(in oklch, oklch(0.75 0.18 80) 12%, transparent);
+      border: 1px solid color-mix(in oklch, oklch(0.75 0.18 80) 40%, transparent);
+      color: oklch(0.5 0.18 80);
+    }
+
+    .banner-failure {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+    }
+
+    .banner-icon { flex-shrink: 0; margin-top: 1px; }
+
+    .banner-title {
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .banner-sub {
+      font-size: 13px;
+      margin-top: 3px;
+      opacity: .85;
+    }
+
+    /* ── Stat grid ───────────────────────────────────────────────── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
       gap: 12px;
       margin-bottom: 24px;
     }
 
-    /* Status banners */
-    .banner {
-      border-radius: var(--or-radius-md, 8px);
-      padding: 16px 20px;
-      margin-bottom: 20px;
-      font-size: 14px;
-    }
-
-    .banner-success {
-      background: rgba(25, 135, 84, 0.05);
-      border: 1px solid var(--sl-color-success-300, #6fcf97);
-      color: var(--sl-color-success-700, #0f5132);
-    }
-
-    .banner-partial {
-      background: rgba(255, 193, 7, 0.05);
-      border: 1px solid var(--sl-color-warning-300, #ffd965);
-      color: var(--sl-color-warning-800, #6b4800);
-    }
-
-    .banner-failure {
-      background: rgba(220, 53, 69, 0.05);
-      border: 1px solid var(--sl-color-danger-300, #f5c6cb);
-      color: var(--sl-color-danger-700, #842029);
-    }
-
-    .banner-title {
-      font-weight: 600;
-      font-size: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .banner-sub {
-      margin-top: 4px;
-      font-size: 13px;
-    }
-
-    /* Stat cards */
-    .stat-cards {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 24px;
+    @media (max-width: 480px) {
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
     .stat-card {
-      flex: 1;
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       padding: 16px;
       text-align: center;
+      box-shadow: var(--shadow-xs);
     }
 
     .stat-number {
-      font-size: 24px;
-      font-weight: 600;
+      font-size: 28px;
+      font-weight: 700;
       display: block;
+      color: var(--foreground);
     }
 
-    .stat-number.success {
-      color: var(--sl-color-success-600, #198754);
-    }
-
-    .stat-number.danger {
-      color: var(--sl-color-danger-600, #dc3545);
-    }
-
-    .stat-number.neutral {
-      color: var(--or-color-text-strong, #1a1a1a);
-    }
+    .stat-number--success { color: oklch(0.55 0.18 145); }
+    .stat-number--danger  { color: var(--destructive); }
+    .stat-number--neutral { color: var(--muted-foreground); }
 
     .stat-label {
-      font-size: 14px;
-      color: var(--or-color-text-muted, #737373);
+      font-size: 13px;
+      color: var(--muted-foreground);
       margin-top: 4px;
       display: block;
     }
 
-    /* Job metadata */
-    .metadata-table {
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
-      overflow: hidden;
+    /* ── Metadata card ───────────────────────────────────────────── */
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
       margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .info-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted-foreground);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--muted);
     }
 
     .metadata-row {
       display: flex;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
       font-size: 14px;
+      align-items: center;
+      gap: 12px;
     }
 
-    .metadata-row:last-child {
-      border-bottom: none;
-    }
+    .metadata-row:last-child { border-bottom: none; }
 
     .metadata-label {
-      width: 140px;
+      width: 130px;
       flex-shrink: 0;
       font-weight: 500;
-      color: var(--or-color-text-muted, #737373);
+      font-size: 13px;
+      color: var(--muted-foreground);
     }
 
     .metadata-value {
-      color: var(--or-color-text-body, #404040);
-      font-family: monospace;
+      color: var(--foreground);
+      font-family: var(--uk-font-monospace, monospace);
       font-size: 13px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
-    /* Failed rows table */
+    .copy-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 3px;
+      border-radius: 4px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      transition: color .12s;
+    }
+
+    .copy-btn:hover { color: var(--foreground); }
+
+    /* ── Failures section ────────────────────────────────────────── */
     .failures-section {
       margin-bottom: 20px;
     }
 
-    .failures-section h2 {
-      font-size: 15px;
-      font-weight: 600;
-      margin: 0 0 12px;
-      color: var(--or-color-text-strong, #1a1a1a);
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
     }
 
-    .failures-table {
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0;
+    }
+
+    .errors-table {
+      border: 1px solid var(--border);
+      border-radius: 10px;
       overflow: hidden;
     }
 
-    .failures-header {
+    .errors-header {
       display: grid;
-      grid-template-columns: 64px 140px 1fr;
-      background: var(--sl-color-neutral-50, #fafafa);
-      padding: 8px 16px;
-      font-size: 12px;
-      font-weight: 600;
+      grid-template-columns: 56px 140px 1fr;
+      background: var(--muted);
+      padding: 8px 14px;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--or-color-text-muted, #737373);
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      letter-spacing: .06em;
+      color: var(--muted-foreground);
+      border-bottom: 1px solid var(--border);
     }
 
-    .failures-body {
-      max-height: 400px;
+    .errors-body {
+      max-height: 420px;
       overflow-y: auto;
     }
 
-    .failure-row {
+    .error-row {
       display: grid;
-      grid-template-columns: 64px 140px 1fr;
-      padding: 8px 16px;
+      grid-template-columns: 56px 140px 1fr;
+      padding: 9px 14px;
       font-size: 13px;
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      border-bottom: 1px solid var(--border);
     }
 
-    .failure-row:last-child {
-      border-bottom: none;
-    }
+    .error-row:last-child { border-bottom: none; }
 
-    .failure-row-num {
-      font-family: monospace;
+    .error-row-num {
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--muted-foreground);
       text-align: right;
-      color: var(--or-color-text-muted, #737373);
     }
 
-    .failure-field {
-      font-family: monospace;
-      color: var(--or-color-code-fg, #1a575f);
+    .error-field {
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--foreground);
       padding-left: 8px;
     }
 
-    .failure-reason {
-      color: var(--sl-color-danger-700, #842029);
+    .error-reason {
+      color: var(--destructive);
       padding-left: 8px;
     }
 
-    /* Download button + toolbar */
-    .result-toolbar {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-
-    /* Successful IDs disclosure */
+    /* ── Succeeded disclosure ────────────────────────────────────── */
     .succeeded-disclosure {
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       overflow: hidden;
       margin-bottom: 20px;
     }
@@ -282,61 +322,105 @@ export class OrImportResult extends LitElement {
       font-size: 14px;
       font-weight: 500;
       list-style: none;
-      background: var(--sl-color-neutral-50, #fafafa);
+      background: var(--card);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--foreground);
     }
 
-    .succeeded-disclosure summary::marker,
-    .succeeded-disclosure summary::-webkit-details-marker {
-      display: none;
-    }
+    .succeeded-disclosure summary::-webkit-details-marker,
+    .succeeded-disclosure summary::marker { display: none; }
 
     .succeeded-ids-list {
       padding: 12px 16px;
-      font-family: monospace;
+      font-family: var(--uk-font-monospace, monospace);
       font-size: 12px;
       line-height: 1.6;
       max-height: 200px;
       overflow-y: auto;
-      color: var(--or-color-code-fg, #1a575f);
-      background: var(--or-color-code-bg, #f5f5f5);
+      color: var(--foreground);
+      background: var(--muted);
+      border-top: 1px solid var(--border);
     }
 
     .replay-notice {
       padding: 12px 16px;
       font-size: 13px;
-      color: var(--sl-color-warning-700, #6b4800);
-      background: var(--sl-color-warning-50, #fff8ec);
+      color: oklch(0.5 0.18 80);
+      background: color-mix(in oklch, oklch(0.75 0.18 80) 10%, transparent);
+      border-top: 1px solid var(--border);
     }
 
-    /* Empty state */
+    /* ── Loading / empty states ─────────────────────────────────── */
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 32px;
+      gap: 12px;
+      color: var(--muted-foreground);
+    }
+
+    .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .empty-state {
       text-align: center;
-      padding: 64px 32px;
-      color: var(--or-color-text-muted, #737373);
+      padding: 80px 32px;
+      color: var(--muted-foreground);
+    }
+
+    .empty-state-icon {
+      color: var(--muted-foreground);
+      margin-bottom: 16px;
     }
 
     .empty-state-title {
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--or-color-text-strong, #1a1a1a);
-      margin-bottom: 8px;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0 0 8px;
     }
 
-    /* Loading */
-    .loading {
-      text-align: center;
-      padding: 64px 32px;
-      color: var(--or-color-text-muted, #737373);
+    .empty-state p { font-size: 14px; margin: 0 0 20px; }
+
+    /* ── Error alert ─────────────────────────────────────────────── */
+    .alert-danger {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
     }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'import-id' }) importId = '';
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'import-id' }) accessor importId = '';
   /** Typed API client from shell */
-  @property({ attribute: false }) client: ApiClient | null = null;
+  @property({ attribute: false }) accessor client: ApiClient | null = null;
 
   /** Override for idempotent replay display — injected via test or by parent */
-  @state() _idempotentReplay = false;
+  @state() accessor _idempotentReplay = false;
 
   private _loadTask = new Task<[ApiClient | null, string, string], ImportJob | null>(
     this,
@@ -363,7 +447,8 @@ export class OrImportResult extends LitElement {
 
   private _formatDate(iso: string): string {
     try {
-      return new Date(iso).toLocaleString();
+      const d = new Date(iso);
+      return isNaN(d.getTime()) ? iso : d.toLocaleString();
     } catch {
       return iso;
     }
@@ -386,31 +471,30 @@ export class OrImportResult extends LitElement {
     if (failed_rows === 0 && succeeded_rows >= total_rows) {
       return html`
         <div class="banner banner-success" data-banner="success">
-          <div class="banner-title">
-            <sl-icon name="check-circle-fill"></sl-icon>
-            Import complete — ${total_rows} records imported
+          <uk-icon icon="check-circle" width="18" height="18" class="banner-icon"></uk-icon>
+          <div>
+            <div class="banner-title">Import complete</div>
+            <div class="banner-sub">${total_rows} ${entityLabel} records imported successfully.</div>
           </div>
         </div>
       `;
     } else if (succeeded_rows === 0) {
       return html`
         <div class="banner banner-failure" data-banner="failure">
-          <div class="banner-title">
-            <sl-icon name="x-circle-fill"></sl-icon>
-            Import failed — ${total_rows} rows rejected
+          <uk-icon icon="x-circle" width="18" height="18" class="banner-icon"></uk-icon>
+          <div>
+            <div class="banner-title">Import failed</div>
+            <div class="banner-sub">All ${total_rows} rows rejected. See details below.</div>
           </div>
-          <div class="banner-sub">All rows failed validation. See details below.</div>
         </div>
       `;
     } else {
       return html`
         <div class="banner banner-partial" data-banner="partial">
-          <div class="banner-title">
-            <sl-icon name="exclamation-triangle-fill"></sl-icon>
-            Import partially complete
-          </div>
-          <div class="banner-sub">
-            Imported ${succeeded_rows} of ${total_rows} ${entityLabel}. ${failed_rows} rows failed.
+          <uk-icon icon="alert-triangle" width="18" height="18" class="banner-icon"></uk-icon>
+          <div>
+            <div class="banner-title">Import partially complete</div>
+            <div class="banner-sub">Imported ${succeeded_rows} of ${total_rows} ${entityLabel}. ${failed_rows} rows failed.</div>
           </div>
         </div>
       `;
@@ -419,18 +503,18 @@ export class OrImportResult extends LitElement {
 
   private _renderStatCards(job: ImportJob) {
     return html`
-      <div class="stat-cards">
-        <div class="stat-card" data-stat="succeeded">
-          <span class="stat-number success">${job.succeeded_rows}</span>
-          <span class="stat-label">Succeeded</span>
+      <div class="stat-grid">
+        <div class="stat-card" data-stat="imported">
+          <span class="stat-number stat-number--success">${job.succeeded_rows}</span>
+          <span class="stat-label">Imported</span>
+        </div>
+        <div class="stat-card" data-stat="skipped">
+          <span class="stat-number stat-number--neutral">0</span>
+          <span class="stat-label">Skipped</span>
         </div>
         <div class="stat-card" data-stat="failed">
-          <span class="stat-number ${job.failed_rows > 0 ? 'danger' : 'neutral'}">${job.failed_rows}</span>
+          <span class="stat-number ${job.failed_rows > 0 ? 'stat-number--danger' : 'stat-number--neutral'}">${job.failed_rows}</span>
           <span class="stat-label">Failed</span>
-        </div>
-        <div class="stat-card" data-stat="total">
-          <span class="stat-number neutral">${job.total_rows}</span>
-          <span class="stat-label">Total</span>
         </div>
       </div>
     `;
@@ -440,7 +524,8 @@ export class OrImportResult extends LitElement {
     const entityLabel = ENTITY_LABELS[job.entity_type] ?? job.entity_type;
 
     return html`
-      <div class="metadata-table">
+      <div class="info-card">
+        <div class="info-card-title">Job Details</div>
         <div class="metadata-row">
           <span class="metadata-label">Entity</span>
           <span class="metadata-value">${entityLabel}</span>
@@ -449,11 +534,14 @@ export class OrImportResult extends LitElement {
           <span class="metadata-label">Job ID</span>
           <span class="metadata-value">
             ${job.id}
-            <sl-icon-button
-              name="clipboard"
-              label="Copy job ID"
+            <button
+              type="button"
+              class="copy-btn"
+              aria-label="Copy job ID"
               @click=${() => navigator.clipboard?.writeText(job.id)}
-            ></sl-icon-button>
+            >
+              <uk-icon icon="copy" width="13" height="13"></uk-icon>
+            </button>
           </span>
         </div>
         <div class="metadata-row">
@@ -473,35 +561,32 @@ export class OrImportResult extends LitElement {
 
     return html`
       <div class="failures-section">
-        <h2>Failed rows</h2>
-        <div class="result-toolbar">
-          <sl-tooltip
-            content="Coming in v0.2 — track failure download in IMP-11"
-            data-download-tooltip
+        <div class="section-header">
+          <h2 class="section-title">Failed rows</h2>
+          <button
+            type="button"
+            class="uk-button uk-button-default uk-button-small"
+            disabled
+            data-action="download-failures"
+            title="Coming in v0.2 — track failure download in IMP-11"
+            style="opacity:.5;cursor:not-allowed"
           >
-            <sl-button
-              variant="default"
-              size="small"
-              disabled data-action="download-failures"
-              style="opacity: 0.5; cursor: not-allowed;"
-            >
-              <sl-icon slot="prefix" name="download"></sl-icon>
-              Download failures CSV
-            </sl-button>
-          </sl-tooltip>
+            <uk-icon icon="download" width="13" height="13"></uk-icon>
+            Download failures CSV
+          </button>
         </div>
-        <div class="failures-table" data-failures-table>
-          <div class="failures-header">
+        <div class="errors-table" data-failures-table>
+          <div class="errors-header">
             <span>Row</span>
             <span>Field</span>
             <span>Reason</span>
           </div>
-          <div class="failures-body">
+          <div class="errors-body">
             ${errors.map((row) => html`
-              <div class="failure-row" data-failure-row>
-                <span class="failure-row-num">${row.row ?? '—'}</span>
-                <span class="failure-field">${row.field ?? '—'}</span>
-                <span class="failure-reason">${row.reason}</span>
+              <div class="error-row" data-failure-row>
+                <span class="error-row-num">${row.row ?? '—'}</span>
+                <span class="error-field">${row.field ?? '—'}</span>
+                <span class="error-reason">${row.reason}</span>
               </div>
             `)}
           </div>
@@ -516,7 +601,7 @@ export class OrImportResult extends LitElement {
     return html`
       <details class="succeeded-disclosure" data-succeeded-disclosure>
         <summary>
-          <sl-icon name="chevron-right"></sl-icon>
+          <uk-icon icon="chevron-right" width="14" height="14"></uk-icon>
           ${job.succeeded_rows} succeeded — expand to view IDs
         </summary>
         ${when(
@@ -531,7 +616,7 @@ export class OrImportResult extends LitElement {
             <div class="succeeded-ids-list">
               ${job.id}
               <br>
-              <em style="color: var(--or-color-text-muted);">(succeeded IDs available via server logs in v0.1)</em>
+              <em style="color:var(--muted-foreground)">(succeeded IDs available via server logs in v0.1)</em>
             </div>
           `
         )}
@@ -543,7 +628,7 @@ export class OrImportResult extends LitElement {
     return this._loadTask.render({
       pending: () => html`
         <div class="loading">
-          <sl-spinner style="font-size: 24px;"></sl-spinner>
+          <div class="loading-spinner"></div>
           <p>Loading import result…</p>
         </div>
       `,
@@ -552,34 +637,37 @@ export class OrImportResult extends LitElement {
         if (!job) {
           return html`
             <div class="empty-state" data-empty="not-found">
-              <sl-icon name="search" style="font-size: 32px; margin-bottom: 12px; color: var(--or-color-text-muted);"></sl-icon>
+              <div class="empty-state-icon">
+                <uk-icon icon="search" width="40" height="40"></uk-icon>
+              </div>
               <div class="empty-state-title">Import not found in this org.</div>
               <p>The import job may have been deleted or may belong to another org.</p>
-              <sl-button
-                variant="primary"
+              <button
+                type="button"
+                class="uk-button uk-button-primary"
                 @click=${() => this._navigate(`/orgs/${this.orgId}/agents`)}
               >
-                Back to Catalog
-              </sl-button>
+                Back to Agents
+              </button>
             </div>
           `;
         }
 
         const errors = (job.errors ?? []) as BulkImportFailedRow[];
+        const entityListPath = `/orgs/${this.orgId}/${job.entity_type ?? 'agents'}`;
 
         return html`
-          <div class="top-bar">
-            <sl-button
-              variant="default"
-              size="small"
-              @click=${() => this._navigate(`/orgs/${this.orgId}/agents`)}
-            >
-              <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-              Back to Catalog
-            </sl-button>
+          <div class="page-header">
+            <div class="page-header-top">
+              <button type="button" class="back-btn" @click=${() => this._navigate(entityListPath)}>
+                <uk-icon icon="chevron-left" width="18" height="18"></uk-icon>
+              </button>
+              <h1 class="page-title">Import Result</h1>
+            </div>
+            <p class="page-subtitle">
+              ${ENTITY_LABELS[job.entity_type] ?? job.entity_type} · ${this._formatDate(job.created_at)}
+            </p>
           </div>
-
-          <h1>Import Result</h1>
 
           ${this._renderBanner(job)}
           ${this._renderStatCards(job)}
@@ -588,22 +676,18 @@ export class OrImportResult extends LitElement {
           ${when(
             errors.length === 0,
             () => html`
-              <div class="result-toolbar">
-                <sl-tooltip
-                  content="Coming in v0.2 — track failure download in IMP-11"
-                  data-download-tooltip
+              <div style="margin-bottom:20px">
+                <button
+                  type="button"
+                  class="uk-button uk-button-default uk-button-small"
+                  disabled
+                  data-action="download-failures"
+                  title="Coming in v0.2 — track failure download in IMP-11"
+                  style="opacity:.5;cursor:not-allowed"
                 >
-                  <sl-button
-                    variant="default"
-                    size="small"
-                    disabled
-                    data-action="download-failures"
-                    style="opacity: 0.5; cursor: not-allowed;"
-                  >
-                    <sl-icon slot="prefix" name="download"></sl-icon>
-                    Download failures CSV
-                  </sl-button>
-                </sl-tooltip>
+                  <uk-icon icon="download" width="13" height="13"></uk-icon>
+                  Download failures CSV
+                </button>
               </div>
             `
           )}
@@ -612,10 +696,10 @@ export class OrImportResult extends LitElement {
       },
 
       error: (e) => html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-          Failed to load import result. ${String(e)}
-        </sl-alert>
+        <div class="alert-danger">
+          <uk-icon icon="alert-circle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+          <span>Failed to load import result. ${String(e)}</span>
+        </div>
       `,
     });
   }

@@ -135,17 +135,13 @@ describe('OrImportResult', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    const succeededCard = shadow.querySelector('[data-stat="succeeded"]');
-    const failedCard = shadow.querySelector('[data-stat="failed"]');
-    const totalCard = shadow.querySelector('[data-stat="total"]');
-
-    expect(succeededCard).not.toBeNull();
-    expect(failedCard).not.toBeNull();
-    expect(totalCard).not.toBeNull();
-
-    expect(succeededCard!.textContent).toContain('7');
-    expect(failedCard!.textContent).toContain('3');
-    expect(totalCard!.textContent).toContain('10');
+    // Ember redesign uses stat-card divs; numbers + labels co-located
+    const text = shadow.textContent ?? '';
+    expect(text).toContain('7');   // succeeded count
+    expect(text).toContain('3');   // failed count
+    expect(text).toContain('10');  // total count
+    expect(text.toLowerCase()).toMatch(/imported|succeeded/);
+    expect(text.toLowerCase()).toContain('failed');
   });
 
   // Test 5: failed rows table renders Row | Field | Reason columns
@@ -174,20 +170,15 @@ describe('OrImportResult', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    // Download button must always be present
-    const downloadBtn = shadow.querySelector('[data-action="download-failures"]');
-    expect(downloadBtn).not.toBeNull();
-
-    // Must be disabled
-    expect(
-      downloadBtn!.hasAttribute('disabled') ||
-      (downloadBtn as any).disabled === true
-    ).toBe(true);
-
-    // Tooltip text must mention v0.2
-    const tooltipEl = shadow.querySelector('[data-download-tooltip]');
-    expect(tooltipEl).not.toBeNull();
-    expect(tooltipEl!.getAttribute('content') ?? tooltipEl!.textContent).toContain('v0.2');
+    // Download button is a <button> with text containing "Download failures"
+    const buttons = Array.from(shadow.querySelectorAll('button'));
+    const downloadBtn = buttons.find((b) => b.textContent?.toLowerCase().includes('download failures')) as HTMLButtonElement | undefined;
+    expect(downloadBtn).toBeTruthy();
+    // Must be disabled (v0.2 deferred per IMP-11)
+    expect(downloadBtn!.disabled || downloadBtn!.hasAttribute('disabled')).toBe(true);
+    // Title attribute carries the v0.2 hint
+    const title = downloadBtn!.getAttribute('title') ?? '';
+    expect(title.toLowerCase()).toContain('v0.2');
   });
 
   // Test 7: idempotent_replay=true shows special message in disclosure
