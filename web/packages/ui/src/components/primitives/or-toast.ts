@@ -6,7 +6,10 @@ import type { NotifyVariant } from './notify.js';
 export class OrToast extends LitElement {
   @property({ type: String }) accessor variant: NotifyVariant = 'info';
   @property({ type: String, attribute: 'auto-dismiss' }) accessor autoDismiss = '';
+  @property({ type: String }) accessor message = '';
 
+  // Light DOM — Frankenstyle uk-notification CSS requires global stylesheet resolution.
+  // Content passed as a property rather than slot (slots require Shadow DOM).
   override createRenderRoot() { return this; }
 
   override connectedCallback(): void {
@@ -35,7 +38,7 @@ export class OrToast extends LitElement {
         class=${['uk-notification-message', this.variantClass].join(' ')}
         role="alert"
       >
-        <slot></slot>
+        <span>${this.message}</span>
         <button
           type="button"
           class="uk-notification-close"

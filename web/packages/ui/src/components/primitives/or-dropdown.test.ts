@@ -80,7 +80,7 @@ describe('OrDropdown', () => {
     expect(li?.className).toContain('uk-disabled');
   });
 
-  it('destructive item has danger color style', async () => {
+  it('destructive item has danger color inline style', async () => {
     await setItems([{ id: 'remove', label: 'Remove', destructive: true }]);
     (el as any)._open = true;
     await (el as any).updateComplete;

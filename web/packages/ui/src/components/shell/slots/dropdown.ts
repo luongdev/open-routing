@@ -22,8 +22,8 @@ export function dropdownSlot(): TemplateResult {
     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
       <div>
         <p style="margin:0 0 8px;font-size:12px;color:var(--or-color-text-muted,#737373);text-transform:uppercase;letter-spacing:.05em;">User Menu</p>
-        <or-dropdown .items=${userMenuItems} align="left">
-          <button slot="trigger" class="uk-button uk-button-default uk-button-small" type="button">
+        <or-dropdown .items=${userMenuItems} align="left" style="cursor:pointer;">
+          <button class="uk-button uk-button-default uk-button-small" type="button" style="pointer-events:none;">
             <or-icon name="user-cog" size="14" style="margin-inline-end:4px;vertical-align:middle"></or-icon>
             Profile
           </button>
@@ -31,8 +31,8 @@ export function dropdownSlot(): TemplateResult {
       </div>
       <div>
         <p style="margin:0 0 8px;font-size:12px;color:var(--or-color-text-muted,#737373);text-transform:uppercase;letter-spacing:.05em;">Row Actions</p>
-        <or-dropdown .items=${rowActionItems} align="left">
-          <button slot="trigger" class="uk-button uk-button-default uk-button-small" type="button" aria-label="Row actions">
+        <or-dropdown .items=${rowActionItems} align="left" style="cursor:pointer;">
+          <button class="uk-button uk-button-default uk-button-small" type="button" style="pointer-events:none;" aria-label="Row actions">
             <or-icon name="more-vertical" size="16"></or-icon>
           </button>
         </or-dropdown>

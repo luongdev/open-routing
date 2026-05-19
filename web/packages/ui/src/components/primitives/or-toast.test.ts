@@ -13,7 +13,7 @@ describe('OrToast', () => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
 
-  it('renders uk-notification-message wrapper', async () => {
+  it('renders uk-notification-message wrapper with role=alert', async () => {
     await (el as any).updateComplete;
     const wrapper = el.querySelector('.uk-notification-message');
     expect(wrapper).toBeTruthy();
@@ -40,7 +40,14 @@ describe('OrToast', () => {
     expect(wrapper?.className).toContain('uk-notification-message-danger');
   });
 
-  it('close button removes the element', async () => {
+  it('message property renders inside the alert', async () => {
+    (el as any).message = 'Operation complete';
+    await (el as any).updateComplete;
+    const wrapper = el.querySelector('.uk-notification-message');
+    expect(wrapper?.textContent).toContain('Operation complete');
+  });
+
+  it('close button removes the element from DOM', async () => {
     await (el as any).updateComplete;
     const btn = el.querySelector<HTMLButtonElement>('.uk-notification-close');
     expect(btn).toBeTruthy();
