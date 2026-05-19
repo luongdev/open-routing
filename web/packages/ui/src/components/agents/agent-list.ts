@@ -1,44 +1,17 @@
-// Phase 6 Plan 05 Task 1: <or-agent-list> — Agent entity list page.
-// Uses @lit/task for async state machine; passes typed client as @property.
-// Debounces name search 300ms per UI-SPEC §5.3 + D6-V-11.
-// Per-component Shoelace imports for tree-shaking (D6-08).
-// ADMIN-04: only this.client.GET — never direct fetch().
-
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { components } from '../../api/generated.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-
-// Primitives
 import '../primitives/data-table.js';
 import '../primitives/cursor-paginator.js';
 import type { OrDataTableColumn } from '../primitives/data-table.js';
 
 type Agent = components['schemas']['Agent'];
 
-/**
- * <or-agent-list> — Agent entity list page.
- *
- * Fetches GET /v1/orgs/{org_id}/agents via @lit/task.
- * Renders rows in <or-data-table> with cursor pagination.
- * Dispatches 'open-routing:navigate' on row click and "+ New agent" CTA.
- * Debounces name search by 300ms per D6-V-11.
- *
- * Properties:
- *   - orgId: (attribute 'org-id') — the current org UUID
- *   - client: ApiClient — passed from the shell at boot
- */
 @customElement('or-agent-list')
 export class OrAgentList extends LitElement {
   static override styles = css`
@@ -49,56 +22,185 @@ export class OrAgentList extends LitElement {
 
     .page-header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      margin-bottom: 20px;
+      align-items: flex-start;
+      margin-bottom: 24px;
     }
 
+    .page-header-left {}
+
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 24px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
+      margin: 0 0 4px;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
+      color: var(--muted-foreground);
+      font-size: 14px;
       margin: 0;
     }
 
     .filter-row {
       display: flex;
-      align-items: center;
       gap: 12px;
+      align-items: center;
       margin-bottom: 16px;
       flex-wrap: wrap;
     }
 
-    .filter-row sl-input {
-      min-width: 240px;
+    .search-wrap {
+      position: relative;
       flex: 1;
+      max-width: 360px;
     }
 
-    .filter-row sl-checkbox {
-      white-space: nowrap;
+    .search-wrap uk-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted-foreground);
+      pointer-events: none;
+    }
+
+    .search-wrap input {
+      padding-left: 36px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .search-clear {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      padding: 2px;
+      display: flex;
+      align-items: center;
+    }
+
+    .table-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--primary) 15%, transparent);
+      color: var(--primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .name-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .name-cell-text {}
+
+    .agent-name {
+      font-weight: 500;
+      color: var(--foreground);
+      font-size: 14px;
+      display: block;
+    }
+
+    .agent-code {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+      color: var(--muted-foreground);
+      display: block;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .status-pill--success {
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+      color: oklch(0.45 0.18 145);
+    }
+
+    .status-pill--muted {
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity .12s;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color .12s, background .12s;
+    }
+
+    .icon-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .icon-btn--danger:hover {
+      color: var(--destructive);
+      background: color-mix(in oklch, var(--destructive) 12%, transparent);
     }
 
     .empty-state {
       padding: 40px 16px;
       text-align: center;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
     }
 
     .empty-state p {
       margin: 0 0 12px;
     }
 
-    .table-container {
-      width: 100%;
+    .include-disabled-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      white-space: nowrap;
     }
   `;
 
-  // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) orgId = '';
   @property({ type: Object }) client!: ApiClient;
   @property({ type: Boolean, attribute: 'status-mode' }) statusMode = false;
 
-  // --- Internal state ---
   @state() private _search = '';
   @state() private _cursor: string | null = null;
   @state() private _cursorStack: string[] = [];
@@ -109,35 +211,94 @@ export class OrAgentList extends LitElement {
 
   private _searchDebounce?: ReturnType<typeof setTimeout>;
 
-  // --- Column definitions per UI-SPEC §5.3 ---
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
+  private _initials(name: string): string {
+    return name.split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase() ?? '').join('') || '?';
+  }
+
   private _columns: OrDataTableColumn[] = [
     {
-      key: 'code',
-      label: 'Code',
-      render: (row) =>
-        html`<code class="code-cell" style="font-family:var(--or-font-mono,monospace);color:var(--or-color-code-fg,#1f6e77)">${String(row['code'] ?? '')}</code>`,
+      key: 'name',
+      label: 'Name',
+      render: (row) => {
+        const name = String(row['name'] ?? '');
+        const code = String(row['code'] ?? '');
+        return html`
+          <div class="name-cell">
+            <div class="avatar">${this._initials(name)}</div>
+            <div class="name-cell-text">
+              <span class="agent-name">${name}</span>
+              <span class="agent-code">${code}</span>
+            </div>
+          </div>
+        `;
+      },
     },
-    { key: 'name', label: 'Name' },
-    { key: 'email', label: 'Email' },
+    {
+      key: 'external_id',
+      label: 'External ID',
+      render: (row) => {
+        const extId = String(row['external_id'] ?? '');
+        return extId
+          ? html`<code style="font-family:var(--uk-font-monospace,monospace);font-size:12px;color:var(--muted-foreground)">${extId}</code>`
+          : html`<span style="color:var(--muted-foreground);font-size:12px">—</span>`;
+      },
+    },
+    {
+      key: 'email',
+      label: 'Email',
+      render: (row) => {
+        const email = String(row['email'] ?? '');
+        return email
+          ? html`<span style="font-size:13px;color:var(--muted-foreground)">${email}</span>`
+          : html`<span style="color:var(--muted-foreground);font-size:12px">—</span>`;
+      },
+    },
     {
       key: 'enabled',
-      label: 'Enabled',
+      label: 'Status',
       render: (row) =>
         row['enabled']
-          ? html`<sl-icon name="check-lg" style="color:var(--sl-color-success-500)"></sl-icon>`
-          : html`<sl-icon name="x-lg" style="color:var(--or-color-text-muted)"></sl-icon>`,
+          ? html`<span class="status-pill status-pill--success">Active</span>`
+          : html`<span class="status-pill status-pill--muted">Disabled</span>`,
     },
     {
       key: 'updated_at',
       label: 'Updated',
       render: (row) => {
         const iso = String(row['updated_at'] ?? '');
-        return html`<sl-tooltip content="${iso}"><span>${this._relativeTime(iso)}</span></sl-tooltip>`;
+        return html`<span title="${iso}" style="font-size:13px;color:var(--muted-foreground)">${this._relativeTime(iso)}</span>`;
       },
+    },
+    {
+      key: '_actions',
+      label: '',
+      render: (row) => html`
+        <div class="row-actions">
+          <button
+            class="icon-btn"
+            title="Edit"
+            @click=${(e: Event) => { e.stopPropagation(); this._navigate(`/orgs/${this.orgId}/agents/${String(row['id'])}`); }}
+          >
+            <uk-icon icon="pencil" height="16" width="16"></uk-icon>
+          </button>
+          <button
+            class="icon-btn icon-btn--danger"
+            title="Delete"
+            @click=${(e: Event) => { e.stopPropagation(); }}
+          >
+            <uk-icon icon="trash-2" height="16" width="16"></uk-icon>
+          </button>
+        </div>
+      `,
     },
   ];
 
-  // --- Async task (§3 Lit Task pattern) ---
   private _listTask = new Task(this, {
     task: async ([orgId, search, cursor, includeDisabled, limit]) => {
       const { data, error } = await this.client.GET('/v1/orgs/{org_id}/agents', {
@@ -160,9 +321,6 @@ export class OrAgentList extends LitElement {
       [this.orgId, this._search, this._cursor, this._includeDisabled, this._limit] as const,
   });
 
-  // --- Helpers ---
-
-  /** Simple relative time without external lib (e.g. "2h ago", "3d ago"). */
   private _relativeTime(iso: string): string {
     try {
       const ms = Date.now() - new Date(iso).getTime();
@@ -188,8 +346,6 @@ export class OrAgentList extends LitElement {
       })
     );
   }
-
-  // --- Event handlers ---
 
   private _handleSearch(e: Event): void {
     const val = (e.target as HTMLInputElement).value;
@@ -236,41 +392,37 @@ export class OrAgentList extends LitElement {
       }
       this._cursor = this._nextCursor;
     } else {
-      // prev — pop from stack
       const newStack = [...this._cursorStack];
       const prevCursor = newStack.pop() ?? null;
       this._cursorStack = newStack;
       this._cursor = prevCursor;
-      void cursor; // cursor from paginator is just a hint
+      void cursor;
     }
   }
-
-  // --- Render ---
 
   private _renderEmptyState() {
     if (this._search) {
       return html`
         <div class="empty-state">
           <p>No agents found matching '${this._search}'.</p>
-          <sl-button
-            size="small"
+          <button
+            class="uk-button uk-button-default uk-button-small"
             @click=${() => {
               this._search = '';
               this._cursor = null;
               this._cursorStack = [];
             }}
-          >Clear search</sl-button>
+          >Clear search</button>
         </div>
       `;
     }
     return html`
       <div class="empty-state">
         <p>No agents yet. Click <strong>+ Create agent</strong> to add your first.</p>
-        <sl-button
-          variant="primary"
-          size="small"
+        <button
+          class="uk-button uk-button-primary uk-button-small"
           @click=${() => this._navigate(`/orgs/${this.orgId}/agents/new`)}
-        >+ Create agent</sl-button>
+        >+ Create agent</button>
       </div>
     `;
   }
@@ -278,36 +430,50 @@ export class OrAgentList extends LitElement {
   override render() {
     return html`
       <div class="page-header">
-        <h1 class="page-title">${this.statusMode ? 'Agent Status' : 'Agents'}</h1>
+        <div class="page-header-left">
+          <h1 class="page-title">${this.statusMode ? 'Agent Status' : 'Agents'}</h1>
+          <p class="page-subtitle">Manage team members, roles, and access.</p>
+        </div>
         ${this.statusMode ? nothing : html`
-          <sl-button
-            variant="primary"
+          <button
+            class="uk-button uk-button-primary"
             @click=${() => this._navigate(`/orgs/${this.orgId}/agents/new`)}
-          >+ Create agent</sl-button>
+          >+ Add Agent</button>
         `}
       </div>
 
       <div class="filter-row">
-        <sl-input
-          placeholder="Search by name…"
-          clearable
-          @sl-input=${this._handleSearch}
-          aria-label="Search agents"
-        >
-          <sl-icon name="search" slot="prefix"></sl-icon>
-        </sl-input>
-        <sl-checkbox
-          ?checked=${this._includeDisabled}
-          @sl-change=${this._handleIncludeDisabledChange}
-        >Include disabled</sl-checkbox>
-        <sl-icon-button
-          name="arrow-clockwise"
-          label="Refresh"
-          @click=${this._handleRefresh}
-        ></sl-icon-button>
+        <div class="search-wrap">
+          <uk-icon icon="search" height="16" width="16"></uk-icon>
+          <input
+            class="uk-input"
+            type="search"
+            placeholder="Search agents…"
+            .value=${this._search}
+            @input=${this._handleSearch}
+            aria-label="Search agents"
+          />
+          ${this._search ? html`
+            <button class="search-clear" @click=${() => { this._search = ''; this._cursor = null; this._cursorStack = []; }}>
+              <uk-icon icon="x" height="14" width="14"></uk-icon>
+            </button>
+          ` : nothing}
+        </div>
+        <label class="include-disabled-label">
+          <input
+            type="checkbox"
+            class="uk-checkbox"
+            .checked=${this._includeDisabled}
+            @change=${this._handleIncludeDisabledChange}
+          />
+          Include disabled
+        </label>
+        <button class="icon-btn" title="Refresh" @click=${this._handleRefresh}>
+          <uk-icon icon="refresh-cw" height="18" width="18"></uk-icon>
+        </button>
       </div>
 
-      <div class="table-container">
+      <div class="table-card">
         ${this._listTask.render({
           pending: () => html`
             <or-data-table
@@ -339,16 +505,15 @@ export class OrAgentList extends LitElement {
             `;
           },
           error: (err) => html`
-            <sl-alert variant="danger" open>
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+            <div class="uk-alert uk-alert-danger" style="margin:16px;border-radius:8px">
               <strong>Failed to load agents.</strong>
               ${(err as { reason?: string })?.reason ?? String(err)}
-              <sl-button
-                size="small"
-                slot="footer"
+              <button
+                class="uk-button uk-button-default uk-button-small"
+                style="margin-top:8px;display:block"
                 @click=${this._handleRefresh}
-              >Retry</sl-button>
-            </sl-alert>
+              >Retry</button>
+            </div>
           `,
         })}
       </div>
