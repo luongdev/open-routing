@@ -111,6 +111,12 @@ export class OrChannelList extends LitElement {
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 220px;
+    }
+
+    .name-cell-text {
+      min-width: 0;
+      overflow: hidden;
     }
 
     .channel-name {
@@ -118,6 +124,9 @@ export class OrChannelList extends LitElement {
       color: var(--foreground);
       font-size: 14px;
       display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .channel-code {
@@ -125,6 +134,9 @@ export class OrChannelList extends LitElement {
       font-size: 11px;
       color: var(--muted-foreground);
       display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .status-pill {
@@ -246,7 +258,7 @@ export class OrChannelList extends LitElement {
         return html`
           <div class="name-cell">
             <div class="avatar">${this._initials(name)}</div>
-            <div>
+            <div class="name-cell-text">
               <span class="channel-name">${name}</span>
               <span class="channel-code">${code}</span>
             </div>

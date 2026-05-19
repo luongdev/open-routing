@@ -97,6 +97,12 @@ export class OrBreakReasonList extends LitElement {
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 220px;
+    }
+
+    .name-cell-text {
+      min-width: 0;
+      overflow: hidden;
     }
 
     .break-name {
@@ -104,6 +110,9 @@ export class OrBreakReasonList extends LitElement {
       color: var(--foreground);
       font-size: 14px;
       display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .break-code {
@@ -111,6 +120,9 @@ export class OrBreakReasonList extends LitElement {
       font-size: 11px;
       color: var(--muted-foreground);
       display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .status-pill {

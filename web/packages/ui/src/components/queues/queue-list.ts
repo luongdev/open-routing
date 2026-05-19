@@ -128,6 +128,28 @@ export class OrQueueList extends LitElement {
       gap: 4px;
     }
 
+    .name-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 220px;
+    }
+
+    .name-cell-text {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .queue-name {
+      font-weight: 500;
+      color: var(--foreground);
+      font-size: 14px;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .priority-cell {
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -205,7 +227,17 @@ export class OrQueueList extends LitElement {
       render: (row) =>
         html`<code style="font-family:var(--uk-font-monospace,monospace);font-size:12px;color:var(--muted-foreground)">${String(row['code'] ?? '')}</code>`,
     },
-    { key: 'name', label: 'Name' },
+    {
+      key: 'name',
+      label: 'Name',
+      render: (row) => html`
+        <div class="name-cell">
+          <div class="name-cell-text">
+            <span class="queue-name">${String(row['name'] ?? '')}</span>
+          </div>
+        </div>
+      `,
+    },
     {
       key: 'channel_types',
       label: 'Channels',

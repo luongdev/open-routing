@@ -111,15 +111,22 @@ export class OrAgentList extends LitElement {
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 220px;
     }
 
-    .name-cell-text {}
+    .name-cell-text {
+      min-width: 0;
+      overflow: hidden;
+    }
 
     .agent-name {
       font-weight: 500;
       color: var(--foreground);
       font-size: 14px;
       display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .agent-code {
@@ -127,6 +134,9 @@ export class OrAgentList extends LitElement {
       font-size: 11px;
       color: var(--muted-foreground);
       display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .status-pill {

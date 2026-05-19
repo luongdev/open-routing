@@ -11,58 +11,51 @@ export class OrCursorPaginator extends LitElement {
     :host {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
+      gap: 12px;
+      padding: 14px 18px;
       font-size: 13px;
       color: var(--muted-foreground);
       border-top: 1px solid var(--border);
-      background: var(--muted);
-    }
-
-    .pager-group {
-      display: inline-flex;
-      align-items: center;
-      gap: 0;
       background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: var(--shadow-xs);
-      overflow: hidden;
     }
 
+    /* Nav buttons — proper uk-button-default look (border + shadow + hover) */
     .nav-btn {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 6px 12px;
-      border: none;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
       background: var(--card);
       color: var(--foreground);
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      transition: background .12s, color .12s;
-    }
-
-    .nav-btn + .nav-btn,
-    .nav-btn + .page-indicator,
-    .page-indicator + .nav-btn {
-      border-left: 1px solid var(--border);
+      box-shadow: var(--shadow-xs);
+      transition: background .12s, border-color .12s, color .12s, transform .1s, box-shadow .12s;
     }
 
     .nav-btn:hover:not(:disabled) {
       background: var(--muted);
+      border-color: color-mix(in oklch, var(--primary) 50%, var(--border));
       color: var(--primary);
+      box-shadow: var(--shadow-sm);
     }
 
     .nav-btn:hover:not(:disabled) uk-icon {
       color: var(--primary);
     }
 
+    .nav-btn:active:not(:disabled) {
+      transform: translateY(1px);
+      box-shadow: none;
+    }
+
     .nav-btn:disabled {
-      opacity: 0.4;
+      opacity: 0.45;
       cursor: not-allowed;
-      color: var(--muted-foreground);
+      box-shadow: none;
     }
 
     .nav-btn uk-icon {
@@ -74,13 +67,23 @@ export class OrCursorPaginator extends LitElement {
       color: var(--muted-foreground);
     }
 
+    /* Page indicator — coral chip so the current page is unmistakable */
     .page-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       padding: 6px 14px;
+      border-radius: 9999px;
+      background: color-mix(in oklch, var(--primary) 12%, transparent);
+      color: var(--primary);
       font-size: 13px;
       font-weight: 600;
-      color: var(--foreground);
-      background: var(--card);
       white-space: nowrap;
+    }
+
+    .page-indicator-num {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
     }
 
     .spacer {
@@ -108,14 +111,15 @@ export class OrCursorPaginator extends LitElement {
       box-shadow: var(--shadow-xs);
       color: var(--foreground);
       font-size: 13px;
-      font-weight: 500;
-      padding: 6px 28px 6px 12px;
+      font-weight: 600;
+      padding: 7px 30px 7px 14px;
       cursor: pointer;
       transition: border-color .12s, box-shadow .12s;
+      font-variant-numeric: tabular-nums;
     }
 
     .limit-select:hover {
-      border-color: color-mix(in oklch, var(--border) 60%, var(--foreground) 40%);
+      border-color: color-mix(in oklch, var(--primary) 50%, var(--border));
     }
 
     .limit-select:focus,
@@ -127,7 +131,7 @@ export class OrCursorPaginator extends LitElement {
 
     .limit-select-chevron {
       position: absolute;
-      right: 8px;
+      right: 10px;
       top: 50%;
       transform: translateY(-50%);
       pointer-events: none;
@@ -192,29 +196,29 @@ export class OrCursorPaginator extends LitElement {
     const nextDisabled = !this.hasMore;
 
     return html`
-      <div class="pager-group">
-        <button
-          class="nav-btn"
-          ?disabled=${prevDisabled}
-          @click=${this._handlePrev}
-          aria-label="Previous page"
-        >
-          <uk-icon icon="chevron-left" height="14" width="14"></uk-icon>
-          Previous
-        </button>
+      <button
+        class="nav-btn"
+        ?disabled=${prevDisabled}
+        @click=${this._handlePrev}
+        aria-label="Previous page"
+      >
+        <uk-icon icon="chevron-left" height="14" width="14"></uk-icon>
+        Previous
+      </button>
 
-        <span class="page-indicator">Page ${this._pageNum}</span>
+      <span class="page-indicator">
+        Page <span class="page-indicator-num">${this._pageNum}</span>
+      </span>
 
-        <button
-          class="nav-btn"
-          ?disabled=${nextDisabled}
-          @click=${this._handleNext}
-          aria-label="Next page"
-        >
-          Next
-          <uk-icon icon="chevron-right" height="14" width="14"></uk-icon>
-        </button>
-      </div>
+      <button
+        class="nav-btn"
+        ?disabled=${nextDisabled}
+        @click=${this._handleNext}
+        aria-label="Next page"
+      >
+        Next
+        <uk-icon icon="chevron-right" height="14" width="14"></uk-icon>
+      </button>
 
       <div class="spacer"></div>
 
