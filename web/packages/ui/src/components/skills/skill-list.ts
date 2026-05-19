@@ -507,12 +507,6 @@ export class OrSkillList extends LitElement {
                     @or-row-click=${this._handleRowClick}
                     @or-row-action=${this._handleRowAction}
                   ></or-data-table>
-                  <or-cursor-paginator
-                    .hasMore=${this._hasMore}
-                    .cursorStack=${this._cursorStack}
-                    .limit=${this._limit}
-                    @or-page-changed=${this._handlePageChanged}
-                  ></or-cursor-paginator>
                 `
               )}
             `;
@@ -530,6 +524,18 @@ export class OrSkillList extends LitElement {
           `,
         })}
       </div>
+
+      ${when(
+        this._hasMore || this._cursorStack.length > 0,
+        () => html`
+          <or-cursor-paginator
+            .hasMore=${this._hasMore}
+            .cursorStack=${this._cursorStack}
+            .limit=${this._limit}
+            @or-page-changed=${this._handlePageChanged}
+          ></or-cursor-paginator>
+        `
+      )}
     `;
   }
 }

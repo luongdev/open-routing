@@ -12,11 +12,10 @@ export class OrCursorPaginator extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 14px 18px;
+      padding: 14px 0 4px;
       font-size: 13px;
       color: var(--muted-foreground);
-      border-top: 1px solid var(--border);
-      background: var(--card);
+      background: transparent;
     }
 
     /* Each control = same square boxed button, same radius/border/shadow */
