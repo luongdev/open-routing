@@ -1,0 +1,107 @@
+/**
+ * Ember polish layer — overrides on top of Frankenstyle defaults for
+ * extra depth, warmth, and visual hierarchy matching the Ember dashboard.
+ * Adopted via shadow-sheets.ts so it applies inside every Shadow DOM
+ * that hosts uk-* descendants.
+ */
+
+/* Primary button: punchier coral + subtle elevation that lifts on hover */
+button.uk-button-primary,
+.uk-button-primary {
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border: 1px solid var(--primary) !important;
+  box-shadow: var(--shadow-primary), inset 0 1px 0 0 oklch(1 0 0 / 0.15) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.005em !important;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease !important;
+}
+button.uk-button-primary:hover,
+.uk-button-primary:hover {
+  background: color-mix(in oklch, var(--primary) 92%, oklch(0.15 0 0)) !important;
+  box-shadow: 0 6px 16px -2px oklch(0.62 0.22 28 / 0.40), inset 0 1px 0 0 oklch(1 0 0 / 0.18) !important;
+  transform: translateY(-1px);
+}
+button.uk-button-primary:active,
+.uk-button-primary:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Default button: cleaner border + better hover */
+button.uk-button-default,
+.uk-button-default {
+  background: var(--card) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-xs) !important;
+  font-weight: 500 !important;
+  transition: background .12s, border-color .12s !important;
+}
+button.uk-button-default:hover,
+.uk-button-default:hover {
+  background: var(--muted) !important;
+  border-color: color-mix(in oklch, var(--border) 70%, var(--foreground) 30%) !important;
+}
+
+/* Input: better focus ring */
+input.uk-input,
+.uk-input {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  border-radius: 8px !important;
+  transition: border-color .12s, box-shadow .12s !important;
+}
+input.uk-input:focus,
+input.uk-input:focus-visible,
+.uk-input:focus,
+.uk-input:focus-visible {
+  outline: none !important;
+  border-color: var(--ring) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent) !important;
+}
+input.uk-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* Empty state gets bigger breathing room + icon affordance */
+.empty-state {
+  padding: 56px 24px !important;
+}
+.empty-state-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 6px;
+}
+.empty-state-desc {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  margin: 0 0 16px;
+  max-width: 360px;
+  display: inline-block;
+}
+
+/* Page title: more confident */
+.page-title {
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.2 !important;
+}
+.page-subtitle {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}

@@ -12,6 +12,7 @@
 import frankenCss from 'frankenstyle/css/frankenstyle-kit.css?inline';
 import emberVarsCss from './ember-shadow-vars.css?inline';
 import compatOrTokensCss from './compat-or-tokens.css?inline';
+import emberPolishCss from './ember-polish.css?inline';
 
 function makeSheet(css: string): CSSStyleSheet {
   const sheet = new CSSStyleSheet();
@@ -23,12 +24,15 @@ function makeSheet(css: string): CSSStyleSheet {
 let _frankenSheet: CSSStyleSheet | null = null;
 let _emberVarsSheet: CSSStyleSheet | null = null;
 let _compatOrSheet: CSSStyleSheet | null = null;
+let _polishSheet: CSSStyleSheet | null = null;
 
 export function getShadowSheets(): CSSStyleSheet[] {
   if (!_frankenSheet) _frankenSheet = makeSheet(frankenCss);
   if (!_emberVarsSheet) _emberVarsSheet = makeSheet(emberVarsCss);
   if (!_compatOrSheet) _compatOrSheet = makeSheet(compatOrTokensCss);
-  return [_frankenSheet, _emberVarsSheet, _compatOrSheet];
+  if (!_polishSheet) _polishSheet = makeSheet(emberPolishCss);
+  // Polish LAST so it overrides Frankenstyle defaults.
+  return [_frankenSheet, _emberVarsSheet, _compatOrSheet, _polishSheet];
 }
 
 /**

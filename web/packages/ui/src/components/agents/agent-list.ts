@@ -89,6 +89,7 @@ export class OrAgentList extends LitElement {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
+      box-shadow: var(--shadow-sm);
       overflow: hidden;
     }
 

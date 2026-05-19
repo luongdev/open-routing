@@ -126,21 +126,44 @@ export class OrCatalogShell extends LitElement {
     }
 
     .sidebar-header {
-      padding: 16px;
+      padding: 18px 16px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       border-bottom: 1px solid var(--border, #e5e5e5);
       flex-shrink: 0;
     }
 
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--primary), color-mix(in oklch, var(--primary) 60%, oklch(0.50 0.20 15)));
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary-foreground);
+      box-shadow: var(--shadow-primary);
+      flex-shrink: 0;
+    }
+
     .wordmark {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 15px;
       color: var(--foreground, #111);
       white-space: nowrap;
       overflow: hidden;
       flex: 1;
+      letter-spacing: -0.01em;
+    }
+    .wordmark .wordmark-sub {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+      margin-top: 1px;
     }
     .app-grid--collapsed .wordmark { display: none; }
 
@@ -738,10 +761,13 @@ export class OrCatalogShell extends LitElement {
       <div class="app-grid ${collapsed}">
         <aside class="sidebar" aria-label="Navigation">
           <header class="sidebar-header">
+            <span class="logo-mark" aria-hidden="true">
+              <uk-icon icon="route" height="18" width="18"></uk-icon>
+            </span>
+            <span class="wordmark">Open Routing<span class="wordmark-sub">Catalog</span></span>
             <button class="hamburger" @click=${() => { this._sidebarOpen = !this._sidebarOpen; }} aria-label="Toggle sidebar">
-              <uk-icon icon="menu" height="20" width="20"></uk-icon>
+              <uk-icon icon="panel-left" height="18" width="18"></uk-icon>
             </button>
-            <span class="wordmark">Open Routing</span>
           </header>
           <nav class="sidebar-nav">
             ${this._renderNav()}
