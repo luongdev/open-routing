@@ -9,10 +9,11 @@ import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 export class OrCursorPaginator extends LitElement {
   static override styles = css`
     :host {
-      display: flex;
+      display: flex !important;
       align-items: center;
       gap: 6px;
-      margin: 24px 0 16px;
+      margin-top: 24px !important;
+      margin-bottom: 16px !important;
       padding: 0 14px;
       font-size: 13px;
       color: var(--muted-foreground);
