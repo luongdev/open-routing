@@ -36,3 +36,10 @@ export type { Tab } from './or-tabs.js';
 export { OrDialog } from './or-dialog.js';
 // W0.0-19: or-table light DOM primitive wrapping uk-table
 export { OrTable } from './or-table.js';
+// W0.0-20: notify() imperative toast API + or-toast declarative element
+export { notify, notifyError } from './notify.js';
+export type { NotifyOptions, NotifyVariant, NotifyPosition } from './notify.js';
+export { OrToast } from './or-toast.js';
+// W0.0-21: or-dropdown menu popover with keyboard nav
+export { OrDropdown } from './or-dropdown.js';
+export type { DropdownItem } from './or-dropdown.js';
