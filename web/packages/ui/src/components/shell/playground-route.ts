@@ -337,7 +337,12 @@ export class OrPlaygroundRoute extends LitElement {
           API contract with zero drift between server and client.
         </p>
         <div class="hero-cta">
-          <a class="btn-primary" href="#preview">
+          <a class="btn-primary" href="/playground/screens"
+             @click=${(e: Event) => {
+               e.preventDefault();
+               window.history.pushState({}, '', '/playground/screens');
+               window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+             }}>
             See it in action <uk-icon icon="arrow-right" height="16" width="16"></uk-icon>
           </a>
           <a class="btn-ghost" href="#tokens">

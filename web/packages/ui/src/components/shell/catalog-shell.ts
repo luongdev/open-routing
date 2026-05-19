@@ -585,6 +585,24 @@ export class OrCatalogShell extends LitElement {
       },
       render: () => html`<or-playground-route></or-playground-route>`,
     },
+    {
+      // W0.1-24: /playground/screens — public design-system showcase with mock data.
+      path: '/playground/screens',
+      enter: async () => {
+        await import('./playground-screens-route.js');
+        return true;
+      },
+      render: () => html`<or-playground-screens-route></or-playground-screens-route>`,
+    },
+    {
+      // W0.1-24: /playground/screens/:slug — deep-link to a specific demo screen.
+      path: '/playground/screens/:slug',
+      enter: async () => {
+        await import('./playground-screens-route.js');
+        return true;
+      },
+      render: () => html`<or-playground-screens-route></or-playground-screens-route>`,
+    },
   ]);
 
 
@@ -761,8 +779,8 @@ export class OrCatalogShell extends LitElement {
   }
 
   override render() {
-    // /playground is a public design-system demo — render bare (no shell chrome)
-    if (window.location.pathname === '/playground') {
+    // /playground/* routes are public design-system demos — render bare (no shell chrome)
+    if (window.location.pathname.startsWith('/playground')) {
       return html`<div class="bare-shell">${this._routes.outlet()}</div>`;
     }
     // _sidebarOpen=false → sidebar expanded (default); true → collapsed to icon-only
