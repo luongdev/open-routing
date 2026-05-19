@@ -193,3 +193,99 @@ input.uk-checkbox:focus-visible,
   font-size: 13px !important;
   line-height: 1.5 !important;
 }
+
+/* ── List row cells (used in entity list columns) ───────────────
+ * These classes are rendered INSIDE <or-data-table> shadow DOM via
+ * column.render functions. The lists themselves can't style them
+ * because shadow DOM CSS boundaries don't cross — so we put them
+ * here in ember-polish (adopted into every shadow root).
+ */
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.name-cell-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--primary) 15%, transparent);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.agent-name,
+.skill-name,
+.queue-name,
+.channel-name,
+.adapter-name,
+.break-name,
+.break-reason-name {
+  font-weight: 500;
+  color: var(--foreground);
+  font-size: 14px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-code,
+.skill-code,
+.queue-code,
+.channel-code,
+.adapter-code,
+.break-code,
+.break-reason-code {
+  font-family: var(--uk-font-monospace, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--muted-foreground);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status pill shared across list pages */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pill--success {
+  background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+  color: oklch(0.42 0.18 145);
+}
+
+.status-pill--muted {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.status-pill--info {
+  background: color-mix(in oklch, oklch(0.65 0.18 250) 16%, transparent);
+  color: oklch(0.42 0.18 250);
+}
+
+.status-pill--warning {
+  background: color-mix(in oklch, var(--warning) 16%, transparent);
+  color: oklch(0.45 0.18 75);
+}
