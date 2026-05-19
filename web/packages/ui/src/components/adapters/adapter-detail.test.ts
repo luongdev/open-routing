@@ -54,27 +54,18 @@ describe('OrAdapterDetail', () => {
     expect(codeInput.value).toBe('adapter_freeswitch_dc1');
   });
 
-  // Test 2: config renders as sl-textarea with monospace font; displays JSON.stringify(config, null, 2)
-  it('renders config as sl-textarea with monospace font and pretty-printed JSON', async () => {
+  // Test 2: config renders as <textarea> with monospace font; displays JSON.stringify(config, null, 2)
+  it('renders config as textarea with monospace font and pretty-printed JSON', async () => {
     await mountWithAdapter(el);
     const shadow = el.shadowRoot!;
 
-    // Find sl-textarea for config
-    const textareas = shadow.querySelectorAll('sl-textarea');
-    let configTextarea: Element | null = null;
-    for (const ta of textareas) {
-      // Check by label or by value content (JSON)
-      const label = ta.getAttribute('label') ?? '';
-      if (label.toLowerCase().includes('config')) {
-        configTextarea = ta;
-        break;
-      }
-    }
+    // Find native textarea for config (Ember layout uses native <textarea>, not sl-textarea)
+    const configTextarea = shadow.querySelector('textarea#adapter-config') as HTMLElement | null;
     expect(configTextarea).toBeTruthy();
 
-    // Should have monospace style
-    const style = (configTextarea as HTMLElement).getAttribute('style') ?? '';
-    expect(style).toContain('monospace');
+    // Should use the config-textarea class which applies monospace font
+    const classList = (configTextarea as HTMLElement).className ?? '';
+    expect(classList).toContain('config-textarea');
 
     // Internal state should have pretty-printed JSON
     const configText = (el as any)._formData?.configText as string;
