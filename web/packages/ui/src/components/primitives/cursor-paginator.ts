@@ -11,7 +11,7 @@ export class OrCursorPaginator extends LitElement {
     :host {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       padding: 14px 18px;
       font-size: 13px;
       color: var(--muted-foreground);
@@ -19,23 +19,33 @@ export class OrCursorPaginator extends LitElement {
       background: var(--card);
     }
 
-    /* Nav buttons — proper uk-button-default look (border + shadow + hover) */
+    /* Each control = same square boxed button, same radius/border/shadow */
+    .page-num,
     .nav-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 7px 14px;
+      justify-content: center;
+      min-width: 36px;
+      height: 36px;
+      padding: 0 10px;
       border-radius: 8px;
       border: 1px solid var(--border);
       background: var(--card);
       color: var(--foreground);
       font-size: 13px;
       font-weight: 500;
+      font-variant-numeric: tabular-nums;
       cursor: pointer;
       box-shadow: var(--shadow-xs);
       transition: background .12s, border-color .12s, color .12s, transform .1s, box-shadow .12s;
     }
 
+    .nav-btn {
+      padding: 0;
+      width: 36px;
+    }
+
+    .page-num:hover:not(:disabled),
     .nav-btn:hover:not(:disabled) {
       background: var(--muted);
       border-color: color-mix(in oklch, var(--primary) 50%, var(--border));
@@ -47,11 +57,13 @@ export class OrCursorPaginator extends LitElement {
       color: var(--primary);
     }
 
+    .page-num:active:not(:disabled),
     .nav-btn:active:not(:disabled) {
       transform: translateY(1px);
       box-shadow: none;
     }
 
+    .page-num:disabled,
     .nav-btn:disabled {
       opacity: 0.45;
       cursor: not-allowed;
@@ -67,23 +79,29 @@ export class OrCursorPaginator extends LitElement {
       color: var(--muted-foreground);
     }
 
-    /* Page indicator — coral chip so the current page is unmistakable */
-    .page-indicator {
+    /* Current page = filled coral with white digit */
+    .page-num--current {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--primary-foreground);
+      box-shadow: 0 2px 6px -1px oklch(0.62 0.22 28 / 0.35), inset 0 1px 0 0 oklch(1 0 0 / 0.15);
+      cursor: default;
+      font-weight: 700;
+    }
+
+    .page-num--current:hover {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--primary-foreground);
+      box-shadow: 0 2px 6px -1px oklch(0.62 0.22 28 / 0.35), inset 0 1px 0 0 oklch(1 0 0 / 0.15);
+    }
+
+    /* Small gap between page-num group and nav arrows */
+    .nav-group {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 14px;
-      border-radius: 9999px;
-      background: color-mix(in oklch, var(--primary) 12%, transparent);
-      color: var(--primary);
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
-    .page-indicator-num {
-      font-variant-numeric: tabular-nums;
-      font-weight: 700;
+      margin-left: 4px;
     }
 
     .spacer {
@@ -105,6 +123,8 @@ export class OrCursorPaginator extends LitElement {
     .limit-select {
       appearance: none;
       -webkit-appearance: none;
+      height: 36px;
+      box-sizing: border-box;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -112,7 +132,7 @@ export class OrCursorPaginator extends LitElement {
       color: var(--foreground);
       font-size: 13px;
       font-weight: 600;
-      padding: 7px 30px 7px 14px;
+      padding: 0 32px 0 14px;
       cursor: pointer;
       transition: border-color .12s, box-shadow .12s;
       font-variant-numeric: tabular-nums;
@@ -195,30 +215,52 @@ export class OrCursorPaginator extends LitElement {
     const prevDisabled = this.cursorStack.length === 0;
     const nextDisabled = !this.hasMore;
 
+    // Cursor-based pagination only knows: current page index + whether there's
+    // a next page. We surface the current page as a single coral square and
+    // expose history pages (1..N-1) as separate boxes that the back button
+    // walks through one step at a time — clicking N-1 is the same as Prev.
+    const pageButtons: ReturnType<typeof html>[] = [];
+    for (let p = 1; p < this._pageNum; p++) {
+      pageButtons.push(html`
+        <button
+          class="page-num"
+          @click=${this._handlePrev}
+          aria-label="Go to page ${p}"
+          title="Go to page ${p}"
+        >${p}</button>
+      `);
+    }
+    pageButtons.push(html`
+      <button
+        class="page-num page-num--current"
+        aria-current="page"
+        aria-label="Current page, ${this._pageNum}"
+      >${this._pageNum}</button>
+    `);
+
     return html`
-      <button
-        class="nav-btn"
-        ?disabled=${prevDisabled}
-        @click=${this._handlePrev}
-        aria-label="Previous page"
-      >
-        <uk-icon icon="chevron-left" height="14" width="14"></uk-icon>
-        Previous
-      </button>
+      ${pageButtons}
 
-      <span class="page-indicator">
-        Page <span class="page-indicator-num">${this._pageNum}</span>
-      </span>
-
-      <button
-        class="nav-btn"
-        ?disabled=${nextDisabled}
-        @click=${this._handleNext}
-        aria-label="Next page"
-      >
-        Next
-        <uk-icon icon="chevron-right" height="14" width="14"></uk-icon>
-      </button>
+      <div class="nav-group">
+        <button
+          class="nav-btn"
+          ?disabled=${prevDisabled}
+          @click=${this._handlePrev}
+          aria-label="Previous page"
+          title="Previous page"
+        >
+          <uk-icon icon="arrow-left" height="16" width="16"></uk-icon>
+        </button>
+        <button
+          class="nav-btn"
+          ?disabled=${nextDisabled}
+          @click=${this._handleNext}
+          aria-label="Next page"
+          title="Next page"
+        >
+          <uk-icon icon="arrow-right" height="16" width="16"></uk-icon>
+        </button>
+      </div>
 
       <div class="spacer"></div>
 

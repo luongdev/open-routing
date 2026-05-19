@@ -88,14 +88,10 @@ describe('OrCursorPaginator', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    // Find the Next button by text content or data attribute
-    const buttons = shadow.querySelectorAll('sl-button, button');
-    let nextBtn: HTMLElement | null = null;
-    buttons.forEach((btn) => {
-      if (btn.textContent?.trim().includes('Next')) nextBtn = btn as HTMLElement;
-    });
+    // After Wave 0.1 redesign Next is an icon-only square button with aria-label.
+    const nextBtn = shadow.querySelector('button[aria-label="Next page"]') as HTMLButtonElement | null;
     expect(nextBtn).toBeTruthy();
-    expect((nextBtn as unknown as { disabled?: boolean })?.disabled || nextBtn!.hasAttribute('disabled')).toBe(true);
+    expect(nextBtn!.disabled || nextBtn!.hasAttribute('disabled')).toBe(true);
   });
 
   it('Previous button click emits or-page-changed with direction=prev', async () => {
@@ -108,13 +104,7 @@ describe('OrCursorPaginator', () => {
     el.addEventListener('or-page-changed', (e) => events.push(e as CustomEvent));
 
     const shadow = el.shadowRoot!;
-    const buttons = shadow.querySelectorAll('sl-button, button');
-    let prevBtn: HTMLElement | null = null;
-    buttons.forEach((btn) => {
-      if (btn.textContent?.trim().includes('Previous') || btn.textContent?.trim().includes('Prev')) {
-        prevBtn = btn as HTMLElement;
-      }
-    });
+    const prevBtn = shadow.querySelector('button[aria-label="Previous page"]') as HTMLButtonElement | null;
     expect(prevBtn).toBeTruthy();
     prevBtn!.click();
     await (el as any).updateComplete;
