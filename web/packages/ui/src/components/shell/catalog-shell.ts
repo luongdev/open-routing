@@ -1,17 +1,6 @@
-// Phase 6 Plan 03: <or-catalog-shell> — page-level shell with @lit-labs/router,
-// sidebar nav (8 entries per D6-11), top bar with theme toggle (D6-19),
-// UUIDv7 route guard (D6-13). This is the mounting point for the admin SPA.
-//
-// D6-20: Theme CSS custom properties applied to THIS host element (this.style).
-// Applying to the shell host (not the document root) is required for Phase 7 Shadow DOM isolation.
-//
-// Plan 06-06: Wire real agent routes + createApiClient bootstrap from URL org_id.
-// - Shared _orgRouteEnter() guard runs on ALL entity routes (D6-13: reject malformed before any API call).
-// - State sync (orgId, _currentOrgId, client bootstrap) moved to enter() — render() stays pure.
-// - Agent routes render OrAgentList/OrAgentDetail/OrAgentForm with .client property.
-// - Placeholder divs for Wave 3-5 entities (skills/queues/break-reasons/adapters/channels/imports/status).
-// - 'open-routing:navigate' events from entity components reach this._routes.goto().
-// - Switch org clears _client + _currentOrgId and navigates to '/'.
+// Phase 7 Plan W1-01: <or-catalog-shell> — Ember-style healthcare dashboard layout.
+// Sidebar (260px) + topbar + content area grid. uk-* Frankenstyle classes throughout.
+// Routing, theme, and state logic unchanged from Phase 6.
 
 import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -35,15 +24,6 @@ import type { ApiClient } from '../../api/client.js';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Agent components (Wave 2, Plan 06-05) — wired to real routes in Plan 06-06.
-
-// Shoelace per-component imports (D6-08: tree-shaking required for Phase 7 70KB budget)
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/button-group/button-group.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 // Import primitives used in route renders (must be registered before outlet renders them)
 import '../primitives/org-picker.js';
@@ -72,15 +52,15 @@ interface NavEntry {
 
 /** All 8 sidebar nav entries per D6-11. Divider is a special entry with key '__divider__'. */
 const NAV_ENTRIES: readonly NavEntry[] = [
-  { key: 'agents',        label: 'Agents',        icon: 'people-fill',       path: '/orgs/{orgId}/agents' },
-  { key: 'skills',        label: 'Skills',         icon: 'tag-fill',          path: '/orgs/{orgId}/skills' },
-  { key: 'queues',        label: 'Queues',         icon: 'funnel-fill',       path: '/orgs/{orgId}/queues' },
-  { key: 'channels',      label: 'Channels',       icon: 'broadcast-pin',     path: '/orgs/{orgId}/channels' },
-  { key: 'adapters',      label: 'Adapters',       icon: 'plug-fill',         path: '/orgs/{orgId}/adapters' },
-  { key: 'break-reasons', label: 'Break Reasons',  icon: 'pause-circle-fill', path: '/orgs/{orgId}/break-reasons' },
-  { key: '__divider__',   label: '',               icon: '',                  path: '' },
-  { key: 'imports',       label: 'Bulk Import',    icon: 'upload',            path: '/orgs/{orgId}/imports/new' },
-  { key: 'status',        label: 'Agent Status',   icon: 'circle-fill',       path: '/orgs/{orgId}/agents/status' },
+  { key: 'agents',        label: 'Agents',        icon: 'users',        path: '/orgs/{orgId}/agents' },
+  { key: 'skills',        label: 'Skills',         icon: 'tag',          path: '/orgs/{orgId}/skills' },
+  { key: 'queues',        label: 'Queues',         icon: 'filter',       path: '/orgs/{orgId}/queues' },
+  { key: 'channels',      label: 'Channels',       icon: 'radio',        path: '/orgs/{orgId}/channels' },
+  { key: 'adapters',      label: 'Adapters',       icon: 'plug',         path: '/orgs/{orgId}/adapters' },
+  { key: 'break-reasons', label: 'Break Reasons',  icon: 'pause-circle', path: '/orgs/{orgId}/break-reasons' },
+  { key: '__divider__',   label: '',               icon: '',             path: '' },
+  { key: 'imports',       label: 'Bulk Import',    icon: 'upload',       path: '/orgs/{orgId}/imports/new' },
+  { key: 'status',        label: 'Agent Status',   icon: 'activity',     path: '/orgs/{orgId}/agents/status' },
 ] as const;
 
 /** Entries that always show regardless of modules filter (divider, imports, status). */
@@ -114,93 +94,187 @@ const VALID_THEME_NAMES: readonly ThemeName[] = ['or-light', 'or-dark', 'or-bran
 export class OrCatalogShell extends LitElement {
   static override styles = css`
     :host {
+      display: block;
+      height: 100vh;
+      background: var(--background, #fff);
+      color: var(--foreground, #111);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .app-grid {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      grid-template-rows: 56px 1fr;
+      grid-template-areas:
+        "sidebar topbar"
+        "sidebar content";
+      height: 100vh;
+      transition: grid-template-columns 0.15s ease;
+    }
+
+    .app-grid--collapsed {
+      grid-template-columns: 64px 1fr;
+    }
+
+    .sidebar {
+      grid-area: sidebar;
+      grid-row: 1 / -1;
+      background: var(--card, #fafafa);
+      border-right: 1px solid var(--border, #e5e5e5);
       display: flex;
       flex-direction: column;
-      height: 100vh;
-    }
-    .topbar {
-      height: 56px;
-      display: flex;
-      align-items: center;
-      background: var(--or-color-topbar-bg, #fff);
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
-      padding: 0 8px;
-      flex-shrink: 0;
-    }
-    .wordmark {
-      font-weight: 600;
-      margin-left: 8px;
-      font-size: 16px;
-    }
-    .topbar-spacer {
-      flex: 1;
-    }
-    .org-chip {
-      font-size: 12px;
-      font-family: monospace;
-      background: var(--or-color-code-bg, #f5f5f5);
-      color: var(--or-color-code-fg, #1a575f);
-      padding: 2px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      margin: 0 8px;
-    }
-    .body {
-      display: flex;
-      flex: 1;
       overflow: hidden;
     }
-    .sidebar {
-      width: 248px;
-      background: var(--or-color-sidebar-bg, #f5f5f5);
-      border-right: 1px solid var(--or-color-divider, #e5e5e5);
-      overflow-y: auto;
+
+    .sidebar-header {
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border, #e5e5e5);
       flex-shrink: 0;
     }
+
+    .wordmark {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--foreground, #111);
+      white-space: nowrap;
+      overflow: hidden;
+      flex: 1;
+    }
+    .app-grid--collapsed .wordmark { display: none; }
+
+    .sidebar-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 0;
+    }
+
+    .nav-section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted-foreground, #888);
+      padding: 16px 16px 6px;
+    }
+    .app-grid--collapsed .nav-section-label { display: none; }
+
     .nav-item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      cursor: pointer;
-      color: var(--or-color-text-body, #404040);
-      text-decoration: none;
+      gap: 12px;
+      padding: 8px 12px;
+      margin: 1px 8px;
+      border-radius: 8px;
       font-size: 14px;
+      font-weight: 500;
+      color: var(--foreground, #111);
+      cursor: pointer;
+      background: transparent;
       border: none;
-      background: none;
-      width: 100%;
       text-align: left;
+      width: calc(100% - 16px);
+      transition: background 0.12s, color 0.12s;
     }
     .nav-item:hover {
-      background: var(--or-color-row-hover, #fafafa);
+      background: var(--muted, #f5f5f5);
     }
     .nav-item--active {
-      background: var(--or-color-nav-active-bg, rgba(43, 138, 147, 0.1));
-      color: var(--or-color-primary, #2b8a93);
-      font-weight: 500;
+      background: color-mix(in oklch, var(--primary, #f12c3d) 12%, transparent);
+      color: var(--primary, #f12c3d);
+      font-weight: 600;
     }
     .nav-item--active:hover {
-      background: var(--or-color-nav-active-bg, rgba(43, 138, 147, 0.15));
+      background: color-mix(in oklch, var(--primary, #f12c3d) 18%, transparent);
     }
-    .nav-item--active sl-icon {
-      color: var(--or-color-primary, #2b8a93);
-    }
+    .nav-item-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .app-grid--collapsed .nav-item-label { display: none; }
+    .app-grid--collapsed .nav-item { justify-content: center; }
+
     .nav-divider {
       height: 1px;
-      background: var(--or-color-divider, #e5e5e5);
+      background: var(--border, #e5e5e5);
       margin: 8px 16px;
     }
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 32px 32px 24px;
-      background: var(--or-color-app-bg, #fff);
+
+    .sidebar-footer {
+      padding: 12px;
+      border-top: 1px solid var(--border, #e5e5e5);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
     }
-    .placeholder-wave {
-      color: var(--or-color-text-muted, #888);
-      font-size: 14px;
-      padding: 32px;
-      text-align: center;
+
+    .theme-row { display: flex; gap: 4px; }
+    .theme-btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+      background: transparent;
+      border: 1px solid var(--border, #e5e5e5);
+      border-radius: 6px;
+      color: var(--foreground, #111);
+      cursor: pointer;
+    }
+    .theme-btn:hover { background: var(--muted, #f5f5f5); }
+    .theme-btn--active {
+      background: var(--primary, #f12c3d);
+      color: var(--primary-foreground, #fff);
+      border-color: var(--primary, #f12c3d);
+    }
+    .app-grid--collapsed .theme-row { flex-direction: column; }
+
+    .topbar {
+      grid-area: topbar;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border, #e5e5e5);
+      background: var(--card, #fafafa);
+      gap: 16px;
+    }
+
+    .hamburger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--foreground, #111);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .hamburger:hover { background: var(--muted, #f5f5f5); }
+
+    .topbar-spacer { flex: 1; }
+
+    .org-chip {
+      font-family: 'SF Mono', Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: var(--muted, #f5f5f5);
+      color: var(--muted-foreground, #888);
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: none;
+    }
+    .org-chip:hover {
+      background: color-mix(in oklch, var(--muted, #f5f5f5) 80%, var(--foreground, #111) 20%);
+    }
+
+    .content {
+      grid-area: content;
+      background: var(--background, #fff);
+      overflow-y: auto;
+      padding: 24px 32px;
     }
   `;
 
@@ -634,67 +708,72 @@ export class OrCatalogShell extends LitElement {
           class="nav-item ${isActive ? 'nav-item--active' : ''}"
           @click=${() => this._navigate(resolved)}
           aria-current=${isActive ? 'page' : nothing}
-          aria-label="${entry.label}"
+          aria-label=${entry.label}
         >
-          <sl-icon name="${entry.icon}"></sl-icon>
-          ${entry.label}
+          <uk-icon icon=${entry.icon} height="18" width="18"></uk-icon>
+          <span class="nav-item-label">${entry.label}</span>
         </button>
       `;
     });
   }
 
   override render() {
+    // _sidebarOpen=false → sidebar expanded (default); true → collapsed to icon-only
+    const collapsed = this._sidebarOpen ? 'app-grid--collapsed' : '';
     return html`
-      <div class="topbar">
-        <sl-icon-button
-          name="list"
-          class="hamburger-toggle"
-          label="Toggle sidebar"
-          @click=${() => { this._sidebarOpen = !this._sidebarOpen; }}
-        ></sl-icon-button>
-        <span class="wordmark">Open Routing</span>
-        <div class="topbar-spacer"></div>
-        <sl-tooltip content="${this.orgId}">
+      <div class="app-grid ${collapsed}">
+        <aside class="sidebar" aria-label="Navigation">
+          <header class="sidebar-header">
+            <button class="hamburger" @click=${() => { this._sidebarOpen = !this._sidebarOpen; }} aria-label="Toggle sidebar">
+              <uk-icon icon="menu" height="20" width="20"></uk-icon>
+            </button>
+            <span class="wordmark">Open Routing</span>
+          </header>
+          <nav class="sidebar-nav">
+            ${this._renderNav()}
+          </nav>
+          <footer class="sidebar-footer">
+            <div class="theme-row" role="group" aria-label="Theme">
+              <button
+                class="theme-btn ${this.theme === 'or-light' || this.theme === 'ember-light' ? 'theme-btn--active' : ''}"
+                @click=${() => { this.theme = 'ember-light'; }}
+                title="Light"
+              >
+                <uk-icon icon="sun" height="16" width="16"></uk-icon>
+              </button>
+              <button
+                class="theme-btn ${this.theme === 'or-dark' || this.theme === 'ember-dark' ? 'theme-btn--active' : ''}"
+                @click=${() => { this.theme = 'ember-dark'; }}
+                title="Dark"
+              >
+                <uk-icon icon="moon" height="16" width="16"></uk-icon>
+              </button>
+              <button
+                class="theme-btn ${this.theme === 'or-brand' ? 'theme-btn--active' : ''}"
+                @click=${() => { this.theme = 'or-brand'; }}
+                title="Brand"
+              >
+                <uk-icon icon="palette" height="16" width="16"></uk-icon>
+              </button>
+            </div>
+          </footer>
+        </aside>
+        <header class="topbar">
+          <div class="topbar-spacer"></div>
           <code
             class="org-chip"
+            title=${this.orgId}
             @click=${() => { navigator.clipboard?.writeText(this.orgId); }}
+          >org: ${this.orgId.slice(0, 8)}&hellip;</code>
+          <button
+            class="hamburger"
+            @click=${() => { this._currentOrgId = ''; this.orgId = ''; this._client = null; this._navigate('/'); }}
+            aria-label="Switch org"
+            title="Switch org"
           >
-            org: ${this.orgId.slice(0, 8)}&hellip;
-          </code>
-        </sl-tooltip>
-        <sl-button-group label="Theme" style="margin: 0 8px;">
-          <sl-icon-button
-            name="sun"
-            title="Light theme"
-            @click=${() => { this.theme = 'or-light'; }}
-          ></sl-icon-button>
-          <sl-icon-button
-            name="moon"
-            title="Dark theme"
-            @click=${() => { this.theme = 'or-dark'; }}
-          ></sl-icon-button>
-          <sl-icon-button
-            name="palette"
-            title="Brand theme"
-            @click=${() => { this.theme = 'or-brand'; }}
-          ></sl-icon-button>
-        </sl-button-group>
-        <sl-button
-          variant="text"
-          @click=${() => {
-            this._currentOrgId = '';
-            this.orgId = '';
-            this._client = null;
-            this._navigate('/');
-          }}
-        >
-          Switch org
-        </sl-button>
-      </div>
-      <div class="body">
-        <nav class="sidebar" aria-label="Navigation">
-          ${this._renderNav()}
-        </nav>
+            <uk-icon icon="log-out" height="18" width="18"></uk-icon>
+          </button>
+        </header>
         <main class="content">
           ${this._routes.outlet()}
         </main>
