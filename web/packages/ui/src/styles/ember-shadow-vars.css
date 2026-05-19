@@ -1,0 +1,67 @@
+/* Ember theme token variables for Shadow DOM adopted sheets.
+ * Mirrors ember-theme.css :root/.dark blocks — @theme directives omitted
+ * because Tailwind v4 @theme is a build-time directive that cannot be
+ * parsed by CSSStyleSheet.replaceSync() at runtime inside a shadow root.
+ */
+
+:host, :root {
+  --background: oklch(0.985 0.005 60);
+  --foreground: oklch(0.145 0.005 60);
+  --primary: oklch(0.65 0.20 30);
+  --primary-foreground: oklch(0.985 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0.005 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0.005 60);
+  --muted: oklch(0.96 0.005 60);
+  --muted-foreground: oklch(0.55 0.01 60);
+  --accent: oklch(0.96 0.01 30);
+  --accent-foreground: oklch(0.145 0.005 60);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.92 0.005 60);
+  --input: oklch(0.92 0.005 60);
+  --ring: oklch(0.65 0.20 30);
+
+  --uk-bg: oklch(0.985 0.005 60);
+  --uk-bg-f: oklch(0.145 0.005 60);
+  --uk-card: oklch(1 0 0);
+  --uk-card-f: oklch(0.145 0.005 60);
+  --uk-drop: oklch(1 0 0);
+  --uk-drop-f: oklch(0.145 0.005 60);
+  --uk-primary: oklch(0.65 0.20 30);
+  --uk-primary-f: oklch(0.985 0 0);
+  --uk-danger: oklch(0.55 0.22 25);
+  --uk-danger-f: oklch(0.985 0 0);
+}
+
+:host(.dark), .dark {
+  --background: oklch(0.10 0.005 60);
+  --foreground: oklch(0.96 0.005 60);
+  --primary: oklch(0.70 0.18 30);
+  --primary-foreground: oklch(0.10 0 0);
+  --card: oklch(0.13 0.005 60);
+  --card-foreground: oklch(0.96 0.005 60);
+  --popover: oklch(0.13 0.005 60);
+  --popover-foreground: oklch(0.96 0.005 60);
+  --muted: oklch(0.18 0.005 60);
+  --muted-foreground: oklch(0.65 0.01 60);
+  --accent: oklch(0.18 0.01 30);
+  --accent-foreground: oklch(0.96 0.005 60);
+  --destructive: oklch(0.60 0.22 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.22 0.005 60);
+  --input: oklch(0.22 0.005 60);
+  --ring: oklch(0.70 0.18 30);
+
+  --uk-bg: oklch(0.10 0.005 60);
+  --uk-bg-f: oklch(0.96 0.005 60);
+  --uk-card: oklch(0.13 0.005 60);
+  --uk-card-f: oklch(0.96 0.005 60);
+  --uk-drop: oklch(0.13 0.005 60);
+  --uk-drop-f: oklch(0.96 0.005 60);
+  --uk-primary: oklch(0.70 0.18 30);
+  --uk-primary-f: oklch(0.10 0 0);
+  --uk-danger: oklch(0.60 0.22 25);
+  --uk-danger-f: oklch(0.985 0 0);
+}

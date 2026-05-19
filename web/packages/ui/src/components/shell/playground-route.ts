@@ -1,5 +1,6 @@
 import { LitElement, html, css, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 import { iconSlot } from './slots/icon.js';
 import { switchCheckboxSlot } from './slots/switch-checkbox.js';
 import { buttonSlot } from './slots/button.js';
@@ -122,6 +123,12 @@ export class OrPlaygroundRoute extends LitElement {
       border-radius: 8px;
     }
   `;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
   private _dispatchThemeChange(theme: 'ember-light' | 'ember-dark'): void {
     this.dispatchEvent(

@@ -32,6 +32,7 @@ export interface CatalogShellRouterAdapter {
 
 import { createApiClient } from '../../api/client.js';
 import type { ApiClient } from '../../api/client.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Agent components (Wave 2, Plan 06-05) — wired to real routes in Plan 06-06.
 
@@ -287,7 +288,13 @@ export class OrCatalogShell extends LitElement {
     return true;
   }
 
-  /** 
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
+  /**
    * @lit-labs/router Routes
    * Lazy routes — D7-03 single-source shell across admin + embed (D7-02 eager baseline = chrome + 5 primitives only;
    * entities split per route). _composedEnter runs _orgRouteEnter guard first (avoids chunk fetch on malformed UUID)
