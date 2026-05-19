@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+// Playground = public design-system demo (rewritten W0.1 / d2d879d).
+// Old slot/sandbox structure replaced with hero + tokens + components + preview.
+
+import { describe, it, expect, beforeEach } from 'vitest';
 import './playground-route.js';
 
 describe('OrPlaygroundRoute', () => {
@@ -9,80 +12,79 @@ describe('OrPlaygroundRoute', () => {
     document.body.appendChild(el);
   });
 
-  afterEach(() => {
-    if (el.parentNode) {
-      el.parentNode.removeChild(el);
-    }
+  it('renders hero with branded title', async () => {
+    await (el as any).updateComplete;
+    const sr = el.shadowRoot!;
+    const h1 = sr.querySelector('.hero h1');
+    expect(h1?.textContent).toContain('routing catalogs');
   });
 
-  it('renders 13 slots', async () => {
+  it('renders top-bar nav with three section anchors', async () => {
     await (el as any).updateComplete;
-    const slots = el.shadowRoot!.querySelectorAll('section.slot');
-    expect(slots.length).toBe(13);
+    const sr = el.shadowRoot!;
+    const navLinks = sr.querySelectorAll('header.demo-top nav a');
+    expect(navLinks.length).toBe(3);
+    expect(navLinks[0]!.getAttribute('href')).toBe('#tokens');
+    expect(navLinks[1]!.getAttribute('href')).toBe('#components');
+    expect(navLinks[2]!.getAttribute('href')).toBe('#preview');
   });
 
-  it('renders theme toggle buttons in header', async () => {
+  it('renders theme switch pills (Light + Dark)', async () => {
     await (el as any).updateComplete;
-    const header = el.shadowRoot!.querySelector('.header');
-    expect(header).toBeTruthy();
-    const buttons = header!.querySelectorAll('.theme-btn');
-    expect(buttons.length).toBe(2);
-    expect(buttons[0]!.textContent).toContain('Ember Light');
-    expect(buttons[1]!.textContent).toContain('Ember Dark');
+    const sr = el.shadowRoot!;
+    const pills = sr.querySelectorAll('.theme-pill');
+    expect(pills.length).toBe(2);
+    expect(pills[0]!.textContent).toContain('Light');
+    expect(pills[1]!.textContent).toContain('Dark');
   });
 
-  it.each([
-    ['sidebar', '07-w0-22'],
-  ])('slot %s shows pending plan %s', async (id, plan) => {
+  it('renders 9 design-token swatches', async () => {
     await (el as any).updateComplete;
-    const slot = el.shadowRoot!.querySelector(`[data-component="${id}"]`);
-    expect(slot?.textContent).toContain(plan);
+    const sr = el.shadowRoot!;
+    const swatches = sr.querySelectorAll('.swatch');
+    expect(swatches.length).toBe(9);
   });
 
-  it('table slot is wired with or-table element (W0.0-19)', async () => {
+  it('renders 4 component preview cards', async () => {
     await (el as any).updateComplete;
-    const section = el.shadowRoot!.querySelector('section[data-component="table"]');
-    expect(section).toBeTruthy();
-    expect(section!.querySelector('or-table')).toBeTruthy();
+    const sr = el.shadowRoot!;
+    const cards = sr.querySelectorAll('.preview-card');
+    expect(cards.length).toBe(4);
+    const headings = Array.from(cards).map((c) => c.querySelector('h3')?.textContent);
+    expect(headings).toContain('Buttons');
+    expect(headings).toContain('Inputs');
+    expect(headings).toContain('Status badges');
+    expect(headings).toContain('Avatar + identity');
   });
 
-  it('button slot is wired with or-button elements', async () => {
+  it('renders admin live-preview frame with sidebar items + table', async () => {
     await (el as any).updateComplete;
-    const buttonSection = el.shadowRoot!.querySelector('section[data-component="button"]');
-    expect(buttonSection).toBeTruthy();
-    const buttons = buttonSection!.querySelectorAll('or-button');
-    expect(buttons.length).toBeGreaterThan(0);
+    const sr = el.shadowRoot!;
+    const preview = sr.querySelector('.admin-preview');
+    expect(preview).toBeTruthy();
+    expect(preview!.querySelectorAll('.admin-side-item').length).toBeGreaterThanOrEqual(6);
+    expect(preview!.querySelector('.admin-table')).toBeTruthy();
   });
 
-  it('input slot is wired with or-input elements', async () => {
+  it('dispatches open-routing:theme-change with ember-dark when Dark pill clicked', async () => {
     await (el as any).updateComplete;
-    const inputSection = el.shadowRoot!.querySelector('section[data-component="input"]');
-    expect(inputSection).toBeTruthy();
-    const inputs = inputSection!.querySelectorAll('or-input');
-    expect(inputs.length).toBeGreaterThan(0);
+    let fired: { theme?: string } | null = null;
+    el.addEventListener('open-routing:theme-change', (e) => {
+      fired = (e as CustomEvent).detail;
+    });
+    const pills = el.shadowRoot!.querySelectorAll('.theme-pill');
+    (pills[1] as HTMLButtonElement).click();
+    expect((fired as unknown as { theme?: string })?.theme).toBe('ember-dark');
   });
 
-  it('select slot is wired with or-select elements', async () => {
+  it('dispatches open-routing:theme-change with ember-light when Light pill clicked', async () => {
     await (el as any).updateComplete;
-    const section = el.shadowRoot!.querySelector('section[data-component="select"]');
-    expect(section).toBeTruthy();
-    expect(section!.querySelectorAll('or-select').length).toBeGreaterThan(0);
-  });
-
-  it('card slot is wired with or-card elements', async () => {
-    await (el as any).updateComplete;
-    const section = el.shadowRoot!.querySelector('section[data-component="card"]');
-    expect(section).toBeTruthy();
-    expect(section!.querySelectorAll('or-card').length).toBeGreaterThan(0);
-  });
-
-  it('dispatches open-routing:theme-change event on Ember Dark click', async () => {
-    await (el as any).updateComplete;
-    const events: CustomEvent[] = [];
-    el.addEventListener('open-routing:theme-change', (e) => events.push(e as CustomEvent));
-    const darkBtn = el.shadowRoot!.querySelectorAll('.theme-btn')[1] as HTMLButtonElement;
-    darkBtn.click();
-    expect(events.length).toBe(1);
-    expect(events[0]!.detail.theme).toBe('ember-dark');
+    let fired: { theme?: string } | null = null;
+    el.addEventListener('open-routing:theme-change', (e) => {
+      fired = (e as CustomEvent).detail;
+    });
+    const pills = el.shadowRoot!.querySelectorAll('.theme-pill');
+    (pills[0] as HTMLButtonElement).click();
+    expect((fired as unknown as { theme?: string })?.theme).toBe('ember-light');
   });
 });

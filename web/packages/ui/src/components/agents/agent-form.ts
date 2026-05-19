@@ -6,31 +6,18 @@
 // ADMIN-04: only this.client.POST/GET — never direct fetch().
 // ajv validateCreateAgent called on final submit.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { OrFormWizardStep } from '../primitives/form-wizard.js';
 import validateCreateAgent from '../../validators/CreateAgentRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import { nameToCode } from '../primitives/code-input.js';
 import '../primitives/form-wizard.js';
+import '../primitives/code-input.js';
 
 const WIZARD_STEPS: OrFormWizardStep[] = [
   { key: 'basics', label: 'Basics' },
@@ -72,37 +59,138 @@ export class OrAgentForm extends LitElement {
     :host {
       display: block;
       padding: 24px;
-      max-width: 640px;
+      max-width: 680px;
     }
 
     .page-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       margin-bottom: 24px;
     }
 
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 24px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
       margin: 0;
+      color: var(--foreground);
     }
 
-    .form-group {
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      padding: 32px;
+    }
+
+    .step-helper {
+      font-size: 13px;
+      color: var(--muted-foreground);
+      margin: 0 0 20px;
+    }
+
+    .form-section {
+      margin-bottom: 24px;
+    }
+
+    .form-row {
       margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 6px;
+    }
+
+    .form-label-required::after {
+      content: ' *';
+      color: var(--destructive);
     }
 
     .field-error {
       font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
+      color: var(--destructive);
       margin-top: 4px;
     }
 
-    .skills-section {
-      padding: 8px 0;
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
     }
 
+    /* Toggle switch built purely with CSS + checkbox */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--foreground);
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-track {
+      background: var(--primary);
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    /* Skills table */
     .skills-table {
       width: 100%;
       border-collapse: collapse;
@@ -116,32 +204,117 @@ export class OrAgentForm extends LitElement {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      color: var(--or-color-text-muted, #737373);
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      letter-spacing: 0.05em;
+      color: var(--muted-foreground);
+      border-bottom: 1px solid var(--border);
     }
 
     .skills-table td {
       padding: 8px 10px;
       vertical-align: middle;
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      border-bottom: 1px solid var(--border);
     }
 
     .skills-table code {
-      font-family: var(--or-font-mono, monospace);
-      color: var(--or-color-code-fg, #1f6e77);
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--muted-foreground);
       font-size: 13px;
     }
 
     .empty-skills {
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       font-size: 14px;
       margin-bottom: 12px;
     }
 
-    .review-section {
-      background: var(--or-color-card-bg, #fff);
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: 4px;
+    /* Skill search picker */
+    .skill-picker {
+      position: relative;
+      display: inline-block;
+    }
+
+    .skill-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 100;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow-md);
+      min-width: 280px;
+      padding: 8px;
+    }
+
+    .skill-dropdown input {
+      margin-bottom: 8px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .skill-results {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .skill-result-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--foreground);
+      transition: background .1s;
+      width: 100%;
+      background: none;
+      border: none;
+      text-align: left;
+    }
+
+    .skill-result-item:hover,
+    .skill-result-item:focus-visible {
+      background: var(--muted);
+      outline: none;
+    }
+
+    .skill-result-code {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+      color: var(--muted-foreground);
+    }
+
+    .skill-no-results {
+      padding: 8px;
+      font-size: 13px;
+      color: var(--muted-foreground);
+      text-align: center;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color .12s, background .12s;
+    }
+
+    .icon-btn:hover {
+      color: var(--destructive);
+      background: color-mix(in oklch, var(--destructive) 12%, transparent);
+    }
+
+    /* Review summary */
+    .review-card {
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
       padding: 16px;
       margin-bottom: 16px;
     }
@@ -153,36 +326,62 @@ export class OrAgentForm extends LitElement {
       font-size: 14px;
     }
 
+    .review-row:last-child {
+      margin-bottom: 0;
+    }
+
     .review-label {
       flex: 0 0 120px;
       font-weight: 600;
-      color: var(--or-color-text-muted, #737373);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted-foreground);
+      padding-top: 1px;
     }
 
     .review-value {
-      color: var(--or-color-text-body, #404040);
+      color: var(--foreground);
       word-break: break-all;
+      font-size: 14px;
     }
 
     .review-value code {
-      font-family: var(--or-font-mono, monospace);
-      color: var(--or-color-code-fg, #1f6e77);
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--muted-foreground);
       font-size: 13px;
     }
 
-    .wizard-nav {
+    /* API error banner */
+    .api-error {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Form action row */
+    .form-actions {
       display: flex;
       gap: 8px;
-      margin-top: 24px;
       justify-content: flex-end;
-    }
-
-    .step-helper {
-      font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
-      margin-bottom: 16px;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
     }
   `;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
   // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) orgId = '';
@@ -202,6 +401,7 @@ export class OrAgentForm extends LitElement {
   @state() private _apiError: string | null = null;
   @state() private _submitting = false;
   @state() private _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
+  @state() private _skillPickerOpen = false;
   @state() private _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
   private _codeAutoFill = true;
 
@@ -219,7 +419,6 @@ export class OrAgentForm extends LitElement {
 
   async _handleNext(): Promise<void> {
     if (this._currentStep === 0) {
-      // Validate Step 1: code (required + pattern), name (required), email (format if provided)
       const errors: Record<string, string> = {};
 
       if (!this._formData.code) {
@@ -232,8 +431,10 @@ export class OrAgentForm extends LitElement {
         errors['name'] = 'Name is required.';
       }
 
-      // Email is optional but must be valid format if provided (Gemini HIGH #2)
-      if (this._formData.email) {
+      // Email required by CreateAgentRequest schema; validate format too
+      if (!this._formData.email) {
+        errors['email'] = 'Email is required.';
+      } else {
         const emailRegex = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
         if (!emailRegex.test(this._formData.email)) {
           errors['email'] = 'Enter a valid email address.';
@@ -273,7 +474,6 @@ export class OrAgentForm extends LitElement {
       })),
     };
 
-    // Client-side full validation
     // ajv standalone validators attach .errors dynamically; cast to access it.
     const validateFn = validateCreateAgent as unknown as {
       (data: unknown): boolean;
@@ -286,6 +486,11 @@ export class OrAgentForm extends LitElement {
         errors[field] = err.message ?? 'Invalid value';
       }
       this._errors = errors;
+      // Redirect back to step 0 if any step-1 fields failed validation
+      const step0Fields = ['code', 'name', 'email'];
+      if (step0Fields.some(f => errors[f])) {
+        this._currentStep = 0;
+      }
       return;
     }
     this._errors = {};
@@ -317,7 +522,6 @@ export class OrAgentForm extends LitElement {
       }
 
       if (data?.id) {
-        // Dispatch entity-created event
         this.dispatchEvent(
           new CustomEvent('open-routing:entity-created', {
             detail: { entityId: data.id, entityType: 'agent' },
@@ -325,7 +529,6 @@ export class OrAgentForm extends LitElement {
             composed: true,
           })
         );
-        // Navigate to detail page
         this._navigate(`/orgs/${this.orgId}/agents/${data.id}`);
       }
     } finally {
@@ -362,6 +565,7 @@ export class OrAgentForm extends LitElement {
       { skill_id: skill.id, name: skill.name, proficiency: 5 },
     ];
     this._skillSearchResults = [];
+    this._skillPickerOpen = false;
   }
 
   private _handleRemoveSkill(skillId: string): void {
@@ -377,13 +581,10 @@ export class OrAgentForm extends LitElement {
   // --- Step content renderers ---
 
   private _renderBasicsStep() {
-    const proficiencyOptions = Array.from({ length: 10 }, (_, i) => i + 1);
-    void proficiencyOptions; // used in skills step
-
     return html`
       <p class="step-helper">Define the agent's identity. Code cannot be changed after create.</p>
 
-      <div class="form-group">
+      <div class="form-row">
         <or-code-input
           .value=${this._formData.code}
           .required=${true}
@@ -401,13 +602,16 @@ export class OrAgentForm extends LitElement {
         )}
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="Name"
+      <div class="form-row">
+        <label class="form-label form-label-required" for="agent-name">Name</label>
+        <input
+          id="agent-name"
+          class="uk-input"
+          type="text"
           required
-          value=${this._formData.name}
-          ?invalid=${!!this._errors['name']}
-          @sl-input=${(e: Event) => {
+          .value=${this._formData.name}
+          placeholder="e.g. Billing Support Agent"
+          @input=${(e: Event) => {
             const name = (e.target as HTMLInputElement).value;
             this._formData = {
               ...this._formData,
@@ -415,55 +619,74 @@ export class OrAgentForm extends LitElement {
               ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
             };
           }}
-        ></sl-input>
+        />
         ${when(
           this._errors['name'],
           () => html`<div class="field-error">${this._errors['name']}</div>`
         )}
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="Email"
+      <div class="form-row">
+        <label class="form-label form-label-required" for="agent-email">Email</label>
+        <input
+          id="agent-email"
+          class="uk-input"
           type="email"
-          value=${this._formData.email}
-          @sl-input=${(e: Event) => {
+          required
+          .value=${this._formData.email}
+          placeholder="agent@example.com"
+          @input=${(e: Event) => {
             this._formData = { ...this._formData, email: (e.target as HTMLInputElement).value };
           }}
-        ></sl-input>
+        />
+        ${when(
+          this._errors['email'],
+          () => html`<div class="field-error">${this._errors['email']}</div>`
+        )}
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
+      <div class="form-row">
+        <label class="form-label" for="agent-ext-id">External ID</label>
+        <input
+          id="agent-ext-id"
+          class="uk-input"
+          type="text"
+          .value=${this._formData.external_id}
+          placeholder="Optional reference from your system"
+          @input=${(e: Event) => {
             this._formData = {
               ...this._formData,
               external_id: (e.target as HTMLInputElement).value,
             };
           }}
-        ></sl-input>
+        />
+        <div class="field-help">Match an ID from your CRM, HR system, or identity provider.</div>
       </div>
 
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              enabled: (e.target as HTMLInputElement).checked,
-            };
-          }}
-        >Enabled</sl-switch>
+      <div class="form-row">
+        <label class="switch-wrap">
+          <input
+            type="checkbox"
+            .checked=${this._formData.enabled}
+            @change=${(e: Event) => {
+              this._formData = {
+                ...this._formData,
+                enabled: (e.target as HTMLInputElement).checked,
+              };
+            }}
+          />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span>Enabled</span>
+        </label>
+        <div class="field-help">Disabled agents cannot log in or receive interactions.</div>
       </div>
 
-      <div class="wizard-nav">
-        <sl-button
-          variant="default"
+      <div class="form-actions">
+        <button
+          class="uk-button uk-button-default"
           @click=${() => this._navigate(`/orgs/${this.orgId}/agents`)}
-        >Cancel</sl-button>
-        <sl-button variant="primary" @click=${this._handleNext}>Next: Skills →</sl-button>
+        >Cancel</button>
+        <button class="uk-button uk-button-primary" @click=${this._handleNext}>Next: Skills →</button>
       </div>
     `;
   }
@@ -474,7 +697,7 @@ export class OrAgentForm extends LitElement {
     return html`
       <p class="step-helper">Assign initial skills. You can also edit skills after creating the agent.</p>
 
-      <div class="skills-section">
+      <div class="form-section">
         ${when(
           this._assignedSkills.length === 0,
           () => html`<p class="empty-skills">No skills assigned yet.</p>`,
@@ -493,26 +716,28 @@ export class OrAgentForm extends LitElement {
                     <tr>
                       <td><code>${skill.name ?? skill.skill_id}</code></td>
                       <td>
-                        <sl-select
-                          size="small"
-                          value=${String(skill.proficiency)}
-                          @sl-change=${(e: Event) =>
+                        <select
+                          class="uk-select"
+                          style="width:80px"
+                          @change=${(e: Event) =>
                             this._handleProficiencyChange(
                               skill.skill_id,
                               parseInt((e.target as HTMLSelectElement).value, 10)
                             )}
                         >
                           ${proficiencyOptions.map(
-                            (n) => html`<sl-option value=${String(n)}>${n}</sl-option>`
+                            (n) => html`<option value=${String(n)} ?selected=${n === skill.proficiency}>${n}</option>`
                           )}
-                        </sl-select>
+                        </select>
                       </td>
                       <td>
-                        <sl-icon-button
-                          name="x-lg"
-                          label="Remove skill"
+                        <button
+                          class="icon-btn"
+                          title="Remove skill"
                           @click=${() => this._handleRemoveSkill(skill.skill_id)}
-                        ></sl-icon-button>
+                        >
+                          <uk-icon icon="x" height="16" width="16"></uk-icon>
+                        </button>
                       </td>
                     </tr>
                   `
@@ -522,32 +747,56 @@ export class OrAgentForm extends LitElement {
           `
         )}
 
-        <sl-dropdown>
-          <sl-button slot="trigger" size="small" variant="default">+ Add skill</sl-button>
-          <sl-menu>
-            <sl-input
-              placeholder="Search skills…"
-              size="small"
-              @sl-input=${this._handleSkillSearch}
-            ></sl-input>
-            ${this._skillSearchResults.map(
-              (skill) => html`
-                <sl-menu-item @click=${() => this._handleAddSkill(skill)}>
-                  ${skill.name} <code>${skill.code}</code>
-                </sl-menu-item>
-              `
-            )}
-            ${when(
-              this._skillSearchResults.length === 0,
-              () => html`<sl-menu-item disabled>Type to search skills</sl-menu-item>`
-            )}
-          </sl-menu>
-        </sl-dropdown>
+        <div class="skill-picker">
+          <button
+            class="uk-button uk-button-default"
+            style="font-size:13px"
+            @click=${() => {
+              this._skillPickerOpen = !this._skillPickerOpen;
+              this._skillSearchResults = [];
+            }}
+          >
+            <uk-icon icon="plus" height="14" width="14" style="margin-right:4px"></uk-icon>
+            Add skill
+          </button>
+          ${this._skillPickerOpen ? html`
+            <div class="skill-dropdown">
+              <input
+                class="uk-input"
+                type="search"
+                placeholder="Search skills…"
+                @input=${this._handleSkillSearch}
+              />
+              <div class="skill-results">
+                ${this._skillSearchResults.length > 0
+                  ? this._skillSearchResults.map(
+                      (skill) => html`
+                        <button
+                          class="skill-result-item"
+                          role="option"
+                          @click=${() => this._handleAddSkill(skill)}
+                          @keydown=${(e: KeyboardEvent) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              this._handleAddSkill(skill);
+                            }
+                          }}
+                        >
+                          <span>${skill.name}</span>
+                          <span class="skill-result-code">${skill.code}</span>
+                        </button>
+                      `
+                    )
+                  : html`<div class="skill-no-results">Type to search skills</div>`}
+              </div>
+            </div>
+          ` : nothing}
+        </div>
       </div>
 
-      <div class="wizard-nav">
-        <sl-button variant="default" @click=${this._handleBack}>← Back</sl-button>
-        <sl-button variant="primary" @click=${this._handleNext}>Next: Review →</sl-button>
+      <div class="form-actions">
+        <button class="uk-button uk-button-default" @click=${this._handleBack}>← Back</button>
+        <button class="uk-button uk-button-primary" @click=${this._handleNext}>Next: Review →</button>
       </div>
     `;
   }
@@ -560,7 +809,7 @@ export class OrAgentForm extends LitElement {
         : this._assignedSkills.map((s) => `${s.name ?? s.skill_id}:${s.proficiency}`).join(', ');
 
     return html`
-      <div class="review-section">
+      <div class="review-card">
         <div class="review-row">
           <span class="review-label">Code</span>
           <span class="review-value"><code>${code}</code></span>
@@ -593,25 +842,22 @@ export class OrAgentForm extends LitElement {
       ${when(
         this._apiError,
         () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          <div class="api-error">
+            <uk-icon icon="x" height="16" width="16"></uk-icon>
             ${this._apiError}
-            <sl-button size="small" @click=${this._handleSubmit}>Retry</sl-button>
-          </sl-alert>
+          </div>
         `
       )}
 
-      <div class="wizard-nav">
-        <sl-button variant="default" @click=${this._handleBack}>← Back</sl-button>
-        <sl-button
-          variant="primary"
+      <div class="form-actions">
+        <button class="uk-button uk-button-default" @click=${this._handleBack}>← Back</button>
+        <button
+          class="uk-button uk-button-primary"
           ?disabled=${this._submitting}
           @click=${this._handleSubmit}
         >
-          ${this._submitting
-            ? html`<sl-spinner></sl-spinner> Creating…`
-            : 'Create agent'}
-        </sl-button>
+          ${this._submitting ? 'Creating…' : 'Create agent'}
+        </button>
       </div>
     `;
   }
@@ -621,31 +867,33 @@ export class OrAgentForm extends LitElement {
   override render() {
     return html`
       <div class="page-header">
-        <sl-button
-          variant="text"
+        <button
+          class="back-btn"
           @click=${() => this._navigate(`/orgs/${this.orgId}/agents`)}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Agents
-        </sl-button>
+          <uk-icon icon="chevron-left" height="16" width="16"></uk-icon>
+          Agents
+        </button>
         <h1 class="page-title">Create agent</h1>
       </div>
 
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${this._currentStep}
-        .hideNav=${true}
-      >
-        <div slot="step-basics">
-          ${this._renderBasicsStep()}
-        </div>
-        <div slot="step-skills">
-          ${this._renderSkillsStep()}
-        </div>
-        <div slot="step-review">
-          ${this._renderReviewStep()}
-        </div>
-      </or-form-wizard>
+      <div class="form-card">
+        <or-form-wizard
+          .steps=${WIZARD_STEPS}
+          .currentStep=${this._currentStep}
+          .hideNav=${true}
+        >
+          <div slot="step-basics">
+            ${this._renderBasicsStep()}
+          </div>
+          <div slot="step-skills">
+            ${this._renderSkillsStep()}
+          </div>
+          <div slot="step-review">
+            ${this._renderReviewStep()}
+          </div>
+        </or-form-wizard>
+      </div>
     `;
   }
 }
