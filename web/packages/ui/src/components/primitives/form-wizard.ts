@@ -1,50 +1,17 @@
 // Phase 6 Plan 04: <or-form-wizard> — multi-step wizard for entity create flows.
-// Multi-step: Agent (3 steps), Channel (3 steps) — renders stepper with step circles.
-// Single-step: Skill, Queue, BreakReason, Adapter — stepper hidden, simple layout.
-// Slot-based step content: <slot name="step-{key}"> per step.
-// D6-17: same component, right-sized per entity complexity.
-// Per-component Shoelace imports (D6-08).
+// Wave 0.1 polish: pure Lit + Ember tokens, no shoelace. Coral active/completed
+// step indicators, lucide icons, smooth connector transitions.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-
-/** A single step definition for or-form-wizard. */
 export interface OrFormWizardStep {
   key: string;
   label: string;
 }
 
-/**
- * <or-form-wizard> — configurable step-based form component.
- *
- * Multi-step (Agent, Channel): renders a stepper with step circles and connectors.
- * Single-step (Skill, Queue, BreakReason, Adapter): hides the stepper, shows
- * a simple form layout with Create button directly.
- *
- * Step state:
- *   - completed (index < currentStep): filled primary background + check icon
- *   - current (index === currentStep): primary border + step number
- *   - future (index > currentStep): muted border + step number
- *
- * Events:
- *   - 'open-routing:wizard-step-changed'  CustomEvent<{ step: number; key: string }>
- *   - 'open-routing:wizard-completed'     CustomEvent<void>
- *
- * Usage:
- *   <or-form-wizard
- *     .steps=${[{ key: 'basics', label: 'Basics' }, { key: 'skills', label: 'Skills' }, { key: 'review', label: 'Review' }]}
- *     .currentStep=${0}
- *   >
- *     <div slot="step-basics">…form fields…</div>
- *     <div slot="step-skills">…skills picker…</div>
- *     <div slot="step-review">…summary…</div>
- *   </or-form-wizard>
- */
 @customElement('or-form-wizard')
 export class OrFormWizard extends LitElement {
   static override styles = css`
@@ -52,11 +19,11 @@ export class OrFormWizard extends LitElement {
       display: block;
     }
 
-    /* Stepper (hidden for single-step entities) */
+    /* ── Stepper ─────────────────────────────────────────────────── */
     .stepper {
       display: flex;
-      align-items: center;
-      margin-bottom: 32px;
+      align-items: flex-start;
+      margin-bottom: 24px;
     }
 
     .step-item {
@@ -64,82 +31,82 @@ export class OrFormWizard extends LitElement {
       flex-direction: column;
       align-items: center;
       position: relative;
-      flex: 1;
+      flex: 0 0 auto;
     }
 
-    .step-item:first-child {
-      flex: 0;
-    }
-
-    .step-item:last-child {
-      flex: 0;
-    }
-
-    /* Connector line between step circles */
     .step-connector {
       flex: 1;
       height: 2px;
-      background: var(--or-color-divider, #e5e5e5);
-      margin: 0;
+      background: var(--border);
+      margin: 0 4px;
       align-self: flex-start;
-      margin-top: 11px; /* align with center of 24px circles */
+      margin-top: 13px; /* center on 28px circles */
+      border-radius: 1px;
+      transition: background .25s ease;
     }
 
     .step-connector.completed {
-      background: var(--sl-color-primary-500, #2b8a93);
+      background: var(--primary);
     }
 
-    /* Step circle: 24px diameter */
+    /* Step circle: 28px diameter, more breathing room */
     .step-circle {
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
       flex-shrink: 0;
-      transition: background 0.2s ease, border-color 0.2s ease;
+      transition: background .2s, border-color .2s, color .2s, box-shadow .2s;
     }
 
     .step-circle.completed {
-      background: var(--sl-color-primary-500, #2b8a93);
-      border: 2px solid var(--sl-color-primary-500, #2b8a93);
-      color: #ffffff;
+      background: var(--primary);
+      border: 2px solid var(--primary);
+      color: var(--primary-foreground);
+      box-shadow: 0 2px 4px -1px oklch(0.62 0.22 28 / 0.30);
     }
 
     .step-circle.current {
-      background: transparent;
-      border: 2px solid var(--sl-color-primary-500, #2b8a93);
-      color: var(--sl-color-primary-500, #2b8a93);
+      background: var(--card);
+      border: 2px solid var(--primary);
+      color: var(--primary);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 18%, transparent);
     }
 
     .step-circle.future {
-      background: transparent;
-      border: 2px solid var(--or-color-divider, #e5e5e5);
-      color: var(--or-color-text-muted, #737373);
+      background: var(--card);
+      border: 2px solid var(--border);
+      color: var(--muted-foreground);
+    }
+
+    .step-circle uk-icon {
+      color: inherit;
     }
 
     .step-label {
-      margin-top: 6px;
+      margin-top: 8px;
       font-size: 12px;
       text-align: center;
       white-space: nowrap;
+      max-width: 120px;
     }
 
     .step-label.completed {
-      color: var(--sl-color-primary-500, #2b8a93);
+      color: var(--foreground);
       font-weight: 500;
     }
 
     .step-label.current {
-      color: var(--sl-color-primary-500, #2b8a93);
+      color: var(--primary);
       font-weight: 600;
     }
 
     .step-label.future {
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
     }
 
     /* Step content area */
@@ -151,26 +118,21 @@ export class OrFormWizard extends LitElement {
     .nav-buttons {
       display: flex;
       gap: 8px;
-      margin-top: 24px;
+      margin-top: 20px;
       justify-content: flex-end;
     }
   `;
 
-  /** Steps definition. Array length determines single-step vs multi-step mode. */
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   @property({ type: Array }) steps: OrFormWizardStep[] = [];
-
-  /** Currently active step index (0-based). Parent may sync this via property. */
   @property({ type: Number }) currentStep = 0;
-
-  /**
-   * When true, the wizard's built-in navigation buttons (Back/Next/Create) are hidden.
-   * Use this when the parent component provides its own navigation (e.g. or-agent-form
-   * which needs step-level validation before advancing). The stepper and slot content
-   * still render; only the nav bar is suppressed.
-   */
   @property({ type: Boolean, attribute: 'hide-nav' }) hideNav = false;
 
-  /** Internal dirty flag — user has entered data and may lose it on cancel. */
   @state() private _dirty = false;
 
   private get _isSingleStep(): boolean {
@@ -206,7 +168,6 @@ export class OrFormWizard extends LitElement {
 
   private _handleNext(): void {
     if (this._isLastStep || this._isSingleStep) {
-      // Final step: dispatch wizard-completed
       this.dispatchEvent(
         new CustomEvent('open-routing:wizard-completed', {
           detail: {},
@@ -216,7 +177,6 @@ export class OrFormWizard extends LitElement {
       );
       return;
     }
-
     const newStep = this.currentStep + 1;
     this.currentStep = newStep;
     this.dispatchEvent(
@@ -237,20 +197,17 @@ export class OrFormWizard extends LitElement {
       const state = this._getStepState(i);
       const isCompleted = state === 'completed';
 
-      // Add step circle + label
       items.push(html`
         <div class="step-item">
           <div class="step-circle ${state}">
             ${isCompleted
-              ? html`<sl-icon name="check" style="font-size:12px"></sl-icon>`
-              : String(i + 1)
-            }
+              ? html`<uk-icon icon="check" height="14" width="14"></uk-icon>`
+              : String(i + 1)}
           </div>
           <span class="step-label ${state}">${step.label}</span>
         </div>
       `);
 
-      // Add connector line between steps (not after last)
       if (i < this.steps.length - 1) {
         items.push(html`
           <div class="step-connector ${isCompleted ? 'completed' : ''}"></div>
@@ -269,34 +226,26 @@ export class OrFormWizard extends LitElement {
             <slot name="step-${step.key}"></slot>
           </div>
         `)}
-        ${when(
-          this.steps.length === 0,
-          () => html`<slot></slot>`
-        )}
+        ${when(this.steps.length === 0, () => html`<slot></slot>`)}
       </div>
     `;
   }
 
   private _renderNavButtons() {
     const finalLabel = 'Create';
-
     return html`
       <div class="nav-buttons">
         ${when(
           !this._isFirstStep && !this._isSingleStep,
           () => html`
-            <sl-button variant="default" size="small" @click=${this._handleBack}>
+            <button class="uk-button uk-button-default uk-button-small" @click=${this._handleBack}>
               Back
-            </sl-button>
+            </button>
           `
         )}
-        <sl-button
-          variant="primary"
-          size="small"
-          @click=${this._handleNext}
-        >
+        <button class="uk-button uk-button-primary uk-button-small" @click=${this._handleNext}>
           ${this._isLastStep || this._isSingleStep ? finalLabel : 'Next'}
-        </sl-button>
+        </button>
       </div>
     `;
   }
@@ -305,7 +254,7 @@ export class OrFormWizard extends LitElement {
     return html`
       ${this._renderStepper()}
       ${this._renderStepContent()}
-      ${this.hideNav ? null : this._renderNavButtons()}
+      ${this.hideNav ? nothing : this._renderNavButtons()}
     `;
   }
 }

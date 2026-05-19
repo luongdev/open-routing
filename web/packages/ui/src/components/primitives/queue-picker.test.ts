@@ -1,5 +1,5 @@
 // Phase 6 Plan 10 Task 1: <or-queue-picker> unit tests.
-// TDD RED phase: all tests fail before implementation.
+// Wave 0.1: updated for pure Lit + Ember tokens rewrite (no shoelace).
 // Tests cover: loading state, queue options, debounced search, change event.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -37,7 +37,7 @@ describe('or-queue-picker', () => {
     // Component should be in pending/loading state
     const shadow = el.shadowRoot!;
     const text = shadow.textContent ?? '';
-    const hasSpinner = shadow.querySelector('sl-spinner') !== null;
+    const hasSpinner = shadow.querySelector('[data-testid="spinner"]') !== null;
     const hasLoadingText = text.includes('Loading');
     expect(hasSpinner || hasLoadingText).toBe(true);
 
@@ -45,7 +45,7 @@ describe('or-queue-picker', () => {
     resolveFn({ data: { items: [], has_more: false }, error: null });
   });
 
-  it('Test 2: renders sl-option elements for each queue returned by API', async () => {
+  it('Test 2: renders queue option buttons for each queue returned by API', async () => {
     (el as any).orgId = '01901b2c-7f3a-7000-8000-000000000001';
     (el as any).client = {
       GET: vi.fn().mockResolvedValue({
@@ -58,9 +58,14 @@ describe('or-queue-picker', () => {
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
 
+    // Open dropdown to render options
+    (el as any)._open = true;
+    (el as any).requestUpdate();
+    await (el as any).updateComplete;
+
     const shadow = el.shadowRoot!;
-    const options = shadow.querySelectorAll('sl-option');
-    // Should have at least 2 queue options (+ "(none)" option)
+    const options = shadow.querySelectorAll('[data-queue-id]');
+    // Should have at least 2 queue options
     expect(options.length).toBeGreaterThanOrEqual(2);
     // Queue code or name should appear in the shadow DOM
     const text = shadow.textContent ?? '';
@@ -120,11 +125,8 @@ describe('or-queue-picker', () => {
     const events: CustomEvent[] = [];
     el.addEventListener('or-queue-picker-change', (e) => events.push(e as CustomEvent));
 
-    // Call _handleChange directly — simulates sl-change from sl-select with value=''
-    // Must use a target with tagName 'sl-select' to pass the event bubble guard.
-    const fakeTarget = { tagName: 'SL-SELECT', value: '' };
-    const fakeEvent = { target: fakeTarget } as unknown as Event;
-    (el as any)._handleChange(fakeEvent);
+    // Call _handleSelect directly — simulates clicking the (none) option
+    (el as any)._handleSelect(null);
 
     await (el as any).updateComplete;
 
