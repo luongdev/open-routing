@@ -396,12 +396,9 @@ export class OrAgentStatusList extends LitElement {
     .actions-cell {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 6px;
-      opacity: 0;
-      transition: opacity .12s;
     }
-
-    tbody tr:hover .actions-cell { opacity: 1; }
 
     .icon-btn {
       background: none;

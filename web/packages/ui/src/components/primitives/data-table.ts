@@ -79,8 +79,8 @@ export class OrDataTable extends LitElement {
     td[data-align="right"] { text-align: right; }
     td[data-align="center"] { text-align: center; }
 
-    /* Reveal row actions on hover (subtle until needed) */
-    tbody tr .row-actions { opacity: 0; transition: opacity .12s; }
+    /* Kebab always visible — subtle muted color, brightens on row hover */
+    tbody tr .row-actions { opacity: 0.65; transition: opacity .12s; }
     tbody tr:hover .row-actions { opacity: 1; }
     tbody tr.menu-open .row-actions { opacity: 1; }
 

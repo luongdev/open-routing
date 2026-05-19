@@ -11,47 +11,75 @@ export class OrCursorPaginator extends LitElement {
     :host {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
+      gap: 10px;
+      padding: 12px 16px;
       font-size: 13px;
       color: var(--muted-foreground);
       border-top: 1px solid var(--border);
+      background: var(--muted);
+    }
+
+    .pager-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
       background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow-xs);
+      overflow: hidden;
     }
 
     .nav-btn {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 5px 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border: none;
       background: var(--card);
       color: var(--foreground);
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      transition: background .12s, border-color .12s, color .12s;
+      transition: background .12s, color .12s;
+    }
+
+    .nav-btn + .nav-btn,
+    .nav-btn + .page-indicator,
+    .page-indicator + .nav-btn {
+      border-left: 1px solid var(--border);
     }
 
     .nav-btn:hover:not(:disabled) {
       background: var(--muted);
-      border-color: color-mix(in oklch, var(--border) 60%, var(--foreground) 40%);
+      color: var(--primary);
+    }
+
+    .nav-btn:hover:not(:disabled) uk-icon {
+      color: var(--primary);
     }
 
     .nav-btn:disabled {
-      opacity: 0.45;
+      opacity: 0.4;
       cursor: not-allowed;
+      color: var(--muted-foreground);
     }
 
     .nav-btn uk-icon {
       color: var(--muted-foreground);
+      transition: color .12s;
+    }
+
+    .nav-btn:disabled uk-icon {
+      color: var(--muted-foreground);
     }
 
     .page-indicator {
-      padding: 0 10px;
+      padding: 6px 14px;
       font-size: 13px;
-      color: var(--muted-foreground);
+      font-weight: 600;
+      color: var(--foreground);
+      background: var(--card);
       white-space: nowrap;
     }
 
@@ -76,12 +104,18 @@ export class OrCursorPaginator extends LitElement {
       -webkit-appearance: none;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 8px;
+      box-shadow: var(--shadow-xs);
       color: var(--foreground);
       font-size: 13px;
-      padding: 5px 26px 5px 10px;
+      font-weight: 500;
+      padding: 6px 28px 6px 12px;
       cursor: pointer;
       transition: border-color .12s, box-shadow .12s;
+    }
+
+    .limit-select:hover {
+      border-color: color-mix(in oklch, var(--border) 60%, var(--foreground) 40%);
     }
 
     .limit-select:focus,
@@ -158,27 +192,29 @@ export class OrCursorPaginator extends LitElement {
     const nextDisabled = !this.hasMore;
 
     return html`
-      <button
-        class="nav-btn"
-        ?disabled=${prevDisabled}
-        @click=${this._handlePrev}
-        aria-label="Previous page"
-      >
-        <uk-icon icon="chevron-left" height="14" width="14"></uk-icon>
-        Previous
-      </button>
+      <div class="pager-group">
+        <button
+          class="nav-btn"
+          ?disabled=${prevDisabled}
+          @click=${this._handlePrev}
+          aria-label="Previous page"
+        >
+          <uk-icon icon="chevron-left" height="14" width="14"></uk-icon>
+          Previous
+        </button>
 
-      <span class="page-indicator">Page ${this._pageNum}</span>
+        <span class="page-indicator">Page ${this._pageNum}</span>
 
-      <button
-        class="nav-btn"
-        ?disabled=${nextDisabled}
-        @click=${this._handleNext}
-        aria-label="Next page"
-      >
-        Next
-        <uk-icon icon="chevron-right" height="14" width="14"></uk-icon>
-      </button>
+        <button
+          class="nav-btn"
+          ?disabled=${nextDisabled}
+          @click=${this._handleNext}
+          aria-label="Next page"
+        >
+          Next
+          <uk-icon icon="chevron-right" height="14" width="14"></uk-icon>
+        </button>
+      </div>
 
       <div class="spacer"></div>
 

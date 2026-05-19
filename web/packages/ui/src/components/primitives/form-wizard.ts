@@ -23,7 +23,8 @@ export class OrFormWizard extends LitElement {
     .stepper {
       display: flex;
       align-items: flex-start;
-      margin-bottom: 24px;
+      padding: 8px 4px 0;
+      margin-bottom: 28px;
     }
 
     .step-item {
@@ -36,12 +37,12 @@ export class OrFormWizard extends LitElement {
 
     .step-connector {
       flex: 1;
-      height: 2px;
+      height: 3px;
       background: var(--border);
-      margin: 0 4px;
+      margin: 0 8px;
       align-self: flex-start;
-      margin-top: 13px; /* center on 28px circles */
-      border-radius: 1px;
+      margin-top: 16.5px; /* center on 36px circles */
+      border-radius: 2px;
       transition: background .25s ease;
     }
 
@@ -49,32 +50,37 @@ export class OrFormWizard extends LitElement {
       background: var(--primary);
     }
 
-    /* Step circle: 28px diameter, more breathing room */
+    /* Step circle: 36px — confident & punchy */
     .step-circle {
-      width: 28px;
-      height: 28px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 700;
       flex-shrink: 0;
-      transition: background .2s, border-color .2s, color .2s, box-shadow .2s;
+      transition: background .2s, border-color .2s, color .2s, box-shadow .2s, transform .2s;
     }
 
     .step-circle.completed {
       background: var(--primary);
       border: 2px solid var(--primary);
       color: var(--primary-foreground);
-      box-shadow: 0 2px 4px -1px oklch(0.62 0.22 28 / 0.30);
+      box-shadow: 0 4px 10px -2px oklch(0.62 0.22 28 / 0.35);
     }
 
+    /* Current = FILLED coral with white number — no more anemic outline */
     .step-circle.current {
-      background: var(--card);
+      background: var(--primary);
       border: 2px solid var(--primary);
-      color: var(--primary);
-      box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 18%, transparent);
+      color: var(--primary-foreground);
+      box-shadow:
+        0 4px 12px -2px oklch(0.62 0.22 28 / 0.40),
+        0 0 0 5px color-mix(in oklch, var(--primary) 22%, transparent),
+        inset 0 1px 0 0 oklch(1 0 0 / 0.18);
+      transform: scale(1.04);
     }
 
     .step-circle.future {
@@ -88,11 +94,12 @@ export class OrFormWizard extends LitElement {
     }
 
     .step-label {
-      margin-top: 8px;
-      font-size: 12px;
+      margin-top: 10px;
+      font-size: 13px;
       text-align: center;
       white-space: nowrap;
-      max-width: 120px;
+      max-width: 140px;
+      letter-spacing: -0.005em;
     }
 
     .step-label.completed {
@@ -102,11 +109,12 @@ export class OrFormWizard extends LitElement {
 
     .step-label.current {
       color: var(--primary);
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .step-label.future {
       color: var(--muted-foreground);
+      font-weight: 500;
     }
 
     /* Step content area */
