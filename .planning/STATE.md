@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Catalog Foundation
 status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-05-18T14:56:10.524Z"
-last_activity: 2026-05-18 -- Phase 07 planning complete
+stopped_at: Completed 07-w1-01 Ember-style catalog-shell
+last_updated: "2026-05-19T07:55:00.000Z"
+last_activity: 2026-05-19 -- Phase 07 W1-01 catalog-shell Ember layout complete
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 91
-  completed_plans: 74
-  percent: 81
+  total_plans: 92
+  completed_plans: 78
+  percent: 85
 ---
 
 # Project State
@@ -29,7 +29,7 @@ Phase: 04.1 + 05 — SHIPPED (merged to main 2026-05-17 as save point)
 Status: Ready to execute
 Last activity: 2026-05-18 -- Phase 07 planning complete
 
-Progress: [████████░░] 81%
+Progress: [████████░░] 85%
 
 ## Phase 04.1 + 05 Ship Notes (2026-05-17)
 
@@ -84,6 +84,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Key decisions affecting 
 - [Phase 04]: agentEnabledCheck at app layer; TOCTOU race deferred to Phase 5 AUTH phase
 - [Phase 04]: COALESCE engaged_channel (preserve system-set) + explicit PIS assignment (nil clears stale) enforces STATE-05/STATE-06
 - [Phase 04]: per-org DELETE replaces global TRUNCATE in cleanStateTables for parallel test isolation
+- [W1-01]: catalog-shell _sidebarOpen=false means expanded (260px); true means collapsed (64px). Name misleading but @state constraint prevents rename.
+- [W1-01]: switch-org button in topbar uses .topbar-action CSS class (not .hamburger) to distinguish from menu icon.
 
 ### Pending Todos
 
@@ -106,8 +108,8 @@ From research/SUMMARY.md gaps to address during implementation:
 
 ## Session Continuity
 
-Last session: 2026-05-18T14:56:10.517Z
-Stopped at: Phase 7 context gathered
+Last session: 2026-05-19T07:55:00.000Z
+Stopped at: Completed 07-w1-01 Ember-style catalog-shell
 Resume file: None
 
 ## Phase 3 — Decision Coverage Override (2026-05-16)

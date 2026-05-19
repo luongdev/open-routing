@@ -364,8 +364,8 @@ Plans:
 - [ ] 07-w0-03-PLAN.md — `/playground` route in admin app: theme toggle (`<uk-theme-switcher>`), responsive grid, empty component slots; Ember reference screenshots saved to `apps/admin/src/playground/references/`
 - [ ] 07-w0-10-PLAN.md — `or-button` Lit wrapper around `.uk-btn` (variants default/primary/secondary/ghost/destructive; sizes sm/md/lg; states hover/focus/disabled/loading); playground entry; visual diff vs Ember ref
 - [ ] 07-w0-11-PLAN.md — `or-input` wrapper (.uk-input); update or-code-input to use or-input internally; playground entry covering all states
-- [ ] 07-w0-12-PLAN.md — `or-select` wrapper (uk-select markup); playground entry
-- [ ] 07-w0-13-PLAN.md — `or-card` wrapper (uk-card with header/body/footer slots); playground entry
+- [x] 07-w0-12-PLAN.md — `or-select` wrapper (uk-select markup); playground entry
+- [x] 07-w0-13-PLAN.md — `or-card` wrapper (uk-card with header/body/footer slots); playground entry
 - [ ] 07-w0-14-PLAN.md — `or-badge` wrapper (uk-label variants default/success/warning/destructive/info); playground entry
 - [ ] 07-w0-15-PLAN.md — `or-dialog` wrapper around `<uk-modal>` (Franken UI focus trap built-in — supersedes Plan 07-03); update 7 detail components to use or-dialog; playground entry
 - [ ] 07-w0-16-PLAN.md — `or-tabs` wrapper (uk-tab); playground entry
@@ -427,7 +427,7 @@ Plans:
 | 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
 | 5. Bulk Import (Go) | 0/8 | Not started | - |
 | 6. Shared UI Library & Standalone Admin | 0/14 | In progress | - |
-| 7. Web Component Embed Bundle | 11/30 | In Progress|  |
+| 7. Web Component Embed Bundle | 14/31 | In Progress|  |
 
 ---
 
