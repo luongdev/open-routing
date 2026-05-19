@@ -1,39 +1,22 @@
-// Phase 6 Plan 08 Task 2: <or-queue-form> — Single-step wizard for Queue create.
+// Phase 6 Plan 08 Task 2: <or-queue-form> — Single-step form for Queue create.
 // D6-17: Single-step form (queue is a simple entity, no multi-step needed).
 // D04_1-02: code field uses or-code-input (required, writable on create).
 // ADMIN-04: only this.client.POST — never direct fetch().
 // ajv validateCreateQueue called on submit; channel_types required minItems=1.
-// channel_types: sl-select multiple with voice/chat/email options.
-// priority and acw_sec: integer fields (type="number" step="1").
+// W0.1-12: redesigned to Ember healthcare-dashboard style (no sl-* in shadow).
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
-import type { OrFormWizardStep } from '../primitives/form-wizard.js';
 import validateCreateQueue from '../../validators/CreateQueueRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import { nameToCode } from '../primitives/code-input.js';
-import '../primitives/form-wizard.js';
+import '../primitives/code-input.js';
 
 type ChannelType = 'voice' | 'chat' | 'email';
-
-// Single-step wizard (D6-17: Queues use single-step form)
-const WIZARD_STEPS: OrFormWizardStep[] = [
-  { key: 'basics', label: 'Basics' },
-];
 
 interface QueueFormData {
   code: string;
@@ -46,10 +29,10 @@ interface QueueFormData {
 }
 
 /**
- * <or-queue-form> — Single-step wizard for creating a new Queue.
+ * <or-queue-form> — Single-step form for creating a new Queue (Ember style).
  *
- * Fields: code (or-code-input), name, external_id, channel_types (sl-select multiple),
- * priority (number), acw_sec (number), enabled (sl-switch).
+ * Fields: code, name, external_id, channel_types (checkbox group),
+ * priority, acw_sec, enabled.
  *
  * On 201 → dispatches open-routing:navigate to /orgs/{orgId}/queues/{newId}
  * On 409 duplicate_code → inline error on code field
@@ -64,60 +47,232 @@ export class OrQueueForm extends LitElement {
     :host {
       display: block;
       padding: 24px;
-      max-width: 640px;
+      max-width: 680px;
     }
 
     .page-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       margin-bottom: 24px;
     }
 
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 24px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
       margin: 0;
+      color: var(--foreground);
     }
 
-    .form-group {
-      margin-bottom: 16px;
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color .12s, background .12s;
     }
 
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
-      margin-top: 4px;
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
     }
 
-    .field-helper {
-      font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-      margin-top: 4px;
-    }
-
-    .wizard-nav {
-      display: flex;
-      gap: 8px;
-      margin-top: 24px;
-      justify-content: flex-end;
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      padding: 32px;
     }
 
     .step-helper {
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
+      margin: 0 0 20px;
+    }
+
+    .form-row {
       margin-bottom: 16px;
     }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 6px;
+    }
+
+    .form-label-required::after {
+      content: ' *';
+      color: var(--destructive);
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* Channel type checkboxes */
+    .channel-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .channel-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--foreground);
+      background: var(--card);
+      cursor: pointer;
+      transition: border-color .12s, background .12s, color .12s;
+      user-select: none;
+    }
+
+    .channel-chip:has(input:checked) {
+      border-color: var(--primary);
+      background: color-mix(in oklch, var(--primary) 12%, transparent);
+      color: var(--primary);
+    }
+
+    .channel-chip input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    /* Two-column layout for numeric fields */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 500px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* Toggle switch */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--foreground);
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-track {
+      background: var(--primary);
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    /* Error banner */
+    .api-error {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Form actions */
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary-foreground);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
   `;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
   // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) orgId = '';
   @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private _currentStep = 0;
-  @state() _formData: QueueFormData = {
+  @state() private _formData: QueueFormData = {
     code: '',
     name: '',
     external_id: '',
@@ -126,7 +281,7 @@ export class OrQueueForm extends LitElement {
     acw_sec: 0,
     enabled: true,
   };
-  @state() _errors: Record<string, string> = {};
+  @state() private _errors: Record<string, string> = {};
   @state() private _apiError: string | null = null;
   @state() private _submitting = false;
   private _codeAutoFill = true;
@@ -143,22 +298,14 @@ export class OrQueueForm extends LitElement {
     );
   }
 
-  // --- channel_types change ---
+  // --- Channel types ---
 
-  private _handleChannelTypesChange(e: Event): void {
-    // sl-select multiple returns string[] when multiple values selected.
-    // HTMLSelectElement.value is always string, but sl-select extends with string[].
-    const select = e.target as HTMLSelectElement & { value: string | string[] };
-    const val = select.value;
-    let types: ChannelType[];
-    if (Array.isArray(val)) {
-      types = val as ChannelType[];
-    } else if (typeof val === 'string' && val) {
-      types = val.split(' ').filter(Boolean) as ChannelType[];
-    } else {
-      types = [];
-    }
-    this._formData = { ...this._formData, channel_types: types };
+  private _toggleChannelType(type: ChannelType): void {
+    const current = this._formData.channel_types;
+    const next = current.includes(type)
+      ? current.filter((t) => t !== type)
+      : [...current, type];
+    this._formData = { ...this._formData, channel_types: next };
     if (this._errors['channel_types']) {
       this._errors = { ...this._errors, channel_types: '' };
     }
@@ -169,7 +316,6 @@ export class OrQueueForm extends LitElement {
   async _handleSubmit(): Promise<void> {
     if (this._submitting) return;
 
-    // Validate channel_types manually first (required, minItems=1)
     if (!this._formData.channel_types || this._formData.channel_types.length === 0) {
       this._errors = { ...this._errors, channel_types: 'Select at least one channel type.' };
       return;
@@ -185,7 +331,7 @@ export class OrQueueForm extends LitElement {
       enabled: this._formData.enabled,
     };
 
-    // Client-side full validation via ajv
+    // ajv standalone validators attach .errors dynamically; cast to access it.
     const validateFn = validateCreateQueue as unknown as {
       (data: unknown): boolean;
       errors: Array<{ instancePath: string; message?: string }> | null;
@@ -241,196 +387,207 @@ export class OrQueueForm extends LitElement {
     }
   }
 
-  // --- Step content renderer ---
-
-  private _renderBasicsStep() {
-    return html`
-      <p class="step-helper">Define the queue's identity. Code cannot be changed after create.</p>
-
-      <!-- code -->
-      <div class="form-group">
-        <or-code-input
-          .value=${this._formData.code}
-          .required=${true}
-          @or-code-input=${(e: CustomEvent) => {
-            this._codeAutoFill = false;
-            this._formData = { ...this._formData, code: e.detail.value };
-            if (this._errors['code']) {
-              this._errors = { ...this._errors, code: '' };
-            }
-          }}
-        ></or-code-input>
-        ${when(
-          this._errors['code'],
-          () => html`<div class="field-error">${this._errors['code']}</div>`
-        )}
-      </div>
-
-      <!-- name -->
-      <div class="form-group">
-        <sl-input
-          label="Name"
-          required
-          value=${this._formData.name}
-          ?invalid=${!!this._errors['name']}
-          @sl-input=${(e: Event) => {
-            const name = (e.target as HTMLInputElement).value;
-            this._formData = {
-              ...this._formData,
-              name,
-              ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
-            };
-          }}
-        ></sl-input>
-        ${when(
-          this._errors['name'],
-          () => html`<div class="field-error">${this._errors['name']}</div>`
-        )}
-      </div>
-
-      <!-- external_id -->
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              external_id: (e.target as HTMLInputElement).value,
-            };
-          }}
-        ></sl-input>
-        <div class="field-helper">Optional integration mapping.</div>
-      </div>
-
-      <!-- channel_types — sl-select multiple; required; minItems=1 -->
-      <div class="form-group">
-        <label style="font-size:14px;font-weight:500;margin-bottom:4px;display:block">
-          Channel Types <span style="color:var(--sl-color-danger-500)">*</span>
-        </label>
-        <sl-select
-          multiple
-          placeholder="Select channel types"
-          .value=${this._formData.channel_types}
-          @sl-change=${this._handleChannelTypesChange}
-          aria-label="Channel types"
-        >
-          <sl-option value="voice">voice</sl-option>
-          <sl-option value="chat">chat</sl-option>
-          <sl-option value="email">email</sl-option>
-        </sl-select>
-        ${when(
-          this._errors['channel_types'],
-          () => html`<div class="field-error">${this._errors['channel_types']}</div>`
-        )}
-      </div>
-
-      <!-- priority -->
-      <div class="form-group">
-        <sl-input
-          label="Priority"
-          type="number"
-          min="0"
-          step="1"
-          value=${String(this._formData.priority)}
-          required
-          ?invalid=${!!this._errors['priority']}
-          @sl-input=${(e: Event) => {
-            const v = parseInt((e.target as HTMLInputElement).value, 10);
-            this._formData = { ...this._formData, priority: isNaN(v) ? 0 : v };
-          }}
-        ></sl-input>
-        ${when(
-          this._errors['priority'],
-          () => html`<div class="field-error">${this._errors['priority']}</div>`
-        )}
-      </div>
-
-      <!-- acw_sec -->
-      <div class="form-group">
-        <sl-input
-          label="After-Call Work (seconds)"
-          type="number"
-          min="0"
-          step="1"
-          value=${String(this._formData.acw_sec)}
-          required
-          ?invalid=${!!this._errors['acw_sec']}
-          @sl-input=${(e: Event) => {
-            const v = parseInt((e.target as HTMLInputElement).value, 10);
-            this._formData = { ...this._formData, acw_sec: isNaN(v) ? 0 : v };
-          }}
-        ></sl-input>
-        <div class="field-helper">seconds</div>
-        ${when(
-          this._errors['acw_sec'],
-          () => html`<div class="field-error">${this._errors['acw_sec']}</div>`
-        )}
-      </div>
-
-      <!-- enabled -->
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              enabled: (e.target as HTMLInputElement).checked,
-            };
-          }}
-        >Enabled</sl-switch>
-      </div>
-
-      ${when(
-        this._apiError,
-        () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-            ${this._apiError}
-          </sl-alert>
-        `
-      )}
-
-      <div class="wizard-nav">
-        <sl-button
-          variant="default"
-          @click=${() => this._navigate(`/orgs/${this.orgId}/queues`)}
-        >Cancel</sl-button>
-        <sl-button
-          variant="primary"
-          ?disabled=${this._submitting}
-          @click=${this._handleSubmit}
-        >
-          ${this._submitting ? html`<sl-spinner></sl-spinner> Creating…` : 'Create queue'}
-        </sl-button>
-      </div>
-    `;
-  }
-
-  // --- Main render ---
+  // --- Render ---
 
   override render() {
+    const { code: _code, name, channel_types, priority, acw_sec, enabled, external_id } = this._formData;
+    void _code;
+
     return html`
       <div class="page-header">
-        <sl-button
-          variant="text"
+        <button
+          class="back-btn"
           @click=${() => this._navigate(`/orgs/${this.orgId}/queues`)}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Queues
-        </sl-button>
+          <uk-icon icon="chevron-left" height="16" width="16"></uk-icon>
+          Queues
+        </button>
         <h1 class="page-title">Create queue</h1>
       </div>
 
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${this._currentStep}
-        .hideNav=${true}
-      >
-        <div slot="step-basics">
-          ${this._renderBasicsStep()}
+      <div class="form-card">
+        <p class="step-helper">Define the queue's identity. Code cannot be changed after create.</p>
+
+        <!-- code -->
+        <div class="form-row">
+          <or-code-input
+            .value=${this._formData.code}
+            .required=${true}
+            @or-code-input=${(e: CustomEvent) => {
+              this._codeAutoFill = false;
+              this._formData = { ...this._formData, code: e.detail.value };
+              if (this._errors['code']) {
+                this._errors = { ...this._errors, code: '' };
+              }
+            }}
+          ></or-code-input>
+          ${when(
+            this._errors['code'],
+            () => html`<div class="field-error">${this._errors['code']}</div>`
+          )}
         </div>
-      </or-form-wizard>
+
+        <!-- name -->
+        <div class="form-row">
+          <label class="form-label form-label-required" for="queue-name">Name</label>
+          <input
+            id="queue-name"
+            class="uk-input"
+            type="text"
+            required
+            .value=${name}
+            placeholder="e.g. Billing Support Queue"
+            @input=${(e: Event) => {
+              const n = (e.target as HTMLInputElement).value;
+              this._formData = {
+                ...this._formData,
+                name: n,
+                ...(this._codeAutoFill ? { code: nameToCode(n) } : {}),
+              };
+            }}
+          />
+          ${when(
+            this._errors['name'],
+            () => html`<div class="field-error">${this._errors['name']}</div>`
+          )}
+        </div>
+
+        <!-- external_id -->
+        <div class="form-row">
+          <label class="form-label" for="queue-ext-id">External ID</label>
+          <input
+            id="queue-ext-id"
+            class="uk-input"
+            type="text"
+            .value=${external_id}
+            placeholder="Optional integration reference"
+            @input=${(e: Event) => {
+              this._formData = {
+                ...this._formData,
+                external_id: (e.target as HTMLInputElement).value,
+              };
+            }}
+          />
+          <div class="field-help">Optional integration mapping.</div>
+        </div>
+
+        <!-- channel_types — pill checkboxes -->
+        <div class="form-row">
+          <label class="form-label form-label-required">Channel Types</label>
+          <div class="channel-group">
+            ${(['voice', 'chat', 'email'] as ChannelType[]).map(
+              (ct) => html`
+                <label class="channel-chip">
+                  <input
+                    type="checkbox"
+                    ?checked=${channel_types.includes(ct)}
+                    @change=${() => this._toggleChannelType(ct)}
+                  />
+                  <uk-icon
+                    icon=${ct === 'voice' ? 'phone' : ct === 'chat' ? 'message-circle' : 'mail'}
+                    width="14"
+                    height="14"
+                  ></uk-icon>
+                  ${ct}
+                </label>
+              `
+            )}
+          </div>
+          ${when(
+            this._errors['channel_types'],
+            () => html`<div class="field-error">${this._errors['channel_types']}</div>`
+          )}
+        </div>
+
+        <!-- priority + acw_sec side by side -->
+        <div class="two-col">
+          <div class="form-row">
+            <label class="form-label form-label-required" for="queue-priority">Priority</label>
+            <input
+              id="queue-priority"
+              class="uk-input"
+              type="number"
+              min="0"
+              step="1"
+              .value=${String(priority)}
+              required
+              @input=${(e: Event) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                this._formData = { ...this._formData, priority: isNaN(v) ? 0 : v };
+              }}
+            />
+            ${when(
+              this._errors['priority'],
+              () => html`<div class="field-error">${this._errors['priority']}</div>`
+            )}
+          </div>
+
+          <div class="form-row">
+            <label class="form-label form-label-required" for="queue-acw">After-Call Work (s)</label>
+            <input
+              id="queue-acw"
+              class="uk-input"
+              type="number"
+              min="0"
+              step="1"
+              .value=${String(acw_sec)}
+              required
+              @input=${(e: Event) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                this._formData = { ...this._formData, acw_sec: isNaN(v) ? 0 : v };
+              }}
+            />
+            ${when(
+              this._errors['acw_sec'],
+              () => html`<div class="field-error">${this._errors['acw_sec']}</div>`
+            )}
+          </div>
+        </div>
+
+        <!-- enabled toggle -->
+        <div class="form-row">
+          <label class="switch-wrap">
+            <input
+              type="checkbox"
+              .checked=${enabled}
+              @change=${(e: Event) => {
+                this._formData = {
+                  ...this._formData,
+                  enabled: (e.target as HTMLInputElement).checked,
+                };
+              }}
+            />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span>Enabled</span>
+          </label>
+          <div class="field-help" style="margin-top:6px">Disabled queues do not receive new interactions.</div>
+        </div>
+
+        ${this._apiError
+          ? html`
+              <div class="api-error">
+                <uk-icon icon="alert-triangle" width="16" height="16"></uk-icon>
+                ${this._apiError}
+              </div>
+            `
+          : nothing}
+
+        <div class="form-actions">
+          <button
+            class="uk-button uk-button-default"
+            @click=${() => this._navigate(`/orgs/${this.orgId}/queues`)}
+          >Cancel</button>
+          <button
+            class="uk-button uk-button-primary"
+            ?disabled=${this._submitting}
+            @click=${this._handleSubmit}
+          >
+            ${this._submitting
+              ? html`<span class="spinner"></span>Creating…`
+              : 'Create queue'}
+          </button>
+        </div>
+      </div>
     `;
   }
 }

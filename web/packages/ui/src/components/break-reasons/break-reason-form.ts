@@ -1,32 +1,21 @@
-// Phase 6 Plan 09 Task 2: <or-break-reason-form> — Single-step wizard for BreakReason create.
+// Phase 6 Plan 09 Task 2: <or-break-reason-form> — Single-step form for BreakReason create.
 // D6-17: single-step for BreakReason (simple entity).
 // D04_1-02: code field uses or-code-input (required, writable on create).
 // ADMIN-04: only this.client.POST — never direct fetch().
 // ajv validateCreateBreakReason called on submit.
 // UI-SPEC §5.5 D6-V-16: Fields: code, name, external_id, routable (default true), display_order (required), enabled.
+// W0.1-18: Ember dashboard layout — uk-* classes, adoptShadowSheets, zero sl-*.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
-import type { OrFormWizardStep } from '../primitives/form-wizard.js';
 import validateCreateBreakReason from '../../validators/CreateBreakReasonRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import { nameToCode } from '../primitives/code-input.js';
-import '../primitives/form-wizard.js';
-
-const WIZARD_STEPS: OrFormWizardStep[] = [
-  { key: 'basics', label: 'Basics' },
-];
+import '../primitives/code-input.js';
 
 interface FormData {
   code: string;
@@ -38,9 +27,9 @@ interface FormData {
 }
 
 /**
- * <or-break-reason-form> — Single-step wizard for creating a new BreakReason.
+ * <or-break-reason-form> — Ember-style single-step form for creating a new BreakReason.
  *
- * Single step (Basics): code, name, external_id, routable (default true), display_order (required), enabled.
+ * Fields: code, name, external_id, routable (default true), display_order (required), enabled.
  * On 201 → dispatches open-routing:navigate to /orgs/{orgId}/break-reasons/{newId}
  * On 409 duplicate_code → inline code error
  *
@@ -54,70 +43,211 @@ export class OrBreakReasonForm extends LitElement {
     :host {
       display: block;
       padding: 24px;
-      max-width: 640px;
+      max-width: 680px;
+      background: var(--background);
+      min-height: 100%;
     }
 
+    /* ── Page header ───────────────────────────────────── */
     .page-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       margin-bottom: 24px;
     }
 
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 24px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
       margin: 0;
+      color: var(--foreground);
     }
 
-    .form-group {
-      margin-bottom: 16px;
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color .12s, background .12s;
     }
 
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
-      margin-top: 4px;
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
     }
 
-    .helper-text {
-      font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-      margin-top: 4px;
-    }
-
-    .wizard-nav {
-      display: flex;
-      gap: 8px;
-      margin-top: 24px;
-      justify-content: flex-end;
+    /* ── Form card ─────────────────────────────────────── */
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      padding: 32px;
     }
 
     .step-helper {
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
+      margin: 0 0 24px;
+    }
+
+    /* ── Form rows ─────────────────────────────────────── */
+    .form-row {
       margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 6px;
+    }
+
+    .form-label-required::after {
+      content: ' *';
+      color: var(--destructive);
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* ── Toggle switch ─────────────────────────────────── */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--foreground);
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-track {
+      background: var(--primary);
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    /* ── Routable toggle block ─────────────────────────── */
+    .toggle-block {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: var(--muted);
+    }
+
+    .toggle-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .toggle-block-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--foreground);
+    }
+
+    .toggle-block-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* ── API error ─────────────────────────────────────── */
+    .api-error {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Form actions ──────────────────────────────────── */
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
     }
   `;
 
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: Object }) accessor client!: ApiClient;
 
   // --- Internal state ---
-  @state() private _currentStep = 0;
-  @state() _formData: FormData = {
+  @state() accessor _formData: FormData = {
     code: '',
     name: '',
     external_id: '',
-    routable: true,        // default true per UI-SPEC D6-V-16
-    display_order: '',     // required; empty = invalid
+    routable: true,
+    display_order: '',
     enabled: true,
   };
-  @state() _errors: Record<string, string> = {};
-  @state() private _apiError: string | null = null;
-  @state() private _submitting = false;
+  @state() accessor _errors: Record<string, string> = {};
+  @state() private accessor _apiError: string | null = null;
+  @state() private accessor _submitting = false;
   private _codeAutoFill = true;
 
   // --- Navigation ---
@@ -135,7 +265,6 @@ export class OrBreakReasonForm extends LitElement {
   async _handleSubmit(): Promise<void> {
     if (this._submitting) return;
 
-    // Validate: display_order required
     const displayOrderVal = this._formData.display_order;
     if (displayOrderVal === '' || displayOrderVal === null || displayOrderVal === undefined) {
       this._errors = { display_order: 'Display order is required.' };
@@ -151,7 +280,7 @@ export class OrBreakReasonForm extends LitElement {
       enabled: this._formData.enabled,
     };
 
-    // Client-side full validation via ajv
+    // ajv standalone validators attach .errors dynamically; cast to access it.
     const validateFn = validateCreateBreakReason as unknown as {
       (data: unknown): boolean;
       errors: Array<{ instancePath: string; message?: string }> | null;
@@ -178,7 +307,6 @@ export class OrBreakReasonForm extends LitElement {
       const { data, error } = result as { data: { id: string; code: string } | null; error: unknown };
 
       if (error) {
-        // 409 duplicate_code → inline code error
         if (
           error &&
           typeof error === 'object' &&
@@ -193,7 +321,6 @@ export class OrBreakReasonForm extends LitElement {
       }
 
       if (data?.id) {
-        // Dispatch entity-created event
         this.dispatchEvent(
           new CustomEvent('open-routing:entity-created', {
             detail: { entityId: data.id, entityType: 'break-reason' },
@@ -201,7 +328,6 @@ export class OrBreakReasonForm extends LitElement {
             composed: true,
           })
         );
-        // Navigate to detail page
         this._navigate(`/orgs/${this.orgId}/break-reasons/${data.id}`);
       }
     } finally {
@@ -209,171 +335,178 @@ export class OrBreakReasonForm extends LitElement {
     }
   }
 
-  // --- Step content renderer ---
-
-  private _renderBasicsStep() {
-    return html`
-      <p class="step-helper">Define the break reason. Code cannot be changed after create.</p>
-
-      <!-- code → or-code-input required -->
-      <div class="form-group">
-        <or-code-input
-          .value=${this._formData.code}
-          .required=${true}
-          @or-code-input=${(e: CustomEvent) => {
-            this._codeAutoFill = false;
-            this._formData = { ...this._formData, code: e.detail.value };
-            if (this._errors['code']) {
-              this._errors = { ...this._errors, code: '' };
-            }
-          }}
-        ></or-code-input>
-        ${when(
-          this._errors['code'],
-          () => html`<div class="field-error">${this._errors['code']}</div>`
-        )}
-      </div>
-
-      <!-- name → sl-input required -->
-      <div class="form-group">
-        <sl-input
-          label="Name"
-          required
-          value=${this._formData.name}
-          ?invalid=${!!this._errors['name']}
-          @sl-input=${(e: Event) => {
-            const name = (e.target as HTMLInputElement).value;
-            this._formData = {
-              ...this._formData,
-              name,
-              ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
-            };
-          }}
-        ></sl-input>
-        ${when(
-          this._errors['name'],
-          () => html`<div class="field-error">${this._errors['name']}</div>`
-        )}
-      </div>
-
-      <!-- external_id → sl-input optional -->
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              external_id: (e.target as HTMLInputElement).value,
-            };
-          }}
-        ></sl-input>
-      </div>
-
-      <!-- routable → sl-switch, default checked=true per UI-SPEC D6-V-16 -->
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.routable}
-          @sl-change=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              routable: (e.target as HTMLInputElement).checked,
-            };
-          }}
-        >Routable</sl-switch>
-        <div class="helper-text">When on, agents on this break can still receive routed interactions.</div>
-      </div>
-
-      <!-- display_order → sl-input type="number" min="0" step="1" required -->
-      <div class="form-group">
-        <sl-input
-          label="Display Order"
-          type="number"
-          min="0"
-          step="1"
-          value=${this._formData.display_order === '' ? '' : String(this._formData.display_order)}
-          required
-          ?invalid=${!!this._errors['display_order']}
-          @sl-input=${(e: Event) => {
-            const val = (e.target as HTMLInputElement).value;
-            this._formData = {
-              ...this._formData,
-              display_order: val === '' ? '' : parseInt(val, 10),
-            };
-          }}
-        ></sl-input>
-        <div class="helper-text">Lower values appear first in the break picker.</div>
-        ${when(
-          this._errors['display_order'],
-          () => html`<div class="field-error">${this._errors['display_order']}</div>`
-        )}
-      </div>
-
-      <!-- enabled → sl-switch, default true -->
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              enabled: (e.target as HTMLInputElement).checked,
-            };
-          }}
-        >Enabled</sl-switch>
-      </div>
-
-      ${when(
-        this._apiError,
-        () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-            ${this._apiError}
-          </sl-alert>
-        `
-      )}
-
-      <div class="wizard-nav">
-        <sl-button
-          variant="default"
-          @click=${() => this._navigate(`/orgs/${this.orgId}/break-reasons`)}
-        >Cancel</sl-button>
-        <sl-button
-          variant="primary"
-          ?disabled=${this._submitting}
-          @click=${this._handleSubmit}
-        >
-          ${this._submitting
-            ? html`<sl-spinner></sl-spinner> Creating…`
-            : 'Create break reason'}
-        </sl-button>
-      </div>
-    `;
-  }
-
-  // --- Main render ---
+  // --- Render ---
 
   override render() {
     return html`
       <div class="page-header">
-        <sl-button
-          variant="text"
+        <button
+          type="button"
+          class="back-btn"
           @click=${() => this._navigate(`/orgs/${this.orgId}/break-reasons`)}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Break reasons
-        </sl-button>
+          <uk-icon icon="chevron-left" height="16" width="16"></uk-icon>
+          Break reasons
+        </button>
         <h1 class="page-title">Create break reason</h1>
       </div>
 
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${this._currentStep}
-        .hideNav=${true}
-      >
-        <div slot="step-basics">
-          ${this._renderBasicsStep()}
+      <div class="form-card">
+        <p class="step-helper">Define the break reason. Code cannot be changed after create.</p>
+
+        <div class="form-row">
+          <or-code-input
+            .value=${this._formData.code}
+            .required=${true}
+            @or-code-input=${(e: CustomEvent) => {
+              this._codeAutoFill = false;
+              this._formData = { ...this._formData, code: e.detail.value };
+              if (this._errors['code']) {
+                this._errors = { ...this._errors, code: '' };
+              }
+            }}
+          ></or-code-input>
+          ${when(
+            this._errors['code'],
+            () => html`<div class="field-error">${this._errors['code']}</div>`
+          )}
         </div>
-      </or-form-wizard>
+
+        <div class="form-row">
+          <label class="form-label form-label-required" for="br-name">Name</label>
+          <input
+            id="br-name"
+            class="uk-input"
+            type="text"
+            required
+            .value=${this._formData.name}
+            placeholder="e.g. Lunch Break"
+            @input=${(e: Event) => {
+              const name = (e.target as HTMLInputElement).value;
+              this._formData = {
+                ...this._formData,
+                name,
+                ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
+              };
+            }}
+          />
+          ${when(
+            this._errors['name'],
+            () => html`<div class="field-error">${this._errors['name']}</div>`
+          )}
+        </div>
+
+        <div class="form-row">
+          <label class="form-label" for="br-ext-id">External ID</label>
+          <input
+            id="br-ext-id"
+            class="uk-input"
+            type="text"
+            .value=${this._formData.external_id}
+            placeholder="Optional reference from your system"
+            @input=${(e: Event) => {
+              this._formData = {
+                ...this._formData,
+                external_id: (e.target as HTMLInputElement).value,
+              };
+            }}
+          />
+          <div class="field-help">Match an ID from your CRM or identity provider.</div>
+        </div>
+
+        <div class="form-row">
+          <div class="toggle-block">
+            <div class="toggle-block-header">
+              <div>
+                <div class="toggle-block-label">Routable</div>
+                <div class="toggle-block-sub">When on, agents on this break can still receive routed interactions.</div>
+              </div>
+              <label class="switch-wrap" aria-label="Routable">
+                <input
+                  type="checkbox"
+                  .checked=${this._formData.routable}
+                  @change=${(e: Event) => {
+                    this._formData = {
+                      ...this._formData,
+                      routable: (e.target as HTMLInputElement).checked,
+                    };
+                  }}
+                />
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label form-label-required" for="br-display-order">Display Order</label>
+          <input
+            id="br-display-order"
+            class="uk-input"
+            type="number"
+            min="0"
+            step="1"
+            .value=${this._formData.display_order === '' ? '' : String(this._formData.display_order)}
+            required
+            placeholder="e.g. 1"
+            @input=${(e: Event) => {
+              const val = (e.target as HTMLInputElement).value;
+              this._formData = {
+                ...this._formData,
+                display_order: val === '' ? '' : parseInt(val, 10),
+              };
+            }}
+          />
+          <div class="field-help">Lower values appear first in the break picker.</div>
+          ${when(
+            this._errors['display_order'],
+            () => html`<div class="field-error">${this._errors['display_order']}</div>`
+          )}
+        </div>
+
+        <div class="form-row">
+          <label class="switch-wrap">
+            <input
+              type="checkbox"
+              .checked=${this._formData.enabled}
+              @change=${(e: Event) => {
+                this._formData = {
+                  ...this._formData,
+                  enabled: (e.target as HTMLInputElement).checked,
+                };
+              }}
+            />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span>Enabled</span>
+          </label>
+          <div class="field-help">Disabled break reasons are hidden from the break picker.</div>
+        </div>
+
+        ${this._apiError
+          ? html`
+              <div class="api-error">
+                <uk-icon icon="alert-triangle" height="16" width="16"></uk-icon>
+                ${this._apiError}
+              </div>
+            `
+          : nothing}
+
+        <div class="form-actions">
+          <button
+            type="button"
+            class="uk-button uk-button-default"
+            @click=${() => this._navigate(`/orgs/${this.orgId}/break-reasons`)}
+          >Cancel</button>
+          <button
+            type="button"
+            class="uk-button uk-button-primary"
+            ?disabled=${this._submitting}
+            @click=${this._handleSubmit}
+          >
+            ${this._submitting ? 'Creating…' : 'Create break reason'}
+          </button>
+        </div>
+      </div>
     `;
   }
 }

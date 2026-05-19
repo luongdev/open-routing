@@ -1,32 +1,15 @@
-// Phase 6 Plan 07 Task 2: <or-skill-form> — Single-step wizard for Skill create.
-// D6-17: single-step for Skills — same or-form-wizard component, steps=[{key:'basics',label:'Basics'}].
-//   Single step causes wizard to hide stepper and show "Create skill" header.
-// D04_1-02: code field uses or-code-input (required, writable on create).
-// ADMIN-04: only this.client.POST — never direct fetch().
-// ajv validateCreateSkill called before POST.
-
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { OrFormWizardStep } from '../primitives/form-wizard.js';
 import validateCreateSkill from '../../validators/CreateSkillRequest.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-
-// Primitives
 import { nameToCode } from '../primitives/code-input.js';
 import '../primitives/form-wizard.js';
+import '../primitives/code-input.js';
 
-// Single step — stepper hidden (D6-17: simple entity single-step form)
 const WIZARD_STEPS: OrFormWizardStep[] = [
   { key: 'basics', label: 'Basics' },
 ];
@@ -41,18 +24,12 @@ interface FormData {
 }
 
 /**
- * <or-skill-form> — Single-step wizard for creating a new Skill.
+ * <or-skill-form> — Single-step form for creating a new Skill (Ember layout).
  *
- * D6-17: single-step (steps.length === 1) → or-form-wizard hides stepper,
- * shows only "Create skill" header with Cancel + Create buttons.
- *
+ * D6-17: single-step (steps.length === 1) → or-form-wizard hides stepper.
  * Fields: code, name, external_id, description, skill_type, enabled
  * On 201 → dispatches open-routing:navigate to /orgs/{orgId}/skills/{newId}
  * On 409 duplicate_code → inline error on code field
- *
- * Properties:
- *   - orgId: (attribute 'org-id') — the current org UUID
- *   - client: ApiClient — passed from shell at boot
  */
 @customElement('or-skill-form')
 export class OrSkillForm extends LitElement {
@@ -60,52 +37,170 @@ export class OrSkillForm extends LitElement {
     :host {
       display: block;
       padding: 24px;
-      max-width: 640px;
+      max-width: 680px;
     }
 
     .page-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       margin-bottom: 24px;
     }
 
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 24px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
       margin: 0;
+      color: var(--foreground);
     }
 
-    .form-group {
-      margin-bottom: 16px;
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color .12s, background .12s;
     }
 
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
-      margin-top: 4px;
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
     }
 
-    .wizard-nav {
-      display: flex;
-      gap: 8px;
-      margin-top: 24px;
-      justify-content: flex-end;
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      padding: 32px;
     }
 
     .step-helper {
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
+      margin: 0 0 20px;
+    }
+
+    .form-row {
       margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 6px;
+    }
+
+    .form-label-required::after {
+      content: ' *';
+      color: var(--destructive);
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    textarea.uk-input {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    /* Toggle switch */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--foreground);
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-track {
+      background: var(--primary);
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    .api-error {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
     }
   `;
 
-  // --- Properties ---
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   @property({ type: String, attribute: 'org-id' }) orgId = '';
   @property({ type: Object }) client!: ApiClient;
 
-  // --- Internal state ---
   @state() private _formData: FormData = {
     code: '',
     name: '',
@@ -119,8 +214,6 @@ export class OrSkillForm extends LitElement {
   @state() private _submitting = false;
   private _codeAutoFill = true;
 
-  // --- Navigation ---
-
   private _navigate(path: string): void {
     this.dispatchEvent(
       new CustomEvent('open-routing:navigate', {
@@ -130,8 +223,6 @@ export class OrSkillForm extends LitElement {
       })
     );
   }
-
-  // --- Submit ---
 
   async _handleSubmit(): Promise<void> {
     if (this._submitting) return;
@@ -145,8 +236,6 @@ export class OrSkillForm extends LitElement {
       enabled: this._formData.enabled,
     };
 
-    // Client-side validation
-    // ajv standalone validators attach .errors dynamically; cast to access it.
     const validateFn = validateCreateSkill as unknown as {
       (data: unknown): boolean;
       errors: Array<{ instancePath: string; message?: string }> | null;
@@ -173,7 +262,6 @@ export class OrSkillForm extends LitElement {
       const { data, error } = result as { data: { id: string; code: string } | null; error: unknown };
 
       if (error) {
-        // 409 duplicate_code — inline error on code field
         if (
           error &&
           typeof error === 'object' &&
@@ -183,7 +271,6 @@ export class OrSkillForm extends LitElement {
           this._errors = { code: 'This code is already in use.' };
           return;
         }
-        // 5xx or other — show danger alert
         this._apiError = (error as { reason?: string })?.reason ?? 'Create failed';
         return;
       }
@@ -196,14 +283,11 @@ export class OrSkillForm extends LitElement {
     }
   }
 
-  // --- Step content ---
-
   private _renderBasicsStep() {
     return html`
       <p class="step-helper">Define the skill's identity. Code cannot be changed after create.</p>
 
-      <!-- code (or-code-input, required, writable on create) -->
-      <div class="form-group">
+      <div class="form-row">
         <or-code-input
           .value=${this._formData.code}
           .required=${true}
@@ -221,15 +305,16 @@ export class OrSkillForm extends LitElement {
         )}
       </div>
 
-      <!-- name (required) -->
-      <!-- Use .value property binding (not value= attribute) for Shoelace programmatic resets -->
-      <div class="form-group">
-        <sl-input
-          label="Name"
+      <div class="form-row">
+        <label class="form-label form-label-required" for="skill-name">Name</label>
+        <input
+          id="skill-name"
+          class="uk-input"
+          type="text"
           required
           .value=${this._formData.name}
-          ?invalid=${!!this._errors['name']}
-          @sl-input=${(e: Event) => {
+          placeholder="e.g. Billing Support"
+          @input=${(e: Event) => {
             const name = (e.target as HTMLInputElement).value;
             this._formData = {
               ...this._formData,
@@ -237,115 +322,136 @@ export class OrSkillForm extends LitElement {
               ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
             };
           }}
-        ></sl-input>
+        />
         ${when(
           this._errors['name'],
           () => html`<div class="field-error">${this._errors['name']}</div>`
         )}
       </div>
 
-      <!-- external_id (optional) -->
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          .value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
-            this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
-          }}
-        ></sl-input>
-      </div>
-
-      <!-- description (optional textarea) -->
-      <div class="form-group">
-        <sl-textarea
-          label="Description"
-          .value=${this._formData.description}
-          @sl-input=${(e: Event) => {
-            this._formData = { ...this._formData, description: (e.target as HTMLTextAreaElement).value };
-          }}
-        ></sl-textarea>
-      </div>
-
-      <!-- skill_type (required, freeform string) -->
-      <div class="form-group">
-        <sl-input
-          label="Skill Type"
+      <div class="form-row">
+        <label class="form-label form-label-required" for="skill-type">Skill Type</label>
+        <input
+          id="skill-type"
+          class="uk-input"
+          type="text"
           required
           .value=${this._formData.skill_type}
-          ?invalid=${!!this._errors['skill_type']}
-          help-text="e.g. support, technical, billing"
-          @sl-input=${(e: Event) => {
+          placeholder="e.g. support, technical, billing"
+          @input=${(e: Event) => {
             this._formData = { ...this._formData, skill_type: (e.target as HTMLInputElement).value };
           }}
-        ></sl-input>
+        />
+        <div class="field-help">Category that groups this skill for routing rules.</div>
         ${when(
           this._errors['skill_type'],
           () => html`<div class="field-error">${this._errors['skill_type']}</div>`
         )}
       </div>
 
-      <!-- enabled switch (default true) -->
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = { ...this._formData, enabled: (e.target as HTMLInputElement).checked };
+      <div class="form-row">
+        <label class="form-label" for="skill-ext-id">External ID</label>
+        <input
+          id="skill-ext-id"
+          class="uk-input"
+          type="text"
+          .value=${this._formData.external_id}
+          placeholder="Optional reference from your system"
+          @input=${(e: Event) => {
+            this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
           }}
-        >Enabled</sl-switch>
+        />
+        <div class="field-help">Match an ID from your CRM or workforce management system.</div>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="skill-description">Description</label>
+        <textarea
+          id="skill-description"
+          class="uk-input"
+          .value=${this._formData.description}
+          placeholder="Optional description of this skill"
+          @input=${(e: Event) => {
+            this._formData = { ...this._formData, description: (e.target as HTMLTextAreaElement).value };
+          }}
+        ></textarea>
+      </div>
+
+      <div class="form-row">
+        <label class="switch-wrap">
+          <input
+            type="checkbox"
+            .checked=${this._formData.enabled}
+            @change=${(e: Event) => {
+              this._formData = {
+                ...this._formData,
+                enabled: (e.target as HTMLInputElement).checked,
+              };
+            }}
+          />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span>Enabled</span>
+        </label>
+        <div class="field-help">Disabled skills cannot be assigned to agents.</div>
       </div>
 
       ${when(
         this._apiError,
         () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          <div class="api-error">
+            <uk-icon icon="alert-triangle" width="16" height="16"></uk-icon>
             ${this._apiError}
-            <sl-button size="small" @click=${this._handleSubmit}>Retry</sl-button>
-          </sl-alert>
+            <button
+              class="uk-button uk-button-default uk-button-small"
+              style="margin-left:auto"
+              @click=${this._handleSubmit}
+            >Retry</button>
+          </div>
         `
       )}
 
-      <div class="wizard-nav">
-        <sl-button
-          variant="default"
+      <div class="form-actions">
+        <button
+          class="uk-button uk-button-default"
           @click=${() => this._navigate(`/orgs/${this.orgId}/skills`)}
-        >Cancel</sl-button>
-        <sl-button
-          variant="primary"
+        >Cancel</button>
+        <button
+          class="uk-button uk-button-primary"
           ?disabled=${this._submitting}
           @click=${this._handleSubmit}
         >
-          ${this._submitting ? html`<sl-spinner></sl-spinner> Creating…` : 'Create skill'}
-        </sl-button>
+          ${this._submitting
+            ? html`<span style="opacity:.7">Creating…</span>`
+            : 'Create skill'}
+        </button>
       </div>
     `;
   }
 
-  // --- Main render ---
-
   override render() {
     return html`
       <div class="page-header">
-        <sl-button
-          variant="text"
+        <button
+          class="back-btn"
           @click=${() => this._navigate(`/orgs/${this.orgId}/skills`)}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Skills
-        </sl-button>
+          <uk-icon icon="chevron-left" height="16" width="16"></uk-icon>
+          Skills
+        </button>
         <h1 class="page-title">Create skill</h1>
       </div>
 
-      <!-- Single step wizard (D6-17): steps.length === 1 → or-form-wizard hides stepper -->
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${0}
-        .hideNav=${true}
-      >
-        <div slot="step-basics">
-          ${this._renderBasicsStep()}
-        </div>
-      </or-form-wizard>
+      <div class="form-card">
+        <or-form-wizard
+          .steps=${WIZARD_STEPS}
+          .currentStep=${0}
+          .hideNav=${true}
+        >
+          <div slot="step-basics">
+            ${this._renderBasicsStep()}
+          </div>
+        </or-form-wizard>
+      </div>
     `;
   }
 }

@@ -4,26 +4,16 @@
 // D6-03: 409 body comes from error.current — no re-GET (Pitfall 9 avoided).
 // T-06-10-01: ajv validateUpdateChannel enforces channel_type enum.
 // default_queue_id: or-queue-picker with null clear support (nullable field).
-// UI-SPEC §5.4: fields: code(RO), name, external_id, channel_type(sl-select), default_queue_id(or-queue-picker), enabled.
+// UI-SPEC §5.4: fields: code(RO), name, external_id, channel_type(select), default_queue_id(or-queue-picker), enabled.
+// W0.1-15: Ember dashboard style — adoptShadowSheets, uk-button/uk-input, uk-icon, zero sl-*.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { components } from '../../api/generated.js';
 import validateUpdateChannel from '../../validators/UpdateChannelRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import '../primitives/code-input.js';
@@ -31,7 +21,15 @@ import '../primitives/conflict-banner.js';
 import '../primitives/queue-picker.js';
 
 type Channel = components['schemas']['Channel'];
-type ChannelType = 'voice' | 'chat' | 'email';
+type ChannelType = 'voice' | 'chat' | 'email' | 'sms' | 'social';
+
+const CHANNEL_TYPE_OPTIONS: Array<{ value: ChannelType; label: string }> = [
+  { value: 'voice', label: 'Voice' },
+  { value: 'chat', label: 'Chat' },
+  { value: 'email', label: 'Email' },
+  { value: 'sms', label: 'SMS' },
+  { value: 'social', label: 'Social' },
+];
 
 type ChannelForm = {
   name: string;
@@ -42,10 +40,10 @@ type ChannelForm = {
 };
 
 /**
- * <or-channel-detail> — Channel detail / edit page.
+ * <or-channel-detail> — Channel detail / edit page (Ember dashboard style).
  *
- * Single-column form: code (readonly), name, external_id, channel_type (sl-select),
- * default_queue_id (or-queue-picker nullable), enabled (sl-switch).
+ * Page-header + identity card layout.
+ * Fields: code (readonly), name, external_id, channel_type (select), default_queue_id (or-queue-picker, nullable), enabled.
  * 409 conflict: consumed from error.current (D6-03) — no second GET.
  *
  * Properties:
@@ -59,111 +57,333 @@ export class OrChannelDetail extends LitElement {
     :host {
       display: block;
       padding: 24px;
-      max-width: 720px;
+      background: var(--background);
+      min-height: 100%;
     }
 
-    .top-bar {
+    /* ── Page header ─────────────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+      gap: 16px;
+    }
+
+    .page-header-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .page-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0 0 2px;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 13px;
+      color: var(--muted-foreground);
+      margin: 0;
+    }
+
+    .page-header-right {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
+      flex-shrink: 0;
     }
 
-    .top-bar-spacer { flex: 1; }
-
-    .page-title {
-      font-size: var(--or-text-display, 24px);
-      font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
-      margin: 0 0 4px;
+    /* ── Status badge ────────────────────────────────────────────── */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
     }
 
-    .form-group {
+    .status-badge--active {
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+      color: oklch(0.45 0.18 145);
+    }
+
+    .status-badge--disabled {
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+
+    /* ── Info cards ──────────────────────────────────────────────── */
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: var(--shadow-sm);
       margin-bottom: 16px;
     }
 
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .card-title uk-icon {
+      color: var(--muted-foreground);
+    }
+
+    /* ── Two-column grid for identity fields ─────────────────────── */
+    .two-col-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 24px;
+    }
+
+    @media (max-width: 640px) {
+      .two-col-grid { grid-template-columns: 1fr; }
+    }
+
+    .form-group { margin-bottom: 0; }
+
     .field-label {
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 4px;
       display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      margin-bottom: 5px;
+    }
+
+    .field-label-required::after {
+      content: ' *';
+      color: var(--destructive);
     }
 
     .field-error {
       font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
+      color: var(--destructive);
       margin-top: 4px;
     }
 
+    /* ── Toggle row ──────────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+    }
+
+    .toggle-row + .toggle-row {
+      border-top: 1px solid var(--border);
+    }
+
+    .toggle-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--foreground);
+    }
+
+    .toggle-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 1px;
+    }
+
+    /* Frankenstyle toggle switch */
+    .uk-toggle {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .uk-toggle input { opacity: 0; width: 0; height: 0; }
+
+    .uk-toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--muted);
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .uk-toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      left: 3px;
+      top: 3px;
+      transition: transform .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+
+    .uk-toggle input:checked + .uk-toggle-slider {
+      background: var(--primary);
+    }
+
+    .uk-toggle input:checked + .uk-toggle-slider::before {
+      transform: translateX(18px);
+    }
+
+    /* ── Alert / error banner ────────────────────────────────────── */
+    .alert {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .alert--danger {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 35%, transparent);
+      color: var(--destructive);
+    }
+
+    /* ── Footer meta ─────────────────────────────────────────────── */
     .footer-meta {
       font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       margin-top: 16px;
       padding-top: 12px;
-      border-top: 1px solid var(--or-color-divider, #e5e5e5);
+      border-top: 1px solid var(--border);
     }
 
     .bottom-bar {
       display: flex;
       gap: 8px;
-      margin-top: 24px;
+      margin-top: 20px;
       justify-content: flex-end;
     }
-    /* Inline confirm panel — D7-04: <sl-dialog> has broken focus-trap inside nested Shadow DOM (shoelace#709, #1382). Embed mounts inside Shadow DOM, so this is replaced with an inline role=dialog + manual focus management. */
+
+    /* ── Loading / spinner ───────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 40px 0;
+      color: var(--muted-foreground);
+      font-size: 14px;
+    }
+
+    /* ── Delete confirm inline panel (D7-04 pattern) ─────────────── */
     .confirm-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: var(--shadow-overlay, oklch(0 0 0 / 0.5));
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 1000;
     }
+
     .confirm-panel {
-      background: var(--or-color-card-bg, #ffffff);
-      border: 1px solid var(--or-color-card-border, #d1d5db);
-      border-radius: var(--sl-border-radius-medium, 6px);
-      padding: 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
       max-width: 480px;
       width: 90%;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow-lg);
     }
-    .confirm-title { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; }
-    .confirm-body { margin: 0 0 20px 0; }
-    .action-row { display: flex; gap: 8px; justify-content: flex-end; }
-    /* Inline confirm panel — D7-04: <sl-dialog> has broken focus-trap inside nested Shadow DOM (shoelace#709, #1382). Embed mounts inside Shadow DOM, so this is replaced with an inline role=dialog + manual focus management. */
-    .confirm-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+
+    .confirm-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+
+    .confirm-body {
+      margin: 0 0 16px;
+      font-size: 14px;
+      color: var(--muted-foreground);
+    }
+
+    .action-row {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
+      gap: 8px;
+      justify-content: flex-end;
     }
-    .confirm-panel {
-      background: var(--or-color-card-bg, #ffffff);
-      border: 1px solid var(--or-color-card-border, #d1d5db);
-      border-radius: var(--sl-border-radius-medium, 6px);
-      padding: 20px;
-      max-width: 480px;
-      width: 90%;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-    .confirm-title { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; }
-    .confirm-body { margin: 0 0 20px 0; }
-    .action-row { display: flex; gap: 8px; justify-content: flex-end; }
 
-
-
+    /* ── Toast ───────────────────────────────────────────────────── */
     .toast-container {
       position: fixed;
       bottom: 24px;
       right: 24px;
       z-index: var(--or-z-toast, 9000);
     }
+
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      box-shadow: var(--shadow-md);
+      font-size: 14px;
+      color: var(--foreground);
+    }
+
+    .toast uk-icon { color: oklch(0.45 0.18 145); }
   `;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
   // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) orgId = '';
@@ -183,6 +403,8 @@ export class OrChannelDetail extends LitElement {
   @state() private _deleteConfirmName = '';
 
   private _savedToastTimeout?: ReturnType<typeof setTimeout>;
+  private _onKeydown?: (e: KeyboardEvent) => void;
+
   _formData: ChannelForm = {
     name: '',
     external_id: '',
@@ -197,27 +419,6 @@ export class OrChannelDetail extends LitElement {
   }
 
   // --- Lifecycle ---
-  private _onKeydown?: (e: KeyboardEvent) => void;
-
-  override disconnectedCallback(): void {
-    super.disconnectedCallback();
-    if (this._onKeydown) {
-      document.removeEventListener('keydown', this._onKeydown);
-    }
-  }
-
-  override updated(changed: Map<string, unknown>): void {
-    if (changed.has('_deleteConfirmOpen') && this._deleteConfirmOpen) {
-      this.setAttribute('aria-live', 'polite');
-      this.updateComplete.then(() => {
-        const input = this.shadowRoot?.querySelector('sl-input[aria-label^="Type"]') as HTMLElement;
-        if (input) input.focus();
-      });
-    } else if (changed.has('_deleteConfirmOpen') && !this._deleteConfirmOpen) {
-      this.removeAttribute('aria-live');
-    }
-  }
-
   override connectedCallback(): void {
     super.connectedCallback();
     void this._loadEntity();
@@ -228,6 +429,20 @@ export class OrChannelDetail extends LitElement {
       }
     };
     document.addEventListener('keydown', this._onKeydown);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this._onKeydown) document.removeEventListener('keydown', this._onKeydown);
+  }
+
+  override updated(changed: Map<string, unknown>): void {
+    if (changed.has('_deleteConfirmOpen') && this._deleteConfirmOpen) {
+      void this.updateComplete.then(() => {
+        const input = this.shadowRoot?.querySelector('.confirm-panel input') as HTMLElement | null;
+        if (input) input.focus();
+      });
+    }
   }
 
   // --- Private methods ---
@@ -281,6 +496,18 @@ export class OrChannelDetail extends LitElement {
     }, 3000);
   }
 
+  private _relativeTime(iso: string): string {
+    try {
+      const ms = Date.now() - new Date(iso).getTime();
+      const min = Math.floor(ms / 60000);
+      if (min < 1) return 'just now';
+      if (min < 60) return `${min}m ago`;
+      const h = Math.floor(min / 60);
+      if (h < 24) return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    } catch { return iso; }
+  }
+
   // --- Save / PATCH ---
 
   async _handleSave(): Promise<void> {
@@ -316,7 +543,7 @@ export class OrChannelDetail extends LitElement {
     this._fieldErrors = {};
 
     // Full PATCH body includes explicit null for default_queue_id (nullable field)
-    // Gemini MED: normalize external_id — pass undefined when empty to avoid 422 minLength
+    // Normalize external_id — pass undefined when empty to avoid 422 minLength
     const body = {
       name: this._formData.name,
       external_id: this._formData.external_id || undefined,
@@ -336,13 +563,11 @@ export class OrChannelDetail extends LitElement {
       const { data, error } = result as { data: Channel | null; error: unknown };
 
       if (error) {
-        // 409 version_conflict — consume from error.current (Pitfall 9: never call response.json())
-        // D6-03: use error.current directly, no re-GET.
-        // [Rule 1 - 06-09 pattern] Also update _entity so re-submit uses the correct version.
+        // 409 version_conflict — consume from error.current (D6-03: no re-GET)
+        // Also update _entity so re-submit uses the correct version.
         if (error && typeof error === 'object' && 'current' in error) {
           const current = (error as { current: Channel }).current;
           this._conflictServer = current as unknown as Record<string, unknown>;
-          // Update _entity so next PATCH body.version is the server's current version
           this._entity = current;
           return;
         }
@@ -388,7 +613,6 @@ export class OrChannelDetail extends LitElement {
     } as never);
     const { data, error } = result as { data: Channel | null; error: unknown };
     if (error) {
-      // Gemini MED: surface enable/disable errors (not silently swallowed)
       this._apiError = (error as { reason?: string })?.reason ?? 'Failed to enable channel';
       return;
     }
@@ -406,7 +630,6 @@ export class OrChannelDetail extends LitElement {
     } as never);
     const { data, error } = result as { data: Channel | null; error: unknown };
     if (error) {
-      // Gemini MED: surface enable/disable errors (not silently swallowed)
       this._apiError = (error as { reason?: string })?.reason ?? 'Failed to disable channel';
       return;
     }
@@ -449,7 +672,7 @@ export class OrChannelDetail extends LitElement {
     this._conflictServer = null;
   }
 
-  // --- Render ---
+  // --- Render helpers ---
 
   private _renderConflictBanner() {
     if (!this._conflictServer) return null;
@@ -464,253 +687,268 @@ export class OrChannelDetail extends LitElement {
   }
 
   private _renderTopBar() {
+    const entity = this._entity;
     return html`
-      <div class="top-bar">
-        <sl-button
-          variant="text"
-          @click=${() => this._navigate(`/orgs/${this.orgId}/channels`)}
-        >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Channels
-        </sl-button>
-        <div class="top-bar-spacer"></div>
+      <div class="page-header">
+        <div class="page-header-left">
+          <button
+            class="back-btn"
+            type="button"
+            @click=${() => this._navigate(`/orgs/${this.orgId}/channels`)}
+            aria-label="Back to Channels"
+          >
+            <uk-icon icon="chevron-left" height="18" width="18"></uk-icon>
+          </button>
+          <div>
+            <h1 class="page-title">${entity?.name ?? 'Channel'}</h1>
+            ${entity ? html`<p class="page-subtitle">${entity.code}</p>` : nothing}
+          </div>
+        </div>
 
-        ${when(
-          this._entity,
-          () => html`
-            ${when(
-              this._entity!.enabled,
-              () => html`
-                <sl-button variant="default" size="small" @click=${this._handleDisable}>Disable</sl-button>
-              `,
-              () => html`
-                <sl-button variant="default" size="small" @click=${this._handleEnable}>Enable</sl-button>
-              `
-            )}
-            <sl-button
-              variant="default"
-              size="small"
-              style="color:var(--sl-color-danger-500)"
+        <div class="page-header-right">
+          ${entity ? html`
+            <span class="status-badge ${entity.enabled ? 'status-badge--active' : 'status-badge--disabled'}">
+              <uk-icon icon=${entity.enabled ? 'circle-check' : 'circle-x'} height="12" width="12"></uk-icon>
+              ${entity.enabled ? 'Active' : 'Disabled'}
+            </span>
+            ${entity.enabled
+              ? html`<button class="uk-button uk-button-default" type="button" style="font-size:13px" @click=${this._handleDisable}>Disable</button>`
+              : html`<button class="uk-button uk-button-default" type="button" style="font-size:13px" @click=${this._handleEnable}>Enable</button>`
+            }
+            <button
+              class="uk-button uk-button-default"
+              type="button"
+              style="font-size:13px;color:var(--destructive)"
               @click=${() => {
                 this._deleteConfirmOpen = true;
                 this._deleteConfirmName = '';
               }}
-            >Delete</sl-button>
-          `
-        )}
+            >Delete</button>
+          ` : nothing}
+        </div>
       </div>
     `;
   }
 
-  private _renderDeleteDialog() {
-    return html`
-      ${when(this._deleteConfirmOpen, () => html`
-        <div class="confirm-overlay" role="presentation" @click=${() => {
-          this._deleteConfirmOpen = false;
-          this._deleteConfirmName = '';
-        }}>
-          <div class="confirm-panel"
-               role="dialog"
-               aria-modal="true"
-               aria-labelledby="confirm-title"
-               @click=${(e: Event) => e.stopPropagation()}>
-            <h3 id="confirm-title" class="confirm-title">Delete channel ${this._entity?.name ?? ''}?</h3>
-            <p class="confirm-body">This is permanent and cannot be undone.</p>
-            <div style="margin-bottom: 20px;">
-              <sl-input
-                placeholder="Type channel name to confirm"
-                .value=${this._deleteConfirmName}
-                @sl-input=${(e: Event) => {
-                  this._deleteConfirmName = (e.target as HTMLInputElement).value;
-                }}
-                aria-label="Type channel name to confirm deletion"
-              ></sl-input>
-            </div>
-            <div class="action-row">
-              <sl-button
-                variant="default"
-                size="small"
-                @click=${() => {
-                  this._deleteConfirmOpen = false;
-                  this._deleteConfirmName = '';
-                }}
-              >Cancel</sl-button>
-              <sl-button
-                variant="danger"
-                size="small"
-                ?disabled=${!this._canDelete}
-                @click=${this._handleDelete}
-              >Delete</sl-button>
-            </div>
-          </div>
-        </div>
-      `)}
-    `;
-  }
-
   private _renderForm() {
-    if (!this._entity) return null;
+    if (!this._entity) return nothing;
     const entity = this._entity;
-    const relativeTime = (iso: string) => {
-      try {
-        const ms = Date.now() - new Date(iso).getTime();
-        const min = Math.floor(ms / 60000);
-        if (min < 60) return `${min}m ago`;
-        const h = Math.floor(min / 60);
-        if (h < 24) return `${h}h ago`;
-        return `${Math.floor(h / 24)}d ago`;
-      } catch { return iso; }
-    };
 
     return html`
-      <h1 class="page-title">${entity.name}</h1>
-
       ${this._renderConflictBanner()}
 
       ${when(
         this._apiError,
         () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          <div class="alert alert--danger">
+            <uk-icon icon="triangle-alert" height="16" width="16"></uk-icon>
             ${this._apiError}
-          </sl-alert>
+          </div>
         `
       )}
 
-      <!-- 1. code — read-only (D04_1-02) -->
-      <div class="form-group">
-        <or-code-input
-          .value=${entity.code}
-          .readonly=${true}
-        ></or-code-input>
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="radio-tower" height="16" width="16"></uk-icon>
+          Identity
+        </h2>
+
+        <div class="two-col-grid">
+          <div class="form-group">
+            <or-code-input
+              .value=${entity.code}
+              .readonly=${true}
+            ></or-code-input>
+          </div>
+
+          <div class="form-group">
+            <label class="field-label field-label-required" for="ch-name">Name</label>
+            <input
+              id="ch-name"
+              class="uk-input"
+              type="text"
+              required
+              .value=${this._formData.name}
+              @input=${(e: Event) => {
+                this._formData = { ...this._formData, name: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+            ${when(
+              this._fieldErrors['name'],
+              () => html`<div class="field-error">${this._fieldErrors['name']}</div>`
+            )}
+          </div>
+
+          <div class="form-group">
+            <label class="field-label field-label-required" for="ch-type">Channel Type</label>
+            <select
+              id="ch-type"
+              class="uk-select"
+              @change=${(e: Event) => {
+                const val = (e.target as HTMLSelectElement).value as ChannelType;
+                this._formData = { ...this._formData, channel_type: val };
+                this._markDirty();
+              }}
+              aria-label="Channel type"
+            >
+              ${CHANNEL_TYPE_OPTIONS.map(
+                (opt) => html`<option value=${opt.value} ?selected=${this._formData.channel_type === opt.value}>${opt.label}</option>`
+              )}
+            </select>
+            ${when(
+              this._fieldErrors['channel_type'],
+              () => html`<div class="field-error">${this._fieldErrors['channel_type']}</div>`
+            )}
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="ch-ext-id">External ID</label>
+            <input
+              id="ch-ext-id"
+              class="uk-input"
+              type="text"
+              .value=${this._formData.external_id}
+              @input=${(e: Event) => {
+                this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+          </div>
+
+          <div class="form-group" style="grid-column: 1 / -1">
+            <label class="field-label">Default Queue <span style="font-weight:400">(optional)</span></label>
+            <or-queue-picker
+              .orgId=${this.orgId}
+              .client=${this.client}
+              .value=${this._formData.default_queue_id}
+              @or-queue-picker-change=${(e: CustomEvent) => {
+                this._formData = { ...this._formData, default_queue_id: e.detail.queueId };
+                this._markDirty();
+              }}
+            ></or-queue-picker>
+          </div>
+        </div>
+
+        <div class="footer-meta">
+          version ${entity.version}
+          · updated ${this._relativeTime(entity.updated_at ?? '')}
+          · created ${entity.created_at ? new Date(entity.created_at).toLocaleDateString() : ''}
+        </div>
+
+        <div class="bottom-bar">
+          <button
+            class="uk-button uk-button-default"
+            type="button"
+            @click=${() => {
+              if (!this._dirty) {
+                this._navigate(`/orgs/${this.orgId}/channels`);
+              } else {
+                this._formData = {
+                  name: entity.name ?? '',
+                  external_id: entity.external_id ?? '',
+                  channel_type: (entity.channel_type ?? '') as ChannelType | '',
+                  default_queue_id: entity.default_queue_id ?? null,
+                  enabled: entity.enabled ?? true,
+                };
+                this._dirty = false;
+              }
+            }}
+          >Cancel</button>
+          <button
+            class="uk-button uk-button-primary"
+            type="button"
+            ?disabled=${!this._dirty || this._saving}
+            @click=${this._handleSave}
+          >
+            ${this._saving
+              ? html`<span class="spinner" style="width:14px;height:14px;margin-right:6px;border-width:2px"></span> Saving…`
+              : 'Save changes'}
+          </button>
+        </div>
       </div>
 
-      <!-- 2. name -->
-      <div class="form-group">
-        <sl-input
-          label="Name"
-          value=${this._formData.name}
-          required
-          ?invalid=${!!this._fieldErrors['name']}
-          @sl-input=${(e: Event) => {
-            this._formData = { ...this._formData, name: (e.target as HTMLInputElement).value };
-            this._markDirty();
-          }}
-        ></sl-input>
-        ${when(
-          this._fieldErrors['name'],
-          () => html`<div class="field-error">${this._fieldErrors['name']}</div>`
-        )}
-      </div>
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="settings" height="16" width="16"></uk-icon>
+          Status &amp; Routing
+        </h2>
 
-      <!-- 3. external_id -->
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
-            this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
-            this._markDirty();
-          }}
-        ></sl-input>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Enabled</div>
+            <div class="toggle-sub">Allow incoming interactions on this channel</div>
+          </div>
+          <label class="uk-toggle">
+            <input
+              type="checkbox"
+              .checked=${this._formData.enabled}
+              @change=${(e: Event) => {
+                this._formData = { ...this._formData, enabled: (e.target as HTMLInputElement).checked };
+                this._markDirty();
+              }}
+            />
+            <span class="uk-toggle-slider"></span>
+          </label>
+        </div>
       </div>
+    `;
+  }
 
-      <!-- 4. channel_type — sl-select single; voice/chat/email; required (T-06-10-01 enum enforcement) -->
-      <div class="form-group">
-        <label class="field-label">
-          Channel Type <span style="color:var(--sl-color-danger-500)">*</span>
-        </label>
-        <sl-select
-          .value=${this._formData.channel_type}
-          placeholder="Select channel type"
-          @sl-change=${(e: Event) => {
-            const val = (e.target as HTMLElement & { value: string }).value;
-            this._formData = { ...this._formData, channel_type: val as ChannelType };
-            this._markDirty();
-          }}
-          aria-label="Channel type"
-        >
-          <sl-option value="voice">voice</sl-option>
-          <sl-option value="chat">chat</sl-option>
-          <sl-option value="email">email</sl-option>
-        </sl-select>
-        ${when(
-          this._fieldErrors['channel_type'],
-          () => html`<div class="field-error">${this._fieldErrors['channel_type']}</div>`
-        )}
-      </div>
-
-      <!-- 5. default_queue_id — or-queue-picker, nullable -->
-      <div class="form-group">
-        <label class="field-label">Default Queue <span style="color:var(--or-color-text-muted,#737373);font-weight:400">(optional)</span></label>
-        <or-queue-picker
-          .orgId=${this.orgId}
-          .client=${this.client}
-          .value=${this._formData.default_queue_id}
-          @or-queue-picker-change=${(e: CustomEvent) => {
-            this._formData = { ...this._formData, default_queue_id: e.detail.queueId };
-            this._markDirty();
-          }}
-        ></or-queue-picker>
-      </div>
-
-      <!-- 6. enabled -->
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = { ...this._formData, enabled: (e.target as HTMLInputElement).checked };
-            this._markDirty();
-          }}
-        >Enabled</sl-switch>
-      </div>
-
-      <div class="footer-meta">
-        version ${entity.version}
-        · updated ${relativeTime(entity.updated_at ?? '')}
-        · created ${entity.created_at ? new Date(entity.created_at).toLocaleDateString() : ''}
-      </div>
-
-      <div class="bottom-bar">
-        <sl-button
-          variant="default"
-          @click=${() => {
-            if (!this._dirty) {
-              this._navigate(`/orgs/${this.orgId}/channels`);
-            } else if (this._entity) {
-              this._formData = {
-                name: entity.name ?? '',
-                external_id: entity.external_id ?? '',
-                channel_type: (entity.channel_type ?? '') as ChannelType | '',
-                default_queue_id: entity.default_queue_id ?? null,
-                enabled: entity.enabled ?? true,
-              };
-              this._dirty = false;
-            }
-          }}
-        >Cancel</sl-button>
-        <sl-button
-          variant="primary"
-          ?disabled=${!this._dirty || this._saving}
-          @click=${this._handleSave}
-        >
-          ${this._saving ? html`<sl-spinner></sl-spinner> Saving…` : 'Save changes'}
-        </sl-button>
+  private _renderDeleteDialog() {
+    if (!this._deleteConfirmOpen) return nothing;
+    return html`
+      <div class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="del-title">
+        <div class="confirm-panel">
+          <h2 class="confirm-title" id="del-title">Delete channel ${this._entity?.name ?? ''}?</h2>
+          <p class="confirm-body">This is permanent and cannot be undone. Type the channel name to confirm.</p>
+          <input
+            class="uk-input"
+            style="margin-bottom:16px"
+            placeholder="Type channel name to confirm"
+            .value=${this._deleteConfirmName}
+            @input=${(e: Event) => {
+              this._deleteConfirmName = (e.target as HTMLInputElement).value;
+            }}
+            aria-label="Type channel name to confirm deletion"
+          />
+          <div class="action-row">
+            <button
+              class="uk-button uk-button-default"
+              type="button"
+              @click=${() => {
+                this._deleteConfirmOpen = false;
+                this._deleteConfirmName = '';
+              }}
+            >Cancel</button>
+            <button
+              class="uk-button uk-button-danger"
+              type="button"
+              ?disabled=${!this._canDelete}
+              @click=${this._handleDelete}
+            >Delete</button>
+          </div>
+        </div>
       </div>
     `;
   }
 
   override render() {
     if (this._loading) {
-      return html`<sl-spinner></sl-spinner>`;
+      return html`
+        <div class="loading-wrap">
+          <span class="spinner"></span>
+          Loading channel…
+        </div>
+      `;
     }
 
     if (!this._entity && this._apiError) {
       return html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+        <div class="alert alert--danger">
+          <uk-icon icon="triangle-alert" height="16" width="16"></uk-icon>
           ${this._apiError}
-        </sl-alert>
+        </div>
       `;
     }
 
@@ -723,10 +961,10 @@ export class OrChannelDetail extends LitElement {
         this._showSavedToast,
         () => html`
           <div class="toast-container">
-            <sl-alert variant="success" open>
-              <sl-icon slot="icon" name="check-circle"></sl-icon>
+            <div class="toast">
+              <uk-icon icon="circle-check" height="16" width="16"></uk-icon>
               Saved
-            </sl-alert>
+            </div>
           </div>
         `
       )}

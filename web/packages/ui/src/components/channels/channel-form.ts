@@ -6,31 +6,31 @@
 // ajv validateCreateChannel called on final submit.
 // T-06-10-01: channel_type enum enforced client-side by ajv + server-side 422.
 // Step 2: default_queue_id is optional (null allowed) per plan.
+// W0.1-14: Ember dashboard style — adoptShadowSheets, uk-button/uk-input, uk-icon, zero sl-*.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { OrFormWizardStep } from '../primitives/form-wizard.js';
 import validateCreateChannel from '../../validators/CreateChannelRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import { nameToCode } from '../primitives/code-input.js';
 import '../primitives/form-wizard.js';
+import '../primitives/code-input.js';
 import '../primitives/queue-picker.js';
 
-type ChannelType = 'voice' | 'chat' | 'email';
+type ChannelType = 'voice' | 'chat' | 'email' | 'sms' | 'social';
+
+const CHANNEL_TYPE_OPTIONS: Array<{ value: ChannelType; label: string }> = [
+  { value: 'voice', label: 'Voice' },
+  { value: 'chat', label: 'Chat' },
+  { value: 'email', label: 'Email' },
+  { value: 'sms', label: 'SMS' },
+  { value: 'social', label: 'Social' },
+];
 
 const WIZARD_STEPS: OrFormWizardStep[] = [
   { key: 'basics', label: 'Basics' },
@@ -48,7 +48,7 @@ interface FormData {
 }
 
 /**
- * <or-channel-form> — 3-step wizard for creating a new Channel.
+ * <or-channel-form> — 3-step wizard for creating a new Channel (Ember dashboard style).
  *
  * Step 1 (Basics): code, name, channel_type (required), external_id, enabled
  * Step 2 (Default queue): or-queue-picker — optional, null allowed
@@ -67,50 +67,138 @@ export class OrChannelForm extends LitElement {
     :host {
       display: block;
       padding: 24px;
-      max-width: 640px;
+      max-width: 680px;
     }
 
     .page-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       margin-bottom: 24px;
     }
 
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 24px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
       margin: 0;
+      color: var(--foreground);
     }
 
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .field-label {
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
       font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 4px;
-      display: block;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color .12s, background .12s;
     }
 
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
-      margin-top: 4px;
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      padding: 32px;
     }
 
     .step-helper {
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
+      margin: 0 0 20px;
+    }
+
+    .form-row {
       margin-bottom: 16px;
     }
 
-    .review-section {
-      background: var(--or-color-card-bg, #fff);
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: 4px;
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 6px;
+    }
+
+    .form-label-required::after {
+      content: ' *';
+      color: var(--destructive);
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* CSS-only toggle switch */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--foreground);
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-track {
+      background: var(--primary);
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    /* Review summary */
+    .review-card {
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
       padding: 16px;
       margin-bottom: 16px;
     }
@@ -122,30 +210,62 @@ export class OrChannelForm extends LitElement {
       font-size: 14px;
     }
 
+    .review-row:last-child {
+      margin-bottom: 0;
+    }
+
     .review-label {
       flex: 0 0 140px;
       font-weight: 600;
-      color: var(--or-color-text-muted, #737373);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted-foreground);
+      padding-top: 1px;
     }
 
     .review-value {
-      color: var(--or-color-text-body, #404040);
+      color: var(--foreground);
       word-break: break-all;
+      font-size: 14px;
     }
 
     .review-value code {
-      font-family: var(--or-font-mono, monospace);
-      color: var(--or-color-code-fg, #1f6e77);
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--muted-foreground);
       font-size: 13px;
     }
 
-    .wizard-nav {
+    /* API error banner */
+    .api-error {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Form action row */
+    .form-actions {
       display: flex;
       gap: 8px;
-      margin-top: 24px;
       justify-content: flex-end;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
     }
   `;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
   // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) orgId = '';
@@ -183,7 +303,6 @@ export class OrChannelForm extends LitElement {
 
   async _handleNext(): Promise<void> {
     if (this._currentStep === 0) {
-      // Validate Step 1: code, name, channel_type are required
       const errors: Record<string, string> = {};
 
       if (!this._formData.code) {
@@ -224,7 +343,6 @@ export class OrChannelForm extends LitElement {
 
     // Build validation body — omit default_queue_id if null to work around
     // generated ajv validator's allOf+nullable UUID handling (erroneously fails null).
-    // The actual POST body includes default_queue_id: null (explicitly serialized).
     const validationBody: Record<string, unknown> = {
       code: this._formData.code,
       name: this._formData.name,
@@ -234,7 +352,6 @@ export class OrChannelForm extends LitElement {
     if (this._formData.external_id) {
       validationBody['external_id'] = this._formData.external_id;
     }
-    // Only include default_queue_id in validation body if it's a non-null UUID string
     if (this._formData.default_queue_id !== null) {
       validationBody['default_queue_id'] = this._formData.default_queue_id;
     }
@@ -276,7 +393,6 @@ export class OrChannelForm extends LitElement {
       const { data, error } = result as { data: { id: string; code: string } | null; error: unknown };
 
       if (error) {
-        // 409 duplicate_code — back to step 1 with inline error
         if (
           error &&
           typeof error === 'object' &&
@@ -312,7 +428,7 @@ export class OrChannelForm extends LitElement {
     return html`
       <p class="step-helper">Define the channel's identity. Code cannot be changed after create.</p>
 
-      <div class="form-group">
+      <div class="form-row">
         <or-code-input
           .value=${this._formData.code}
           .required=${true}
@@ -330,13 +446,16 @@ export class OrChannelForm extends LitElement {
         )}
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="Name"
+      <div class="form-row">
+        <label class="form-label form-label-required" for="ch-name">Name</label>
+        <input
+          id="ch-name"
+          class="uk-input"
+          type="text"
           required
-          value=${this._formData.name}
-          ?invalid=${!!this._errors['name']}
-          @sl-input=${(e: Event) => {
+          .value=${this._formData.name}
+          placeholder="e.g. Main Voice Line"
+          @input=${(e: Event) => {
             const name = (e.target as HTMLInputElement).value;
             this._formData = {
               ...this._formData,
@@ -344,66 +463,77 @@ export class OrChannelForm extends LitElement {
               ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
             };
           }}
-        ></sl-input>
+        />
         ${when(
           this._errors['name'],
           () => html`<div class="field-error">${this._errors['name']}</div>`
         )}
       </div>
 
-      <!-- channel_type: required single-select (voice/chat/email) -->
-      <div class="form-group">
-        <label class="field-label">
-          Channel Type <span style="color:var(--sl-color-danger-500)">*</span>
-        </label>
-        <sl-select
-          .value=${this._formData.channel_type}
-          placeholder="Select channel type"
-          ?invalid=${!!this._errors['channel_type']}
-          @sl-change=${(e: Event) => {
-            const val = (e.target as HTMLElement & { value: string }).value;
-            this._formData = { ...this._formData, channel_type: val as ChannelType };
+      <div class="form-row">
+        <label class="form-label form-label-required" for="ch-type">Channel Type</label>
+        <select
+          id="ch-type"
+          class="uk-select"
+          @change=${(e: Event) => {
+            const val = (e.target as HTMLSelectElement).value as ChannelType;
+            this._formData = { ...this._formData, channel_type: val };
             if (this._errors['channel_type']) {
               this._errors = { ...this._errors, channel_type: '' };
             }
           }}
           aria-label="Channel type"
         >
-          <sl-option value="voice">voice</sl-option>
-          <sl-option value="chat">chat</sl-option>
-          <sl-option value="email">email</sl-option>
-        </sl-select>
+          <option value="" ?selected=${this._formData.channel_type === ''} disabled>Select channel type</option>
+          ${CHANNEL_TYPE_OPTIONS.map(
+            (opt) => html`<option value=${opt.value} ?selected=${this._formData.channel_type === opt.value}>${opt.label}</option>`
+          )}
+        </select>
         ${when(
           this._errors['channel_type'],
           () => html`<div class="field-error">${this._errors['channel_type']}</div>`
         )}
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
+      <div class="form-row">
+        <label class="form-label" for="ch-ext-id">External ID</label>
+        <input
+          id="ch-ext-id"
+          class="uk-input"
+          type="text"
+          .value=${this._formData.external_id}
+          placeholder="Optional reference from your system"
+          @input=${(e: Event) => {
             this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
           }}
-        ></sl-input>
+        />
       </div>
 
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = { ...this._formData, enabled: (e.target as HTMLInputElement).checked };
-          }}
-        >Enabled</sl-switch>
+      <div class="form-row">
+        <label class="switch-wrap">
+          <input
+            type="checkbox"
+            .checked=${this._formData.enabled}
+            @change=${(e: Event) => {
+              this._formData = {
+                ...this._formData,
+                enabled: (e.target as HTMLInputElement).checked,
+              };
+            }}
+          />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span>Enabled</span>
+        </label>
+        <div class="field-help">Disabled channels will not accept incoming interactions.</div>
       </div>
 
-      <div class="wizard-nav">
-        <sl-button
-          variant="default"
+      <div class="form-actions">
+        <button
+          class="uk-button uk-button-default"
+          type="button"
           @click=${() => this._navigate(`/orgs/${this.orgId}/channels`)}
-        >Cancel</sl-button>
-        <sl-button variant="primary" @click=${this._handleNext}>Next: Default queue →</sl-button>
+        >Cancel</button>
+        <button class="uk-button uk-button-primary" type="button" @click=${this._handleNext}>Next: Default queue →</button>
       </div>
     `;
   }
@@ -412,8 +542,8 @@ export class OrChannelForm extends LitElement {
     return html`
       <p class="step-helper">Optionally assign a default queue. Channels can route to a queue automatically.</p>
 
-      <div class="form-group">
-        <label class="field-label">Default Queue <span style="color:var(--or-color-text-muted,#737373);font-weight:400">(optional)</span></label>
+      <div class="form-row">
+        <label class="form-label">Default Queue <span style="font-weight:400;color:var(--muted-foreground)">(optional)</span></label>
         <or-queue-picker
           .orgId=${this.orgId}
           .client=${this.client}
@@ -424,9 +554,9 @@ export class OrChannelForm extends LitElement {
         ></or-queue-picker>
       </div>
 
-      <div class="wizard-nav">
-        <sl-button variant="default" @click=${this._handleBack}>← Back</sl-button>
-        <sl-button variant="primary" @click=${this._handleNext}>Next: Review →</sl-button>
+      <div class="form-actions">
+        <button class="uk-button uk-button-default" type="button" @click=${this._handleBack}>← Back</button>
+        <button class="uk-button uk-button-primary" type="button" @click=${this._handleNext}>Next: Review →</button>
       </div>
     `;
   }
@@ -435,7 +565,7 @@ export class OrChannelForm extends LitElement {
     const { code, name, external_id, channel_type, default_queue_id, enabled } = this._formData;
 
     return html`
-      <div class="review-section">
+      <div class="review-card">
         <div class="review-row">
           <span class="review-label">Code</span>
           <span class="review-value"><code>${code}</code></span>
@@ -469,25 +599,23 @@ export class OrChannelForm extends LitElement {
       ${when(
         this._apiError,
         () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          <div class="api-error">
+            <uk-icon icon="x" height="16" width="16"></uk-icon>
             ${this._apiError}
-            <sl-button size="small" @click=${this._handleSubmit}>Retry</sl-button>
-          </sl-alert>
+          </div>
         `
       )}
 
-      <div class="wizard-nav">
-        <sl-button variant="default" @click=${this._handleBack}>← Back</sl-button>
-        <sl-button
-          variant="primary"
+      <div class="form-actions">
+        <button class="uk-button uk-button-default" type="button" @click=${this._handleBack}>← Back</button>
+        <button
+          class="uk-button uk-button-primary"
+          type="button"
           ?disabled=${this._submitting}
           @click=${this._handleSubmit}
         >
-          ${this._submitting
-            ? html`<sl-spinner></sl-spinner> Creating…`
-            : 'Create channel'}
-        </sl-button>
+          ${this._submitting ? 'Creating…' : 'Create channel'}
+        </button>
       </div>
     `;
   }
@@ -497,31 +625,34 @@ export class OrChannelForm extends LitElement {
   override render() {
     return html`
       <div class="page-header">
-        <sl-button
-          variant="text"
+        <button
+          class="back-btn"
+          type="button"
           @click=${() => this._navigate(`/orgs/${this.orgId}/channels`)}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Channels
-        </sl-button>
+          <uk-icon icon="chevron-left" height="16" width="16"></uk-icon>
+          Channels
+        </button>
         <h1 class="page-title">Create channel</h1>
       </div>
 
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${this._currentStep}
-        .hideNav=${true}
-      >
-        <div slot="step-basics">
-          ${this._renderBasicsStep()}
-        </div>
-        <div slot="step-default-queue">
-          ${this._renderDefaultQueueStep()}
-        </div>
-        <div slot="step-review">
-          ${this._renderReviewStep()}
-        </div>
-      </or-form-wizard>
+      <div class="form-card">
+        <or-form-wizard
+          .steps=${WIZARD_STEPS}
+          .currentStep=${this._currentStep}
+          .hideNav=${true}
+        >
+          <div slot="step-basics">
+            ${this._renderBasicsStep()}
+          </div>
+          <div slot="step-default-queue">
+            ${this._renderDefaultQueueStep()}
+          </div>
+          <div slot="step-review">
+            ${this._renderReviewStep()}
+          </div>
+        </or-form-wizard>
+      </div>
     `;
   }
 }

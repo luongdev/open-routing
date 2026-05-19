@@ -1,5 +1,5 @@
 // Phase 6 Plan 09 Task 2: Tests for <or-break-reason-detail>
-// TDD RED — these tests fail until break-reason-detail.ts exists.
+// W0.1-19: Updated to match Ember layout (native checkbox toggles, uk-input, zero sl-*).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import './break-reason-detail.js';
@@ -51,27 +51,23 @@ describe('OrBreakReasonDetail', () => {
     expect(codeInput.value).toBe('break_lunch');
   });
 
-  it('routable field renders as sl-switch with correct helper text', async () => {
+  it('routable toggle rendered with explanation text; _formData.routable matches entity', async () => {
     await mountWithBreakReason(el);
-    const shadow = el.shadowRoot!;
-    // sl-switch for routable must be present
-    const switches = shadow.querySelectorAll('sl-switch');
-    expect(switches.length).toBeGreaterThan(0);
 
-    // The routable switch should have help text (as data attribute or checked state)
     // Check that _formData has routable=true (matches MOCK_BR.routable=true)
     expect((el as any)._formData?.routable).toBe(true);
 
-    // Check helper text in shadow HTML
+    // Check helper text in shadow HTML (Ember uses inline toggle-sub text)
+    const shadow = el.shadowRoot!;
     const shadowHtml = shadow.innerHTML;
     expect(shadowHtml).toContain('still receive routed interactions');
   });
 
-  it('display_order renders as sl-input type="number" min="0" step="1" with helper text', async () => {
+  it('display_order renders as number input with helper text', async () => {
     await mountWithBreakReason(el);
     const shadow = el.shadowRoot!;
     const shadowHtml = shadow.innerHTML;
-    // The display_order field must be a number input (attribute rendered as type="number")
+    // The display_order field must be a number input
     expect(shadowHtml.includes('type="number"') || shadowHtml.includes("type='number'")).toBe(true);
     // Helper text about break picker ordering
     expect(shadowHtml).toContain('break picker');
@@ -92,10 +88,8 @@ describe('OrBreakReasonDetail', () => {
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
 
-    // Initial GET count
     const getCallCountBefore = mockGet.mock.calls.length;
 
-    // Simulate save — should trigger 409
     (el as any)._formData = { ...(el as any)._formData, name: 'SomeName' };
     (el as any)._dirty = true;
     await (el as any)._handleSave();
@@ -111,16 +105,13 @@ describe('OrBreakReasonDetail', () => {
   it('Save disabled until dirty; footer shows version · updated · created', async () => {
     await mountWithBreakReason(el);
 
-    // Save button disabled when not dirty
     expect((el as any)._dirty).toBe(false);
 
-    // Make dirty
     (el as any)._formData = { ...(el as any)._formData, name: 'NewName' };
     (el as any)._dirty = true;
     await (el as any).updateComplete;
     expect((el as any)._dirty).toBe(true);
 
-    // Footer meta should contain version info
     const shadow = el.shadowRoot!;
     const shadowHtml = shadow.innerHTML;
     expect(shadowHtml).toContain('version');
