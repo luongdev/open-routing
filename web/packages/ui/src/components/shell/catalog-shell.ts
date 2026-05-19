@@ -118,7 +118,6 @@ export class OrCatalogShell extends LitElement {
 
     .sidebar {
       grid-area: sidebar;
-      grid-row: 1 / -1;
       background: var(--card, #fafafa);
       border-right: 1px solid var(--border, #e5e5e5);
       display: flex;
@@ -253,6 +252,21 @@ export class OrCatalogShell extends LitElement {
       flex-shrink: 0;
     }
     .hamburger:hover { background: var(--muted, #f5f5f5); }
+
+    .topbar-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--foreground, #111);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .topbar-action:hover { background: var(--muted, #f5f5f5); }
 
     .topbar-spacer { flex: 1; }
 
@@ -766,7 +780,7 @@ export class OrCatalogShell extends LitElement {
             @click=${() => { navigator.clipboard?.writeText(this.orgId); }}
           >org: ${this.orgId.slice(0, 8)}&hellip;</code>
           <button
-            class="hamburger"
+            class="topbar-action"
             @click=${() => { this._currentOrgId = ''; this.orgId = ''; this._client = null; this._navigate('/'); }}
             aria-label="Switch org"
             title="Switch org"
