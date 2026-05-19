@@ -5,7 +5,7 @@
  * that hosts uk-* descendants.
  */
 
-/* Primary button: punchier coral + subtle elevation that lifts on hover */
+/* ── Primary button ─────────────────────────────────────────────── */
 button.uk-button-primary,
 .uk-button-primary {
   background: var(--primary) !important;
@@ -27,8 +27,15 @@ button.uk-button-primary:active,
   transform: translateY(0);
   box-shadow: var(--shadow-sm) !important;
 }
+button.uk-button-primary:disabled,
+.uk-button-primary:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: var(--shadow-xs) !important;
+}
 
-/* Default button: cleaner border + better hover */
+/* ── Default button ─────────────────────────────────────────────── */
 button.uk-button-default,
 .uk-button-default {
   background: var(--card) !important;
@@ -43,8 +50,29 @@ button.uk-button-default:hover,
   background: var(--muted) !important;
   border-color: color-mix(in oklch, var(--border) 70%, var(--foreground) 30%) !important;
 }
+button.uk-button-default:disabled,
+.uk-button-default:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
 
-/* Input: better focus ring */
+/* ── Danger button ──────────────────────────────────────────────── */
+button.uk-button-danger,
+.uk-button-danger {
+  background: var(--destructive) !important;
+  color: var(--destructive-foreground) !important;
+  border: 1px solid var(--destructive) !important;
+  box-shadow: 0 4px 12px -2px oklch(0.55 0.22 25 / 0.30), inset 0 1px 0 0 oklch(1 0 0 / 0.15) !important;
+  font-weight: 600 !important;
+  transition: transform .12s, background .12s, box-shadow .12s !important;
+}
+button.uk-button-danger:hover,
+.uk-button-danger:hover {
+  background: color-mix(in oklch, var(--destructive) 90%, oklch(0.15 0 0)) !important;
+  transform: translateY(-1px);
+}
+
+/* ── Input ──────────────────────────────────────────────────────── */
 input.uk-input,
 .uk-input {
   background: var(--card) !important;
@@ -65,9 +93,69 @@ input.uk-input::placeholder {
   color: var(--muted-foreground);
 }
 
-/* Empty state gets bigger breathing room + icon affordance */
+/* ── Select ─────────────────────────────────────────────────────── */
+select.uk-select,
+.uk-select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-color: var(--card) !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px 14px !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  border-radius: 8px !important;
+  padding: 6px 32px 6px 12px !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: border-color .12s, box-shadow .12s !important;
+}
+select.uk-select:focus,
+select.uk-select:focus-visible,
+.uk-select:focus,
+.uk-select:focus-visible {
+  outline: none !important;
+  border-color: var(--ring) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent) !important;
+}
+select.uk-select:hover,
+.uk-select:hover {
+  border-color: color-mix(in oklch, var(--border) 70%, var(--foreground) 30%) !important;
+}
+
+/* ── Checkbox ───────────────────────────────────────────────────── */
+input.uk-checkbox,
+.uk-checkbox {
+  width: 16px !important;
+  height: 16px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  background: var(--card) !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  transition: background .12s, border-color .12s !important;
+  position: relative !important;
+}
+input.uk-checkbox:checked,
+.uk-checkbox:checked {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 11px 11px !important;
+}
+input.uk-checkbox:focus-visible,
+.uk-checkbox:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent) !important;
+}
+
+/* ── Empty state ────────────────────────────────────────────────── */
 .empty-state {
-  padding: 56px 24px !important;
+  padding: 48px 24px !important;
 }
 .empty-state-icon {
   width: 48px;
@@ -94,14 +182,14 @@ input.uk-input::placeholder {
   display: inline-block;
 }
 
-/* Page title: more confident */
+/* ── Page title ─────────────────────────────────────────────────── */
 .page-title {
-  font-size: 28px !important;
+  font-size: 24px !important;
   font-weight: 700 !important;
   letter-spacing: -0.02em !important;
   line-height: 1.2 !important;
 }
 .page-subtitle {
-  font-size: 14px !important;
+  font-size: 13px !important;
   line-height: 1.5 !important;
 }

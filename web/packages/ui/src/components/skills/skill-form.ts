@@ -36,7 +36,7 @@ export class OrSkillForm extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
       max-width: 680px;
     }
 
@@ -44,11 +44,11 @@ export class OrSkillForm extends LitElement {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .page-title {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
       margin: 0;
       color: var(--foreground);
@@ -78,17 +78,17 @@ export class OrSkillForm extends LitElement {
       border: 1px solid var(--border);
       border-radius: 12px;
       box-shadow: var(--shadow-sm);
-      padding: 32px;
+      padding: 24px;
     }
 
     .step-helper {
       font-size: 13px;
       color: var(--muted-foreground);
-      margin: 0 0 20px;
+      margin: 0 0 14px;
     }
 
     .form-row {
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .form-label {
@@ -96,7 +96,7 @@ export class OrSkillForm extends LitElement {
       font-size: 13px;
       font-weight: 600;
       color: var(--foreground);
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .form-label-required::after {
@@ -174,9 +174,9 @@ export class OrSkillForm extends LitElement {
       border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
       color: var(--destructive);
       border-radius: 8px;
-      padding: 12px 16px;
+      padding: 10px 14px;
       font-size: 13px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -186,8 +186,8 @@ export class OrSkillForm extends LitElement {
       display: flex;
       gap: 8px;
       justify-content: flex-end;
-      margin-top: 24px;
-      padding-top: 20px;
+      margin-top: 16px;
+      padding-top: 14px;
       border-top: 1px solid var(--border);
     }
   `;

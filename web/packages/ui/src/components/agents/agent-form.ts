@@ -58,7 +58,7 @@ export class OrAgentForm extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
       max-width: 680px;
     }
 
@@ -66,11 +66,11 @@ export class OrAgentForm extends LitElement {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .page-title {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
       margin: 0;
       color: var(--foreground);
@@ -100,21 +100,21 @@ export class OrAgentForm extends LitElement {
       border: 1px solid var(--border);
       border-radius: 12px;
       box-shadow: var(--shadow-sm);
-      padding: 32px;
+      padding: 24px;
     }
 
     .step-helper {
       font-size: 13px;
       color: var(--muted-foreground);
-      margin: 0 0 20px;
+      margin: 0 0 14px;
     }
 
     .form-section {
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .form-row {
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .form-label {
@@ -122,7 +122,7 @@ export class OrAgentForm extends LitElement {
       font-size: 13px;
       font-weight: 600;
       color: var(--foreground);
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .form-label-required::after {
@@ -195,7 +195,7 @@ export class OrAgentForm extends LitElement {
       width: 100%;
       border-collapse: collapse;
       font-size: 14px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .skills-table th {
@@ -209,22 +209,45 @@ export class OrAgentForm extends LitElement {
       border-bottom: 1px solid var(--border);
     }
 
+    .skills-table th.col-proficiency { width: 130px; }
+    .skills-table th.col-action { width: 40px; text-align: right; }
+
     .skills-table td {
-      padding: 8px 10px;
+      padding: 10px;
       vertical-align: middle;
       border-bottom: 1px solid var(--border);
     }
 
-    .skills-table code {
-      font-family: var(--uk-font-monospace, monospace);
-      color: var(--muted-foreground);
-      font-size: 13px;
+    .skills-table tr:last-child td { border-bottom: none; }
+
+    .skill-name-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--foreground);
+    }
+
+    .skill-name-cell::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--primary) 60%, transparent);
+      flex-shrink: 0;
+    }
+
+    .skills-table .uk-select {
+      width: 100%;
+      max-width: 110px;
     }
 
     .empty-skills {
       color: var(--muted-foreground);
       font-size: 14px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
+      padding: 8px 0;
     }
 
     /* Skill search picker */
@@ -315,14 +338,14 @@ export class OrAgentForm extends LitElement {
       background: var(--muted);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
     }
 
     .review-row {
       display: flex;
       gap: 8px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       font-size: 14px;
     }
 
@@ -358,9 +381,9 @@ export class OrAgentForm extends LitElement {
       border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
       color: var(--destructive);
       border-radius: 8px;
-      padding: 12px 16px;
+      padding: 10px 14px;
       font-size: 13px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -371,8 +394,8 @@ export class OrAgentForm extends LitElement {
       display: flex;
       gap: 8px;
       justify-content: flex-end;
-      margin-top: 24px;
-      padding-top: 20px;
+      margin-top: 16px;
+      padding-top: 14px;
       border-top: 1px solid var(--border);
     }
   `;
@@ -706,19 +729,19 @@ export class OrAgentForm extends LitElement {
               <thead>
                 <tr>
                   <th>Skill</th>
-                  <th>Proficiency</th>
-                  <th></th>
+                  <th class="col-proficiency">Proficiency</th>
+                  <th class="col-action"></th>
                 </tr>
               </thead>
               <tbody>
                 ${this._assignedSkills.map(
                   (skill) => html`
                     <tr>
-                      <td><code>${skill.name ?? skill.skill_id}</code></td>
+                      <td><span class="skill-name-cell">${skill.name ?? skill.skill_id}</span></td>
                       <td>
                         <select
                           class="uk-select"
-                          style="width:80px"
+                          aria-label="Proficiency for ${skill.name ?? skill.skill_id}"
                           @change=${(e: Event) =>
                             this._handleProficiencyChange(
                               skill.skill_id,
@@ -730,13 +753,14 @@ export class OrAgentForm extends LitElement {
                           )}
                         </select>
                       </td>
-                      <td>
+                      <td style="text-align:right">
                         <button
                           class="icon-btn"
                           title="Remove skill"
+                          aria-label="Remove ${skill.name ?? skill.skill_id}"
                           @click=${() => this._handleRemoveSkill(skill.skill_id)}
                         >
-                          <uk-icon icon="x" height="16" width="16"></uk-icon>
+                          <uk-icon icon="trash-2" height="15" width="15"></uk-icon>
                         </button>
                       </td>
                     </tr>

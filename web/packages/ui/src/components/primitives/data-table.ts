@@ -1,50 +1,26 @@
 // Phase 6 Plan 04: <or-data-table> — reusable table primitive for all 6 entity list pages.
-// Renders a <table> with sticky <thead> and dispatches 'or-row-click' on row click.
-// Row context menu [⋮] uses sl-dropdown with Edit/Disable/Enable/Delete actions.
-// CSS uses design token variables from or-light/or-dark/or-brand themes (D6-19, D6-20).
-// Per-component Shoelace imports for tree-shaking (D6-08).
-// W0.0-19: table uses uk-table/uk-table-hover classes matching or-table's class map.
-// or-table element is registered here to keep custom element registration centralised
-// in the data-table bundle slice.
+// Wave 0.1 polish: pure Lit + Ember tokens, no shoelace. Custom kebab dropdown
+// with lucide icons, divider, and proper hover/active states.
+//
+// Events:
+//   - 'or-row-click'   CustomEvent<{ row }>            — row was clicked (not menu)
+//   - 'or-row-action'  CustomEvent<{ row, action }>    — kebab menu action
 
-import { LitElement, html, css, type TemplateResult } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { LitElement, html, css, nothing, type TemplateResult } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import { repeat } from 'lit/directives/repeat.js';
-
-// Shoelace per-component imports (D6-08: tree-shaking for Phase 7 70KB budget)
-import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import '@shoelace-style/shoelace/dist/components/divider/divider.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 import './or-table.js';
 
-/** Column definition for or-data-table. */
 export interface OrDataTableColumn {
   key: string;
-  /** Column header label. Accepts plain string or a Lit TemplateResult for rich headers (e.g. sl-tooltip). */
   label: string | TemplateResult;
   width?: string;
   align?: 'left' | 'right' | 'center';
-  /** Optional custom renderer — receives the full row object. */
   render?: (row: Record<string, unknown>) => TemplateResult;
 }
 
-/**
- * <or-data-table> — generic data table for all catalog entity list pages.
- *
- * Displays tabular data with sticky header, row hover, and row click events.
- * Provides a [⋮] context menu per row for Edit/Disable/Enable/Delete actions.
- *
- * Events:
- *   - 'or-row-click'   CustomEvent<{ row: object }> — row was clicked (not menu)
- *   - 'or-row-action'  CustomEvent<{ row: object, action: string }> — context menu action
- *
- * Usage:
- *   <or-data-table .columns=${cols} .rows=${rows}></or-data-table>
- */
 @customElement('or-data-table')
 export class OrDataTable extends LitElement {
   static override styles = css`
@@ -58,25 +34,25 @@ export class OrDataTable extends LitElement {
       width: 100%;
       border-collapse: collapse;
       font-size: 14px;
-      color: var(--or-color-text-body, #404040);
+      color: var(--foreground);
     }
 
     thead {
       position: sticky;
       top: 0;
-      z-index: var(--or-z-sticky, 10);
-      background: var(--or-color-sidebar-bg, #f5f5f5);
+      z-index: 10;
+      background: var(--card);
     }
 
     th {
-      padding: 10px 12px;
+      padding: 10px 14px;
       text-align: left;
       font-weight: 600;
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--or-color-text-muted, #737373);
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      color: var(--muted-foreground);
+      border-bottom: 1px solid var(--border);
       white-space: nowrap;
     }
 
@@ -85,64 +61,141 @@ export class OrDataTable extends LitElement {
 
     tbody tr {
       cursor: pointer;
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      border-bottom: 1px solid var(--border);
       transition: background 0.1s ease;
     }
 
     tbody tr:hover {
-      background: var(--or-color-row-hover, #fafafa);
+      background: var(--muted);
     }
 
-    tbody tr:last-child {
-      border-bottom: none;
-    }
+    tbody tr:last-child { border-bottom: none; }
 
     td {
-      padding: 10px 12px;
+      padding: 10px 14px;
       vertical-align: middle;
     }
 
     td[data-align="right"] { text-align: right; }
     td[data-align="center"] { text-align: center; }
 
-    /* Code cells use monospace font (D6-V design token) */
+    /* Reveal row actions on hover (subtle until needed) */
+    tbody tr .row-actions { opacity: 0; transition: opacity .12s; }
+    tbody tr:hover .row-actions { opacity: 1; }
+    tbody tr.menu-open .row-actions { opacity: 1; }
+
     td.code-cell {
-      font-family: var(--or-font-mono, ui-monospace, 'Cascadia Code', 'Fira Code', monospace);
-      color: var(--or-color-code-fg, #1f6e77);
+      font-family: var(--uk-font-monospace, ui-monospace, 'SF Mono', monospace);
+      color: var(--muted-foreground);
       font-size: 13px;
     }
 
-    /* Context menu cell — does NOT trigger row click */
+    /* ── Kebab cell ───────────────────────────────────────────────── */
     td.menu-cell {
-      width: 40px;
-      padding: 0 4px;
-      text-align: center;
+      width: 44px;
+      padding: 0 8px 0 4px;
+      text-align: right;
+      position: relative;
     }
 
-    td.menu-cell sl-dropdown {
-      display: inline-block;
+    .kebab-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color .12s, background .12s;
     }
 
-    /* Compact the action menu */
-    sl-menu {
-      min-width: 140px;
+    .kebab-btn:hover,
+    .kebab-btn:focus-visible {
+      color: var(--foreground);
+      background: color-mix(in oklch, var(--foreground) 10%, transparent);
+      outline: none;
     }
 
-    sl-menu-item::part(base) {
+    .kebab-btn[aria-expanded="true"] {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    /* ── Menu popup ────────────────────────────────────────────────── */
+    .menu-popup {
+      position: absolute;
+      top: 100%;
+      right: 8px;
+      margin-top: 4px;
+      min-width: 168px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-md);
+      padding: 4px;
+      z-index: 50;
+      animation: pop-in .1s ease-out;
+    }
+
+    @keyframes pop-in {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
       font-size: 13px;
-      padding: 6px 12px;
+      color: var(--foreground);
+      text-align: left;
+      transition: background .1s, color .1s;
     }
 
-    sl-menu-item[data-action="delete"]::part(base) {
-      color: var(--sl-color-danger-600, #c01048);
+    .menu-item uk-icon {
+      color: var(--muted-foreground);
+      flex-shrink: 0;
     }
 
-    sl-menu-item[data-action="delete"]::part(base):hover {
-      background: var(--sl-color-danger-50, #fff1f3);
-      color: var(--sl-color-danger-700, #89123e);
+    .menu-item:hover,
+    .menu-item:focus-visible {
+      background: var(--muted);
+      outline: none;
     }
 
-    /* Loading state */
+    .menu-item:hover uk-icon,
+    .menu-item:focus-visible uk-icon {
+      color: var(--foreground);
+    }
+
+    .menu-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 2px;
+    }
+
+    .menu-item--danger {
+      color: var(--destructive);
+    }
+
+    .menu-item--danger uk-icon {
+      color: var(--destructive);
+    }
+
+    .menu-item--danger:hover {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      color: var(--destructive);
+    }
+
+    /* ── Loading skeleton ─────────────────────────────────────────── */
     .loading-container {
       display: flex;
       flex-direction: column;
@@ -160,9 +213,9 @@ export class OrDataTable extends LitElement {
       border-radius: 4px;
       background: linear-gradient(
         90deg,
-        var(--or-color-skeleton-base, #e5e5e5) 0%,
-        var(--or-color-skeleton-highlight, #f0f0f0) 50%,
-        var(--or-color-skeleton-base, #e5e5e5) 100%
+        var(--muted) 0%,
+        color-mix(in oklch, var(--muted) 60%, var(--card)) 50%,
+        var(--muted) 100%
       );
       background-size: 200% 100%;
       animation: shimmer 1.4s linear infinite;
@@ -174,57 +227,65 @@ export class OrDataTable extends LitElement {
       100% { background-position: -200% center; }
     }
 
-    /* Empty state */
     .empty-state {
       padding: 40px 16px;
       text-align: center;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       font-size: 14px;
-    }
-
-    /* Menu trigger button */
-    .menu-trigger {
-      background: none;
-      border: none;
-      padding: 4px 8px;
-      cursor: pointer;
-      color: var(--or-color-text-muted, #737373);
-      border-radius: 4px;
-      font-size: 16px;
-      line-height: 1;
-    }
-
-    .menu-trigger:hover {
-      background: var(--or-color-row-hover, #fafafa);
-      color: var(--or-color-text-body, #404040);
     }
   `;
 
-  /** Column definitions. Order preserved. */
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   @property({ type: Array }) columns: OrDataTableColumn[] = [];
-
-  /** Row data. Each row object's keys correspond to column keys. */
   @property({ type: Array }) rows: Record<string, unknown>[] = [];
-
-  /** Show loading skeleton rows instead of actual data. */
   @property({ type: Boolean }) loading = false;
-
-  /** Number of skeleton rows to show while loading. */
   @property({ type: Number }) skeletonRows = 5;
+
+  @state() private _openMenuRowKey: string | number | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    document.addEventListener('click', this._handleOutsideClick);
+    document.addEventListener('keydown', this._handleEsc);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    document.removeEventListener('click', this._handleOutsideClick);
+    document.removeEventListener('keydown', this._handleEsc);
+  }
+
+  private _handleOutsideClick = (e: MouseEvent): void => {
+    if (this._openMenuRowKey === null) return;
+    const path = e.composedPath();
+    const insideMenu = path.some(
+      (n) =>
+        n instanceof Element &&
+        (n.classList.contains('menu-cell') || n.classList.contains('menu-popup'))
+    );
+    if (!insideMenu) this._openMenuRowKey = null;
+  };
+
+  private _handleEsc = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this._openMenuRowKey !== null) {
+      this._openMenuRowKey = null;
+    }
+  };
 
   private _dispatchRowClick(row: Record<string, unknown>): void {
     this.dispatchEvent(
-      new CustomEvent('or-row-click', {
-        detail: { row },
-        bubbles: true,
-        composed: true,
-      })
+      new CustomEvent('or-row-click', { detail: { row }, bubbles: true, composed: true })
     );
   }
 
   private _dispatchRowAction(row: Record<string, unknown>, action: string, e: Event): void {
-    // Stop propagation so the row click does not also fire
     e.stopPropagation();
+    this._openMenuRowKey = null;
     this.dispatchEvent(
       new CustomEvent('or-row-action', {
         detail: { row, action },
@@ -248,54 +309,84 @@ export class OrDataTable extends LitElement {
   }
 
   private _renderCellValue(col: OrDataTableColumn, row: Record<string, unknown>): TemplateResult {
-    if (col.render) {
-      return col.render(row);
-    }
+    if (col.render) return col.render(row);
     const value = row[col.key];
     return html`${value !== undefined && value !== null ? String(value) : ''}`;
   }
 
-  private _renderContextMenu(row: Record<string, unknown>): TemplateResult {
+  private _renderKebab(row: Record<string, unknown>, rowKey: string | number) {
+    const enabled = row['enabled'] !== false; // default true if undefined
+    const isOpen = this._openMenuRowKey === rowKey;
     return html`
       <td class="menu-cell" @click=${(e: Event) => e.stopPropagation()}>
-        <sl-dropdown>
-          <button slot="trigger" class="menu-trigger" aria-label="Row actions">⋮</button>
-          <sl-menu>
-            <sl-menu-item @click=${(e: Event) => this._dispatchRowAction(row, 'edit', e)}>
-              <sl-icon slot="prefix" name="pencil"></sl-icon>
-              Edit
-            </sl-menu-item>
-            <sl-menu-item @click=${(e: Event) => this._dispatchRowAction(row, 'disable', e)}>
-              <sl-icon slot="prefix" name="slash-circle"></sl-icon>
-              Disable
-            </sl-menu-item>
-            <sl-menu-item @click=${(e: Event) => this._dispatchRowAction(row, 'enable', e)}>
-              <sl-icon slot="prefix" name="check-circle"></sl-icon>
-              Enable
-            </sl-menu-item>
-            <sl-divider></sl-divider>
-            <sl-menu-item data-action="delete" @click=${(e: Event) => this._dispatchRowAction(row, 'delete', e)}>
-              <sl-icon slot="prefix" name="trash"></sl-icon>
-              Delete
-            </sl-menu-item>
-          </sl-menu>
-        </sl-dropdown>
+        <button
+          class="kebab-btn row-actions"
+          aria-haspopup="menu"
+          aria-expanded=${isOpen ? 'true' : 'false'}
+          aria-label="Row actions"
+          @click=${(e: Event) => {
+            e.stopPropagation();
+            this._openMenuRowKey = isOpen ? null : rowKey;
+          }}
+        >
+          <uk-icon icon="more-vertical" height="16" width="16"></uk-icon>
+        </button>
+        ${isOpen
+          ? html`
+              <div class="menu-popup" role="menu">
+                <button
+                  class="menu-item"
+                  role="menuitem"
+                  @click=${(e: Event) => this._dispatchRowAction(row, 'edit', e)}
+                >
+                  <uk-icon icon="pencil" height="14" width="14"></uk-icon>
+                  Edit
+                </button>
+                ${enabled
+                  ? html`
+                      <button
+                        class="menu-item"
+                        role="menuitem"
+                        @click=${(e: Event) => this._dispatchRowAction(row, 'disable', e)}
+                      >
+                        <uk-icon icon="ban" height="14" width="14"></uk-icon>
+                        Disable
+                      </button>
+                    `
+                  : html`
+                      <button
+                        class="menu-item"
+                        role="menuitem"
+                        @click=${(e: Event) => this._dispatchRowAction(row, 'enable', e)}
+                      >
+                        <uk-icon icon="check-circle" height="14" width="14"></uk-icon>
+                        Enable
+                      </button>
+                    `}
+                <div class="menu-divider"></div>
+                <button
+                  class="menu-item menu-item--danger"
+                  role="menuitem"
+                  @click=${(e: Event) => this._dispatchRowAction(row, 'delete', e)}
+                >
+                  <uk-icon icon="trash-2" height="14" width="14"></uk-icon>
+                  Delete
+                </button>
+              </div>
+            `
+          : nothing}
       </td>
     `;
   }
 
   override render() {
-    if (this.loading) {
-      return this._renderLoadingSkeleton();
-    }
+    if (this.loading) return this._renderLoadingSkeleton();
 
-    // or-table's uk-table classes applied directly so Shadow DOM tests can
-    // query tbody/tr without slot distribution breaking the DOM tree.
     return html`
-      <table class="uk-table uk-table-hover" role="grid" aria-label="Data table">
+      <table role="grid" aria-label="Data table">
         <thead>
           <tr>
-            ${this.columns.map(col => html`
+            ${this.columns.map((col) => html`
               <th
                 scope="col"
                 data-align=${col.align ?? 'left'}
@@ -304,7 +395,7 @@ export class OrDataTable extends LitElement {
                 ${col.label}
               </th>
             `)}
-            <th scope="col" style="width: 40px;" aria-label="Actions"></th>
+            <th scope="col" style="width: 44px;" aria-label="Actions"></th>
           </tr>
         </thead>
         <tbody>
@@ -312,27 +403,32 @@ export class OrDataTable extends LitElement {
             this.rows.length === 0,
             () => html`
               <tr>
-                <td colspan=${this.columns.length + 1} class="empty-state">
-                  No data available
-                </td>
+                <td colspan=${this.columns.length + 1} class="empty-state">No data available</td>
               </tr>
             `,
             () => repeat(
               this.rows,
               (row, i) => (row['id'] as string | undefined) ?? i,
-              (row) => html`
-                <tr @click=${() => this._dispatchRowClick(row)}>
-                  ${this.columns.map(col => html`
-                    <td
-                      data-align=${col.align ?? 'left'}
-                      class=${col.key === 'code' ? 'code-cell' : ''}
-                    >
-                      ${this._renderCellValue(col, row)}
-                    </td>
-                  `)}
-                  ${this._renderContextMenu(row)}
-                </tr>
-              `
+              (row, i) => {
+                const rowKey = (row['id'] as string | undefined) ?? i;
+                const isOpen = this._openMenuRowKey === rowKey;
+                return html`
+                  <tr
+                    class=${isOpen ? 'menu-open' : ''}
+                    @click=${() => this._dispatchRowClick(row)}
+                  >
+                    ${this.columns.map((col) => html`
+                      <td
+                        data-align=${col.align ?? 'left'}
+                        class=${col.key === 'code' ? 'code-cell' : ''}
+                      >
+                        ${this._renderCellValue(col, row)}
+                      </td>
+                    `)}
+                    ${this._renderKebab(row, rowKey)}
+                  </tr>
+                `;
+              }
             )
           )}
         </tbody>

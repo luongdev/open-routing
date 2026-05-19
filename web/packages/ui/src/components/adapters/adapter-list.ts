@@ -17,36 +17,36 @@ export class OrAdapterList extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
     }
 
     .page-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .page-header-left {}
 
     .page-title {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
-      margin: 0 0 4px;
+      margin: 0 0 2px;
       color: var(--foreground);
     }
 
     .page-subtitle {
       color: var(--muted-foreground);
-      font-size: 14px;
+      font-size: 13px;
       margin: 0;
     }
 
     .filter-row {
       display: flex;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       flex-wrap: wrap;
     }
 
@@ -243,6 +243,7 @@ export class OrAdapterList extends LitElement {
     {
       key: 'adapter_type',
       label: 'Type',
+      width: '160px',
       render: (row) => {
         const t = String(row['adapter_type'] ?? '');
         return t
@@ -253,6 +254,7 @@ export class OrAdapterList extends LitElement {
     {
       key: 'enabled',
       label: 'Status',
+      width: '100px',
       render: (row) =>
         row['enabled']
           ? html`<span class="status-pill status-pill--success">Active</span>`
@@ -261,34 +263,39 @@ export class OrAdapterList extends LitElement {
     {
       key: 'updated_at',
       label: 'Updated',
+      width: '130px',
       render: (row) => {
         const iso = String(row['updated_at'] ?? '');
         return html`<span title="${iso}" style="font-size:13px;color:var(--muted-foreground)">${this._relativeTime(iso)}</span>`;
       },
     },
-    {
-      key: '⋮',
-      label: '',
-      render: (row) => html`
-        <div class="row-actions">
-          <button
-            class="icon-btn"
-            title="Edit"
-            @click=${(e: Event) => { e.stopPropagation(); this._navigate(`/orgs/${this.orgId}/adapters/${String(row['id'])}`); }}
-          >
-            <uk-icon icon="pencil" height="16" width="16"></uk-icon>
-          </button>
-          <button
-            class="icon-btn icon-btn--danger"
-            title="Delete"
-            @click=${(e: Event) => { e.stopPropagation(); }}
-          >
-            <uk-icon icon="trash-2" height="16" width="16"></uk-icon>
-          </button>
-        </div>
-      `,
-    },
   ];
+
+  private async _handleRowAction(e: CustomEvent): Promise<void> {
+    const { row, action } = e.detail as { row: { id: string; name: string; version: number }; action: string };
+    if (!row?.id) return;
+    if (action === 'edit') {
+      this._navigate(`/orgs/${this.orgId}/adapters/${row.id}`);
+      return;
+    }
+    if (action === 'disable' || action === 'enable') {
+      const body = { enabled: action === 'enable', version: row.version };
+      await this.client.PATCH('/v1/orgs/{org_id}/adapters/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: row.id } },
+        body,
+      } as never);
+      void this._listTask.run();
+      return;
+    }
+    if (action === 'delete') {
+      const ok = window.confirm(`Delete adapter "${row.name}"? This cannot be undone.`);
+      if (!ok) return;
+      await this.client.DELETE('/v1/orgs/{org_id}/adapters/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: row.id } },
+      } as never);
+      void this._listTask.run();
+    }
+  }
 
   private _listTask = new Task(this, {
     task: async ([orgId, search, cursor, includeDisabled, limit]) => {
@@ -479,6 +486,7 @@ export class OrAdapterList extends LitElement {
                     .columns=${this._columns}
                     .rows=${rows}
                     @or-row-click=${this._handleRowClick}
+                    @or-row-action=${this._handleRowAction}
                   ></or-data-table>
                   <or-cursor-paginator
                     .hasMore=${this._hasMore}

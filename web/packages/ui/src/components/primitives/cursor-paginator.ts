@@ -1,38 +1,10 @@
 // Phase 6 Plan 04: <or-cursor-paginator> — cursor-based pagination control.
-// Previous button disabled when cursorStack is empty (no previous pages).
-// Next button disabled when hasMore is false.
-// Limit picker (10/25/50/100) resets to page 1 when changed.
-// Per-component Shoelace imports (D6-08).
+// Wave 0.1 polish: pure Lit + Ember tokens, no shoelace.
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-
-/**
- * <or-cursor-paginator> — cursor-based page navigation control.
- *
- * Works in conjunction with the list component which manages cursorStack.
- * Emits 'or-page-changed' events; the parent handles cursor state.
- *
- * Properties:
- *   - hasMore:     whether there's a next page available
- *   - cursorStack: array of previously-used cursors (for back navigation)
- *   - limit:       current page size (10/25/50/100)
- *
- * Events:
- *   - 'or-page-changed' CustomEvent<{ cursor: string|null; direction: 'next'|'prev'; limit: number }>
- *
- * Usage:
- *   <or-cursor-paginator
- *     .hasMore=${hasMore}
- *     .cursorStack=${cursorStack}
- *     .limit=${limit}
- *   ></or-cursor-paginator>
- */
 @customElement('or-cursor-paginator')
 export class OrCursorPaginator extends LitElement {
   static override styles = css`
@@ -40,62 +12,114 @@ export class OrCursorPaginator extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 12px 0;
-      font-size: 14px;
-      color: var(--or-color-text-muted, #737373);
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--muted-foreground);
+      border-top: 1px solid var(--border);
+      background: var(--card);
+    }
+
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--foreground);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      background: var(--muted);
+      border-color: color-mix(in oklch, var(--border) 60%, var(--foreground) 40%);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .nav-btn uk-icon {
+      color: var(--muted-foreground);
     }
 
     .page-indicator {
-      padding: 0 8px;
+      padding: 0 10px;
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+
+    .spacer {
+      flex: 1;
     }
 
     .limit-label {
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       white-space: nowrap;
     }
 
-    sl-select {
-      width: 80px;
+    .limit-select-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
     }
 
-    sl-button::part(base) {
+    .limit-select {
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--foreground);
       font-size: 13px;
+      padding: 5px 26px 5px 10px;
+      cursor: pointer;
+      transition: border-color .12s, box-shadow .12s;
+    }
+
+    .limit-select:focus,
+    .limit-select:focus-visible {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent);
+    }
+
+    .limit-select-chevron {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--muted-foreground);
     }
   `;
 
-  /** Whether there's a next page (controls Next button disabled state). */
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   @property({ type: Boolean }) hasMore = false;
-
-  /**
-   * Stack of cursors for previous pages (managed by parent component).
-   * Previous button is disabled when this is empty.
-   */
   @property({ type: Array }) cursorStack: string[] = [];
-
-  /** Current page size. */
   @property({ type: Number }) limit = 25;
 
-  /** Internal page display counter (increments on next, decrements on prev). */
   @state() private _pageNum = 1;
 
   private _handlePrev(): void {
     if (this.cursorStack.length === 0) return;
-
-    // The parent manages cursorStack — we emit the event and they update the stack.
-    // We pop from our perspective to signal "go to previous cursor".
     const poppedCursor = this.cursorStack[this.cursorStack.length - 1];
     this._pageNum = Math.max(1, this._pageNum - 1);
-
     this.dispatchEvent(
       new CustomEvent('or-page-changed', {
-        detail: {
-          cursor: poppedCursor ?? null,
-          direction: 'prev',
-          limit: this.limit,
-        },
+        detail: { cursor: poppedCursor ?? null, direction: 'prev', limit: this.limit },
         bubbles: true,
         composed: true,
       })
@@ -104,19 +128,10 @@ export class OrCursorPaginator extends LitElement {
 
   private _handleNext(): void {
     if (!this.hasMore) return;
-
     this._pageNum += 1;
-
-    // Cursor for next page is null here — the parent component knows the
-    // next_cursor from the last API response and passes it via its own state.
-    // Paginator emits the intent; parent resolves the actual cursor value.
     this.dispatchEvent(
       new CustomEvent('or-page-changed', {
-        detail: {
-          cursor: null, // parent fills actual next_cursor from API response
-          direction: 'next',
-          limit: this.limit,
-        },
+        detail: { cursor: null, direction: 'next', limit: this.limit },
         bubbles: true,
         composed: true,
       })
@@ -127,18 +142,11 @@ export class OrCursorPaginator extends LitElement {
     const target = e.target as HTMLSelectElement;
     const newLimit = parseInt(target.value, 10);
     if (isNaN(newLimit)) return;
-
     this._pageNum = 1;
     this.limit = newLimit;
-
-    // Limit change resets pagination to the beginning (cursor: null)
     this.dispatchEvent(
       new CustomEvent('or-page-changed', {
-        detail: {
-          cursor: null,
-          direction: 'next', // effectively "go to first page"
-          limit: newLimit,
-        },
+        detail: { cursor: null, direction: 'next', limit: newLimit },
         bubbles: true,
         composed: true,
       })
@@ -150,40 +158,45 @@ export class OrCursorPaginator extends LitElement {
     const nextDisabled = !this.hasMore;
 
     return html`
-      <sl-button
-        size="small"
-        variant="default"
+      <button
+        class="nav-btn"
         ?disabled=${prevDisabled}
         @click=${this._handlePrev}
         aria-label="Previous page"
       >
+        <uk-icon icon="chevron-left" height="14" width="14"></uk-icon>
         Previous
-      </sl-button>
+      </button>
 
       <span class="page-indicator">Page ${this._pageNum}</span>
 
-      <sl-button
-        size="small"
-        variant="default"
+      <button
+        class="nav-btn"
         ?disabled=${nextDisabled}
         @click=${this._handleNext}
         aria-label="Next page"
       >
         Next
-      </sl-button>
+        <uk-icon icon="chevron-right" height="14" width="14"></uk-icon>
+      </button>
+
+      <div class="spacer"></div>
 
       <span class="limit-label">Rows per page:</span>
-      <sl-select
-        size="small"
-        value=${String(this.limit)}
-        @sl-change=${this._handleLimitChange}
-        aria-label="Rows per page"
-      >
-        <sl-option value="10">10</sl-option>
-        <sl-option value="25">25</sl-option>
-        <sl-option value="50">50</sl-option>
-        <sl-option value="100">100</sl-option>
-      </sl-select>
+      <div class="limit-select-wrap">
+        <select
+          class="limit-select"
+          .value=${String(this.limit)}
+          @change=${this._handleLimitChange}
+          aria-label="Rows per page"
+        >
+          <option value="10" ?selected=${this.limit === 10}>10</option>
+          <option value="25" ?selected=${this.limit === 25}>25</option>
+          <option value="50" ?selected=${this.limit === 50}>50</option>
+          <option value="100" ?selected=${this.limit === 100}>100</option>
+        </select>
+        <uk-icon class="limit-select-chevron" icon="chevron-down" height="14" width="14"></uk-icon>
+      </div>
     `;
   }
 }

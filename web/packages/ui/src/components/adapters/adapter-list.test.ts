@@ -166,9 +166,11 @@ describe('OrAdapterList', () => {
     const dataTable = shadow.querySelector('or-data-table') as any;
     expect(dataTable).toBeTruthy();
 
-    const columns = dataTable.columns as Array<{ key: string; label?: string }>;
-    // Context menu column has key '⋮' or 'actions'
-    const menuCol = columns.find((c) => c.key === '⋮' || c.key === 'actions' || c.label === '⋮');
-    expect(menuCol).toBeTruthy();
+    // Kebab menu is now rendered automatically by <or-data-table> for every row
+    // (Wave 0.1 polish — no separate _actions column needed). Verify the table
+    // primitive exposes a kebab trigger on at least one rendered row.
+    await new Promise((r) => setTimeout(r, 50));
+    const kebab = dataTable.shadowRoot?.querySelector('.kebab-btn');
+    expect(kebab).toBeTruthy();
   });
 });

@@ -17,36 +17,36 @@ export class OrQueueList extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
     }
 
     .page-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .page-header-left {}
 
     .page-title {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
-      margin: 0 0 4px;
+      margin: 0 0 2px;
       color: var(--foreground);
     }
 
     .page-subtitle {
       color: var(--muted-foreground);
-      font-size: 14px;
+      font-size: 13px;
       margin: 0;
     }
 
     .filter-row {
       display: flex;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       flex-wrap: wrap;
     }
 
@@ -140,13 +140,6 @@ export class OrQueueList extends LitElement {
       color: var(--muted-foreground);
     }
 
-    .row-actions {
-      display: flex;
-      gap: 4px;
-      opacity: 0;
-      transition: opacity .12s;
-    }
-
     .icon-btn {
       background: none;
       border: none;
@@ -216,6 +209,7 @@ export class OrQueueList extends LitElement {
     {
       key: 'channel_types',
       label: 'Channels',
+      width: '160px',
       render: (row) => {
         const types = (row['channel_types'] as string[]) ?? [];
         return html`
@@ -240,6 +234,7 @@ export class OrQueueList extends LitElement {
     {
       key: 'enabled',
       label: 'Status',
+      width: '100px',
       render: (row) =>
         row['enabled']
           ? html`<span class="status-pill status-pill--success">Active</span>`
@@ -248,33 +243,39 @@ export class OrQueueList extends LitElement {
     {
       key: 'updated_at',
       label: 'Updated',
+      width: '130px',
       render: (row) => {
         const iso = String(row['updated_at'] ?? '');
         return html`<span title="${iso}" style="font-size:13px;color:var(--muted-foreground)">${this._relativeTime(iso)}</span>`;
       },
     },
-    {
-      key: '_actions',
-      label: '',
-      render: (row) => {
-        const queue = row as unknown as Queue;
-        return html`
-          <div class="row-actions">
-            <button
-              class="icon-btn"
-              title="Edit"
-              @click=${(e: Event) => { e.stopPropagation(); this._navigate(`/orgs/${this.orgId}/queues/${String(row['id'])}`); }}
-            >
-              <uk-icon icon="pencil" height="16" width="16"></uk-icon>
-            </button>
-            ${queue.enabled
-              ? html`<button class="icon-btn" title="Disable" @click=${(e: Event) => { e.stopPropagation(); void this._handleDisable(queue); }}><uk-icon icon="pause-circle" height="16" width="16"></uk-icon></button>`
-              : html`<button class="icon-btn" title="Enable" @click=${(e: Event) => { e.stopPropagation(); void this._handleEnable(queue); }}><uk-icon icon="play-circle" height="16" width="16"></uk-icon></button>`}
-          </div>
-        `;
-      },
-    },
   ];
+
+  private async _handleRowAction(e: CustomEvent): Promise<void> {
+    const { row, action } = e.detail as { row: { id: string; name: string; version: number }; action: string };
+    if (!row?.id) return;
+    if (action === 'edit') {
+      this._navigate(`/orgs/${this.orgId}/queues/${row.id}`);
+      return;
+    }
+    if (action === 'disable' || action === 'enable') {
+      const body = { enabled: action === 'enable', version: row.version };
+      await this.client.PATCH('/v1/orgs/{org_id}/queues/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: row.id } },
+        body,
+      } as never);
+      void this._listTask.run();
+      return;
+    }
+    if (action === 'delete') {
+      const ok = window.confirm(`Delete queue "${row.name}"? This cannot be undone.`);
+      if (!ok) return;
+      await this.client.DELETE('/v1/orgs/{org_id}/queues/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: row.id } },
+      } as never);
+      void this._listTask.run();
+    }
+  }
 
   private _listTask = new Task(this, {
     task: async ([orgId, search, cursor, includeDisabled, limit]) => {
@@ -374,28 +375,6 @@ export class OrQueueList extends LitElement {
     }
   }
 
-  async _handleDisable(queue: Queue): Promise<void> {
-    const result = await this.client.PATCH('/v1/orgs/{org_id}/queues/{id}' as never, {
-      params: { path: { org_id: this.orgId, id: queue.id } },
-      body: { enabled: false, version: queue.version },
-    } as never);
-    const { error } = result as { error: unknown };
-    if (!error) {
-      void this._listTask.run();
-    }
-  }
-
-  async _handleEnable(queue: Queue): Promise<void> {
-    const result = await this.client.PATCH('/v1/orgs/{org_id}/queues/{id}' as never, {
-      params: { path: { org_id: this.orgId, id: queue.id } },
-      body: { enabled: true, version: queue.version },
-    } as never);
-    const { error } = result as { error: unknown };
-    if (!error) {
-      void this._listTask.run();
-    }
-  }
-
   private _renderEmptyState() {
     if (this._search) {
       return html`
@@ -487,6 +466,7 @@ export class OrQueueList extends LitElement {
                     .columns=${this._columns}
                     .rows=${rows}
                     @or-row-click=${this._handleRowClick}
+                    @or-row-action=${this._handleRowAction}
                   ></or-data-table>
                   <or-cursor-paginator
                     .hasMore=${this._hasMore}

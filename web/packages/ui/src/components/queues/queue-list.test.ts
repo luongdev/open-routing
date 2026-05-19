@@ -168,8 +168,11 @@ describe('OrQueueList', () => {
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
 
-    // Call _handleDisable directly with the queue
-    await (el as any)._handleDisable(MOCK_QUEUE);
+    // Disable is dispatched via the data-table kebab menu's 'or-row-action' event
+    // (Wave 0.1 polish — _handleDisable folded into _handleRowAction).
+    await (el as any)._handleRowAction(
+      new CustomEvent('or-row-action', { detail: { row: MOCK_QUEUE, action: 'disable' } })
+    );
 
     expect(mockPatch).toHaveBeenCalled();
     const patchCall = mockPatch.mock.calls[0];

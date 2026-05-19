@@ -32,7 +32,7 @@ export class OrAdapterDetail extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
       background: var(--background);
       min-height: 100%;
     }
@@ -42,7 +42,7 @@ export class OrAdapterDetail extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       gap: 16px;
     }
 
@@ -73,7 +73,7 @@ export class OrAdapterDetail extends LitElement {
     }
 
     .page-title {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
       margin: 0 0 2px;
       color: var(--foreground);
@@ -119,8 +119,8 @@ export class OrAdapterDetail extends LitElement {
     .stats-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
+      gap: 10px;
+      margin-bottom: 14px;
     }
 
     @media (max-width: 640px) {
@@ -131,7 +131,7 @@ export class OrAdapterDetail extends LitElement {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 14px 16px;
+      padding: 12px 14px;
       box-shadow: var(--shadow-xs);
     }
 
@@ -145,7 +145,7 @@ export class OrAdapterDetail extends LitElement {
     }
 
     .stat-value {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
       color: var(--foreground);
     }
@@ -161,16 +161,16 @@ export class OrAdapterDetail extends LitElement {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 20px 24px;
+      padding: 18px 20px;
       box-shadow: var(--shadow-sm);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .card-title {
       font-size: 15px;
       font-weight: 600;
       color: var(--foreground);
-      margin: 0 0 16px;
+      margin: 0 0 12px;
       display: flex;
       align-items: center;
       gap: 7px;
@@ -184,7 +184,7 @@ export class OrAdapterDetail extends LitElement {
     .two-col-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px 24px;
+      gap: 10px 20px;
     }
 
     @media (max-width: 640px) {
@@ -311,10 +311,10 @@ export class OrAdapterDetail extends LitElement {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-radius: 8px;
       font-size: 14px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .alert--danger {
@@ -327,15 +327,15 @@ export class OrAdapterDetail extends LitElement {
     .footer-meta {
       font-size: 12px;
       color: var(--muted-foreground);
-      margin-top: 16px;
-      padding-top: 12px;
+      margin-top: 12px;
+      padding-top: 10px;
       border-top: 1px solid var(--border);
     }
 
     .bottom-bar {
       display: flex;
       gap: 8px;
-      margin-top: 20px;
+      margin-top: 14px;
       justify-content: flex-end;
     }
 

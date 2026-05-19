@@ -50,7 +50,7 @@ export class OrAgentDetail extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
       background: var(--background);
       min-height: 100%;
     }
@@ -60,7 +60,7 @@ export class OrAgentDetail extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       gap: 16px;
     }
 
@@ -91,7 +91,7 @@ export class OrAgentDetail extends LitElement {
     }
 
     .page-title {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
       margin: 0 0 2px;
       color: var(--foreground);
@@ -142,8 +142,8 @@ export class OrAgentDetail extends LitElement {
     .stats-row {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
+      gap: 10px;
+      margin-bottom: 14px;
     }
 
     @media (max-width: 900px) {
@@ -156,7 +156,7 @@ export class OrAgentDetail extends LitElement {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 14px 16px;
+      padding: 12px 14px;
       box-shadow: var(--shadow-xs);
     }
 
@@ -170,7 +170,7 @@ export class OrAgentDetail extends LitElement {
     }
 
     .stat-value {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
       color: var(--foreground);
     }
@@ -186,16 +186,16 @@ export class OrAgentDetail extends LitElement {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 20px 24px;
+      padding: 18px 20px;
       box-shadow: var(--shadow-sm);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .card-title {
       font-size: 15px;
       font-weight: 600;
       color: var(--foreground);
-      margin: 0 0 16px;
+      margin: 0 0 12px;
       display: flex;
       align-items: center;
       gap: 7px;
@@ -209,7 +209,7 @@ export class OrAgentDetail extends LitElement {
     .two-col-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px 24px;
+      gap: 10px 20px;
     }
 
     @media (max-width: 640px) {
@@ -302,10 +302,10 @@ export class OrAgentDetail extends LitElement {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-radius: 8px;
       font-size: 14px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .alert--warning {
@@ -325,21 +325,25 @@ export class OrAgentDetail extends LitElement {
       width: 100%;
       border-collapse: collapse;
       font-size: 14px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .skills-table th {
-      padding: 6px 10px;
+      padding: 8px 10px;
       text-align: left;
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
+      letter-spacing: 0.05em;
       color: var(--muted-foreground);
       border-bottom: 1px solid var(--border);
     }
 
+    .skills-table th.col-proficiency { width: 130px; }
+    .skills-table th.col-action { width: 40px; text-align: right; }
+
     .skills-table td {
-      padding: 8px 10px;
+      padding: 10px;
       vertical-align: middle;
       border-bottom: 1px solid var(--border);
     }
@@ -347,15 +351,32 @@ export class OrAgentDetail extends LitElement {
     .skills-table tr:last-child td { border-bottom: none; }
 
     .skill-name-code {
-      font-family: var(--uk-font-monospace, monospace);
-      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
       color: var(--foreground);
+    }
+
+    .skill-name-code::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--primary) 60%, transparent);
+      flex-shrink: 0;
+    }
+
+    .skills-table .uk-select {
+      width: 100%;
+      max-width: 110px;
     }
 
     .empty-skills {
       color: var(--muted-foreground);
       font-size: 14px;
-      padding: 12px 0 4px;
+      padding: 8px 0 4px;
     }
 
     .skill-helper {
@@ -425,15 +446,15 @@ export class OrAgentDetail extends LitElement {
     .footer-meta {
       font-size: 12px;
       color: var(--muted-foreground);
-      margin-top: 16px;
-      padding-top: 12px;
+      margin-top: 12px;
+      padding-top: 10px;
       border-top: 1px solid var(--border);
     }
 
     .bottom-bar {
       display: flex;
       gap: 8px;
-      margin-top: 20px;
+      margin-top: 14px;
       justify-content: flex-end;
     }
 
@@ -1209,8 +1230,8 @@ export class OrAgentDetail extends LitElement {
               <thead>
                 <tr>
                   <th>Skill</th>
-                  <th>Proficiency</th>
-                  <th></th>
+                  <th class="col-proficiency">Proficiency</th>
+                  <th class="col-action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1221,7 +1242,6 @@ export class OrAgentDetail extends LitElement {
                       <td>
                         <select
                           class="uk-select"
-                          style="width:80px"
                           .value=${String(skill.proficiency)}
                           @change=${(e: Event) =>
                             this._handleProficiencyChange(
@@ -1235,13 +1255,14 @@ export class OrAgentDetail extends LitElement {
                           )}
                         </select>
                       </td>
-                      <td>
+                      <td style="text-align:right">
                         <button
                           class="icon-btn icon-btn--danger"
                           title="Remove skill"
+                          aria-label="Remove ${skill.name ?? skill.skill_id}"
                           @click=${() => this._handleRemoveSkill(skill.skill_id)}
                         >
-                          <uk-icon icon="x" width="14" height="14"></uk-icon>
+                          <uk-icon icon="trash-2" width="15" height="15"></uk-icon>
                         </button>
                       </td>
                     </tr>
