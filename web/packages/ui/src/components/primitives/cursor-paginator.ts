@@ -11,9 +11,9 @@ export class OrCursorPaginator extends LitElement {
     :host {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 20px;
-      padding: 4px 14px;
+      gap: 12px;
+      margin-top: 32px;
+      padding: 8px 14px;
       font-size: 13px;
       color: var(--muted-foreground);
       background: transparent;
@@ -96,12 +96,12 @@ export class OrCursorPaginator extends LitElement {
       box-shadow: 0 2px 6px -1px oklch(0.62 0.22 28 / 0.35), inset 0 1px 0 0 oklch(1 0 0 / 0.15);
     }
 
-    /* Small gap between page-num group and nav arrows */
+    /* Clear gap between page-num group and nav arrows */
     .nav-group {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      margin-left: 4px;
+      gap: 8px;
+      margin-left: 16px;
     }
 
     .spacer {
