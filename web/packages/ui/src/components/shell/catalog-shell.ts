@@ -313,6 +313,12 @@ export class OrCatalogShell extends LitElement {
       overflow-y: auto;
       padding: 24px 32px;
     }
+
+    .bare-shell {
+      min-height: 100vh;
+      background: var(--background);
+      color: var(--foreground);
+    }
   `;
 
   @property({ type: String, attribute: 'org-id' }) orgId = '';
@@ -755,6 +761,10 @@ export class OrCatalogShell extends LitElement {
   }
 
   override render() {
+    // /playground is a public design-system demo — render bare (no shell chrome)
+    if (window.location.pathname === '/playground') {
+      return html`<div class="bare-shell">${this._routes.outlet()}</div>`;
+    }
     // _sidebarOpen=false → sidebar expanded (default); true → collapsed to icon-only
     const collapsed = this._sidebarOpen ? 'app-grid--collapsed' : '';
     return html`
