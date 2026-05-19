@@ -779,8 +779,9 @@ export class OrCatalogShell extends LitElement {
   }
 
   override render() {
-    // /playground/* routes are public design-system demos — render bare (no shell chrome)
-    if (window.location.pathname.startsWith('/playground')) {
+    // /playground and /playground/* are public design-system demos — render bare (no shell chrome)
+    const p = window.location.pathname;
+    if (p === '/playground' || p.startsWith('/playground/')) {
       return html`<div class="bare-shell">${this._routes.outlet()}</div>`;
     }
     // _sidebarOpen=false → sidebar expanded (default); true → collapsed to icon-only
