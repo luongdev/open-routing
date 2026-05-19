@@ -47,7 +47,7 @@ describe('OrQueueList', () => {
     expect(shadow.textContent).toContain('No queues yet');
   });
 
-  it('renders channel_types as individual sl-badge elements per type', async () => {
+  it('renders channel_types as individual channel-tag spans per type', async () => {
     (el as any).orgId = 'test-org-id';
     (el as any).client = {
       GET: vi.fn().mockResolvedValue({
@@ -62,7 +62,7 @@ describe('OrQueueList', () => {
     const shadow = el.shadowRoot!;
     const table = shadow.querySelector('or-data-table') as any;
     expect(table).toBeTruthy();
-    // Each channel_type should produce an sl-badge
+    // Each channel_type should produce a channel-tag span
     // The data-table renders via column renderers; we inspect rows prop to confirm data is there
     expect(table.rows).toHaveLength(1);
     expect(table.rows[0]?.channel_types).toEqual(['voice', 'chat']);
