@@ -531,17 +531,12 @@ export class OrAgentList extends LitElement {
         })}
       </div>
 
-      ${when(
-        this._hasMore || this._cursorStack.length > 0,
-        () => html`
-          <or-cursor-paginator
-            .hasMore=${this._hasMore}
-            .cursorStack=${this._cursorStack}
-            .limit=${this._limit}
-            @or-page-changed=${this._handlePageChanged}
-          ></or-cursor-paginator>
-        `
-      )}
+      <or-cursor-paginator
+        .hasMore=${this._hasMore}
+        .cursorStack=${this._cursorStack}
+        .limit=${this._limit}
+        @or-page-changed=${this._handlePageChanged}
+      ></or-cursor-paginator>
     `;
   }
 }

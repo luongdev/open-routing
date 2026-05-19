@@ -12,7 +12,8 @@ export class OrCursorPaginator extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 14px 0 4px;
+      margin-top: 16px;
+      padding: 4px 2px;
       font-size: 13px;
       color: var(--muted-foreground);
       background: transparent;
