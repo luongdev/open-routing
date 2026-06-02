@@ -12,7 +12,8 @@ Current OpenSpec state:
 
 - Completed capabilities live under `openspec/specs/`.
 - Phase 7 is complete and archived as `openspec/changes/archive/2026-06-02-ship-web-component-embed-bundle/`.
-- Milestone 1/v0.1 is archived; the next milestone is not yet formalized in OpenSpec.
+- Milestone 1/v0.1 is archived.
+- Milestone v0.2 is proposed as `openspec/changes/define-v0-2-core-routing-runtime-foundation/`.
 - Original GSD planning remains in `.planning/` as migration source and historical detail.
 
 ## Locked Stack
@@ -30,4 +31,4 @@ Open Routing owns routing decisions, catalog configuration, state projections, f
 
 ## Current Focus
 
-Milestone 1/v0.1 is closed. The next implementation milestone should be formalized as a new OpenSpec change before work begins.
+Milestone 1/v0.1 is closed. The active planning focus is the proposed v0.2 Core Routing Runtime Foundation change. Implementation should wait until the gray areas in that change are confirmed.
