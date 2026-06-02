@@ -8,7 +8,7 @@
 - `.planning/research/FEATURES.md`: vendor-derived agent state and reservation lifecycle evidence.
 - `.planning/research/PITFALLS.md`: multi-org, state-machine, async context, and routing candidate hazards.
 - `.planning/phases/04-agent-state-machine-go/04-CONTEXT.md`: deferred runtime transitions and agent-state invariants.
-- `web/packages/ui/src/components/vnext/`: flow list, flow builder, simulator, and trace viewer previews.
+- `web/packages/ui/src/components/vnext/`: flow list, flow builder with simulator mode, and trace viewer previews.
 
 ## Findings
 
@@ -59,9 +59,9 @@ Everything else can stay visible only as playground/design vocabulary or future 
 
 ### 6. Determinism requires snapshots and effect controls
 
-The project requirement is deterministic debug: the same flow version, catalog snapshot, interaction input, and state snapshot produce the same trace. The vNext trace data already models step inputs/outputs and effect mock notes.
+The project requirement is deterministic debug: the same flow version, catalog snapshot, interaction input, state snapshot, and clock input produce the same trace. The vNext trace data already models step inputs/outputs and effect mock notes.
 
-Recommendation: simulation and replay must pin flow version, catalog snapshot, interaction input, initial state snapshot, and effect mode. The snapshot contract must store enough catalog and state values to replay without consulting mutable current catalog rows or Redis cache. Live effects should be disabled by default in simulation.
+Recommendation: simulation and replay must pin flow version, catalog snapshot, interaction input, initial state snapshot, virtual clock, reservation outcome signals, candidate tie-break inputs, and effect mode. The snapshot contract must store the minimal catalog/state read set needed for replay without consulting mutable current catalog rows or Redis cache. Live effects should be disabled by default in simulation. Trace equality should compare logical path and outcome, not generated IDs or wall-clock timestamps.
 
 ### 7. Outbox-first is enough for v0.2; SSE can wait
 
@@ -88,5 +88,7 @@ Recommendation: do not make AUTH or full voice/chat/email mock adapters part of 
 
 - The node subset may still be too broad if each node receives production-grade UI and validation in the first pass.
 - Runtime event schema can become audit schema by accident; audit needs org-facing retention and display decisions that may be broader than trace debugging.
-- Existing no-FK posture means every runtime reference check must be app-layer and test-backed.
+- Existing no-FK posture means every runtime reference check must be app-layer and test-backed, including published flows whose catalog references are deleted or disabled after publish.
 - Performance target needs a realistic fixture budget; v0.2 should report p95 first instead of failing builds on an unstable benchmark.
+- Adapter reference terminology can drift from the shipped adapter catalog entity; Wave 0 must confirm whether a separate runtime registry exists.
+- Live wait/reservation timeout behavior must be durable; replay-only virtual clock semantics are not enough for production route execution.

@@ -4,7 +4,7 @@
 
 v0.1 shipped the catalog foundation and Web Component catalog embed. The next useful milestone needs to turn the post-v0.1 product intent from `.planning/PROJECT.md` and the vNext playground previews into an implementation-grade OpenSpec change.
 
-The playground already has flow list, flow builder, simulator, and trace viewer mock screens, but those screens are design previews only. v0.2 should formalize the backend/runtime contracts they need before treating the UI as shipped behavior.
+The playground already has flow list, flow builder with simulator mode, and trace viewer mock screens, but those screens are design previews only. v0.2 should formalize the backend/runtime contracts they need before treating the UI as shipped behavior.
 
 ## What Changes
 
@@ -36,7 +36,7 @@ The playground already has flow list, flow builder, simulator, and trace viewer 
 - Reason: ACD routing needs offered reservations, accept/reject/timeout outcomes, retry actions, and post-interaction cleanup, not a one-shot selected agent.
 - Impact: Existing agent-state invariants are exercised by real runtime paths.
 
-**Trace and simulator**
+**Trace and simulator mode**
 
 - From: trace viewer and simulator are playground previews backed by mock trace data.
 - To: v0.2 defines deterministic simulation and trace records for routing runs.
@@ -56,12 +56,6 @@ The playground already has flow list, flow builder, simulator, and trace viewer 
 
 Migrated from `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md` future requirements, `.planning/research/`, Phase 4 runtime deferrals, and the vNext playground components under `web/packages/ui/src/components/vnext/`.
 
-## Discussion Needed
+## Decision Gates
 
-This change is enough to begin detailed planning, but these gray areas should be confirmed before implementation commits:
-
-- Whether v0.2 should ship runtime APIs plus minimal UI, or only formalize/prove the flow UI first.
-- Whether runtime runs inside the existing Go API process for v0.2 or gets a separate `cmd/runtime` service immediately.
-- Whether realtime delivery remains a deliberate rescope from the old GSD v0.2 notes, or traces/state need SSE in this milestone.
-- Whether graph JSON import/export is enough for the DSL surface, or a proper DSL editor is required.
-- Whether mock adapters should be part of v0.2 acceptance or deferred to the next milestone after runtime foundation.
+Wave 0 decisions are locked as of 2026-06-02; implementation may proceed. The canonical decision table, status fields, business gates, output gates, UI gates, and review gates live in `acceptance.md`. Notable changes from the original recommendations: the runtime runs as a separate `cmd/runtime` process, and the flow builder is embeddable as a Web Component from v0.2.

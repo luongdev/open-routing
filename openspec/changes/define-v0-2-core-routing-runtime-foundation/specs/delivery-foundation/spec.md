@@ -12,6 +12,19 @@ Open Routing SHALL separate runtime execution concerns from catalog and authorin
 - **THEN** it uses a runtime-facing contract for published plans, catalog snapshots, reservations, and events
 - **AND** it does not directly depend on UI component behavior
 
+#### Scenario: Running runtime as its own process
+
+- **WHEN** v0.2 deploys Open Routing
+- **THEN** live route execution runs in a separate `cmd/runtime` process from the `cmd/api` control plane
+- **AND** both share one `internal/runtime` library and the database
+- **AND** simulation runs in-process inside `cmd/api` against the same library without an inter-process call
+
+#### Scenario: Claiming time-driven work safely
+
+- **WHEN** the runtime worker processes due continuations, reservation timeouts, or WrapUp expiry
+- **THEN** it claims due rows transactionally with `FOR UPDATE SKIP LOCKED`
+- **AND** multiple runtime replicas can run the worker without double-firing the same row
+
 ### Requirement: Canonical runtime event envelope
 
 Runtime and adapter-facing events SHALL use a canonical envelope that includes org, event identity, source, type, timestamp, correlation, and payload fields.
@@ -21,6 +34,12 @@ Runtime and adapter-facing events SHALL use a canonical envelope that includes o
 - **WHEN** runtime records a route step, reservation update, adapter command, or state transition
 - **THEN** the event is stored with the canonical envelope
 - **AND** downstream trace or projection reads can correlate related events
+
+#### Scenario: Avoiding audit-contract creep
+
+- **WHEN** v0.2 records runtime events
+- **THEN** those events support debugging, trace, and replay behavior
+- **AND** they do not define the org-facing audit retention contract
 
 ### Requirement: Outbox-first delivery
 

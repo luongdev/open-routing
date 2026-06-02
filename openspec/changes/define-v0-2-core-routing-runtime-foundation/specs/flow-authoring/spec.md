@@ -30,7 +30,7 @@ Open Routing SHALL treat the flow graph as the canonical authoring model for rou
 
 ### Requirement: Flow validation
 
-Open Routing SHALL validate graph structure, supported node kinds, edge connectivity, graph export consistency, catalog references, and adapter registry references before simulation or publish.
+Open Routing SHALL validate graph structure, supported node kinds, edge connectivity, graph export consistency, catalog references, and adapter references before simulation or publish.
 
 #### Scenario: Rejecting invalid catalog reference
 
@@ -47,6 +47,13 @@ Open Routing SHALL publish immutable flow versions and allow rollback to a prior
 - **WHEN** validation passes for a flow draft
 - **THEN** publish creates an immutable flow version
 - **AND** runtime route requests use the currently published version
+
+#### Scenario: Activating a flow entry binding
+
+- **WHEN** publish or rollback activates a flow version for an org, channel, and entry code
+- **THEN** the data model enforces at most one active published binding for that org, channel, and entry code
+- **AND** a successful publish or rollback leaves one active published binding for its target org, channel, and entry code
+- **AND** runtime route requests cannot observe multiple active published versions for the same binding
 
 #### Scenario: Simulating before publish
 

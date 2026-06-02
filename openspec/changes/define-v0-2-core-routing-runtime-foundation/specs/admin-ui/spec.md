@@ -24,6 +24,12 @@ The admin UI SHALL provide API-backed flow list, flow builder, simulator, publis
 - **THEN** the UI shows ordered execution steps and step details from the API
 - **AND** the trace viewer remains usable without exposing cross-org records
 
+#### Scenario: Embedding the flow builder
+
+- **WHEN** a host product mounts the flow builder as a Web Component
+- **THEN** the builder canvas works inside Shadow DOM without event-retargeting or measurement regressions
+- **AND** it uses the same trusted-host org context as the v0.1 catalog embed
+
 ### Requirement: Playground remains non-contractual
 
 The playground SHALL remain a design and regression fixture surface unless a screen is explicitly backed by a v0.2 API contract.
