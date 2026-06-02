@@ -1630,7 +1630,7 @@ export interface components {
         SimulateScriptedReservationOutcome: {
             /** @enum {string} */
             outcome: "accepted" | "rejected" | "timeout";
-            agent_id?: components["schemas"]["UUIDv7"] | null;
+            agent_id?: components["schemas"]["UUIDv7"];
         };
         /** @description An immutable published version of a flow, created by publish. Route requests pin a flow_version_id at start; traces reference it. */
         FlowVersion: {
@@ -1672,7 +1672,7 @@ export interface components {
             /** @description Expected current draft version (optimistic concurrency against the draft being published). */
             version: number;
             /** @description If set, publish only proceeds when the binding's current active version matches (guards against concurrent publish/rollback clobber). */
-            expected_current_flow_version_id?: components["schemas"]["UUIDv7"] | null;
+            expected_current_flow_version_id?: components["schemas"]["UUIDv7"];
         };
         /** @description Re-activate a prior published version for a route entry point. */
         RollbackFlowRequest: {
@@ -1683,7 +1683,7 @@ export interface components {
             /** @example 1 */
             to_version_number: number;
             /** @description If set, rollback only proceeds when the binding's current active version matches (guards against concurrent clobber). */
-            expected_current_flow_version_id?: components["schemas"]["UUIDv7"] | null;
+            expected_current_flow_version_id?: components["schemas"]["UUIDv7"];
         };
         /** @description Deterministic simulation of the draft graph against synthetic input. Does not mutate live reservations or agent state. */
         SimulateFlowRequest: {
@@ -1729,8 +1729,8 @@ export interface components {
             org_id: components["schemas"]["UUIDv7"];
             /** @enum {string} */
             kind: "runtime" | "simulation";
-            route_request_id?: components["schemas"]["UUIDv7"] | null;
-            flow_version_id?: components["schemas"]["UUIDv7"] | null;
+            route_request_id?: components["schemas"]["UUIDv7"];
+            flow_version_id?: components["schemas"]["UUIDv7"];
             outcome?: string | null;
             steps: components["schemas"]["TraceStep"][];
             /** Format: date-time */
@@ -1752,13 +1752,13 @@ export interface components {
             org_id: components["schemas"]["UUIDv7"];
             channel: string;
             entry_code: string;
-            flow_version_id?: components["schemas"]["UUIDv7"] | null;
+            flow_version_id?: components["schemas"]["UUIDv7"];
             flow_code?: string | null;
             /** @enum {string} */
             status: "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
-            failure_code?: components["schemas"]["RoutingFailureCode"] | null;
+            failure_code?: components["schemas"]["RoutingFailureCode"];
             /** @description The trace for this route request, once execution has produced one. */
-            trace_id?: components["schemas"]["UUIDv7"] | null;
+            trace_id?: components["schemas"]["UUIDv7"];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */

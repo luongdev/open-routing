@@ -843,7 +843,6 @@ components:
         agent_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
 
     FlowVersion:
       type: object
@@ -939,7 +938,6 @@ components:
         expected_current_flow_version_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
           description: If set, publish only proceeds when the binding's current active version matches (guards against concurrent publish/rollback clobber).
 
     RollbackFlowRequest:
@@ -962,7 +960,6 @@ components:
         expected_current_flow_version_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
           description: If set, rollback only proceeds when the binding's current active version matches (guards against concurrent clobber).
 
     SimulateFlowRequest:
@@ -1055,11 +1052,9 @@ components:
         route_request_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
         flow_version_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
         outcome:
           type: string
           nullable: true
@@ -1111,7 +1106,6 @@ components:
         flow_version_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
         flow_code:
           type: string
           nullable: true
@@ -1121,11 +1115,9 @@ components:
         failure_code:
           allOf:
             - $ref: "#/components/schemas/RoutingFailureCode"
-          nullable: true
         trace_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
           description: The trace for this route request, once execution has produced one.
         created_at:
           type: string
