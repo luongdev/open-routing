@@ -326,11 +326,11 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		// Phase 5 fix H2: pass external_id through. nil → preserve,
 		// empty-string → NULL (clear), non-empty → new value. See
 		// agents.go UpdateAgent for full rationale.
-		ExternalID:      req.Body.ExternalId,
-		Name:            req.Body.Name,
-		Description:     req.Body.Description,
-		SkillType:       req.Body.SkillType,
-		Enabled:         req.Body.Enabled,
+		ExternalID:  req.Body.ExternalId,
+		Name:        req.Body.Name,
+		Description: req.Body.Description,
+		SkillType:   req.Body.SkillType,
+		Enabled:     req.Body.Enabled,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Phase 04.1: reuse `stored` if pre-UPDATE fetch already ran
@@ -366,7 +366,7 @@ func (h *Handlers) UpdateSkill(ctx context.Context, req api.UpdateSkillRequestOb
 		var body api.UpdateSkill409JSONResponseBody
 		_ = body.FromUpdateSkill409JSONResponseBody1(api.UpdateSkill409JSONResponseBody1{
 			Current: mapSkill(cur),
-			Error:   api.VersionConflict,
+			Error:   api.UpdateSkill409JSONResponseBody1ErrorVersionConflict,
 			Reason:  "version_mismatch",
 		})
 		return api.UpdateSkill409JSONResponse(body), nil

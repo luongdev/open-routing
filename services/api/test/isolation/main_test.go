@@ -46,6 +46,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/imports"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
@@ -241,11 +242,13 @@ func TestMain(m *testing.M) {
 		*catalog.Handlers
 		*state.Server
 		*imports.Importer
+		*flowrt.Endpoints
 	}
 	handlers := &apiHandlers{
-		Handlers: catalogHandlers,
-		Server:   stateServer,
-		Importer: importer,
+		Handlers:  catalogHandlers,
+		Server:    stateServer,
+		Importer:  importer,
+		Endpoints: flowrt.New(flowrt.Deps{OrgDB: orgDB, Cache: catalogCache, Logger: logger}),
 	}
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,

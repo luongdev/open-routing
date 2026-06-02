@@ -86,6 +86,31 @@ These were the major gray areas; `acceptance.md` holds the canonical decision ta
 
 **Node extensibility** — Decided: a node registry plus per-node `Validate`/`Compile`/`Execute` contract and UI descriptor, so the narrow v0.2 subset can grow by O(1) per node during iteration.
 
+## Caching strategy
+
+Redis via the existing `cache.GetOrSet` / `cache.Del` (key = `org:entity:id`). Policy is driven by mutability and hot-path role:
+
+**Cache hard, never invalidate (immutable):**
+- `flow_versions` (write-once; immutability is DB-enforced by a BEFORE UPDATE/DELETE trigger so the "never invalidate" cache cannot desync) — key `org:flow_versions:id`.
+- `compiled_plan` per version — key `org:plan:flow_version_id`. This is the runtime hot-path read for the p95 < 50 ms target.
+- completed `traces` — key `org:traces:id`.
+- TTL: long (immutable; eviction is the only expiry).
+
+**Cache + invalidate on change (hot lookups):**
+- binding resolution `(org, channel, entry_code) → active flow_version_id`, read on every route request — key `org:binding:channel:entry_code`. Short TTL (~60s, so a missed invalidation self-heals) plus explicit `Del` on publish/rollback.
+- flow drafts (`flows`) and catalog entities — existing `cacheTTL`, `Del` on mutation.
+
+**Never cache (correctness-critical or unsuited):**
+- `reservations`, in-flight `route_requests`, `continuations` — the DB partial-unique guards are the source of truth for reservation integrity; a stale cached read could mask a race or trigger a guard-rejected double-book. Same reasoning that rejected the Redis lock: correctness lives in Postgres.
+- `runtime_events` — append-only log; reads are range queries, not point lookups.
+
+**Replay vs live cache:** deterministic simulation/replay reads the pinned `route_requests.read_set_snapshot`, never the live cache, so a trace replays identically regardless of cache state. The live cache serves only the live hot path.
+
+**Invalidation matrix:**
+- flow draft update/delete → `Del org:flows:id`.
+- publish / rollback → `Del org:binding:channel:entry_code` for the changed entry points; new `flow_versions`/plan keys are immutable (no invalidation).
+- reservation / route mutations → nothing to invalidate (uncached).
+
 ## Validation Strategy
 
 - Contract tests for flow APIs and generated clients.

@@ -59,6 +59,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
 )
@@ -113,6 +114,7 @@ type importsApiHandlers struct {
 	*catalog.Handlers
 	*state.Server
 	*Importer
+	*flowrt.Endpoints
 }
 
 // newTestImports constructs ONE Importer per test (D-73):
@@ -182,9 +184,10 @@ func newTestImports(t testing.TB) *TestImports {
 	t.Cleanup(stateServer.Stop)
 
 	handlers := &importsApiHandlers{
-		Handlers: catalogHandlers,
-		Server:   stateServer,
-		Importer: imp,
+		Handlers:  catalogHandlers,
+		Server:    stateServer,
+		Importer:  imp,
+		Endpoints: flowrt.New(flowrt.Deps{OrgDB: orgDB, Cache: c, Logger: logger}),
 	}
 
 	swagger, _ := api.GetSpec()

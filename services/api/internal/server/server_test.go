@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 )
 
 // noopStrictStub returns 500 not_implemented for every catalog method and
@@ -19,7 +20,17 @@ import (
 // assert is middleware chain behaviour, not handler semantics. The real
 // integration tests live in test/isolation against the production
 // catalog.Handlers wiring.
-type noopStrictStub struct{}
+type noopStrictStub struct {
+	// A non-nil *flowrt.Endpoints (flowrtStub) supplies the v0.2 flow-runtime
+	// methods as 501 stubs, so this middleware-only fixture need not hand-list
+	// them — and constructing non-nil avoids the nil-receiver footgun once
+	// Layer 3 gives those methods real bodies (cross-AI review A2/C12).
+	*flowrt.Endpoints
+}
+
+// flowrtStub is a shared non-nil flow-runtime stub. Zero deps is fine here: the
+// server suite exercises the middleware chain, not handler logic.
+var flowrtStub = flowrt.New(flowrt.Deps{})
 
 func (noopStrictStub) GetHealthz(context.Context, api.GetHealthzRequestObject) (api.GetHealthzResponseObject, error) {
 	return api.GetHealthz200JSONResponse(api.HealthResponse{Status: api.Alive}), nil
@@ -40,6 +51,21 @@ func (noopStrictStub) GetReadyz(context.Context, api.GetReadyzRequestObject) (ap
 }
 func (noopStrictStub) ListAdapters(context.Context, api.ListAdaptersRequestObject) (api.ListAdaptersResponseObject, error) {
 	return api.ListAdapters500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+}
+func (noopStrictStub) CreateFlow(context.Context, api.CreateFlowRequestObject) (api.CreateFlowResponseObject, error) {
+	return api.CreateFlow500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+}
+func (noopStrictStub) GetFlow(context.Context, api.GetFlowRequestObject) (api.GetFlowResponseObject, error) {
+	return api.GetFlow500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+}
+func (noopStrictStub) ListFlows(context.Context, api.ListFlowsRequestObject) (api.ListFlowsResponseObject, error) {
+	return api.ListFlows500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+}
+func (noopStrictStub) UpdateFlow(context.Context, api.UpdateFlowRequestObject) (api.UpdateFlowResponseObject, error) {
+	return api.UpdateFlow500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+}
+func (noopStrictStub) DeleteFlow(context.Context, api.DeleteFlowRequestObject) (api.DeleteFlowResponseObject, error) {
+	return api.DeleteFlow500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
 func (noopStrictStub) CreateAdapter(context.Context, api.CreateAdapterRequestObject) (api.CreateAdapterResponseObject, error) {
 	return api.CreateAdapter500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
@@ -141,7 +167,7 @@ func (noopStrictStub) UpdateSkill(context.Context, api.UpdateSkillRequestObject)
 	return api.UpdateSkill500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
 
-var _ api.StrictServerInterface = noopStrictStub{}
+var _ api.StrictServerInterface = noopStrictStub{Endpoints: flowrtStub}
 
 // TestNewMux_HealthzAccessibleWithoutOrgHeader pins the LOCKED middleware
 // chain in NewMux: /healthz must reach the GetHealthz handler with no
@@ -149,7 +175,7 @@ var _ api.StrictServerInterface = noopStrictStub{}
 // /healthz under OrgContext would return 400 here and fail.
 func TestNewMux_HealthzAccessibleWithoutOrgHeader(t *testing.T) {
 	t.Parallel()
-	deps := &Deps{StrictHandlers: noopStrictStub{}}
+	deps := &Deps{StrictHandlers: noopStrictStub{Endpoints: flowrtStub}}
 	mux := NewMux(deps)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -165,7 +191,7 @@ func TestNewMux_HealthzAccessibleWithoutOrgHeader(t *testing.T) {
 // outside the strict-server pipeline, so it must still bypass OrgContext.
 func TestNewMux_MetricsAccessibleWithoutOrgHeader(t *testing.T) {
 	t.Parallel()
-	deps := &Deps{StrictHandlers: noopStrictStub{}}
+	deps := &Deps{StrictHandlers: noopStrictStub{Endpoints: flowrtStub}}
 	mux := NewMux(deps)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -180,7 +206,7 @@ func TestNewMux_MetricsAccessibleWithoutOrgHeader(t *testing.T) {
 // for T-1-01.
 func TestNewMux_V1RequiresOrgHeader(t *testing.T) {
 	t.Parallel()
-	deps := &Deps{StrictHandlers: noopStrictStub{}}
+	deps := &Deps{StrictHandlers: noopStrictStub{Endpoints: flowrtStub}}
 	mux := NewMux(deps)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/orgs/01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e/agents", nil)
@@ -229,7 +255,7 @@ func oversizeBody() []byte {
 // pipeline runs.
 func TestServerMuxChain_BodyLimit_BlocksOversizeBody(t *testing.T) {
 	t.Parallel()
-	deps := &Deps{StrictHandlers: noopStrictStub{}}
+	deps := &Deps{StrictHandlers: noopStrictStub{Endpoints: flowrtStub}}
 	mux := NewMux(deps)
 
 	body := oversizeBody()
@@ -255,7 +281,7 @@ func TestServerMuxChain_BodyLimit_BlocksOversizeBody(t *testing.T) {
 // response is NOT 413 — under-limit bodies make it past BodyLimit.
 func TestServerMuxChain_BodyLimit_PassesUnderLimit(t *testing.T) {
 	t.Parallel()
-	deps := &Deps{StrictHandlers: noopStrictStub{}}
+	deps := &Deps{StrictHandlers: noopStrictStub{Endpoints: flowrtStub}}
 	mux := NewMux(deps)
 
 	// 1 KB body — well under 50 MB.
@@ -288,7 +314,7 @@ func TestServerMuxChain_BodyLimit_PassesUnderLimit(t *testing.T) {
 // the assertion is "not 413".)
 func TestServerMuxChain_BodyLimit_BypassesHealthz(t *testing.T) {
 	t.Parallel()
-	deps := &Deps{StrictHandlers: noopStrictStub{}}
+	deps := &Deps{StrictHandlers: noopStrictStub{Endpoints: flowrtStub}}
 	mux := NewMux(deps)
 
 	body := oversizeBody()

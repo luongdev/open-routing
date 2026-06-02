@@ -17,10 +17,10 @@
 //  9. server.NewMux — chi mux with the LOCKED middleware chain (Recoverer
 //     -> RequestID -> bypass routes -> /v1 Route(OrgContext + catalog)).
 //  10. otelhttp.NewHandler wraps the mux AFTER NewMux completes — Pattern S6
-//      requires the wrap is AFTER every mux.Use call so the request span
-//      exists when OrgContext sets org_id span attribute.
+//     requires the wrap is AFTER every mux.Use call so the request span
+//     exists when OrgContext sets org_id span attribute.
 //  11. http.Server.ListenAndServe in a goroutine; graceful shutdown on
-//      ctx cancel via srv.Shutdown with a 10s timeout.
+//     ctx cancel via srv.Shutdown with a 10s timeout.
 //
 // Anti-pattern guard: this main MUST NOT call migrate.NewWithDatabaseInstance
 // or m.Up. Per D-11 the API never auto-runs migrations — cmd/migrate owns
@@ -48,6 +48,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/imports"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
@@ -208,14 +209,22 @@ func run() int {
 	//   - state.Server contributes 2 agent-state status methods.
 	//   - imports.Importer contributes BulkImportCatalog + GetImportJob
 	//     (Phase 5 — Plan 05-06 added the method bodies).
+	//   - flowrt.Endpoints contributes the v0.2 flow publish/validate/simulate/
+	//     rollback + runtime read endpoints (501 stubs until Layer 3).
 	//
-	// All three embed sets are disjoint — Go's method-set resolution merges
-	// them cleanly. Pitfall 1 is avoided by giving each type a distinct
-	// name (Handlers / Server / Importer; per RESEARCH §F3).
+	// All embed sets are disjoint — Go's method-set resolution merges them
+	// cleanly. Pitfall 1 is avoided by giving each type a distinct name
+	// (Handlers / Server / Importer / Endpoints; per RESEARCH §F3).
+	flowrtEndpoints := flowrt.New(flowrt.Deps{
+		OrgDB:  orgDB,
+		Cache:  catalogCache,
+		Logger: slog.Default(),
+	})
 	type ApiHandlers struct {
 		*catalog.Handlers
 		*state.Server
 		*imports.Importer
+		*flowrt.Endpoints
 	}
 	// Compile-time guarantee that the COMPOSITE satisfies the full
 	// StrictServerInterface. If this line fails to compile, either:
@@ -227,9 +236,10 @@ func run() int {
 	var _ api.StrictServerInterface = (*ApiHandlers)(nil)
 
 	apiHandlers := &ApiHandlers{
-		Handlers: catalogHandlers,
-		Server:   stateServer,
-		Importer: importer,
+		Handlers:  catalogHandlers,
+		Server:    stateServer,
+		Importer:  importer,
+		Endpoints: flowrtEndpoints,
 	}
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).

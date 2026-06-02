@@ -83,6 +83,62 @@ type Channel struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Continuation struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	Kind           string             `json:"kind"`
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	ReservationID  pgtype.UUID        `json:"reservation_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	FlowVersionID  pgtype.UUID        `json:"flow_version_id"`
+	Cursor         []byte             `json:"cursor"`
+	DueAt          pgtype.Timestamptz `json:"due_at"`
+	Status         string             `json:"status"`
+	ClaimedAt      pgtype.Timestamptz `json:"claimed_at"`
+	ClaimExpiresAt pgtype.Timestamptz `json:"claim_expires_at"`
+	ClaimedBy      *string            `json:"claimed_by"`
+	AttemptCount   int32              `json:"attempt_count"`
+	LastError      *string            `json:"last_error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Flow struct {
+	ID        pgtype.UUID        `json:"id"`
+	OrgID     pgtype.UUID        `json:"org_id"`
+	Code      string             `json:"code"`
+	Name      string             `json:"name"`
+	Graph     []byte             `json:"graph"`
+	Enabled   bool               `json:"enabled"`
+	Version   int32              `json:"version"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type FlowEntryBinding struct {
+	ID            pgtype.UUID        `json:"id"`
+	OrgID         pgtype.UUID        `json:"org_id"`
+	Channel       string             `json:"channel"`
+	EntryCode     string             `json:"entry_code"`
+	FlowVersionID pgtype.UUID        `json:"flow_version_id"`
+	FlowCode      string             `json:"flow_code"`
+	Active        bool               `json:"active"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type FlowVersion struct {
+	ID                pgtype.UUID        `json:"id"`
+	OrgID             pgtype.UUID        `json:"org_id"`
+	FlowID            pgtype.UUID        `json:"flow_id"`
+	FlowCode          string             `json:"flow_code"`
+	VersionNumber     int32              `json:"version_number"`
+	Graph             []byte             `json:"graph"`
+	CompiledPlan      []byte             `json:"compiled_plan"`
+	PlanFormatVersion int32              `json:"plan_format_version"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
 type ImportJob struct {
 	ID             pgtype.UUID        `json:"id"`
 	OrgID          pgtype.UUID        `json:"org_id"`
@@ -112,6 +168,47 @@ type Queue struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Reservation struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	State          string             `json:"state"`
+	Attempt        int32              `json:"attempt"`
+	OfferedAt      pgtype.Timestamptz `json:"offered_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	Reason         *string            `json:"reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RouteRequest struct {
+	ID               pgtype.UUID        `json:"id"`
+	OrgID            pgtype.UUID        `json:"org_id"`
+	Channel          string             `json:"channel"`
+	EntryCode        string             `json:"entry_code"`
+	FlowVersionID    pgtype.UUID        `json:"flow_version_id"`
+	FlowCode         *string            `json:"flow_code"`
+	InteractionInput []byte             `json:"interaction_input"`
+	Status           string             `json:"status"`
+	FailureCode      *string            `json:"failure_code"`
+	ReadSetSnapshot  []byte             `json:"read_set_snapshot"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RuntimeEvent struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	Source         string             `json:"source"`
+	Type           string             `json:"type"`
+	CorrelationID  pgtype.UUID        `json:"correlation_id"`
+	Payload        []byte             `json:"payload"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type Skill struct {
 	ID          pgtype.UUID        `json:"id"`
 	OrgID       pgtype.UUID        `json:"org_id"`
@@ -124,4 +221,15 @@ type Skill struct {
 	Version     int32              `json:"version"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Trace struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	Kind           string             `json:"kind"`
+	FlowVersionID  pgtype.UUID        `json:"flow_version_id"`
+	Steps          []byte             `json:"steps"`
+	Outcome        *string            `json:"outcome"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }

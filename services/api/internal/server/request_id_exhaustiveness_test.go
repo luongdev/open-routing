@@ -397,7 +397,7 @@ func TestInjectRequestID_AllErrorTypes(t *testing.T) {
 	var updateSkill409 api.UpdateSkill409JSONResponseBody
 	require.NoError(t, updateSkill409.FromUpdateSkill409JSONResponseBody1(api.UpdateSkill409JSONResponseBody1{
 		Current: api.Skill{},
-		Error:   api.VersionConflict,
+		Error:   api.UpdateSkill409JSONResponseBody1ErrorVersionConflict,
 		Reason:  "stale",
 	}))
 	var updateQueue409 api.UpdateQueue409JSONResponseBody
