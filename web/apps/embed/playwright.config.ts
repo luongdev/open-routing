@@ -7,7 +7,7 @@ export default defineConfig({
   retries: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure'
@@ -17,27 +17,27 @@ export default defineConfig({
       name: 'react',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:4173/hosts/react/'
+        baseURL: 'http://127.0.0.1:4173/react/'
       }
     },
     {
       name: 'vue',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:4173/hosts/vue/'
+        baseURL: 'http://127.0.0.1:4173/vue/'
       }
     },
     {
       name: 'html',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:4173/hosts/html/'
+        baseURL: 'http://127.0.0.1:4173/html/'
       }
     }
   ],
   webServer: {
-    command: 'pnpm --filter @open-routing/catalog-embed preview',
-    url: 'http://localhost:4173',
+    command: 'pnpm --filter @open-routing/catalog-embed exec vite preview --host 127.0.0.1 --port 4173',
+    url: 'http://127.0.0.1:4173/html/',
     reuseExistingServer: true,
     timeout: 60_000
   }

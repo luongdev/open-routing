@@ -90,7 +90,11 @@ func NewMux(deps *Deps) http.Handler {
 	// chi root means preflight requests for both bypass routes (D-21:
 	// /healthz, /readyz, /metrics, /openapi.yaml, /docs) and /v1/* paths
 	// return 200 + CORS headers without requiring X-Org-Id (D7-16).
-	r.Use(appmw.NewCORS(deps.Config.CORSAllowedOrigins))
+	corsAllowedOrigins := []string{}
+	if deps.Config != nil {
+		corsAllowedOrigins = deps.Config.CORSAllowedOrigins
+	}
+	r.Use(appmw.NewCORS(corsAllowedOrigins))
 
 	// (3) /metrics: Phase 1 stub — NOT in the generated spec; registered
 	//     separately as a bare chi route at root (D-21 bypass list).

@@ -1,14 +1,13 @@
 // Phase 6 Plan 10 Task 2: <or-channel-form> — 3-step wizard for Channel create.
 // Steps: Basics (code/name/channel_type/external_id/enabled) → Default queue (or-queue-picker) → Review.
 // D6-17: multi-step for Channel — same or-form-wizard component with steps count=3.
-// D04_1-02: code field uses or-code-input (required, writable on create).
 // ADMIN-04: only this.client.POST — never direct fetch().
 // ajv validateCreateChannel called on final submit.
 // T-06-10-01: channel_type enum enforced client-side by ajv + server-side 422.
 // Step 2: default_queue_id is optional (null allowed) per plan.
 // W0.1-14: Ember dashboard style — adoptShadowSheets, uk-button/uk-input, uk-icon, zero sl-*.
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
@@ -287,7 +286,10 @@ export class OrChannelForm extends LitElement {
   @state() _errors: Record<string, string> = {};
   @state() private _apiError: string | null = null;
   @state() private _submitting = false;
+  @state() private _codeEditable = false;
+  @state() private _codeDraft = '';
   private _codeAutoFill = true;
+  private _codeDraftTouched = false;
 
   // --- Navigation ---
 
@@ -303,6 +305,8 @@ export class OrChannelForm extends LitElement {
 
   async _handleNext(): Promise<void> {
     if (this._currentStep === 0) {
+      if (!this._ensureCodeEditClosed()) return;
+
       const errors: Record<string, string> = {};
 
       if (!this._formData.code) {
@@ -340,6 +344,10 @@ export class OrChannelForm extends LitElement {
 
   async _handleSubmit(): Promise<void> {
     if (this._submitting) return;
+    if (!this._ensureCodeEditClosed()) {
+      this._currentStep = 0;
+      return;
+    }
 
     // Build validation body — omit default_queue_id if null to work around
     // generated ajv validator's allOf+nullable UUID handling (erroneously fails null).
@@ -422,29 +430,82 @@ export class OrChannelForm extends LitElement {
     }
   }
 
+  private _clearFieldError(field: string): void {
+    if (!this._errors[field]) return;
+    const errors = { ...this._errors };
+    delete errors[field];
+    this._errors = errors;
+  }
+
+  private _handleCodeEdit(): void {
+    const code = this._formData.code || nameToCode(this._formData.name);
+    this._codeEditable = true;
+    this._codeDraft = code;
+    this._codeDraftTouched = false;
+    if (this._codeAutoFill && this._formData.code !== code) {
+      this._formData = { ...this._formData, code };
+    }
+  }
+
+  private _handleCodeInput(e: CustomEvent<{ value: string }>): void {
+    this._codeDraft = e.detail.value;
+    this._codeDraftTouched = true;
+    this._clearFieldError('code');
+  }
+
+  private _handleCodeSave(): void {
+    const code = this._codeDraft;
+    if (!code) {
+      this._errors = { ...this._errors, code: 'Code is required.' };
+      return;
+    }
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(code)) {
+      this._errors = { ...this._errors, code: 'Code must start with a lowercase letter and contain only lowercase letters, digits, and underscores.' };
+      return;
+    }
+    this._formData = { ...this._formData, code };
+    this._codeAutoFill = false;
+    this._codeEditable = false;
+    this._codeDraft = '';
+    this._codeDraftTouched = false;
+    this._clearFieldError('code');
+  }
+
+  private _handleCodeCancel(): void {
+    this._codeEditable = false;
+    this._codeDraft = '';
+    this._codeDraftTouched = false;
+    if (this._codeAutoFill) {
+      this._formData = { ...this._formData, code: nameToCode(this._formData.name) };
+    }
+    this._clearFieldError('code');
+  }
+
+  private _handleNameInput(name: string): void {
+    const code = nameToCode(name);
+    this._formData = {
+      ...this._formData,
+      name,
+      ...(this._codeAutoFill ? { code } : {}),
+    };
+    if (this._codeEditable && this._codeAutoFill && !this._codeDraftTouched) {
+      this._codeDraft = code;
+    }
+    if (name) this._clearFieldError('name');
+    if (this._codeAutoFill && code) this._clearFieldError('code');
+  }
+
+  private _ensureCodeEditClosed(): boolean {
+    if (!this._codeEditable) return true;
+    this._errors = { ...this._errors, code: 'Save or cancel code before continuing.' };
+    return false;
+  }
+
   // --- Step content renderers ---
 
   private _renderBasicsStep() {
     return html`
       <p class="step-helper">Define the channel's identity. Code cannot be changed after create.</p>
-
-      <div class="form-row">
-        <or-code-input
-          .value=${this._formData.code}
-          .required=${true}
-          @or-code-input=${(e: CustomEvent) => {
-            this._codeAutoFill = false;
-            this._formData = { ...this._formData, code: e.detail.value };
-            if (this._errors['code']) {
-              this._errors = { ...this._errors, code: '' };
-            }
-          }}
-        ></or-code-input>
-        ${when(
-          this._errors['code'],
-          () => html`<div class="field-error">${this._errors['code']}</div>`
-        )}
-      </div>
 
       <div class="form-row">
         <label class="form-label form-label-required" for="ch-name">Name</label>
@@ -456,17 +517,34 @@ export class OrChannelForm extends LitElement {
           .value=${this._formData.name}
           placeholder="e.g. Main Voice Line"
           @input=${(e: Event) => {
-            const name = (e.target as HTMLInputElement).value;
-            this._formData = {
-              ...this._formData,
-              name,
-              ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
-            };
+            this._handleNameInput((e.target as HTMLInputElement).value);
           }}
         />
         ${when(
           this._errors['name'],
           () => html`<div class="field-error">${this._errors['name']}</div>`
+        )}
+      </div>
+
+      <div class="form-row">
+        <or-code-input
+          .value=${this._codeEditable ? this._codeDraft : this._formData.code}
+          .required=${true}
+          .readonly=${!this._codeEditable}
+          .editButton=${!this._codeEditable}
+          .saveButton=${this._codeEditable}
+          .cancelButton=${this._codeEditable}
+          .helperText=${this._codeEditable
+            ? 'Custom code. Cannot be changed after create.'
+            : 'Generated from name. Cannot be changed after create.'}
+          @or-code-edit=${() => this._handleCodeEdit()}
+          @or-code-input=${(e: CustomEvent<{ value: string }>) => this._handleCodeInput(e)}
+          @or-code-save=${() => this._handleCodeSave()}
+          @or-code-cancel=${() => this._handleCodeCancel()}
+        ></or-code-input>
+        ${when(
+          this._errors['code'],
+          () => html`<div class="field-error">${this._errors['code']}</div>`
         )}
       </div>
 

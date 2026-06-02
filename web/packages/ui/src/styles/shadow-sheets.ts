@@ -1,14 +1,3 @@
-// Shared constructed CSSStyleSheets for Shadow DOM hosts that render uk-* descendants.
-//
-// Frankenstyle CSS lives at :root in the main document. Shadow DOM roots cannot
-// inherit from it — they need the sheets adopted explicitly. ?inline imports give
-// us the raw CSS text at bundle time so we can call sheet.replaceSync() once and
-// share the same CSSStyleSheet object across all shadow roots (spec §4.1: one
-// CSSStyleSheet instance can be adopted by multiple shadow roots with no copy).
-//
-// Usage: call adoptShadowSheets(this.shadowRoot) in createRenderRoot() for any
-// LitElement that uses Shadow DOM and renders uk-* class descendants.
-
 import frankenCss from 'frankenstyle/css/frankenstyle-kit.css?inline';
 import emberVarsCss from './ember-shadow-vars.css?inline';
 import compatOrTokensCss from './compat-or-tokens.css?inline';
@@ -25,26 +14,37 @@ let _frankenSheet: CSSStyleSheet | null = null;
 let _emberVarsSheet: CSSStyleSheet | null = null;
 let _compatOrSheet: CSSStyleSheet | null = null;
 let _polishSheet: CSSStyleSheet | null = null;
+let _darkObserver: MutationObserver | null = null;
+const _darkHosts = new Set<Element>();
 
 export function getShadowSheets(): CSSStyleSheet[] {
   if (!_frankenSheet) _frankenSheet = makeSheet(frankenCss);
   if (!_emberVarsSheet) _emberVarsSheet = makeSheet(emberVarsCss);
   if (!_compatOrSheet) _compatOrSheet = makeSheet(compatOrTokensCss);
   if (!_polishSheet) _polishSheet = makeSheet(emberPolishCss);
-  // Polish LAST so it overrides Frankenstyle defaults.
   return [_frankenSheet, _emberVarsSheet, _compatOrSheet, _polishSheet];
 }
 
-/**
- * Adopt Frankenstyle + Ember token sheets into a shadow root.
- * Call this inside createRenderRoot() after super.createRenderRoot():
- *
- *   override createRenderRoot() {
- *     const root = super.createRenderRoot() as ShadowRoot;
- *     adoptShadowSheets(root);
- *     return root;
- *   }
- */
+function syncDarkHosts(): void {
+  const dark = document.documentElement.classList.contains('dark');
+  for (const host of [..._darkHosts]) {
+    if (!host.isConnected) {
+      _darkHosts.delete(host);
+      continue;
+    }
+    host.classList.toggle('dark', dark);
+  }
+}
+
+function registerDarkHost(host: Element): void {
+  _darkHosts.add(host);
+  syncDarkHosts();
+  if (_darkObserver) return;
+  _darkObserver = new MutationObserver(syncDarkHosts);
+  _darkObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
+
 export function adoptShadowSheets(root: ShadowRoot): void {
   root.adoptedStyleSheets = [...root.adoptedStyleSheets, ...getShadowSheets()];
+  registerDarkHost(root.host);
 }

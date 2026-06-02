@@ -450,11 +450,11 @@ export class OrChannelList extends LitElement {
     }
     return html`
       <div class="empty-state">
-        <p>No channels yet. Click <strong>+ Add Channel</strong> to create your first.</p>
+        <p>No channels yet. Click <strong>+ Create channel</strong> to add your first.</p>
         <button
           class="uk-button uk-button-primary uk-button-small"
           @click=${() => this._navigate(`/orgs/${this.orgId}/channels/new`)}
-        >+ Add Channel</button>
+        >+ Create channel</button>
       </div>
     `;
   }
@@ -469,7 +469,7 @@ export class OrChannelList extends LitElement {
         <button
           class="uk-button uk-button-primary"
           @click=${() => this._navigate(`/orgs/${this.orgId}/channels/new`)}
-        >+ Add Channel</button>
+        >+ Create channel</button>
       </div>
 
       <div class="filter-row">

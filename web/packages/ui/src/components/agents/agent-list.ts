@@ -456,7 +456,7 @@ export class OrAgentList extends LitElement {
           <button
             class="uk-button uk-button-primary"
             @click=${() => this._navigate(`/orgs/${this.orgId}/agents/new`)}
-          >+ Add Agent</button>
+          >+ Create agent</button>
         `}
       </div>
 

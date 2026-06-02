@@ -1,6 +1,7 @@
 import { html, type TemplateResult } from 'lit';
 import type { ApiClient } from '../../api/client.js';
-import { MOCK_ORG_ID, MOCK_AGENTS, MOCK_SKILLS, MOCK_QUEUES, MOCK_CHANNELS, MOCK_ADAPTERS, MOCK_BREAK_REASONS, MOCK_IMPORT_JOB } from './playground-mock-data.js';
+import { MOCK_ORG_ID, MOCK_AGENTS, MOCK_SKILLS, MOCK_QUEUES, MOCK_CHANNELS, MOCK_ADAPTERS, MOCK_BREAK_REASONS, MOCK_IMPORT_JOB, MOCK_FLOWS } from './playground-mock-data.js';
+import '../vnext/index.js';
 
 export interface ScreenEntry {
   id: string;
@@ -156,5 +157,29 @@ export const SCREENS: ReadonlyArray<ScreenEntry> = [
     label: 'Import Result',
     group: 'Operations',
     render: (c) => html`<or-import-result .client=${c} .orgId=${MOCK_ORG_ID} .importId=${IMPORT_JOB_ID}></or-import-result>`,
+  },
+
+  // vNext Preview — design-only screens for the v0.2+ workflow milestone.
+  // Mocks read from playground-mock-data; no real API behind them.
+  {
+    id: 'vnext-flow-list',
+    label: 'Flow List',
+    group: 'vNext Preview',
+    render: () => html`<or-flow-list .orgId=${MOCK_ORG_ID}></or-flow-list>`,
+  },
+  {
+    id: 'vnext-flow-builder',
+    label: 'Flow Builder',
+    group: 'vNext Preview',
+    render: () => html`<or-flow-builder .orgId=${MOCK_ORG_ID} .flowId=${MOCK_FLOWS[0]!.id}></or-flow-builder>`,
+  },
+  // Simulator merged into Flow Builder (sim mode toggle in toolbar). The
+  // standalone 3-pane runner was the wrong shape — authoring + running
+  // need to share canvas state.
+  {
+    id: 'vnext-trace-viewer',
+    label: 'Trace Viewer',
+    group: 'vNext Preview',
+    render: () => html`<or-trace-viewer .orgId=${MOCK_ORG_ID}></or-trace-viewer>`,
   },
 ];

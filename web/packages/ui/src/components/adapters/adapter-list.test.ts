@@ -45,7 +45,9 @@ describe('OrAdapterList', () => {
 
     const shadow = el.shadowRoot!;
     const text = shadow.textContent ?? '';
-    expect(text).toMatch(/No adapters yet/i);
+    expect(text).toContain('No adapters yet. Click + Create adapter to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create adapter');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create adapter');
   });
 
   it('renders adapter_type as plain text (not badge/monospace)', async () => {

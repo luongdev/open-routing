@@ -1,6 +1,5 @@
 // Phase 6 Plan 08 Task 2: <or-queue-form> — Single-step form for Queue create.
 // D6-17: Single-step form (queue is a simple entity, no multi-step needed).
-// D04_1-02: code field uses or-code-input (required, writable on create).
 // ADMIN-04: only this.client.POST — never direct fetch().
 // ajv validateCreateQueue called on submit; channel_types required minItems=1.
 // W0.1-12: redesigned to Ember healthcare-dashboard style (no sl-* in shadow).
@@ -284,7 +283,10 @@ export class OrQueueForm extends LitElement {
   @state() private _errors: Record<string, string> = {};
   @state() private _apiError: string | null = null;
   @state() private _submitting = false;
+  @state() private _codeEditable = false;
+  @state() private _codeDraft = '';
   private _codeAutoFill = true;
+  private _codeDraftTouched = false;
 
   // --- Navigation ---
 
@@ -315,6 +317,7 @@ export class OrQueueForm extends LitElement {
 
   async _handleSubmit(): Promise<void> {
     if (this._submitting) return;
+    if (!this._ensureCodeEditClosed()) return;
 
     if (!this._formData.channel_types || this._formData.channel_types.length === 0) {
       this._errors = { ...this._errors, channel_types: 'Select at least one channel type.' };
@@ -387,6 +390,77 @@ export class OrQueueForm extends LitElement {
     }
   }
 
+  private _clearFieldError(field: string): void {
+    if (!this._errors[field]) return;
+    const errors = { ...this._errors };
+    delete errors[field];
+    this._errors = errors;
+  }
+
+  private _handleCodeEdit(): void {
+    const code = this._formData.code || nameToCode(this._formData.name);
+    this._codeEditable = true;
+    this._codeDraft = code;
+    this._codeDraftTouched = false;
+    if (this._codeAutoFill && this._formData.code !== code) {
+      this._formData = { ...this._formData, code };
+    }
+  }
+
+  private _handleCodeInput(e: CustomEvent<{ value: string }>): void {
+    this._codeDraft = e.detail.value;
+    this._codeDraftTouched = true;
+    this._clearFieldError('code');
+  }
+
+  private _handleCodeSave(): void {
+    const code = this._codeDraft;
+    if (!code) {
+      this._errors = { ...this._errors, code: 'Code is required.' };
+      return;
+    }
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(code)) {
+      this._errors = { ...this._errors, code: 'Code must start with a lowercase letter and contain only lowercase letters, digits, and underscores.' };
+      return;
+    }
+    this._formData = { ...this._formData, code };
+    this._codeAutoFill = false;
+    this._codeEditable = false;
+    this._codeDraft = '';
+    this._codeDraftTouched = false;
+    this._clearFieldError('code');
+  }
+
+  private _handleCodeCancel(): void {
+    this._codeEditable = false;
+    this._codeDraft = '';
+    this._codeDraftTouched = false;
+    if (this._codeAutoFill) {
+      this._formData = { ...this._formData, code: nameToCode(this._formData.name) };
+    }
+    this._clearFieldError('code');
+  }
+
+  private _handleNameInput(name: string): void {
+    const code = nameToCode(name);
+    this._formData = {
+      ...this._formData,
+      name,
+      ...(this._codeAutoFill ? { code } : {}),
+    };
+    if (this._codeEditable && this._codeAutoFill && !this._codeDraftTouched) {
+      this._codeDraft = code;
+    }
+    if (name) this._clearFieldError('name');
+    if (this._codeAutoFill && code) this._clearFieldError('code');
+  }
+
+  private _ensureCodeEditClosed(): boolean {
+    if (!this._codeEditable) return true;
+    this._errors = { ...this._errors, code: 'Save or cancel code before continuing.' };
+    return false;
+  }
+
   // --- Render ---
 
   override render() {
@@ -408,26 +482,6 @@ export class OrQueueForm extends LitElement {
       <div class="form-card">
         <p class="step-helper">Define the queue's identity. Code cannot be changed after create.</p>
 
-        <!-- code -->
-        <div class="form-row">
-          <or-code-input
-            .value=${this._formData.code}
-            .required=${true}
-            @or-code-input=${(e: CustomEvent) => {
-              this._codeAutoFill = false;
-              this._formData = { ...this._formData, code: e.detail.value };
-              if (this._errors['code']) {
-                this._errors = { ...this._errors, code: '' };
-              }
-            }}
-          ></or-code-input>
-          ${when(
-            this._errors['code'],
-            () => html`<div class="field-error">${this._errors['code']}</div>`
-          )}
-        </div>
-
-        <!-- name -->
         <div class="form-row">
           <label class="form-label form-label-required" for="queue-name">Name</label>
           <input
@@ -438,17 +492,34 @@ export class OrQueueForm extends LitElement {
             .value=${name}
             placeholder="e.g. Billing Support Queue"
             @input=${(e: Event) => {
-              const n = (e.target as HTMLInputElement).value;
-              this._formData = {
-                ...this._formData,
-                name: n,
-                ...(this._codeAutoFill ? { code: nameToCode(n) } : {}),
-              };
+              this._handleNameInput((e.target as HTMLInputElement).value);
             }}
           />
           ${when(
             this._errors['name'],
             () => html`<div class="field-error">${this._errors['name']}</div>`
+          )}
+        </div>
+
+        <div class="form-row">
+          <or-code-input
+            .value=${this._codeEditable ? this._codeDraft : this._formData.code}
+            .required=${true}
+            .readonly=${!this._codeEditable}
+            .editButton=${!this._codeEditable}
+            .saveButton=${this._codeEditable}
+            .cancelButton=${this._codeEditable}
+            .helperText=${this._codeEditable
+              ? 'Custom code. Cannot be changed after create.'
+              : 'Generated from name. Cannot be changed after create.'}
+            @or-code-edit=${() => this._handleCodeEdit()}
+            @or-code-input=${(e: CustomEvent<{ value: string }>) => this._handleCodeInput(e)}
+            @or-code-save=${() => this._handleCodeSave()}
+            @or-code-cancel=${() => this._handleCodeCancel()}
+          ></or-code-input>
+          ${when(
+            this._errors['code'],
+            () => html`<div class="field-error">${this._errors['code']}</div>`
           )}
         </div>
 

@@ -2,34 +2,38 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Catalog Foundation
-status: executing
-stopped_at: Completed 07-w1-01 Ember-style catalog-shell
-last_updated: "2026-05-19T07:55:00.000Z"
-last_activity: 2026-05-19 -- Phase 07 W1-01 catalog-shell Ember layout complete
+status: archived
+stopped_at: Milestone v0.1 Catalog Foundation archived into OpenSpec
+last_updated: "2026-06-02T10:15:00.000Z"
+last_activity: 2026-06-02 -- v0.1 archived; OpenSpec is canonical for future work
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 92
-  completed_plans: 78
-  percent: 85
+  completed_plans: 92
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-16)
+See: .planning/PROJECT.md (archived 2026-06-02)
 
 **Core value:** Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
-**Current focus:** Phase 06 — Shared UI Library & Standalone Admin (next)
+**Current focus:** v0.1 archived. Start the next milestone with a new OpenSpec change.
 
 ## Current Position
 
-Phase: 04.1 + 05 — SHIPPED (merged to main 2026-05-17 as save point)
-Status: Ready to execute
-Last activity: 2026-05-18 -- Phase 07 planning complete
+Phase: v0.1 Catalog Foundation — ARCHIVED
+Status: Historical GSD state; OpenSpec is canonical
+Last activity: 2026-06-02 -- Phase 7 closed and milestone archived
 
-Progress: [████████░░] 85%
+Progress: [██████████] 100%
+
+## Archive Note (2026-06-02)
+
+v0.1 Catalog Foundation is complete and archived. Current behavior lives in `openspec/specs/`; the Phase 7 closing change is archived at `openspec/changes/archive/2026-06-02-ship-web-component-embed-bundle/`. Keep `.planning/` as historical implementation detail only. Do not start follow-on work from GSD plan files; formalize the next milestone as a new OpenSpec change first.
 
 ## Phase 04.1 + 05 Ship Notes (2026-05-17)
 
@@ -97,7 +101,7 @@ From research/SUMMARY.md gaps to address during implementation:
 
 - WrapUp TTL with multi-replica (Phase 4): Go goroutine scheduler works single-process; flag before v1 multi-replica (`setInterval` analog — needs distributed lock or single-writer pattern).
 - `postInteractionState` default configurability (Phase 4): product decision needed — can orgs configure the default to `not_ready`?
-- Phase 7 host integration test harness: Playwright + React/Vue/HTML stub shell must be set up at Phase 7 start, before embed component work begins.
+- Phase 7 host integration test harness: completed and archived in OpenSpec Phase 7.
 - Import schema version communication: `?schema_version=v0.1` is specified; customer notification mechanism for v0.2 schema changes is not defined yet.
 
 ## Deferred Items
@@ -108,8 +112,8 @@ From research/SUMMARY.md gaps to address during implementation:
 
 ## Session Continuity
 
-Last session: 2026-05-19T07:55:00.000Z
-Stopped at: Completed 07-w1-01 Ember-style catalog-shell
+Last session: 2026-06-02T10:15:00.000Z
+Stopped at: v0.1 Catalog Foundation archived into OpenSpec
 Resume file: None
 
 ## Phase 3 — Decision Coverage Override (2026-05-16)

@@ -62,6 +62,12 @@ export class OrCodeInput extends LitElement {
   @property({ type: String }) value = '';
   @property({ type: String }) label = 'Code';
   @property({ type: String }) helperText = '';
+  @property({ type: Boolean, attribute: 'edit-button' }) editButton = false;
+  @property({ type: String, attribute: 'edit-button-label' }) editButtonLabel = 'Edit code';
+  @property({ type: Boolean, attribute: 'save-button' }) saveButton = false;
+  @property({ type: String, attribute: 'save-button-label' }) saveButtonLabel = 'Save code';
+  @property({ type: Boolean, attribute: 'cancel-button' }) cancelButton = false;
+  @property({ type: String, attribute: 'cancel-button-label' }) cancelButtonLabel = 'Cancel';
   // D04_1-02: immutable after create
   @property({ type: Boolean }) readonly = false;
   @property({ type: Boolean }) required = false;
@@ -112,37 +118,133 @@ export class OrCodeInput extends LitElement {
     this.validate();
   }
 
+  private _handleEditClick(): void {
+    this.dispatchEvent(
+      new CustomEvent('or-code-edit', {
+        detail: {},
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private _handleSaveClick(): void {
+    if (!this.validate()) return;
+    this.dispatchEvent(
+      new CustomEvent('or-code-save', {
+        detail: { value: this.value },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private _handleCancelClick(): void {
+    this.dispatchEvent(
+      new CustomEvent('or-code-cancel', {
+        detail: {},
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
   override render() {
     const showError = this._validationState === false;
+    const readonlyHelper = this.helperText || 'Code cannot be changed after create.';
+    const helper = showError
+      ? CODE_ERROR_MSG
+      : (this.helperText || 'Lowercase letters, digits, and underscores only. Cannot be changed after create.');
+    const helperColor = showError ? 'var(--destructive)' : 'var(--muted-foreground)';
+    const editableInput = html`
+      <or-input
+        style="display:block; width:100%;"
+        .value=${this.value}
+        ?required=${this.required}
+        placeholder="e.g. agent_voice_en"
+        aria-label=${this.label}
+        @or-input=${this._handleInput}
+        @or-change=${this._handleChange}
+      ></or-input>
+    `;
+    const editAction = this.editButton
+      ? html`
+          <button
+            type="button"
+            class="uk-button uk-button-default uk-button-small"
+            style="display:inline-flex; align-items:center; gap:5px; white-space:nowrap;"
+            aria-label=${this.editButtonLabel}
+            @click=${() => this._handleEditClick()}
+          >
+            <uk-icon icon="pencil" height="14" width="14"></uk-icon>
+            <span>${this.editButtonLabel}</span>
+          </button>
+        `
+      : nothing;
+    const commitActions = this.saveButton || this.cancelButton
+      ? html`
+          <div style="display:flex; gap:6px; align-items:center;">
+            ${this.saveButton
+              ? html`
+                  <button
+                    type="button"
+                    class="uk-button uk-button-primary uk-button-small"
+                    style="display:inline-flex; align-items:center; gap:5px; white-space:nowrap;"
+                    aria-label=${this.saveButtonLabel}
+                    @click=${() => this._handleSaveClick()}
+                  >
+                    <uk-icon icon="check" height="14" width="14"></uk-icon>
+                    <span>${this.saveButtonLabel}</span>
+                  </button>
+                `
+              : nothing}
+            ${this.cancelButton
+              ? html`
+                  <button
+                    type="button"
+                    class="uk-button uk-button-default uk-button-small"
+                    style="display:inline-flex; align-items:center; gap:5px; white-space:nowrap;"
+                    aria-label=${this.cancelButtonLabel}
+                    @click=${() => this._handleCancelClick()}
+                  >
+                    <uk-icon icon="x" height="14" width="14"></uk-icon>
+                    <span>${this.cancelButtonLabel}</span>
+                  </button>
+                `
+              : nothing}
+          </div>
+        `
+      : nothing;
 
     if (this.readonly) {
       return html`
-        <or-input
-          label=${this.label}
-          .value=${this.value}
-          .readonly=${true}
-          .disabled=${true}
-          suffix-icon="lock"
-          aria-label=${this.label}
-        ></or-input>
+        <label class="uk-form-label" style="display:block; margin-bottom:4px;">${this.label}</label>
+        <div style="display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center;">
+          <or-input
+            style="display:block; width:100%;"
+            .value=${this.value}
+            .readonly=${true}
+            .disabled=${true}
+            suffix-icon="lock"
+            aria-label=${this.label}
+          ></or-input>
+          ${editAction}
+        </div>
         <div style="font-size:12px; color:var(--muted-foreground); margin-top:4px;">
-          Code cannot be changed after create.
+          ${readonlyHelper}
         </div>
       `;
     }
 
     return html`
-      <or-input
-        label=${this.label}
-        .value=${this.value}
-        ?required=${this.required}
-        placeholder="e.g. agent_voice_en"
-        error-text=${showError ? CODE_ERROR_MSG : ''}
-        helper-text=${showError ? '' : (this.helperText || 'Lowercase letters, digits, and underscores only. Cannot be changed after create.')}
-        aria-label=${this.label}
-        @or-input=${this._handleInput}
-        @or-change=${this._handleChange}
-      ></or-input>
+      <label class="uk-form-label" style="display:block; margin-bottom:4px;">${this.label}</label>
+      <div style="display:grid; grid-template-columns:${this.saveButton || this.cancelButton ? 'minmax(0, 1fr) auto' : '1fr'}; gap:8px; align-items:center;">
+        ${editableInput}
+        ${commitActions}
+      </div>
+      <div style="font-size:12px; color:${helperColor}; margin-top:4px;">
+        ${helper}
+      </div>
     `;
   }
 }

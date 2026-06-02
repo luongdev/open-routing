@@ -81,6 +81,7 @@ function mockFetch(req: Request): Promise<Response> {
   const segments = afterOrg.split('/');
   const entity = segments[0];
   const entityId = segments[1];
+  if (!entity) return Promise.resolve(notFound());
 
   const entityMap: Record<string, unknown[]> = {
     agents:        MOCK_AGENTS,

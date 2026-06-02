@@ -44,7 +44,9 @@ describe('OrQueueList', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    expect(shadow.textContent).toContain('No queues yet');
+    expect(shadow.textContent).toContain('No queues yet. Click + Create queue to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create queue');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create queue');
   });
 
   it('renders channel_types as individual channel-tag spans per type', async () => {

@@ -6,7 +6,11 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 
 ## Milestone
 
-**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 5/7 phases complete (Phase 04.1 + Phase 5 shipped 2026-05-17); Phase 6 is current focus.
+**v0.1 Catalog Foundation** — archived 2026-06-02. All seven milestone phases are complete and current behavior is captured in `openspec/specs/`.
+
+## Archive Note
+
+This GSD roadmap is frozen as historical implementation detail. OpenSpec is the canonical planning/spec source from this point forward. Start the next milestone by creating a new OpenSpec change; do not resume work from unchecked historical plan rows below.
 
 ## Phases
 
@@ -24,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 04.1: Catalog Identity Normalization (INSERTED)** - Introduce universal user-facing `code` (TEXT NOT NULL, UNIQUE per org) on all 6 primary catalog entities. Demote `external_id` to optional with partial unique. Drop `break_reasons.UNIQUE (org_id, name)`. Updates migration 000002 (still editable per D-61), OpenAPI contract, sqlc queries, 6 CRUD handlers, and tests. Unblocks Phase 5 import keyed on `code`. (completed 2026-05-17)
 - [x] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities keyed on `code`, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning. (completed 2026-05-17)
 - [x] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support. (completed 2026-05-18)
-- [ ] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped.
+- [x] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped. (completed 2026-06-02)
 
 ## Phase Details
 
@@ -417,7 +421,7 @@ Plans:
 
 **Execution Order:** 1 → 2 → 3 → 4 → 5 → 6 → 7
 
-**Overall:** 2 / 7 phases complete (29%).
+**Overall:** 7 / 7 phases complete (100%).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -425,9 +429,9 @@ Plans:
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
 | 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
-| 5. Bulk Import (Go) | 0/8 | Not started | - |
-| 6. Shared UI Library & Standalone Admin | 0/14 | In progress | - |
-| 7. Web Component Embed Bundle | 14/31 | In Progress|  |
+| 5. Bulk Import (Go) | 8/8 | Complete | 2026-05-17 |
+| 6. Shared UI Library & Standalone Admin | 14/14 | Complete | 2026-05-18 |
+| 7. Web Component Embed Bundle | archived | Complete | 2026-06-02 |
 
 ---
 
@@ -454,3 +458,4 @@ Plans:
 *Milestone: v0.1 Catalog Foundation*
 *Stack: Go + chi + sqlc + pgx + golang-migrate + PostgreSQL 17 + Redis + OpenAPI 3.0 + Vite + Lit + Shoelace + Web Components*
 *Phase numbering: sequential, starting at 1*
+*Archived: 2026-06-02 — OpenSpec is canonical for future work*

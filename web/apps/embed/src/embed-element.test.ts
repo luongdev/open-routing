@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import './index.js';
 import type { OpenRoutingCatalog } from './embed-element.js';
 
@@ -249,7 +249,7 @@ describe('OpenRoutingCatalog: open-routing:auth-expired (EMBED-07, D7-14)', () =
   });
 
   const mockFetch401 = (requestId: string) =>
-    vi.fn(async (_req: Request | string): Promise<Response> => {
+    vi.fn(async (_req: RequestInfo | URL): Promise<Response> => {
       return new Response(
         JSON.stringify({ error: 'auth_expired', request_id: requestId }),
         { status: 401, headers: { 'Content-Type': 'application/json' } },

@@ -21,8 +21,8 @@ install via tarball (`pnpm pack`).
 - Hash routing inside the embed (`#open-routing/...`).
 - Lazy entity bundles — 6 catalog entities + status panel + bulk
   import load on first navigation.
-- Bundle size budget enforced via size-limit (≤ 70 KB gzipped eager
-  baseline).
+- Bundle size budget enforced via gzip file-size gate (≤ 70 KB gzipped
+  eager baseline; lazy chunks reported separately).
 - Playwright integration tests across React 18, Vue 3, plain HTML
   hosts (3 × 4 specs).
 

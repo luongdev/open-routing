@@ -54,7 +54,9 @@ describe('OrBreakReasonList', () => {
 
     const shadow = el.shadowRoot!;
     const text = shadow.textContent ?? '';
-    expect(text).toContain('No break reasons yet');
+    expect(text).toContain('No break reasons yet. Click + Create break reason to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create break reason');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create break reason');
   });
 
   it('renders routable column as check-lg icon for routable=true, x-lg for routable=false', async () => {
@@ -189,9 +191,8 @@ describe('OrBreakReasonList', () => {
     const events: CustomEvent[] = [];
     el.addEventListener('open-routing:navigate', (e) => events.push(e as CustomEvent));
 
-    // Click the CTA button in empty state
     const shadow = el.shadowRoot!;
-    const ctaButton = shadow.querySelector('button.uk-button-primary') as HTMLElement;
+    const ctaButton = shadow.querySelector('.empty-state button.uk-button-primary') as HTMLElement;
     expect(ctaButton).toBeTruthy();
     ctaButton!.click();
     await (el as any).updateComplete;

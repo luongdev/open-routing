@@ -31,6 +31,18 @@ impossible.
 > locks the required set to the original 6. Adding it as a 7th required check
 > later is a one-line UI edit.
 
+## Recommended Phase 7 checks
+
+For the v0.1 Web Component embed bundle, also enable these status checks before
+shipping changes that touch `web/apps/embed` or its shared UI runtime:
+
+1. `web-embed-e2e`
+2. `web-bundle-size`
+
+`web-embed-e2e` runs the React, Vue, and plain HTML host matrix. `web-bundle-size`
+builds `@open-routing/catalog-embed` and gates only `dist/embed.js` against the
+70 KiB gzip budget; lazy chunks are reported but not blocking.
+
 ## Manual setup steps (one-time, by a repo admin)
 
 1. Open `https://github.com/<owner>/<repo>/settings/branches`

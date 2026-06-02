@@ -29,6 +29,10 @@ func AllowedOriginsFromEnv(raw string) []string {
 // github.com/go-chi/cors source. This is why ordering in the chain is safe
 // BEFORE OrgContext.
 func NewCORS(allowedOrigins []string) func(http.Handler) http.Handler {
+	if len(allowedOrigins) == 0 {
+		// go-chi/cors treats an empty AllowedOrigins list as wildcard.
+		allowedOrigins = []string{"https://cors-deny.open-routing.invalid"}
+	}
 	return cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},

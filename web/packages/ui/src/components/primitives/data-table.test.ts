@@ -145,4 +145,41 @@ describe('OrCodeInput', () => {
     const result = (el as any).validate();
     expect(result).toBe(false);
   });
+
+  it('emits or-code-edit from the readonly edit button', async () => {
+    (el as any).value = 'valid_code';
+    (el as any).readonly = true;
+    (el as any).editButton = true;
+    await (el as any).updateComplete;
+
+    const events: CustomEvent[] = [];
+    el.addEventListener('or-code-edit', (e) => events.push(e as CustomEvent));
+
+    const button = el.querySelector('button') as HTMLButtonElement | null;
+    expect(button).toBeTruthy();
+    button!.click();
+
+    expect(events).toHaveLength(1);
+  });
+
+  it('emits save and cancel from editable code actions', async () => {
+    (el as any).value = 'valid_code';
+    (el as any).saveButton = true;
+    (el as any).cancelButton = true;
+    await (el as any).updateComplete;
+
+    const saveEvents: CustomEvent[] = [];
+    const cancelEvents: CustomEvent[] = [];
+    el.addEventListener('or-code-save', (e) => saveEvents.push(e as CustomEvent));
+    el.addEventListener('or-code-cancel', (e) => cancelEvents.push(e as CustomEvent));
+
+    const buttons = Array.from(el.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons).toHaveLength(2);
+
+    buttons[0]!.click();
+    buttons[1]!.click();
+
+    expect(saveEvents[0]?.detail?.value).toBe('valid_code');
+    expect(cancelEvents).toHaveLength(1);
+  });
 });

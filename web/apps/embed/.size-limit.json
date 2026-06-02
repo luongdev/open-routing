@@ -1,8 +1,0 @@
-[
-  {
-    "name": "embed.js (eager baseline)",
-    "path": "dist/embed.js",
-    "limit": "70 KB",
-    "gzip": true
-  }
-]

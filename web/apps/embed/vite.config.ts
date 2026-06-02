@@ -13,6 +13,13 @@ export default defineConfig({
       }
     })
   ],
+  server: {
+    proxy: {
+      '/v1': 'http://localhost:8080',
+      '/healthz': 'http://localhost:8080',
+      '/readyz': 'http://localhost:8080'
+    }
+  },
   build: {
     target: 'esnext',
     sourcemap: true,

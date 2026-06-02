@@ -325,6 +325,7 @@ export class OrCatalogShell extends LitElement {
   @property({ type: String }) theme: ThemeName = 'or-light';
   @property({ type: String }) modules = '';
   @property({ type: String }) locale: 'en' | 'vi' = 'en';
+  @property({ attribute: false }) client: ApiClient | null = null;
 
 
   // routingMode + routerAdapter — admin defaults to history (pretty URLs);
@@ -345,6 +346,7 @@ export class OrCatalogShell extends LitElement {
   routerAdapter: CatalogShellRouterAdapter | undefined = undefined;
 
   @state() private _sidebarOpen = false;
+  private _routerStarted = false;
 
   /**
    * D6-09: current org_id parsed from URL. getOrgId() in createApiClient closes
@@ -368,15 +370,18 @@ export class OrCatalogShell extends LitElement {
    */
   private _orgRouteEnter = async ({ org_id }: Record<string, string | undefined>): Promise<boolean> => {
     if (!UUIDV7_PATTERN.test(org_id ?? '')) {
-      window.history.pushState(null, '', '/');
-      this._syncOrgIdFromUrl();
-      this._routes.goto('/');
+      this._navigate('/', true);
+      if (this.routingMode === 'history') {
+        this._syncOrgIdFromUrl();
+      }
       return false;
     }
     const safeOrgId = org_id as string;
     this._currentOrgId = safeOrgId;
     this.orgId = safeOrgId;
-    if (!this._client) {
+    if (this.client) {
+      this._client = this.client;
+    } else if (!this._client) {
       this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
     }
     return true;
@@ -607,9 +612,7 @@ export class OrCatalogShell extends LitElement {
 
 
   override firstUpdated(_changed: PropertyValues): void {
-    if (this.routingMode === 'hash' && this.routerAdapter) {
-      this.routerAdapter.start(this._routes);
-    }
+    this._startRouterAdapter();
   }
 
 
@@ -626,28 +629,32 @@ export class OrCatalogShell extends LitElement {
     }
     this._applyTheme();
 
-    // D6-09: Parse initial org_id from URL path on first connect.
-    this._syncOrgIdFromUrl();
-
-    this._handlePopState = () => {
+    if (this.routingMode === 'history') {
       this._syncOrgIdFromUrl();
-      this._routes.goto(window.location.pathname);
-    };
-    window.addEventListener('popstate', this._handlePopState);
+
+      this._handlePopState = () => {
+        this._syncOrgIdFromUrl();
+        this._routes.goto(window.location.pathname);
+      };
+      window.addEventListener('popstate', this._handlePopState);
+    }
 
     this.addEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.addEventListener('open-routing:navigate', this._handleNavigate);
     this.addEventListener('open-routing:theme-change', this._handleThemeChange);
 
-    setTimeout(() => {
-      this._routes.goto(window.location.pathname);
-    }, 0);
+    if (this.routingMode === 'history') {
+      setTimeout(() => {
+        this._routes.goto(window.location.pathname);
+      }, 0);
+    }
   }
 
   override disconnectedCallback(): void {
     if (this.routerAdapter) {
       this.routerAdapter.stop();
     }
+    this._routerStarted = false;
     super.disconnectedCallback();
     this.removeEventListener('open-routing:org-selected', this._handleOrgSelected);
     this.removeEventListener('open-routing:navigate', this._handleNavigate);
@@ -661,6 +668,18 @@ export class OrCatalogShell extends LitElement {
   private _handlePopState: (() => void) | null = null;
 
   private _navigate(path: string, replace = false): void {
+    if (this.routingMode === 'hash') {
+      const cleanPath = path.split('?')[0] ?? path;
+      const hashPath = `#open-routing/${path.replace(/^\/+/, '')}`;
+      if (replace) {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hashPath}`);
+      } else if (window.location.hash !== hashPath) {
+        window.location.hash = hashPath;
+      }
+      this._routes.goto(cleanPath);
+      return;
+    }
+
     if (replace) {
       window.history.replaceState(null, '', path);
     } else {
@@ -680,7 +699,9 @@ export class OrCatalogShell extends LitElement {
       const org_id: string = match[1];
       this._currentOrgId = org_id;
       this.orgId = org_id;
-      if (!this._client) {
+      if (this.client) {
+        this._client = this.client;
+      } else if (!this._client) {
         this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
       }
     } else {
@@ -704,7 +725,7 @@ export class OrCatalogShell extends LitElement {
     const { orgId } = (e as CustomEvent<{ orgId: string }>).detail;
     this._currentOrgId = orgId;
     this.orgId = orgId;
-    this._client = createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
+    this._client = this.client ?? createApiClient({ baseURL: '', getOrgId: () => this._currentOrgId });
     this._navigate(`/orgs/${orgId}/agents`);
   };
 
@@ -712,9 +733,21 @@ export class OrCatalogShell extends LitElement {
     if (changed.has('routingMode') && changed.get('routingMode') !== undefined) {
       console.warn('[catalog-shell] routingMode changed after construction — admin sets once, embed sets once; behavior is undefined');
     }
+    if (changed.has('routingMode') || changed.has('routerAdapter')) {
+      this._startRouterAdapter();
+    }
     if (changed.has('theme')) {
       this._applyTheme();
     }
+    if (changed.has('client') && this.client) {
+      this._client = this.client;
+    }
+  }
+
+  private _startRouterAdapter(): void {
+    if (this.routingMode !== 'hash' || !this.routerAdapter || this._routerStarted) return;
+    this.routerAdapter.start(this._routes);
+    this._routerStarted = true;
   }
 
   private _applyTheme(): void {
@@ -752,7 +785,9 @@ export class OrCatalogShell extends LitElement {
   }
 
   private _renderNav() {
-    const currentPath = window.location.pathname;
+    const currentPath = this.routingMode === 'hash'
+      ? window.location.hash.replace(/^#open-routing/, '') || '/'
+      : window.location.pathname;
     return this._visibleEntries().map((entry) => {
       if (entry.key === '__divider__') {
         return html`<div class="nav-divider" role="separator"></div>`;
@@ -767,6 +802,7 @@ export class OrCatalogShell extends LitElement {
       return html`
         <button
           class="nav-item ${isActive ? 'nav-item--active' : ''}"
+          data-entity=${entry.key}
           @click=${() => this._navigate(resolved)}
           aria-current=${isActive ? 'page' : nothing}
           aria-label=${entry.label}

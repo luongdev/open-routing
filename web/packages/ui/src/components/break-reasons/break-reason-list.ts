@@ -428,8 +428,7 @@ export class OrBreakReasonList extends LitElement {
     }
     return html`
       <div class="empty-state">
-        <p><strong>No break reasons yet</strong></p>
-        <p>Define why agents go on break. Each reason shows in the break picker.</p>
+        <p>No break reasons yet. Click <strong>+ Create break reason</strong> to add your first.</p>
         <button
           type="button"
           class="uk-button uk-button-primary uk-button-small"

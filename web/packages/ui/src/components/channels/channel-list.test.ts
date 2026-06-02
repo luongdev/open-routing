@@ -49,7 +49,9 @@ describe('or-channel-list', () => {
     await (el as any).updateComplete;
 
     const text = el.shadowRoot?.textContent ?? '';
-    expect(text).toContain('No channels');
+    expect(text).toContain('No channels yet. Click + Create channel to add your first.');
+    expect(el.shadowRoot?.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create channel');
+    expect(el.shadowRoot?.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create channel');
   });
 
   it('Test 2: default_queue_id column shows first 8 chars + "..." + sl-tooltip with full value', async () => {

@@ -92,6 +92,19 @@ func TestCORS_RejectedOriginNoAllowOriginHeader(t *testing.T) {
 	require.Equal(t, "", rec.Header().Get("Access-Control-Allow-Origin"))
 }
 
+func TestCORS_EmptyAllowedOriginsDenyByDefault(t *testing.T) {
+	t.Parallel()
+	h := NewCORS([]string{})(corsNoopOK(t))
+	req := httptest.NewRequest(http.MethodGet, "/v1/orgs/some-org/agents", nil)
+	req.Header.Set("Origin", "https://example.com")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "", rec.Header().Get("Access-Control-Allow-Origin"))
+}
+
 func TestCORS_AllowedMethodsHeader(t *testing.T) {
 	t.Parallel()
 	h := NewCORS([]string{"https://example.com"})(corsFailNextHandler(t))

@@ -157,6 +157,10 @@ The eager baseline (`dist/embed.js`) is ≤ 70 KB gzipped. Per-entity
 modules lazy-load on first navigation. Brotli-served reality (on
 Cloudflare Pro+ or similar CDN) is ~52 KB.
 
+Run `pnpm --filter @open-routing/catalog-embed size` to check the
+blocking gzip budget; lazy chunks are printed for review but do not fail
+the gate in v0.1.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).

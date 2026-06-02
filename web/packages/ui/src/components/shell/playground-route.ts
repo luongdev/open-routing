@@ -478,7 +478,7 @@ export class OrPlaygroundRoute extends LitElement {
               <p class="muted">Manage team members, roles, and access.</p>
               <div class="admin-toolbar">
                 <input placeholder="Search agents…" />
-                <button class="uk-button uk-button-primary uk-button-small">+ Add Agent</button>
+                <button class="uk-button uk-button-primary uk-button-small">+ Create agent</button>
               </div>
               <div class="admin-table">
                 <div class="admin-row">

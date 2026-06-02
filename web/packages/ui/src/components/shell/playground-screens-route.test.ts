@@ -20,22 +20,23 @@ describe('OrPlaygroundScreensRoute', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders side-nav with all 21 screens listed', async () => {
+  it('renders side-nav with all 24 screens listed', async () => {
     await (el as any).updateComplete;
     const sr = el.shadowRoot!;
     const items = sr.querySelectorAll('.screen-item');
     expect(items.length).toBe(SCREENS.length);
-    expect(SCREENS.length).toBe(21);
+    expect(SCREENS.length).toBe(24);
   });
 
-  it('groups screens into 7 labeled groups', async () => {
+  it('groups screens into 8 labeled groups', async () => {
     await (el as any).updateComplete;
     const sr = el.shadowRoot!;
     const groupLabels = sr.querySelectorAll('.group-label');
-    expect(groupLabels.length).toBe(7);
+    expect(groupLabels.length).toBe(8);
     const labels = Array.from(groupLabels).map(g => g.textContent?.trim());
     expect(labels).toContain('Agents');
     expect(labels).toContain('Operations');
+    expect(labels).toContain('vNext Preview');
   });
 
   it('default state has agents-list screen active', async () => {

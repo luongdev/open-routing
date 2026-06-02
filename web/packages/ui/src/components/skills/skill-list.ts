@@ -432,11 +432,11 @@ export class OrSkillList extends LitElement {
     }
     return html`
       <div class="empty-state">
-        <p>No skills yet. Define a skill to assign to agents.</p>
+        <p>No skills yet. Click <strong>+ Create skill</strong> to add your first.</p>
         <button
           class="uk-button uk-button-primary uk-button-small"
           @click=${() => this._navigate(`/orgs/${this.orgId}/skills/new`)}
-        >+ Add Skill</button>
+        >+ Create skill</button>
       </div>
     `;
   }
@@ -451,7 +451,7 @@ export class OrSkillList extends LitElement {
         <button
           class="uk-button uk-button-primary"
           @click=${() => this._navigate(`/orgs/${this.orgId}/skills/new`)}
-        >+ Add Skill</button>
+        >+ Create skill</button>
       </div>
 
       <div class="filter-row">

@@ -249,3 +249,71 @@ jobs:
       - name: Admin production build smoke
         working-directory: web
         run: pnpm --filter @open-routing/admin build
+
+  web-bundle-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Build embed bundle
+        working-directory: web
+        run: pnpm --filter @open-routing/catalog-embed build
+      - name: Check embed gzip budget
+        working-directory: web
+        run: |
+          set -o pipefail
+          pnpm --filter @open-routing/catalog-embed size | tee embed-size-report.txt
+          cat embed-size-report.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Smoke packed embed package
+        working-directory: web
+        run: pnpm --filter @open-routing/catalog-embed pack:smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: embed-size-report
+          path: web/embed-size-report.txt
+
+  web-embed-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-ms-playwright-${{ hashFiles('web/pnpm-lock.yaml') }}
+      - name: Install Playwright browsers
+        working-directory: web
+        run: pnpm --filter @open-routing/catalog-embed exec playwright install --with-deps chromium
+      - name: Build embed bundle
+        working-directory: web
+        run: pnpm --filter @open-routing/catalog-embed build
+      - name: Embed Playwright matrix
+        working-directory: web
+        run: pnpm --filter @open-routing/catalog-embed test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: embed-playwright-report
+          path: |
+            web/apps/embed/playwright-report/
+            web/apps/embed/test-results/

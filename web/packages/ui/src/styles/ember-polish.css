@@ -289,3 +289,19 @@ input.uk-checkbox:focus-visible,
   background: color-mix(in oklch, var(--warning) 16%, transparent);
   color: oklch(0.45 0.18 75);
 }
+
+/* vNext flow status variants (used by or-flow-list cells rendered inside data-table). */
+.status-pill--published {
+  background: color-mix(in oklch, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.status-pill--draft {
+  background: color-mix(in oklch, var(--warning) 22%, transparent);
+  color: var(--warning);
+}
+
+.status-pill--archived {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}

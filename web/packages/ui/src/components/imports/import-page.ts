@@ -160,10 +160,11 @@ export class OrImportPage extends LitElement {
       box-shadow: var(--shadow-sm);
       max-width: 720px;
       overflow: hidden;
+      padding: 24px;
     }
 
     .wizard-body {
-      padding: 28px 32px;
+      padding: 0;
     }
 
     /* ── Step heading ────────────────────────────────────────────── */

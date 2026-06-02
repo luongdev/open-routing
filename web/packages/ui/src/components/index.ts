@@ -14,3 +14,5 @@ export * from './adapters/index.js';
 export * from './channels/index.js';
 export * from './status/index.js';
 export * from './imports/index.js';
+// vNext (v0.2+) preview — flows, simulator, trace viewer. Design-only.
+export * from './vnext/index.js';
