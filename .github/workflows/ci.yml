@@ -184,9 +184,11 @@ jobs:
       # Taskfile.yml:21 runs `sqlc generate` as the first codegen step.
       # GitHub runners do not ship with sqlc; without this step the
       # codegen-drift job fails on any runner that has not pre-cached it.
-      # Pin matches the sqlc version used locally (services/api/sqlc.yaml).
+      # Pin matches the version the committed generated code was produced with
+      # (the v0.1.x files + v0.2 regen are sqlc v1.31.1); a stale pin makes the
+      # version-header comment drift and fails this gate.
       - name: install sqlc
-        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
       # D-47: run codegen via the canonical entry point so the CI behavior
       # matches local `task gen`. Sqlc is part of the chain too — sqlc on
       # the Phase 1 surface should be a no-op, but running it keeps the
