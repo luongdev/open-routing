@@ -1,0 +1,307 @@
+/**
+ * Ember polish layer — overrides on top of Frankenstyle defaults for
+ * extra depth, warmth, and visual hierarchy matching the Ember dashboard.
+ * Adopted via shadow-sheets.ts so it applies inside every Shadow DOM
+ * that hosts uk-* descendants.
+ */
+
+/* ── Primary button ─────────────────────────────────────────────── */
+button.uk-button-primary,
+.uk-button-primary {
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border: 1px solid var(--primary) !important;
+  box-shadow: var(--shadow-primary), inset 0 1px 0 0 oklch(1 0 0 / 0.15) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.005em !important;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease !important;
+}
+button.uk-button-primary:hover,
+.uk-button-primary:hover {
+  background: color-mix(in oklch, var(--primary) 92%, oklch(0.15 0 0)) !important;
+  box-shadow: 0 6px 16px -2px oklch(0.62 0.22 28 / 0.40), inset 0 1px 0 0 oklch(1 0 0 / 0.18) !important;
+  transform: translateY(-1px);
+}
+button.uk-button-primary:active,
+.uk-button-primary:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm) !important;
+}
+button.uk-button-primary:disabled,
+.uk-button-primary:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: var(--shadow-xs) !important;
+}
+
+/* ── Default button ─────────────────────────────────────────────── */
+button.uk-button-default,
+.uk-button-default {
+  background: var(--card) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-xs) !important;
+  font-weight: 500 !important;
+  transition: background .12s, border-color .12s !important;
+}
+button.uk-button-default:hover,
+.uk-button-default:hover {
+  background: var(--muted) !important;
+  border-color: color-mix(in oklch, var(--border) 70%, var(--foreground) 30%) !important;
+}
+button.uk-button-default:disabled,
+.uk-button-default:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+/* ── Danger button ──────────────────────────────────────────────── */
+button.uk-button-danger,
+.uk-button-danger {
+  background: var(--destructive) !important;
+  color: var(--destructive-foreground) !important;
+  border: 1px solid var(--destructive) !important;
+  box-shadow: 0 4px 12px -2px oklch(0.55 0.22 25 / 0.30), inset 0 1px 0 0 oklch(1 0 0 / 0.15) !important;
+  font-weight: 600 !important;
+  transition: transform .12s, background .12s, box-shadow .12s !important;
+}
+button.uk-button-danger:hover,
+.uk-button-danger:hover {
+  background: color-mix(in oklch, var(--destructive) 90%, oklch(0.15 0 0)) !important;
+  transform: translateY(-1px);
+}
+
+/* ── Input ──────────────────────────────────────────────────────── */
+input.uk-input,
+.uk-input {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  border-radius: 8px !important;
+  transition: border-color .12s, box-shadow .12s !important;
+}
+input.uk-input:focus,
+input.uk-input:focus-visible,
+.uk-input:focus,
+.uk-input:focus-visible {
+  outline: none !important;
+  border-color: var(--ring) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent) !important;
+}
+input.uk-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ── Select ─────────────────────────────────────────────────────── */
+select.uk-select,
+.uk-select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-color: var(--card) !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px 14px !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  border-radius: 8px !important;
+  padding: 6px 32px 6px 12px !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: border-color .12s, box-shadow .12s !important;
+}
+select.uk-select:focus,
+select.uk-select:focus-visible,
+.uk-select:focus,
+.uk-select:focus-visible {
+  outline: none !important;
+  border-color: var(--ring) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent) !important;
+}
+select.uk-select:hover,
+.uk-select:hover {
+  border-color: color-mix(in oklch, var(--border) 70%, var(--foreground) 30%) !important;
+}
+
+/* ── Checkbox ───────────────────────────────────────────────────── */
+input.uk-checkbox,
+.uk-checkbox {
+  width: 16px !important;
+  height: 16px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  background: var(--card) !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  transition: background .12s, border-color .12s !important;
+  position: relative !important;
+}
+input.uk-checkbox:checked,
+.uk-checkbox:checked {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 11px 11px !important;
+}
+input.uk-checkbox:focus-visible,
+.uk-checkbox:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent) !important;
+}
+
+/* ── Empty state ────────────────────────────────────────────────── */
+.empty-state {
+  padding: 48px 24px !important;
+}
+.empty-state-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 6px;
+}
+.empty-state-desc {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  margin: 0 0 16px;
+  max-width: 360px;
+  display: inline-block;
+}
+
+/* ── Page title ─────────────────────────────────────────────────── */
+.page-title {
+  font-size: 24px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.2 !important;
+}
+.page-subtitle {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+/* ── List row cells (used in entity list columns) ───────────────
+ * These classes are rendered INSIDE <or-data-table> shadow DOM via
+ * column.render functions. The lists themselves can't style them
+ * because shadow DOM CSS boundaries don't cross — so we put them
+ * here in ember-polish (adopted into every shadow root).
+ */
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.name-cell-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--primary) 15%, transparent);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.agent-name,
+.skill-name,
+.queue-name,
+.channel-name,
+.adapter-name,
+.break-name,
+.break-reason-name {
+  font-weight: 500;
+  color: var(--foreground);
+  font-size: 14px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-code,
+.skill-code,
+.queue-code,
+.channel-code,
+.adapter-code,
+.break-code,
+.break-reason-code {
+  font-family: var(--uk-font-monospace, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--muted-foreground);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status pill shared across list pages */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pill--success {
+  background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+  color: oklch(0.42 0.18 145);
+}
+
+.status-pill--muted {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.status-pill--info {
+  background: color-mix(in oklch, oklch(0.65 0.18 250) 16%, transparent);
+  color: oklch(0.42 0.18 250);
+}
+
+.status-pill--warning {
+  background: color-mix(in oklch, var(--warning) 16%, transparent);
+  color: oklch(0.45 0.18 75);
+}
+
+/* vNext flow status variants (used by or-flow-list cells rendered inside data-table). */
+.status-pill--published {
+  background: color-mix(in oklch, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.status-pill--draft {
+  background: color-mix(in oklch, var(--warning) 22%, transparent);
+  color: var(--warning);
+}
+
+.status-pill--archived {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}

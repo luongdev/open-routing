@@ -5,11 +5,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-
-// Shoelace per-component imports (D6-08: tree-shaking required for Phase 7 70KB budget)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 /** UUIDv7 regex per D6-13. Client-side UX nicety; server is authoritative. */
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -40,37 +36,37 @@ export class OrOrgPicker extends LitElement {
     .card {
       width: 480px;
       padding: 32px;
-      border-radius: var(--or-radius-lg, 8px);
-      border: 1px solid var(--or-color-card-border, #e5e5e5);
-      background: var(--or-color-card-bg, #ffffff);
-      box-shadow: var(--or-shadow-lg, 0 4px 24px rgba(0,0,0,0.08));
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      box-shadow: var(--shadow-md);
     }
     .wordmark {
       font-size: 24px;
       font-weight: 600;
-      color: var(--or-color-text-strong, #171717);
+      color: var(--foreground);
       margin: 0 0 4px;
     }
     .subtitle {
       font-size: 14px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       margin: 0 0 24px;
     }
     .field-label {
       display: block;
       font-size: 14px;
       font-weight: 500;
-      color: var(--or-color-text-body, #404040);
+      color: var(--foreground);
       margin-bottom: 8px;
     }
     .helper-text {
       font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       margin-top: 6px;
     }
     .validation-error {
       font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
+      color: var(--destructive);
       margin-top: 6px;
     }
     .input-wrapper {
@@ -83,10 +79,10 @@ export class OrOrgPicker extends LitElement {
       padding: 0 16px;
       font-size: 14px;
       font-weight: 500;
-      background: var(--sl-color-primary-500, #2b8a93);
-      color: var(--or-color-text-on-primary, #ffffff);
+      background: var(--primary);
+      color: var(--primary-foreground);
       border: none;
-      border-radius: var(--sl-border-radius-medium, 4px);
+      border-radius: 4px;
       cursor: pointer;
       margin-top: 8px;
     }
@@ -97,7 +93,7 @@ export class OrOrgPicker extends LitElement {
     .last-used {
       margin-top: 16px;
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -105,7 +101,7 @@ export class OrOrgPicker extends LitElement {
     .last-used-uuid {
       font-family: monospace;
       font-size: 12px;
-      background: var(--or-color-code-bg, #f5f5f5);
+      background: var(--muted);
       padding: 2px 6px;
       border-radius: 3px;
     }
@@ -114,7 +110,7 @@ export class OrOrgPicker extends LitElement {
       border: none;
       padding: 0;
       font-size: 13px;
-      color: var(--sl-color-primary-500, #2b8a93);
+      color: var(--primary);
       cursor: pointer;
       text-decoration: underline;
     }
@@ -124,28 +120,47 @@ export class OrOrgPicker extends LitElement {
       min-height: 40px;
       padding: 0 12px;
       font-size: 14px;
-      border: 1px solid var(--or-color-card-border, #e5e5e5);
-      border-radius: var(--sl-border-radius-medium, 4px);
-      color: var(--or-color-text-body, #404040);
-      background: var(--or-color-card-bg, #ffffff);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--foreground);
+      background: var(--input);
       box-sizing: border-box;
     }
     .native-input:focus {
-      outline: 2px solid var(--or-color-focus-ring, #2b8a93);
+      outline: 2px solid var(--ring);
       outline-offset: 2px;
     }
     .native-input.has-error {
-      border-color: var(--sl-color-danger-500, #d92d20);
+      border-color: var(--destructive);
+    }
+    .spinner {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      border: 2px solid var(--primary-foreground);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   `;
 
-  /** Pre-fill value — exposed as HTML attribute 'last-used-org-id'. */
-  @property({ type: String, attribute: 'last-used-org-id' }) accessor lastUsedOrgId = '';
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
-  @state() private accessor _value = '';
-  @state() private accessor _error = '';
-  @state() private accessor _submitting = false;
-  @state() private accessor _lastUsedFromStorage = '';
+  /** Pre-fill value — exposed as HTML attribute 'last-used-org-id'. */
+  @property({ type: String, attribute: 'last-used-org-id' }) lastUsedOrgId = '';
+
+  @state() private _value = '';
+  @state() private _error = '';
+  @state() private _submitting = false;
+  @state() private _lastUsedFromStorage = '';
 
   override firstUpdated(): void {
     // Pre-fill from localStorage first, fall back to lastUsedOrgId property (D6-10).
@@ -256,7 +271,7 @@ export class OrOrgPicker extends LitElement {
             class="continue-btn"
             ?disabled=${this._submitting}
           >
-            ${this._submitting ? html`<sl-spinner style="font-size:1em"></sl-spinner>` : 'Continue'}
+            ${this._submitting ? html`<span class="spinner" aria-hidden="true"></span>` : 'Continue'}
           </button>
         </form>
 

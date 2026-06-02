@@ -54,7 +54,9 @@ describe('OrBreakReasonList', () => {
 
     const shadow = el.shadowRoot!;
     const text = shadow.textContent ?? '';
-    expect(text).toContain('No break reasons yet');
+    expect(text).toContain('No break reasons yet. Click + Create break reason to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create break reason');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create break reason');
   });
 
   it('renders routable column as check-lg icon for routable=true, x-lg for routable=false', async () => {
@@ -80,13 +82,13 @@ describe('OrBreakReasonList', () => {
     const routableCol = columns.find((c) => c.key === 'routable');
     expect(routableCol?.render).toBeTruthy();
 
-    // routable=true → check-lg icon
+    // routable=true → "Yes" pill with check icon
     const routableTrueRendered = JSON.stringify(routableCol!.render!({ routable: true }));
-    expect(routableTrueRendered).toContain('check-lg');
+    expect(routableTrueRendered).toContain('Yes');
 
-    // routable=false → x-lg icon
+    // routable=false → "No" pill
     const routableFalseRendered = JSON.stringify(routableCol!.render!({ routable: false }));
-    expect(routableFalseRendered).toContain('x-lg');
+    expect(routableFalseRendered).toContain('No');
   });
 
   it('routable column header has sl-tooltip with correct content', async () => {
@@ -137,9 +139,9 @@ describe('OrBreakReasonList', () => {
     // Render the column cell and check for right-align style
     const rendered = doCol?.render?.({ display_order: 1 });
     expect(rendered).toBeTruthy();
-    // The rendered value should be a Lit template string containing text-align:right
+    // The rendered value should be a Lit template using order-cell class (right-aligned via CSS)
     const asString = JSON.stringify(rendered);
-    expect(asString).toContain('right');
+    expect(asString).toContain('order-cell');
   });
 
   it('row click dispatches open-routing:navigate with /orgs/{orgId}/break-reasons/{id}', async () => {
@@ -189,9 +191,8 @@ describe('OrBreakReasonList', () => {
     const events: CustomEvent[] = [];
     el.addEventListener('open-routing:navigate', (e) => events.push(e as CustomEvent));
 
-    // Click the CTA button in empty state
     const shadow = el.shadowRoot!;
-    const ctaButton = shadow.querySelector('sl-button[variant="primary"]') as HTMLElement;
+    const ctaButton = shadow.querySelector('.empty-state button.uk-button-primary') as HTMLElement;
     expect(ctaButton).toBeTruthy();
     ctaButton!.click();
     await (el as any).updateComplete;

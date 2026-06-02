@@ -1,0 +1,137 @@
+/**
+ * Ember palette — punched-up version (warmer cream bg, richer coral, real shadows).
+ * Three namespaces: --color-* (Tailwind v4 @theme), bare --primary etc (shadcn-style),
+ * --uk-* (Frankenstyle internals).
+ */
+
+@theme {
+  --color-background: oklch(0.975 0.012 50);
+  --color-foreground: oklch(0.14 0.01 40);
+  --color-primary: oklch(0.62 0.22 28);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.14 0.01 40);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.14 0.01 40);
+  --color-muted: oklch(0.955 0.012 50);
+  --color-muted-foreground: oklch(0.52 0.015 50);
+  --color-accent: oklch(0.95 0.025 30);
+  --color-accent-foreground: oklch(0.14 0.01 40);
+  --color-destructive: oklch(0.55 0.22 25);
+  --color-destructive-foreground: oklch(0.99 0 0);
+  --color-success: oklch(0.55 0.16 145);
+  --color-success-foreground: oklch(0.99 0 0);
+  --color-warning: oklch(0.72 0.16 75);
+  --color-warning-foreground: oklch(0.14 0.01 40);
+  --color-border: oklch(0.91 0.012 50);
+  --color-input: oklch(0.91 0.012 50);
+  --color-ring: oklch(0.62 0.22 28);
+}
+
+:root {
+  --background: oklch(0.975 0.012 50);
+  --foreground: oklch(0.14 0.01 40);
+  --primary: oklch(0.62 0.22 28);
+  --primary-foreground: oklch(0.99 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.14 0.01 40);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.14 0.01 40);
+  --muted: oklch(0.955 0.012 50);
+  --muted-foreground: oklch(0.52 0.015 50);
+  --accent: oklch(0.95 0.025 30);
+  --accent-foreground: oklch(0.14 0.01 40);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.55 0.16 145);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.16 75);
+  --warning-foreground: oklch(0.14 0.01 40);
+  --border: oklch(0.91 0.012 50);
+  --input: oklch(0.91 0.012 50);
+  --ring: oklch(0.62 0.22 28);
+
+  /* Shadow scale — gives cards & buttons depth */
+  --shadow-xs: 0 1px 2px 0 oklch(0.14 0.01 40 / 0.04);
+  --shadow-sm: 0 1px 3px 0 oklch(0.14 0.01 40 / 0.06), 0 1px 2px -1px oklch(0.14 0.01 40 / 0.04);
+  --shadow: 0 4px 6px -1px oklch(0.14 0.01 40 / 0.08), 0 2px 4px -2px oklch(0.14 0.01 40 / 0.05);
+  --shadow-md: 0 10px 15px -3px oklch(0.14 0.01 40 / 0.10), 0 4px 6px -4px oklch(0.14 0.01 40 / 0.05);
+  --shadow-lg: 0 20px 25px -5px oklch(0.14 0.01 40 / 0.12), 0 8px 10px -6px oklch(0.14 0.01 40 / 0.08);
+  --shadow-primary: 0 4px 12px -2px oklch(0.62 0.22 28 / 0.30);
+
+  /* Frankenstyle internals */
+  --uk-bg: oklch(0.975 0.012 50);
+  --uk-bg-f: oklch(0.14 0.01 40);
+  --uk-card: oklch(1 0 0);
+  --uk-card-f: oklch(0.14 0.01 40);
+  --uk-drop: oklch(1 0 0);
+  --uk-drop-f: oklch(0.14 0.01 40);
+  --uk-primary: oklch(0.62 0.22 28);
+  --uk-primary-f: oklch(0.99 0 0);
+  --uk-danger: oklch(0.55 0.22 25);
+  --uk-danger-f: oklch(0.99 0 0);
+}
+
+.dark {
+  --color-background: oklch(0.105 0.008 40);
+  --color-foreground: oklch(0.96 0.005 50);
+  --color-primary: oklch(0.68 0.22 28);
+  --color-primary-foreground: oklch(0.105 0 0);
+  --color-card: oklch(0.145 0.008 40);
+  --color-card-foreground: oklch(0.96 0.005 50);
+  --color-popover: oklch(0.145 0.008 40);
+  --color-popover-foreground: oklch(0.96 0.005 50);
+  --color-muted: oklch(0.20 0.008 40);
+  --color-muted-foreground: oklch(0.65 0.015 50);
+  --color-accent: oklch(0.20 0.02 30);
+  --color-accent-foreground: oklch(0.96 0.005 50);
+  --color-destructive: oklch(0.62 0.22 25);
+  --color-destructive-foreground: oklch(0.99 0 0);
+  --color-success: oklch(0.60 0.16 145);
+  --color-success-foreground: oklch(0.105 0 0);
+  --color-warning: oklch(0.74 0.16 75);
+  --color-warning-foreground: oklch(0.105 0 0);
+  --color-border: oklch(0.24 0.008 40);
+  --color-input: oklch(0.24 0.008 40);
+  --color-ring: oklch(0.68 0.22 28);
+
+  --background: oklch(0.105 0.008 40);
+  --foreground: oklch(0.96 0.005 50);
+  --primary: oklch(0.68 0.22 28);
+  --primary-foreground: oklch(0.105 0 0);
+  --card: oklch(0.145 0.008 40);
+  --card-foreground: oklch(0.96 0.005 50);
+  --popover: oklch(0.145 0.008 40);
+  --popover-foreground: oklch(0.96 0.005 50);
+  --muted: oklch(0.20 0.008 40);
+  --muted-foreground: oklch(0.65 0.015 50);
+  --accent: oklch(0.20 0.02 30);
+  --accent-foreground: oklch(0.96 0.005 50);
+  --destructive: oklch(0.62 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.60 0.16 145);
+  --success-foreground: oklch(0.105 0 0);
+  --warning: oklch(0.74 0.16 75);
+  --warning-foreground: oklch(0.105 0 0);
+  --border: oklch(0.24 0.008 40);
+  --input: oklch(0.24 0.008 40);
+  --ring: oklch(0.68 0.22 28);
+
+  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.30);
+  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.35), 0 1px 2px -1px oklch(0 0 0 / 0.30);
+  --shadow: 0 4px 6px -1px oklch(0 0 0 / 0.40), 0 2px 4px -2px oklch(0 0 0 / 0.30);
+  --shadow-md: 0 10px 15px -3px oklch(0 0 0 / 0.45), 0 4px 6px -4px oklch(0 0 0 / 0.30);
+  --shadow-lg: 0 20px 25px -5px oklch(0 0 0 / 0.50), 0 8px 10px -6px oklch(0 0 0 / 0.40);
+  --shadow-primary: 0 4px 12px -2px oklch(0.68 0.22 28 / 0.40);
+
+  --uk-bg: oklch(0.105 0.008 40);
+  --uk-bg-f: oklch(0.96 0.005 50);
+  --uk-card: oklch(0.145 0.008 40);
+  --uk-card-f: oklch(0.96 0.005 50);
+  --uk-drop: oklch(0.145 0.008 40);
+  --uk-drop-f: oklch(0.96 0.005 50);
+  --uk-primary: oklch(0.68 0.22 28);
+  --uk-primary-f: oklch(0.105 0 0);
+  --uk-danger: oklch(0.62 0.22 25);
+  --uk-danger-f: oklch(0.99 0 0);
+}

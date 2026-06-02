@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": false,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "dist"
+  },
+  "include": [
+    "src/index.ts",
+    "src/embed-element.ts",
+    "src/hash-router-adapter.ts",
+    "src/locale.ts",
+    "../../packages/ui/src/vite-env.d.ts"
+  ]
+}

@@ -88,14 +88,10 @@ describe('OrCursorPaginator', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    // Find the Next button by text content or data attribute
-    const buttons = shadow.querySelectorAll('sl-button, button');
-    let nextBtn: HTMLElement | null = null;
-    buttons.forEach((btn) => {
-      if (btn.textContent?.trim().includes('Next')) nextBtn = btn as HTMLElement;
-    });
+    // After Wave 0.1 redesign Next is an icon-only square button with aria-label.
+    const nextBtn = shadow.querySelector('button[aria-label="Next page"]') as HTMLButtonElement | null;
     expect(nextBtn).toBeTruthy();
-    expect((nextBtn as unknown as { disabled?: boolean })?.disabled || nextBtn!.hasAttribute('disabled')).toBe(true);
+    expect(nextBtn!.disabled || nextBtn!.hasAttribute('disabled')).toBe(true);
   });
 
   it('Previous button click emits or-page-changed with direction=prev', async () => {
@@ -108,13 +104,7 @@ describe('OrCursorPaginator', () => {
     el.addEventListener('or-page-changed', (e) => events.push(e as CustomEvent));
 
     const shadow = el.shadowRoot!;
-    const buttons = shadow.querySelectorAll('sl-button, button');
-    let prevBtn: HTMLElement | null = null;
-    buttons.forEach((btn) => {
-      if (btn.textContent?.trim().includes('Previous') || btn.textContent?.trim().includes('Prev')) {
-        prevBtn = btn as HTMLElement;
-      }
-    });
+    const prevBtn = shadow.querySelector('button[aria-label="Previous page"]') as HTMLButtonElement | null;
     expect(prevBtn).toBeTruthy();
     prevBtn!.click();
     await (el as any).updateComplete;
@@ -154,5 +144,42 @@ describe('OrCodeInput', () => {
 
     const result = (el as any).validate();
     expect(result).toBe(false);
+  });
+
+  it('emits or-code-edit from the readonly edit button', async () => {
+    (el as any).value = 'valid_code';
+    (el as any).readonly = true;
+    (el as any).editButton = true;
+    await (el as any).updateComplete;
+
+    const events: CustomEvent[] = [];
+    el.addEventListener('or-code-edit', (e) => events.push(e as CustomEvent));
+
+    const button = el.querySelector('button') as HTMLButtonElement | null;
+    expect(button).toBeTruthy();
+    button!.click();
+
+    expect(events).toHaveLength(1);
+  });
+
+  it('emits save and cancel from editable code actions', async () => {
+    (el as any).value = 'valid_code';
+    (el as any).saveButton = true;
+    (el as any).cancelButton = true;
+    await (el as any).updateComplete;
+
+    const saveEvents: CustomEvent[] = [];
+    const cancelEvents: CustomEvent[] = [];
+    el.addEventListener('or-code-save', (e) => saveEvents.push(e as CustomEvent));
+    el.addEventListener('or-code-cancel', (e) => cancelEvents.push(e as CustomEvent));
+
+    const buttons = Array.from(el.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons).toHaveLength(2);
+
+    buttons[0]!.click();
+    buttons[1]!.click();
+
+    expect(saveEvents[0]?.detail?.value).toBe('valid_code');
+    expect(cancelEvents).toHaveLength(1);
   });
 });

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vue host (embed test)</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "vue": "https://esm.sh/vue@3.5.13"
+      }
+    }
+  </script>
+  <style>
+    * { all: revert; box-sizing: border-box; }
+    body { font-family: serif; background: lime; color: red; }
+  </style>
+</head>
+<body>
+  <h1 style="font-size: 200%; color: purple;">Host CSS poison</h1>
+  <div id="root"></div>
+  <script type="module" src="/embed.js"></script>
+  <script type="module">
+    import { createApp, defineComponent, h } from 'vue';
+
+    const App = defineComponent({
+      render() {
+        return h('open-routing-catalog', {
+          'org-id': '01952a6b-1c00-7000-8000-000000000001',
+          'api-base-url': '',
+          theme: 'or-light',
+          modules: 'agents,skills'
+        });
+      }
+    });
+
+    createApp(App).mount('#root');
+  </script>
+</body>
+</html>

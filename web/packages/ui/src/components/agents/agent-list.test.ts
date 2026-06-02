@@ -28,6 +28,24 @@ describe('OrAgentList', () => {
     if (el.parentNode) el.parentNode.removeChild(el);
   });
 
+  it('renders consistent create CTAs when items=[]', async () => {
+    (el as any).orgId = 'test-org-id';
+    (el as any).client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { items: [], has_more: false, next_cursor: null },
+        error: null,
+      }),
+    };
+    await (el as any).updateComplete;
+    await new Promise((r) => setTimeout(r, 50));
+    await (el as any).updateComplete;
+
+    const shadow = el.shadowRoot!;
+    expect(shadow.textContent).toContain('No agents yet. Click + Create agent to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create agent');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create agent');
+  });
+
   it('renders or-data-table with rows when client.GET resolves successfully', async () => {
     (el as any).orgId = 'test-org-id';
     (el as any).client = {
@@ -46,7 +64,6 @@ describe('OrAgentList', () => {
     // The component renders or-data-table; check it received the rows
     const dataTable = shadow.querySelector('or-data-table') as any;
     expect(dataTable).toBeTruthy();
-    // Verify the rows property is set with the agent data
     expect(dataTable.rows).toHaveLength(1);
     expect(dataTable.rows[0]?.code).toBe('emp_0042');
   });

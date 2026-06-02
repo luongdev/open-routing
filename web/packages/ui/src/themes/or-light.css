@@ -49,6 +49,7 @@
   --or-color-text-strong:      var(--sl-color-neutral-900);
   --or-color-text-muted:       var(--sl-color-neutral-500);
   --or-color-text-on-primary:  #ffffff;
+  --or-color-nav-active-bg:    rgba(43, 138, 147, 0.1);
   --or-color-conflict-bg:      #fef3c7;                            /* amber-100 — calm warning */
   --or-color-conflict-border:  #f59e0b;                            /* amber-500 */
   --or-color-diff-removed:     #fecaca;                            /* red-200 — server's old value */

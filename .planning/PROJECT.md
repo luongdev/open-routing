@@ -10,9 +10,11 @@ The primary users are product teams embedding routing and configuration surfaces
 
 Product teams can define, simulate, debug, publish, and embed powerful routing flows quickly without Open Routing becoming a media platform, agent desktop, CRM, or ticketing system.
 
-## Current Milestone: v0.1 Catalog Foundation
+## Archived Milestone: v0.1 Catalog Foundation
 
 **Goal:** Ship an org-scoped catalog (agents, skills, queues, channels, adapters, break-reasons) plus the agent status model with REST CRUD, JSON/CSV bulk import, a standalone admin UI, and a Web Component-embeddable Catalog config — proving the embed, multi-org isolation, and agent-state foundation before flows or runtime exist.
+
+**Archive status:** Complete as of 2026-06-02. Current shipped behavior is captured in `openspec/specs/`; `.planning/` is historical implementation context only.
 
 **Target features:**
 - Normalized catalog with 6 entities: agents, skills, queues, channels, adapters, break_reasons
@@ -45,9 +47,11 @@ Product teams can define, simulate, debug, publish, and embed powerful routing f
 
 ### Validated
 
-(None yet - ship to validate)
+- v0.1 Catalog Foundation shipped: org-scoped catalog, agent status model, REST CRUD, bulk import, standalone admin UI, and Web Component embed bundle. See `openspec/specs/` for current behavior.
 
 ### Active
+
+The following are long-term product requirements for post-v0.1 milestones and must be formalized through OpenSpec before implementation.
 
 - [ ] Provide a visual flow builder where the UI graph is the source of truth.
 - [ ] Compile published flow graphs into cached executable plans with strict validation.
@@ -139,18 +143,18 @@ The product should feel simple despite powerful behavior. The UI should reduce c
 | REST management API plus internal gRPC runtime API | UI/admin operations and runtime/adapter operations have different needs | - Pending |
 | PostgreSQL outbox first, Kafka/NATS bridge later | Keeps v1 operationally simpler while preserving event-driven growth path | - Pending |
 | Shared database with `org_id` and app-layer enforcement | Org isolation is needed from day one without per-org database overhead | - Pending |
-| Project-wide naming: `org_id` and "org" (not `tenant_id` / "tenant") | Aligns with common SaaS terminology (GitHub/Slack-style "org") and standardises a single noun across schema, APIs, UI, and docs | - Pending (locked in v0.1) |
-| Backend stack: Go + chi (router) + sqlc + pgx + golang-migrate + slog | Go's concurrency/latency profile fits the future runtime engine; chi is idiomatic net/http with OTel-friendly middleware; sqlc gives type-safe SQL without ORM magic; pgx is the fastest native Postgres driver; slog is in stdlib | - Pending (locked in v0.1) |
-| Database: PostgreSQL 17 + Redis (cache layer) | Postgres for source-of-truth with JSONB/outbox support; Redis for hot catalog reads and future agent-state push fan-out (aligns with v1 runtime p95<50ms target) | - Pending (locked in v0.1) |
-| Frontend stack: Vite + Lit + Shoelace + TypeScript (no React, no Next.js) | Lit produces real Custom Elements with ~5KB runtime; Shoelace ships accessible production-grade components; native Web Components means zero React-version-skew risk with host apps and CSS-custom-property theming maps directly to PROJECT.md's "theme tokens" requirement | - Pending (locked in v0.1) |
-| Embedding: Web Components (Custom Elements) as the v0.1 distributable; iframe deferred | Web Components are framework-agnostic by definition — host apps in any framework can mount via HTML tag; Shadow DOM provides CSS isolation; no Module Federation/single-spa orchestration needed | - Pending (locked in v0.1) |
+| Project-wide naming: `org_id` and "org" (not `tenant_id` / "tenant") | Aligns with common SaaS terminology (GitHub/Slack-style "org") and standardises a single noun across schema, APIs, UI, and docs | Complete in v0.1 |
+| Backend stack: Go + chi (router) + sqlc + pgx + golang-migrate + slog | Go's concurrency/latency profile fits the future runtime engine; chi is idiomatic net/http with OTel-friendly middleware; sqlc gives type-safe SQL without ORM magic; pgx is the fastest native Postgres driver; slog is in stdlib | Complete in v0.1 |
+| Database: PostgreSQL 17 + Redis (cache layer) | Postgres for source-of-truth with JSONB/outbox support; Redis for hot catalog reads and future agent-state push fan-out (aligns with v1 runtime p95<50ms target) | Complete in v0.1 |
+| Frontend stack: Vite + Lit + Shoelace + TypeScript (no React, no Next.js) | Lit produces real Custom Elements with ~5KB runtime; Shoelace ships accessible production-grade components; native Web Components means zero React-version-skew risk with host apps and CSS-custom-property theming maps directly to PROJECT.md's "theme tokens" requirement | Complete in v0.1 |
+| Embedding: Web Components (Custom Elements) as the v0.1 distributable; iframe deferred | Web Components are framework-agnostic by definition — host apps in any framework can mount via HTML tag; Shadow DOM provides CSS isolation; no Module Federation/single-spa orchestration needed | Complete in v0.1 |
 | API contract: OpenAPI 3.0 spec as source-of-truth → oapi-codegen (Go server stubs) + openapi-typescript (TS client) | Contract-first prevents drift between Go backend and TS frontend; spec doubles as customer-facing API documentation; gRPC contract (Buf/Connect) added alongside when v1 runtime engine arrives. Originally scoped as OpenAPI 3.1, downgraded to 3.0 for oapi-codegen v2 compatibility. | Complete in Phase 2 |
-| Repo structure: polyglot monorepo (Go module + pnpm workspaces side-by-side) | Single source of truth for backend + frontend + migrations + OpenAPI spec; atomic cross-cutting commits; Go uses native `go.mod`; Node side uses pnpm workspaces; Turborepo or Makefile orchestrates tasks across both | - Pending (locked in v0.1) |
-| Realtime in v0.1: REST polling only (no WebSocket/SSE) | Catalog UI does not need realtime; agent state changes are polled every ~5s; SSE/WS pushed to v0.2 when runtime engine needs broadcast | - Pending (locked in v0.1) |
-| Browser workers (service/shared/web) deferred to v0.2 | No offline, no push notifications, no SSE-deduplication needed in v0.1; Web Worker CSV preview is nice-to-have only | - Pending (locked in v0.1) |
+| Repo structure: polyglot monorepo (Go module + pnpm workspaces side-by-side) | Single source of truth for backend + frontend + migrations + OpenAPI spec; atomic cross-cutting commits; Go uses native `go.mod`; Node side uses pnpm workspaces; Turborepo or Makefile orchestrates tasks across both | Complete in v0.1 |
+| Realtime in v0.1: REST polling only (no WebSocket/SSE) | Catalog UI does not need realtime; agent state changes are polled every ~5s; SSE/WS pushed to v0.2 when runtime engine needs broadcast | Complete in v0.1 |
+| Browser workers (service/shared/web) deferred to v0.2 | No offline, no push notifications, no SSE-deduplication needed in v0.1; Web Worker CSV preview is nice-to-have only | Complete in v0.1 |
 | Split control-plane and runtime-engine from the start | Protects routing hot path without decomposing into many services | - Pending |
 | Route decision target is p95 under 50 ms | Performance is part of the product value, not a later optimization | - Pending |
-| Embedded UI uses Web Components in v0.1 (iframe and Module Federation deferred) | Web Components are framework-agnostic by definition; host products in any framework can mount via HTML tag with Shadow DOM CSS isolation, no orchestration tooling needed | - Pending (locked in v0.1) |
+| Embedded UI uses Web Components in v0.1 (iframe and Module Federation deferred) | Web Components are framework-agnostic by definition; host products in any framework can mount via HTML tag with Shadow DOM CSS isolation, no orchestration tooling needed | Complete in v0.1 |
 | v1 excludes media/call control, agent desktop, WFM, CRM, ticketing, and production adapters | Keeps the project inside open-routing boundaries | - Pending |
 | Auth/RBAC supports standalone and embedded SSO later | Needed long term, but full implementation can wait until a later milestone | - Pending |
 
@@ -172,4 +176,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-16 — Phase 2 complete; Phase 3 context/research ready*
+*Archived: 2026-06-02 — v0.1 complete; OpenSpec is canonical*

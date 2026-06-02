@@ -6,6 +6,8 @@
 
 > v0.1 ships the catalog data model + agent status machine + a standalone admin app + a Web Component embed bundle. No flows, no routing execution, no real adapters. Everything in v0.1 is foundational — every later milestone (flows, runtime, simulator) depends on this layer being correct.
 
+**Archived:** 2026-06-02. v0.1 is complete and this GSD requirements file is frozen as historical detail. Current behavior and future changes are tracked in `openspec/specs/` and `openspec/changes/`.
+
 **Locked stack (see PROJECT.md Key Decisions for rationale):**
 - Backend: Go + chi + sqlc + pgx + golang-migrate + slog
 - Database: PostgreSQL 17 + Redis
@@ -38,17 +40,17 @@
 
 ### Catalog CRUD
 
-- [ ] **CAT-01**: Org admin can create, read, update, and soft-delete `agents` (`id, external_id, name, email, enabled, version`) via REST API.
-- [ ] **CAT-02**: Org admin can create, read, update, and soft-delete `skills` (`id, external_id, name, description, skill_type, enabled, version`) via REST API.
-- [ ] **CAT-03**: Org admin can assign and unassign skills to/from agents with a `proficiency` integer (validated 1–10) on each `agent_skills` join row.
-- [ ] **CAT-04**: Org admin can create, read, update, and soft-delete `queues` (`id, external_id, name, channel_types, priority, acw_sec, enabled, version`) via REST API.
-- [ ] **CAT-05**: Org admin can create, read, update, and soft-delete `channels` (`id, external_id, name, channel_type, default_queue_id, enabled`) via REST API.
-- [ ] **CAT-06**: Org admin can create, read, update, and soft-delete `adapters` (`id, name, adapter_type, config JSONB, enabled`) via REST API; `config` is a free-form JSONB blob with no vendor-specific fixed columns.
-- [ ] **CAT-07**: Org admin can create, read, update, and soft-delete `break_reasons` (`id, name, routable BOOLEAN, display_order, enabled`) via REST API.
-- [ ] **CAT-08**: All update endpoints require a `version` field on the request body; version mismatch returns HTTP 409 with the current server-side record.
-- [ ] **CAT-09**: Soft-deleted entities (`enabled=false`) are excluded from default list responses; an explicit `?include_disabled=true` query parameter is required to surface them.
-- [ ] **CAT-10**: List endpoints support cursor-based pagination, filtering by `enabled`, and a case-insensitive `name` search.
-- [ ] **CAT-11**: Hot-path read queries (single-entity GETs, status lookups) cache through Redis with a TTL of 60s and a cache key namespaced as `or:{orgId}:{entity}:{id}`; cache invalidates on write within the same request.
+- [x] **CAT-01**: Org admin can create, read, update, and soft-delete `agents` (`id, external_id, name, email, enabled, version`) via REST API.
+- [x] **CAT-02**: Org admin can create, read, update, and soft-delete `skills` (`id, external_id, name, description, skill_type, enabled, version`) via REST API.
+- [x] **CAT-03**: Org admin can assign and unassign skills to/from agents with a `proficiency` integer (validated 1–10) on each `agent_skills` join row.
+- [x] **CAT-04**: Org admin can create, read, update, and soft-delete `queues` (`id, external_id, name, channel_types, priority, acw_sec, enabled, version`) via REST API.
+- [x] **CAT-05**: Org admin can create, read, update, and soft-delete `channels` (`id, external_id, name, channel_type, default_queue_id, enabled`) via REST API.
+- [x] **CAT-06**: Org admin can create, read, update, and soft-delete `adapters` (`id, name, adapter_type, config JSONB, enabled`) via REST API; `config` is a free-form JSONB blob with no vendor-specific fixed columns.
+- [x] **CAT-07**: Org admin can create, read, update, and soft-delete `break_reasons` (`id, name, routable BOOLEAN, display_order, enabled`) via REST API.
+- [x] **CAT-08**: All update endpoints require a `version` field on the request body; version mismatch returns HTTP 409 with the current server-side record.
+- [x] **CAT-09**: Soft-deleted entities (`enabled=false`) are excluded from default list responses; an explicit `?include_disabled=true` query parameter is required to surface them.
+- [x] **CAT-10**: List endpoints support cursor-based pagination, filtering by `enabled`, and a case-insensitive `name` search.
+- [x] **CAT-11**: Hot-path read queries (single-entity GETs, status lookups) cache through Redis with a TTL of 60s and a cache key namespaced as `or:{orgId}:{entity}:{id}`; cache invalidates on write within the same request.
 
 ### Agent State Model
 
@@ -67,47 +69,47 @@
 
 > Inserted after `03-CATALOG-IDENTITY-REVIEW.md` cross-AI peer-review consensus (Codex, Gemini, Claude Opus all returned BLOCK PHASE 5 ONLY). Replaces the implicit `external_id`-as-user-key model with an explicit `code` (user-facing) + optional `external_id` (integration mapping) split. See `03-CATALOG-IDENTITY-REVIEW-RESPONSE.md` for synthesis.
 
-- [ ] **IDENT-01**: All 6 primary catalog entities (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`) have a `code TEXT NOT NULL` column with composite `UNIQUE (org_id, code)`; `code` is the user-facing canonical identifier used by bulk import, OpenAPI references, and future DSL.
-- [ ] **IDENT-02**: `external_id` is demoted to optional integration mapping on all 6 entities (`TEXT NULL`) with partial unique index `(org_id, external_id) WHERE external_id IS NOT NULL`; the previous `NOT NULL` + composite-unique constraint on `agents`, `skills`, `queues`, `channels` is removed.
-- [ ] **IDENT-03**: `break_reasons.UNIQUE (org_id, name)` is dropped — `name` becomes a mutable display label, no longer identity; `break_reasons` gains both `code` (required) and `external_id` (optional) per IDENT-01/IDENT-02.
-- [ ] **IDENT-04**: `Create*Request` schemas in `openapi/openapi.yaml` require `code` for all 6 entities and may accept `external_id`; `Update*Request` schemas treat `code` as immutable in v0.1 (mutation attempts return HTTP 422 with `ErrorCode=immutable_field`); rename support deferred to v0.2.
-- [ ] **IDENT-05**: sqlc queries are regenerated for all 6 catalog entities to read/write `code`; per-entity `InsertX`/`UpsertX`/`GetXByCode` query primitives exist; `task gen` produces no manual-edit diff.
-- [ ] **IDENT-06**: 6 CRUD handlers (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`) read `code` from request bodies, surface 409 `duplicate_code` on `(org_id, code)` collisions, and surface a distinct 409 `duplicate_external_id` on `(org_id, external_id)` collisions when the field is set.
-- [ ] **IDENT-07**: Migration `000002_catalog_v0_1.up.sql` is amended in place (D-61 still applies — migration is editable until v0.1 ships); no migration 003 is added; `task db:reset` rebuilds the schema cleanly from a Phase 1 baseline.
-- [ ] **IDENT-08**: Two-org isolation test suite is updated — fixtures use `code`-keyed rows; every CRUD endpoint exercises both `code` collisions (409 duplicate_code) and `external_id` collisions (409 duplicate_external_id) within a single org and across orgs.
+- [x] **IDENT-01**: All 6 primary catalog entities (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`) have a `code TEXT NOT NULL` column with composite `UNIQUE (org_id, code)`; `code` is the user-facing canonical identifier used by bulk import, OpenAPI references, and future DSL.
+- [x] **IDENT-02**: `external_id` is demoted to optional integration mapping on all 6 entities (`TEXT NULL`) with partial unique index `(org_id, external_id) WHERE external_id IS NOT NULL`; the previous `NOT NULL` + composite-unique constraint on `agents`, `skills`, `queues`, `channels` is removed.
+- [x] **IDENT-03**: `break_reasons.UNIQUE (org_id, name)` is dropped — `name` becomes a mutable display label, no longer identity; `break_reasons` gains both `code` (required) and `external_id` (optional) per IDENT-01/IDENT-02.
+- [x] **IDENT-04**: `Create*Request` schemas in `openapi/openapi.yaml` require `code` for all 6 entities and may accept `external_id`; `Update*Request` schemas treat `code` as immutable in v0.1 (mutation attempts return HTTP 422 with `ErrorCode=immutable_field`); rename support deferred to v0.2.
+- [x] **IDENT-05**: sqlc queries are regenerated for all 6 catalog entities to read/write `code`; per-entity `InsertX`/`UpsertX`/`GetXByCode` query primitives exist; `task gen` produces no manual-edit diff.
+- [x] **IDENT-06**: 6 CRUD handlers (`agents`, `skills`, `queues`, `channels`, `adapters`, `break_reasons`) read `code` from request bodies, surface 409 `duplicate_code` on `(org_id, code)` collisions, and surface a distinct 409 `duplicate_external_id` on `(org_id, external_id)` collisions when the field is set.
+- [x] **IDENT-07**: Migration `000002_catalog_v0_1.up.sql` is amended in place (D-61 still applies — migration is editable until v0.1 ships); no migration 003 is added; `task db:reset` rebuilds the schema cleanly from a Phase 1 baseline.
+- [x] **IDENT-08**: Two-org isolation test suite is updated — fixtures use `code`-keyed rows; every CRUD endpoint exercises both `code` collisions (409 duplicate_code) and `external_id` collisions (409 duplicate_external_id) within a single org and across orgs.
 
 ### Bulk Import
 
-- [ ] **IMP-01**: Org admin can `POST /v1/orgs/{org_id}/catalog/import?entity={entity_type}` with a JSON or CSV body for any of the 6 catalog entities.
-- [ ] **IMP-02**: CSV parser normalizes Byte Order Marks, accepts CRLF and LF line endings, and handles quoted fields with embedded commas, newlines, and quotes (Go `encoding/csv` with explicit BOM handling).
-- [ ] **IMP-03**: Import upserts rows keyed by `(org_id, code)` via `INSERT ... ON CONFLICT (org_id, code) DO UPDATE`; existing rows update fields, new rows insert; the same input run twice produces no duplicates. *(Updated post Phase 04.1 — was `(org_id, external_id)`.)*
-- [ ] **IMP-04**: Failed rows return structured errors with row number, field name, and a human-readable message; valid rows in the same batch still succeed.
-- [ ] **IMP-05**: Import endpoint returns HTTP 207 Multi-Status with body `{ succeeded: [ids], failed: [{row, field, message}] }` when any rows fail; HTTP 200 when all succeed.
-- [ ] **IMP-06**: Import sessions persist in `import_jobs` (id, org_id, entity_type, total_rows, succeeded_rows, failed_rows, errors JSONB, created_at); `GET /v1/orgs/{org_id}/imports/{id}` returns the session result.
-- [ ] **IMP-07**: Import body is capped at 50 MB and 500 rows; oversized requests return HTTP 413 with a message pointing to the v0.2 async pathway.
-- [ ] **IMP-08**: CSV requests require `?schema_version=v0.1`; mismatched versions return HTTP 400 with a list of supported versions.
+- [x] **IMP-01**: Org admin can `POST /v1/orgs/{org_id}/catalog/import?entity={entity_type}` with a JSON or CSV body for any of the 6 catalog entities.
+- [x] **IMP-02**: CSV parser normalizes Byte Order Marks, accepts CRLF and LF line endings, and handles quoted fields with embedded commas, newlines, and quotes (Go `encoding/csv` with explicit BOM handling).
+- [x] **IMP-03**: Import upserts rows keyed by `(org_id, code)` via `INSERT ... ON CONFLICT (org_id, code) DO UPDATE`; existing rows update fields, new rows insert; the same input run twice produces no duplicates. *(Updated post Phase 04.1 — was `(org_id, external_id)`.)*
+- [x] **IMP-04**: Failed rows return structured errors with row number, field name, and a human-readable message; valid rows in the same batch still succeed.
+- [x] **IMP-05**: Import endpoint returns HTTP 207 Multi-Status with body `{ succeeded: [ids], failed: [{row, field, message}] }` when any rows fail; HTTP 200 when all succeed.
+- [x] **IMP-06**: Import sessions persist in `import_jobs` (id, org_id, entity_type, total_rows, succeeded_rows, failed_rows, errors JSONB, created_at); `GET /v1/orgs/{org_id}/imports/{id}` returns the session result.
+- [x] **IMP-07**: Import body is capped at 50 MB and 500 rows; oversized requests return HTTP 413 with a message pointing to the v0.2 async pathway.
+- [x] **IMP-08**: CSV requests require `?schema_version=v0.1`; mismatched versions return HTTP 400 with a list of supported versions.
 
 ### Standalone Admin App
 
-- [ ] **ADMIN-01**: `apps/admin` builds as a Vite SPA written in TypeScript + Lit + Shoelace, deployable as a static bundle to any web host.
-- [ ] **ADMIN-02**: Admin app provides list, create, edit, and delete screens for all 6 catalog entities (agents, skills, queues, channels, adapters, break_reasons), reusing Lit components from `packages/ui`.
-- [ ] **ADMIN-03**: Admin app reads `org_id` from URL path or a configured stub login screen and stores it in app state; all API calls include `X-Org-Id` derived from app state.
-- [ ] **ADMIN-04**: Admin app uses the generated TypeScript API client from `packages/ui` (re-exporting from `openapi-typescript` output); types stay in sync with the OpenAPI spec automatically.
-- [ ] **ADMIN-05**: Admin app handles HTTP 409 optimistic-lock failures by re-fetching the entity and surfacing a "Changed by someone else, reload?" affordance.
-- [ ] **ADMIN-06**: Admin app applies Shoelace theme tokens via CSS custom properties at the root; theme variants are switchable at runtime.
+- [x] **ADMIN-01**: `apps/admin` builds as a Vite SPA written in TypeScript + Lit + Shoelace, deployable as a static bundle to any web host.
+- [x] **ADMIN-02**: Admin app provides list, create, edit, and delete screens for all 6 catalog entities (agents, skills, queues, channels, adapters, break_reasons), reusing Lit components from `packages/ui`.
+- [x] **ADMIN-03**: Admin app reads `org_id` from URL path or a configured stub login screen and stores it in app state; all API calls include `X-Org-Id` derived from app state.
+- [x] **ADMIN-04**: Admin app uses the generated TypeScript API client from `packages/ui` (re-exporting from `openapi-typescript` output); types stay in sync with the OpenAPI spec automatically.
+- [x] **ADMIN-05**: Admin app handles HTTP 409 optimistic-lock failures by re-fetching the entity and surfacing a "Changed by someone else, reload?" affordance.
+- [x] **ADMIN-06**: Admin app applies Shoelace theme tokens via CSS custom properties at the root; theme variants are switchable at runtime.
 
 ### Web Component Embed Bundle
 
-- [ ] **EMBED-01**: `apps/embed` builds as a single ES module bundle that registers `<open-routing-catalog>` as a Custom Element on import; bundle size target is ≤ 70 KB gzipped (Lit runtime + Shoelace tree-shaken + app code).
-- [ ] **EMBED-02**: Host app mounts the element as `<open-routing-catalog org-id="..." api-base-url="..." theme="..." modules="..."></open-routing-catalog>`; `org-id` flows to all REST calls via the `X-Org-Id` header (never via `window` globals or `localStorage`).
-- [ ] **EMBED-03**: Embed renders list + create + edit + delete screens for all 6 catalog entities, reusing the same Lit components from `packages/ui` as `apps/admin`.
-- [ ] **EMBED-04**: Embed wraps all rendering inside Shadow DOM; no CSS bleeds in or out; host page styles are unaffected even when host uses an aggressive CSS reset.
-- [ ] **EMBED-05**: Embed accepts the `theme` attribute as a JSON-encoded set of CSS custom property tokens (colors, typography, spacing) and applies them on the Shadow DOM host node.
-- [ ] **EMBED-06**: Embed accepts the `modules` attribute as a comma-separated entity name list; only listed entities appear in navigation and routes (e.g. `modules="agents,skills,queues"` hides channels/adapters/break_reasons).
-- [ ] **EMBED-07**: Embed dispatches `open-routing:request-context` CustomEvent on mount and `open-routing:auth-expired` on HTTP 401 (contract reserved for v1 auth integration); both events bubble across the Shadow DOM boundary via `composed: true`.
-- [ ] **EMBED-08**: Embed handles HTTP 409 optimistic-lock failures with the same "Changed by someone else, reload?" affordance as the standalone admin app.
-- [ ] **EMBED-09**: Embed bundle is published as `@open-routing/catalog-embed` on the npm registry (or served from a CDN URL) so host apps can `import 'https://cdn.../catalog-embed.js'` or `import '@open-routing/catalog-embed'`.
-- [ ] **EMBED-10**: Integration test loads the embed inside a Playwright stub host page (React 18, Vue 3, and plain HTML variants) and verifies (a) Shadow DOM CSS isolation in both directions, (b) `org-id` propagation on every API call, (c) `open-routing:auth-expired` fires on 401, (d) bundle gzipped size is under 70 KB.
+- [x] **EMBED-01**: `apps/embed` builds as a single ES module bundle that registers `<open-routing-catalog>` as a Custom Element on import; bundle size target is ≤ 70 KB gzipped (Lit runtime + Shoelace tree-shaken + app code).
+- [x] **EMBED-02**: Host app mounts the element as `<open-routing-catalog org-id="..." api-base-url="..." theme="..." modules="..."></open-routing-catalog>`; `org-id` flows to all REST calls via the `X-Org-Id` header (never via `window` globals or `localStorage`).
+- [x] **EMBED-03**: Embed renders list + create + edit + delete screens for all 6 catalog entities, reusing the same Lit components from `packages/ui` as `apps/admin`.
+- [x] **EMBED-04**: Embed wraps all rendering inside Shadow DOM; no CSS bleeds in or out; host page styles are unaffected even when host uses an aggressive CSS reset.
+- [x] **EMBED-05**: Embed accepts the `theme` attribute as a JSON-encoded set of CSS custom property tokens (colors, typography, spacing) and applies them on the Shadow DOM host node.
+- [x] **EMBED-06**: Embed accepts the `modules` attribute as a comma-separated entity name list; only listed entities appear in navigation and routes (e.g. `modules="agents,skills,queues"` hides channels/adapters/break_reasons).
+- [x] **EMBED-07**: Embed dispatches `open-routing:request-context` CustomEvent on mount and `open-routing:auth-expired` on HTTP 401 (contract reserved for v1 auth integration); both events bubble across the Shadow DOM boundary via `composed: true`.
+- [x] **EMBED-08**: Embed handles HTTP 409 optimistic-lock failures with the same "Changed by someone else, reload?" affordance as the standalone admin app.
+- [x] **EMBED-09**: Embed package is tarball-ready as `@open-routing/catalog-embed` for v0.1 distribution; npm/CDN publication is deferred until release policy requires it.
+- [x] **EMBED-10**: Integration test loads the embed inside a Playwright stub host page (React 18, Vue 3, and plain HTML variants) and verifies (a) Shadow DOM CSS isolation in both directions, (b) `org-id` propagation on every API call, (c) `open-routing:auth-expired` fires on 401, (d) bundle gzipped size is under 70 KB.
 
 ## Future Requirements (v0.2+)
 
@@ -215,17 +217,25 @@ Explicitly excluded. Documented to prevent scope creep.
 | CONTRACT-02 | Phase 2 | Complete |
 | CONTRACT-03 | Phase 2 | Complete |
 | CONTRACT-04 | Phase 2 | Complete |
-| CAT-01 | Phase 3 | Pending |
-| CAT-02 | Phase 3 | Pending |
-| CAT-03 | Phase 3 | Pending |
-| CAT-04 | Phase 3 | Pending |
-| CAT-05 | Phase 3 | Pending |
-| CAT-06 | Phase 3 | Pending |
-| CAT-07 | Phase 3 | Pending |
-| CAT-08 | Phase 3 | Pending |
-| CAT-09 | Phase 3 | Pending |
-| CAT-10 | Phase 3 | Pending |
-| CAT-11 | Phase 3 | Pending |
+| CAT-01 | Phase 3 | Complete |
+| CAT-02 | Phase 3 | Complete |
+| CAT-03 | Phase 3 | Complete |
+| CAT-04 | Phase 3 | Complete |
+| CAT-05 | Phase 3 | Complete |
+| CAT-06 | Phase 3 | Complete |
+| CAT-07 | Phase 3 | Complete |
+| CAT-08 | Phase 3 | Complete |
+| CAT-09 | Phase 3 | Complete |
+| CAT-10 | Phase 3 | Complete |
+| CAT-11 | Phase 3 | Complete |
+| IDENT-01 | Phase 04.1 | Complete |
+| IDENT-02 | Phase 04.1 | Complete |
+| IDENT-03 | Phase 04.1 | Complete |
+| IDENT-04 | Phase 04.1 | Complete |
+| IDENT-05 | Phase 04.1 | Complete |
+| IDENT-06 | Phase 04.1 | Complete |
+| IDENT-07 | Phase 04.1 | Complete |
+| IDENT-08 | Phase 04.1 | Complete |
 | STATE-01 | Phase 4 | Complete |
 | STATE-02 | Phase 4 | Complete |
 | STATE-03 | Phase 4 | Complete |
@@ -236,36 +246,37 @@ Explicitly excluded. Documented to prevent scope creep.
 | STATE-08 | Phase 4 | Complete |
 | STATE-09 | Phase 4 | Complete |
 | STATE-10 | Phase 4 | Complete |
-| IMP-01 | Phase 5 | Pending |
-| IMP-02 | Phase 5 | Pending |
-| IMP-03 | Phase 5 | Pending |
-| IMP-04 | Phase 5 | Pending |
-| IMP-05 | Phase 5 | Pending |
-| IMP-06 | Phase 5 | Pending |
-| IMP-07 | Phase 5 | Pending |
-| IMP-08 | Phase 5 | Pending |
-| ADMIN-01 | Phase 6 | Pending |
-| ADMIN-02 | Phase 6 | Pending |
-| ADMIN-03 | Phase 6 | Pending |
-| ADMIN-04 | Phase 6 | Pending |
-| ADMIN-05 | Phase 6 | Pending |
-| ADMIN-06 | Phase 6 | Pending |
-| EMBED-01 | Phase 7 | Pending |
-| EMBED-02 | Phase 7 | Pending |
-| EMBED-03 | Phase 7 | Pending |
-| EMBED-04 | Phase 7 | Pending |
-| EMBED-05 | Phase 7 | Pending |
-| EMBED-06 | Phase 7 | Pending |
-| EMBED-07 | Phase 7 | Pending |
-| EMBED-08 | Phase 7 | Pending |
-| EMBED-09 | Phase 7 | Pending |
-| EMBED-10 | Phase 7 | Pending |
+| IMP-01 | Phase 5 | Complete |
+| IMP-02 | Phase 5 | Complete |
+| IMP-03 | Phase 5 | Complete |
+| IMP-04 | Phase 5 | Complete |
+| IMP-05 | Phase 5 | Complete |
+| IMP-06 | Phase 5 | Complete |
+| IMP-07 | Phase 5 | Complete |
+| IMP-08 | Phase 5 | Complete |
+| ADMIN-01 | Phase 6 | Complete |
+| ADMIN-02 | Phase 6 | Complete |
+| ADMIN-03 | Phase 6 | Complete |
+| ADMIN-04 | Phase 6 | Complete |
+| ADMIN-05 | Phase 6 | Complete |
+| ADMIN-06 | Phase 6 | Complete |
+| EMBED-01 | Phase 7 | Complete |
+| EMBED-02 | Phase 7 | Complete |
+| EMBED-03 | Phase 7 | Complete |
+| EMBED-04 | Phase 7 | Complete |
+| EMBED-05 | Phase 7 | Complete |
+| EMBED-06 | Phase 7 | Complete |
+| EMBED-07 | Phase 7 | Complete |
+| EMBED-08 | Phase 7 | Complete |
+| EMBED-09 | Phase 7 | Complete |
+| EMBED-10 | Phase 7 | Complete |
 
 **Coverage:**
-- v0.1 requirements: 53 total
-- Mapped to phases: 53
+- v0.1 baseline requirements: 53 total
+- Inserted catalog identity requirements: 8 total
+- Mapped to phases: all v0.1 requirements
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-15*
-*Last updated: 2026-05-16 — Phase 2 complete; traceability updated through Phase 2*
+*Archived: 2026-06-02 — v0.1 complete; OpenSpec is canonical*

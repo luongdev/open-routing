@@ -50,7 +50,9 @@ tasks:
 
   # ---- Dev (D-24 flow) ----
   dev:
-    desc: Bring up infra (postgres + redis) and run API with air hot-reload
+    desc: Bring up infra (postgres + redis) and run API with air hot-reload (Note: dev sets CORS_ALLOWED_ORIGINS=* but prod requires explicit allowlist per V14 security)
+    env:
+      CORS_ALLOWED_ORIGINS: '*'
     cmds:
       - docker compose up -d postgres redis
       - cd services/api && air -c .air.toml

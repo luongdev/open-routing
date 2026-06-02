@@ -52,18 +52,15 @@ describe('OrQueueDetail', () => {
     expect(codeInput.value).toBe('queue_billing');
   });
 
-  it('channel_types renders as sl-select with multiple attribute and 3 sl-option elements', async () => {
+  it('channel_types renders as pill checkboxes for voice/chat/email', async () => {
     await mountWithQueue(el);
     const shadow = el.shadowRoot!;
-    const select = shadow.querySelector('sl-select[multiple]');
-    expect(select).toBeTruthy();
-    // Should have 3 options: voice, chat, email
-    const options = shadow.querySelectorAll('sl-option');
-    expect(options.length).toBeGreaterThanOrEqual(3);
-    const optionValues = Array.from(options).map((o) => o.getAttribute('value') ?? (o as any).value);
-    expect(optionValues).toContain('voice');
-    expect(optionValues).toContain('chat');
-    expect(optionValues).toContain('email');
+    const labels = Array.from(shadow.querySelectorAll('label, .pill-check, [data-channel-type]'))
+      .map((el) => el.textContent?.toLowerCase() ?? '');
+    const allText = labels.join(' ');
+    expect(allText).toContain('voice');
+    expect(allText).toContain('chat');
+    expect(allText).toContain('email');
   });
 
   it('validateUpdateQueue rejects if channel_types array is empty (minItems=1)', async () => {

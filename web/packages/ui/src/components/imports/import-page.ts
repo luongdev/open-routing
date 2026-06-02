@@ -7,6 +7,7 @@
 // ADMIN-04: all HTTP is via createImporter() only. No direct fetch calls permitted.
 // D6-08: Per-component Shoelace imports for tree-shaking.
 // D6-13: UUIDv7 idempotency key generated via crypto.randomUUID().
+// W0.1-22: redesigned to Ember bulk-import-wizard style (no sl-* in shadow).
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -14,19 +15,7 @@ import { when } from 'lit/directives/when.js';
 import { createImporter, ImportError } from '../../api/import.js';
 import type { CatalogEntity, ImportCatalogArgs, BulkImportResult } from '../../api/import.js';
 import type { ApiClient } from '../../api/client.js';
-
-// Shoelace per-component imports (D6-08: tree-shaking required for Phase 7 70KB budget)
-import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
-import '@shoelace-style/shoelace/dist/components/radio/radio.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import '../primitives/form-wizard.js';
@@ -43,6 +32,15 @@ const ENTITY_LABELS: Record<CatalogEntity, string> = {
   channels: 'Channels',
   adapters: 'Adapters',
   break_reasons: 'Break Reasons',
+};
+
+const ENTITY_ICONS: Record<CatalogEntity, string> = {
+  agents: 'users',
+  skills: 'star',
+  queues: 'list',
+  channels: 'radio',
+  adapters: 'plug',
+  break_reasons: 'coffee',
 };
 
 /** CSV format help content per entity (D5-04, D5-15..D5-17, UI-SPEC §5.8) */
@@ -83,21 +81,19 @@ interface ExtendedBulkImportResult extends BulkImportResult {
 }
 
 const WIZARD_STEPS: OrFormWizardStep[] = [
-  { key: 'pick', label: 'Pick' },
-  { key: 'upload', label: 'Upload' },
+  { key: 'pick', label: 'Choose entity' },
+  { key: 'upload', label: 'Upload file' },
   { key: 'review', label: 'Review' },
 ];
 
 /**
- * <or-import-page> — 3-step bulk import wizard.
+ * <or-import-page> — Ember bulk-import-wizard style, 3-step.
  *
- * Step 1: Entity picker (6 radio options)
+ * Step 1: Entity picker (6 radio cards in a grid)
  * Step 2: File upload (drag-drop zone, format toggle, CSV help, idempotency)
  * Step 3: Review + submit
  *
  * All HTTP calls are via createImporter() — ADMIN-04 forbids direct fetch calls.
- *
- * Dispatches 'open-routing:navigate' on successful import (200/207/422 all navigate).
  *
  * Properties:
  *   - orgId: (attribute 'org-id') — org UUID from URL
@@ -109,93 +105,199 @@ export class OrImportPage extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      max-width: 720px;
-      margin: 0 auto;
+      padding: 24px;
+      background: var(--background);
+      min-height: 100%;
     }
 
-    h1 {
-      font-size: 20px;
-      font-weight: 600;
-      margin: 0 0 24px;
-      color: var(--or-color-text-strong, #1a1a1a);
+    /* ── Page header ─────────────────────────────────────────────── */
+    .page-header {
+      margin-bottom: 28px;
     }
 
-    h2 {
-      font-size: 16px;
-      font-weight: 600;
-      margin: 0 0 16px;
-      color: var(--or-color-text-strong, #1a1a1a);
-    }
-
-    /* Step 1: Entity picker */
-    .entity-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
+    .page-header-top {
+      display: flex;
+      align-items: center;
       gap: 12px;
-      margin: 16px 0;
+      margin-bottom: 4px;
     }
 
-    .entity-card {
-      border: 2px solid var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
-      padding: 16px;
+    .back-btn {
+      background: none;
+      border: none;
       cursor: pointer;
-      background: transparent;
-      text-align: left;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .page-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
       font-size: 14px;
-      color: var(--or-color-text-body, #404040);
-      transition: border-color 0.15s ease, background 0.15s ease;
+      color: var(--muted-foreground);
+      margin: 0 0 0 44px;
     }
 
-    .entity-card:hover {
-      border-color: var(--sl-color-primary-300, #7ec8d0);
-      background: var(--sl-color-primary-50, #f0fafb);
+    /* ── Wizard card ─────────────────────────────────────────────── */
+    .wizard-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      max-width: 720px;
+      overflow: hidden;
+      padding: 24px;
     }
 
-    .entity-card.selected {
-      border-color: var(--sl-color-primary-500, #2b8a93);
-      background: var(--sl-color-primary-50, #f0fafb);
+    .wizard-body {
+      padding: 0;
     }
 
-    .entity-card-label {
+    /* ── Step heading ────────────────────────────────────────────── */
+    .step-heading {
+      font-size: 17px;
       font-weight: 600;
-      font-size: 15px;
+      color: var(--foreground);
+      margin: 0 0 6px;
+    }
+
+    .step-subheading {
+      font-size: 13px;
+      color: var(--muted-foreground);
+      margin: 0 0 20px;
+    }
+
+    /* ── Radio cards grid (entity picker) ───────────────────────── */
+    .radio-card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 560px) {
+      .radio-card-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .radio-card {
+      position: relative;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 14px;
+      cursor: pointer;
+      background: var(--card);
+      text-align: left;
+      transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+
+    .radio-card:hover {
+      border-color: var(--primary);
+      background: color-mix(in oklch, var(--primary) 6%, transparent);
+    }
+
+    .radio-card.selected {
+      border-color: var(--primary);
+      background: color-mix(in oklch, var(--primary) 8%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 20%, transparent);
+    }
+
+    .radio-card input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .radio-card-icon {
+      color: var(--muted-foreground);
+      margin-bottom: 8px;
       display: block;
     }
 
-    /* Step 2: Upload */
-    .format-toggle {
-      margin-bottom: 16px;
+    .radio-card.selected .radio-card-icon {
+      color: var(--primary);
     }
 
-    .drop-zone {
-      border: 2px dashed var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
+    .radio-card-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--foreground);
+      display: block;
+    }
+
+    .radio-card-check {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .12s;
+    }
+
+    .radio-card.selected .radio-card-check {
+      opacity: 1;
+    }
+
+    /* ── File drop zone ──────────────────────────────────────────── */
+    .file-drop {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
       padding: 48px 32px;
       text-align: center;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       font-size: 14px;
-      transition: border-color 0.15s ease, background 0.15s ease;
-      cursor: default;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
       margin-bottom: 16px;
+      background: var(--muted, #fafafa);
     }
 
-    .drop-zone.drag-over {
-      border-color: var(--sl-color-primary-500, #2b8a93);
-      background: var(--sl-color-primary-50, #f0fafb);
+    .file-drop:hover,
+    .file-drop.drag-over {
+      border-color: var(--primary);
+      background: color-mix(in oklch, var(--primary) 6%, transparent);
+      color: var(--foreground);
     }
 
-    .drop-zone-staged {
-      border: 2px solid var(--sl-color-success-500, #198754);
-      border-radius: var(--or-radius-md, 8px);
-      padding: 16px;
-      background: var(--sl-color-success-50, #f0fdf4);
-      margin-bottom: 16px;
+    .file-drop-icon {
+      display: block;
+      margin: 0 auto 12px;
+      color: var(--muted-foreground);
+    }
+
+    .file-drop:hover .file-drop-icon,
+    .file-drop.drag-over .file-drop-icon {
+      color: var(--primary);
+    }
+
+    .file-drop-hint {
       font-size: 13px;
+      margin-top: 6px;
+      color: var(--muted-foreground);
     }
 
-    .browse-link {
-      color: var(--sl-color-primary-600, #237880);
+    .file-drop-link {
+      color: var(--primary);
       text-decoration: underline;
       cursor: pointer;
       background: none;
@@ -205,119 +307,379 @@ export class OrImportPage extends LitElement {
       padding: 0;
     }
 
-    .csv-help {
-      background: var(--or-color-code-bg, #f5f5f5);
-      padding: 16px;
-      border-radius: var(--or-radius-md, 8px);
-      font-family: monospace;
-      font-size: 13px;
+    /* Staged file */
+    .file-staged {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 2px solid color-mix(in oklch, oklch(0.65 0.18 145) 40%, transparent);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 8%, transparent);
       margin-bottom: 16px;
-      white-space: pre-wrap;
-      color: var(--or-color-code-fg, #1a575f);
+      font-size: 13px;
+    }
+
+    .file-staged-name {
+      flex: 1;
+      font-weight: 600;
+      color: var(--foreground);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-staged-size {
+      color: var(--muted-foreground);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .file-staged-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      transition: color .12s;
+      flex-shrink: 0;
+    }
+
+    .file-staged-remove:hover { color: var(--destructive); }
+
+    /* Format toggle — pill tabs */
+    .format-tabs {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      background: var(--muted);
+    }
+
+    .format-tab {
+      padding: 6px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      transition: background .12s, color .12s;
+    }
+
+    .format-tab.active {
+      background: var(--card);
+      color: var(--foreground);
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* CSV help block */
+    .csv-help {
+      background: var(--muted, #f5f5f5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 12px;
+      margin-bottom: 16px;
     }
 
     .csv-help-header {
-      font-weight: 600;
-      margin-bottom: 8px;
-      font-size: 12px;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--or-color-text-muted, #737373);
-      font-family: sans-serif;
+      letter-spacing: .06em;
+      color: var(--muted-foreground);
+      margin-bottom: 8px;
     }
 
+    .csv-help pre {
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--foreground);
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    /* Schema chip */
     .schema-chip {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      background: var(--sl-color-primary-100, #d6f1f4);
-      color: var(--sl-color-primary-700, #1a6a72);
+      gap: 5px;
+      background: color-mix(in oklch, var(--primary) 12%, transparent);
+      color: var(--primary);
       border-radius: 12px;
-      padding: 2px 10px;
+      padding: 3px 10px;
       font-size: 12px;
       font-weight: 600;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
-    /* Step 3: Review */
+    /* Idempotency section */
+    .idempotency-section {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 16px;
+      background: var(--card);
+    }
+
+    .idempotency-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--foreground);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .idempotency-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+      padding-left: 26px;
+    }
+
+    .idempotency-key {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+      color: var(--foreground);
+      background: var(--muted);
+      padding: 4px 10px;
+      border-radius: 4px;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
+    /* Toggle / checkbox */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] { display: none; }
+
+    .switch-track {
+      position: relative;
+      width: 34px;
+      height: 18px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input:checked) .switch-track { background: var(--primary); }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input:checked) .switch-thumb { transform: translateX(16px); }
+
+    /* Review table */
     .review-table {
-      border: 1px solid var(--or-color-divider, #e5e5e5);
-      border-radius: var(--or-radius-md, 8px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       overflow: hidden;
       margin-bottom: 16px;
     }
 
     .review-row {
       display: flex;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
       font-size: 14px;
+      align-items: flex-start;
+      gap: 12px;
     }
 
-    .review-row:last-child {
-      border-bottom: none;
-    }
+    .review-row:last-child { border-bottom: none; }
 
     .review-label {
       width: 140px;
       flex-shrink: 0;
       font-weight: 500;
-      color: var(--or-color-text-muted, #737373);
+      font-size: 13px;
+      color: var(--muted-foreground);
+      padding-top: 1px;
     }
 
     .review-value {
-      color: var(--or-color-text-body, #404040);
-      font-family: monospace;
+      color: var(--foreground);
+      font-family: var(--uk-font-monospace, monospace);
       font-size: 13px;
     }
 
     .review-warning {
-      background: var(--sl-color-warning-50, #fff8ec);
-      border: 1px solid var(--sl-color-warning-300, #f5c842);
-      border-radius: var(--or-radius-md, 8px);
-      padding: 12px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      background: color-mix(in oklch, oklch(0.75 0.18 80) 12%, transparent);
+      border: 1px solid color-mix(in oklch, oklch(0.75 0.18 80) 40%, transparent);
+      border-radius: 8px;
+      padding: 12px 14px;
       font-size: 13px;
+      color: oklch(0.5 0.18 80);
       margin-bottom: 16px;
-      color: var(--sl-color-warning-800, #6b4800);
     }
 
-    /* Navigation */
+    /* Error / alert banners */
+    .alert {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .alert-danger {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+    }
+
+    .alert-warning {
+      background: color-mix(in oklch, oklch(0.75 0.18 80) 12%, transparent);
+      border: 1px solid color-mix(in oklch, oklch(0.75 0.18 80) 40%, transparent);
+      color: oklch(0.5 0.18 80);
+    }
+
+    /* Step nav */
     .step-nav {
       display: flex;
       gap: 8px;
       justify-content: flex-end;
       margin-top: 24px;
-      padding-top: 16px;
-      border-top: 1px solid var(--or-color-divider, #e5e5e5);
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
     }
 
-    .idempotency-section {
-      margin-top: 16px;
-      padding: 12px 16px;
-      background: var(--sl-color-neutral-50, #fafafa);
-      border-radius: var(--or-radius-md, 8px);
-      border: 1px solid var(--or-color-divider, #e5e5e5);
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
     }
 
-    .idempotency-key-display {
-      font-family: monospace;
-      font-size: 12px;
-      color: var(--or-color-code-fg, #1a575f);
-      background: var(--or-color-code-bg, #f5f5f5);
-      padding: 4px 8px;
-      border-radius: 4px;
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Inline result stat cards */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+      box-shadow: var(--shadow-xs);
+    }
+
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+      display: block;
+      color: var(--foreground);
+    }
+
+    .stat-number--success { color: oklch(0.55 0.18 145); }
+    .stat-number--danger  { color: var(--destructive); }
+    .stat-number--neutral { color: var(--muted-foreground); }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--muted-foreground);
       margin-top: 4px;
-      word-break: break-all;
+      display: block;
     }
 
-    input[type="file"] {
-      display: none;
+    /* Errors table */
+    .errors-section h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0 0 10px;
     }
 
-    sl-alert {
-      margin-bottom: 16px;
+    .errors-table {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
     }
+
+    .errors-header {
+      display: grid;
+      grid-template-columns: 56px 130px 1fr;
+      background: var(--muted);
+      padding: 8px 14px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted-foreground);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .error-row {
+      display: grid;
+      grid-template-columns: 56px 130px 1fr;
+      padding: 9px 14px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .error-row:last-child { border-bottom: none; }
+
+    .error-row-num {
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--muted-foreground);
+    }
+
+    .error-field {
+      font-family: var(--uk-font-monospace, monospace);
+      color: var(--foreground);
+    }
+
+    .error-reason { color: var(--destructive); }
+
+    input[type="file"] { display: none; }
   `;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
 
   @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
   @property({ type: String, attribute: 'base-url' }) accessor baseURL = '';
@@ -413,17 +775,28 @@ export class OrImportPage extends LitElement {
     if (file) {
       this._handleFileChosen(file);
     }
+    // Reset so the same file can be re-selected after removing it.
+    input.value = '';
   }
 
-  private _handleIdempotencyChange(e: Event): void {
-    const cb = e.target as HTMLInputElement;
-    this._useIdempotency = cb.checked;
+  private _handleIdempotencyToggle(): void {
+    this._useIdempotency = !this._useIdempotency;
     if (this._useIdempotency && !this._idempotencyKey) {
       this._idempotencyKey = crypto.randomUUID();
     }
     if (!this._useIdempotency) {
       this._idempotencyKey = null;
     }
+  }
+
+  private _navigate(path: string): void {
+    this.dispatchEvent(
+      new CustomEvent('open-routing:navigate', {
+        detail: { path },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private _stepNext(): void {
@@ -507,28 +880,45 @@ export class OrImportPage extends LitElement {
     const entities: CatalogEntity[] = ['agents', 'skills', 'queues', 'channels', 'adapters', 'break_reasons'];
 
     return html`
-      <h2>What are you importing?</h2>
-      <div class="entity-grid">
+      <p class="step-heading">Choose entity type</p>
+      <p class="step-subheading">Select what you want to import from your CSV file.</p>
+
+      <div class="radio-card-grid">
         ${entities.map((entity) => html`
-          <button
-            class="entity-card ${this._selectedEntity === entity ? 'selected' : ''}"
+          <label
+            class="radio-card ${this._selectedEntity === entity ? 'selected' : ''}"
             data-entity="${entity}"
             @click=${() => { this._selectedEntity = entity; }}
-            aria-pressed="${this._selectedEntity === entity ? 'true' : 'false'}"
           >
-            <span class="entity-card-label">${ENTITY_LABELS[entity]}</span>
-          </button>
+            <input
+              type="radio"
+              name="entity-type"
+              value="${entity}"
+              ?checked=${this._selectedEntity === entity}
+              @change=${() => { this._selectedEntity = entity; }}
+            />
+            <span class="radio-card-icon">
+              <uk-icon icon="${ENTITY_ICONS[entity]}" width="22" height="22"></uk-icon>
+            </span>
+            <span class="radio-card-label">${ENTITY_LABELS[entity]}</span>
+            <span class="radio-card-check" aria-hidden="true">
+              <uk-icon icon="check" width="11" height="11" style="color:white"></uk-icon>
+            </span>
+          </label>
         `)}
       </div>
+
       <div class="step-nav">
-        <sl-button
-          variant="primary"
+        <button
+          type="button"
+          class="uk-button uk-button-primary"
           data-action="step1-next"
           ?disabled=${!this._selectedEntity}
           @click=${this._stepNext}
         >
-          Next: Upload →
-        </sl-button>
+          Next: Upload file
+          <uk-icon icon="chevron-right" width="14" height="14"></uk-icon>
+        </button>
       </div>
     `;
   }
@@ -539,53 +929,72 @@ export class OrImportPage extends LitElement {
     const formatMime = this._selectedFormat === 'csv' ? '.csv' : '.json';
 
     return html`
-      <h2>Upload file</h2>
+      <p class="step-heading">Upload file</p>
+      <p class="step-subheading">Drag and drop or browse for your ${ENTITY_LABELS[entity]} CSV file.</p>
 
       <div class="schema-chip">
-        <sl-icon name="info-circle"></sl-icon>
+        <uk-icon icon="info" width="12" height="12"></uk-icon>
         schema_version=v0.1
       </div>
 
       <!-- Format toggle -->
-      <div class="format-toggle">
-        <sl-radio-group label="Format" value="${this._selectedFormat}" @sl-change=${(e: CustomEvent) => {
-          this._selectedFormat = (e.target as HTMLInputElement).value as 'csv' | 'json';
-          this._stagedFile = null;
-          this._fileError = null;
-        }}>
-          <sl-radio value="csv">CSV</sl-radio>
-          <sl-radio value="json">JSON</sl-radio>
-        </sl-radio-group>
+      <div class="format-tabs">
+        <button
+          type="button"
+          class="format-tab ${this._selectedFormat === 'csv' ? 'active' : ''}"
+          @click=${() => {
+            if (this._selectedFormat !== 'csv') {
+              this._selectedFormat = 'csv';
+              this._stagedFile = null;
+              this._fileError = null;
+            }
+          }}
+        >CSV</button>
+        <button
+          type="button"
+          class="format-tab ${this._selectedFormat === 'json' ? 'active' : ''}"
+          @click=${() => {
+            if (this._selectedFormat !== 'json') {
+              this._selectedFormat = 'json';
+              this._stagedFile = null;
+              this._fileError = null;
+            }
+          }}
+        >JSON</button>
       </div>
 
       <!-- Drop zone or staged file -->
       ${this._stagedFile
         ? html`
-          <div class="drop-zone-staged">
-            <sl-icon name="file-earmark-check" style="color: var(--sl-color-success-600); margin-right: 8px;"></sl-icon>
-            <strong>${this._stagedFile.name}</strong>
-            — ${this._formatFileSize(this._stagedFile.size)}
-            <sl-icon-button
-              name="x"
-              label="Remove file"
+          <div class="file-staged">
+            <uk-icon icon="file-text" width="18" height="18" style="color:oklch(0.55 0.18 145);flex-shrink:0"></uk-icon>
+            <span class="file-staged-name">${this._stagedFile.name}</span>
+            <span class="file-staged-size">${this._formatFileSize(this._stagedFile.size)}</span>
+            <button
+              type="button"
+              class="file-staged-remove"
+              aria-label="Remove file"
               @click=${() => { this._stagedFile = null; this._fileError = null; }}
-              style="float: right;"
-            ></sl-icon-button>
+            >
+              <uk-icon icon="x" width="16" height="16"></uk-icon>
+            </button>
           </div>
         `
         : html`
           <div
-            class="drop-zone ${this._dragOver ? 'drag-over' : ''}"
+            class="file-drop ${this._dragOver ? 'drag-over' : ''}"
             data-dropzone
             @dragover=${this._handleDragOver}
             @dragleave=${this._handleDragLeave}
             @drop=${this._handleDrop}
+            @click=${this._handleBrowseClick}
           >
-            <sl-icon name="cloud-upload" style="font-size: 32px; display: block; margin: 0 auto 12px;"></sl-icon>
-            Drop a ${this._selectedFormat.toUpperCase()} file here, or
-            <button class="browse-link" @click=${this._handleBrowseClick}>Browse</button>
-            <br>
-            <small>Max 50 MB</small>
+            <uk-icon icon="upload-cloud" width="40" height="40" class="file-drop-icon"></uk-icon>
+            <div>
+              <strong>Drag ${this._selectedFormat.toUpperCase()} here</strong> or
+              <button type="button" class="file-drop-link" @click=${(e: Event) => { e.stopPropagation(); this._handleBrowseClick(); }}>browse</button>
+            </div>
+            <div class="file-drop-hint">CSV or JSON · Max 50 MB · Max 500 rows · BOM/CRLF handled server-side</div>
           </div>
         `
       }
@@ -597,51 +1006,53 @@ export class OrImportPage extends LitElement {
         @change=${this._handleFileInputChange}
       >
 
-      <!-- File error alert -->
+      <!-- File error -->
       ${when(this._fileError, () => html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-          ${this._fileError}
-        </sl-alert>
+        <div class="alert alert-danger">
+          <uk-icon icon="alert-circle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+          <span>${this._fileError}</span>
+        </div>
       `)}
 
       <!-- CSV format help -->
       ${when(this._selectedFormat === 'csv', () => html`
         <div class="csv-help" data-csv-help>
           <div class="csv-help-header">${ENTITY_LABELS[entity]} — CSV columns</div>
-          <div><strong>Required:</strong> ${help.required}</div>
-          <div><strong>Optional:</strong> ${help.optional}</div>
-          ${help.extra ? html`<div style="margin-top: 8px; white-space: pre-wrap;">${help.extra}</div>` : null}
+          <pre><strong>Required:</strong> ${help.required}
+<strong>Optional:</strong> ${help.optional}${help.extra ? `\n\n${help.extra}` : ''}</pre>
         </div>
       `)}
 
-      <!-- Idempotency checkbox -->
+      <!-- Idempotency -->
       <div class="idempotency-section">
-        <sl-checkbox
-          data-idempotency-checkbox
-          ?checked=${this._useIdempotency}
-          @sl-change=${this._handleIdempotencyChange}
-        >
+        <label class="idempotency-label" @click=${this._handleIdempotencyToggle}>
+          <span class="switch-wrap">
+            <input type="checkbox" ?checked=${this._useIdempotency} />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
           Make this import retry-safe (Idempotency-Key)
-        </sl-checkbox>
-        <div style="font-size: 12px; color: var(--or-color-text-muted); margin-top: 4px;">
-          When checked, retrying with the same file will return the original result.
-        </div>
+        </label>
+        <div class="idempotency-sub">When enabled, retrying with the same file will return the original result.</div>
         ${when(this._useIdempotency && this._idempotencyKey, () => html`
-          <div class="idempotency-key-display">${this._idempotencyKey}</div>
+          <div class="idempotency-key" data-idempotency-key>${this._idempotencyKey}</div>
         `)}
       </div>
 
       <div class="step-nav">
-        <sl-button variant="default" @click=${this._stepBack}>← Back</sl-button>
-        <sl-button
-          variant="primary"
+        <button type="button" class="uk-button uk-button-default" @click=${this._stepBack}>
+          <uk-icon icon="chevron-left" width="14" height="14"></uk-icon>
+          Back
+        </button>
+        <button
+          type="button"
+          class="uk-button uk-button-primary"
           data-action="step2-next"
           ?disabled=${!this._stagedFile}
           @click=${this._stepNext}
         >
-          Next: Review →
-        </sl-button>
+          Next: Review
+          <uk-icon icon="chevron-right" width="14" height="14"></uk-icon>
+        </button>
       </div>
     `;
   }
@@ -651,26 +1062,26 @@ export class OrImportPage extends LitElement {
     const file = this._stagedFile ?? new File([], 'unknown');
 
     return html`
-      <h2>Review & start import</h2>
+      <p class="step-heading">Review & start import</p>
+      <p class="step-subheading">Confirm details before submitting the import job.</p>
 
-      <!-- Submit error alerts -->
       ${when(this._errorType === 'schema', () => html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-          ${this._error}
-        </sl-alert>
+        <div class="alert alert-danger">
+          <uk-icon icon="alert-circle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+          <span>${this._error}</span>
+        </div>
       `)}
       ${when(this._errorType === 'size', () => html`
-        <sl-alert variant="warning" open>
-          <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
-          ${this._error}
-        </sl-alert>
+        <div class="alert alert-warning">
+          <uk-icon icon="alert-triangle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+          <span>${this._error}</span>
+        </div>
       `)}
       ${when(this._errorType === 'generic', () => html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="x-circle"></sl-icon>
-          ${this._error}
-        </sl-alert>
+        <div class="alert alert-danger">
+          <uk-icon icon="alert-circle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+          <span>${this._error}</span>
+        </div>
       `)}
 
       <div class="review-table" data-review>
@@ -703,99 +1114,169 @@ export class OrImportPage extends LitElement {
 
       ${when(entity === 'agents', () => html`
         <div class="review-warning">
-          <sl-icon name="exclamation-triangle" style="margin-right: 6px;"></sl-icon>
-          Importing existing agents MERGES skills. To remove a skill, use the agent detail edit page.
+          <uk-icon icon="alert-triangle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+          <span>Importing existing agents MERGES skills. To remove a skill, use the agent detail edit page.</span>
         </div>
       `)}
 
       <div class="step-nav">
-        <sl-button variant="default" @click=${this._stepBack} ?disabled=${this._submitting}>
-          ← Back
-        </sl-button>
-        <sl-button
-          variant="primary"
-          ?loading=${this._submitting}
+        <button
+          type="button"
+          class="uk-button uk-button-default"
+          @click=${this._stepBack}
+          ?disabled=${this._submitting}
+        >
+          <uk-icon icon="chevron-left" width="14" height="14"></uk-icon>
+          Back
+        </button>
+        <button
+          type="button"
+          class="uk-button uk-button-primary"
           ?disabled=${this._submitting}
           @click=${() => this._doImport()}
         >
-          ${this._submitting ? html`<sl-spinner></sl-spinner> Starting…` : 'Start import'}
-        </sl-button>
+          ${when(this._submitting, () => html`<span class="spinner"></span>`)}
+          ${this._submitting ? 'Importing…' : 'Import'}
+        </button>
+      </div>
+    `;
+  }
+
+  private _renderInlineResult() {
+    const result = this._inlineResult!;
+    const succeededCount = result.succeeded?.length ?? 0;
+    const failedCount = result.failed?.length ?? 0;
+    const isPartial = failedCount > 0;
+    const totalCount = succeededCount + failedCount;
+    const entityPath = `/orgs/${this.orgId}/${this._selectedEntity ?? 'agents'}`;
+
+    return html`
+      <div class="page-header">
+        <div class="page-header-top">
+          <button type="button" class="back-btn" @click=${() => this._navigate(entityPath)}>
+            <uk-icon icon="chevron-left" width="18" height="18"></uk-icon>
+          </button>
+          <h1 class="page-title">Import Result</h1>
+        </div>
+        <p class="page-subtitle">Bulk import completed</p>
+      </div>
+
+      <div class="wizard-card">
+        <div class="wizard-body">
+          <div class="stat-grid">
+            <div class="stat-card" data-stat="imported">
+              <span class="stat-number stat-number--success">${succeededCount}</span>
+              <span class="stat-label">Imported</span>
+            </div>
+            <div class="stat-card" data-stat="skipped">
+              <span class="stat-number stat-number--neutral">0</span>
+              <span class="stat-label">Skipped</span>
+            </div>
+            <div class="stat-card" data-stat="failed">
+              <span class="stat-number ${isPartial ? 'stat-number--danger' : 'stat-number--neutral'}">${failedCount}</span>
+              <span class="stat-label">Failed</span>
+            </div>
+          </div>
+
+          ${isPartial ? html`
+            <div class="alert alert-warning" style="margin-bottom:20px">
+              <uk-icon icon="alert-triangle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+              <span>${failedCount} row${failedCount === 1 ? '' : 's'} failed validation. Review the failure list and re-upload after correcting.</span>
+            </div>
+            <div class="errors-section">
+              <h3>Failed rows</h3>
+              <div class="errors-table" data-errors-table>
+                <div class="errors-header">
+                  <span>Row</span>
+                  <span>Field</span>
+                  <span>Reason</span>
+                </div>
+                ${result.failed.map((row) => html`
+                  <div class="error-row" data-error-row>
+                    <span class="error-row-num">${row.row ?? '—'}</span>
+                    <span class="error-field">${row.field ?? '—'}</span>
+                    <span class="error-reason">${row.reason ?? '—'}</span>
+                  </div>
+                `)}
+              </div>
+            </div>
+          ` : html`
+            <div class="alert" style="background:color-mix(in oklch,oklch(0.65 0.18 145) 10%,transparent);border:1px solid color-mix(in oklch,oklch(0.65 0.18 145) 35%,transparent);color:oklch(0.45 0.18 145);margin-bottom:20px">
+              <uk-icon icon="check-circle" width="16" height="16" style="flex-shrink:0;margin-top:1px"></uk-icon>
+              <span>All ${totalCount} row${totalCount === 1 ? '' : 's'} imported successfully.</span>
+            </div>
+          `}
+
+          <div style="margin-top:24px;display:flex;gap:8px">
+            <button
+              type="button"
+              class="uk-button uk-button-default"
+              @click=${() => {
+                this._inlineResult = null;
+                this._step = 1;
+                this._selectedEntity = null;
+                this._stagedFile = null;
+                this._error = null;
+                this._errorType = null;
+              }}
+            >
+              <uk-icon icon="upload" width="14" height="14"></uk-icon>
+              Start another import
+            </button>
+            <button
+              type="button"
+              class="uk-button uk-button-default"
+              @click=${() => this._navigate(entityPath)}
+            >
+              Back to Catalog
+            </button>
+          </div>
+        </div>
       </div>
     `;
   }
 
   override render() {
     if (this._inlineResult) {
-      // Inline result fallback (Codex HIGH ship-fix): the server's
-      // BulkImportResult does not yet include import_id, so we cannot navigate
-      // to /imports/{id}. Render a minimal success summary inline instead.
-      // Once Phase 5's contract grows a real import_id we swap back to
-      // navigation + or-import-result for the full historical view.
-      const succeededCount = this._inlineResult.succeeded?.length ?? 0;
-      const failedCount = this._inlineResult.failed?.length ?? 0;
-      const isPartial = failedCount > 0;
-      return html`
-        <h1>Bulk Import — Result</h1>
-        <div style="display:flex;gap:24px;margin:24px 0">
-          <sl-card>
-            <strong style="font-size:24px;color:var(--sl-color-success-500)">${succeededCount}</strong>
-            <div>Succeeded</div>
-          </sl-card>
-          <sl-card>
-            <strong style="font-size:24px;color:${isPartial ? 'var(--sl-color-danger-500)' : 'var(--or-color-text-muted)'}">${failedCount}</strong>
-            <div>Failed</div>
-          </sl-card>
-        </div>
-        ${isPartial ? html`
-          <sl-alert variant="warning" open style="margin-bottom:24px">
-            ${failedCount} row${failedCount === 1 ? '' : 's'} failed validation. Review the failure list below and re-upload after correcting.
-          </sl-alert>
-          <table style="width:100%;border-collapse:collapse">
-            <thead>
-              <tr><th align="left">Row</th><th align="left">Field</th><th align="left">Reason</th></tr>
-            </thead>
-            <tbody>
-              ${this._inlineResult.failed.map(
-                (row) => html`
-                  <tr style="border-top:1px solid var(--or-color-divider)">
-                    <td>${row.row ?? '—'}</td>
-                    <td>${row.field ?? '—'}</td>
-                    <td>${row.reason ?? '—'}</td>
-                  </tr>
-                `,
-              )}
-            </tbody>
-          </table>
-        ` : html`
-          <sl-alert variant="success" open style="margin-bottom:24px">
-            All ${succeededCount} row${succeededCount === 1 ? '' : 's'} imported successfully.
-          </sl-alert>
-        `}
-        <div style="margin-top:24px">
-          <sl-button @click=${() => { this._inlineResult = null; this._step = 1; this._selectedEntity = null; this._stagedFile = null; }}>
-            Start another import
-          </sl-button>
-        </div>
-      `;
+      return this._renderInlineResult();
     }
-    return html`
-      <h1>Bulk Import</h1>
 
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${this._wizardStep}
-        hide-nav
-      >
-        <div slot="step-pick">
-          ${this._renderStep1()}
+    const backPath = `/orgs/${this.orgId}/${this._selectedEntity ?? 'agents'}`;
+
+    return html`
+      <div class="page-header">
+        <div class="page-header-top">
+          <button type="button" class="back-btn" @click=${() => this._navigate(backPath)}>
+            <uk-icon icon="chevron-left" width="18" height="18"></uk-icon>
+          </button>
+          <h1 class="page-title">Bulk Import</h1>
         </div>
-        <div slot="step-upload">
-          ${this._renderStep2()}
-        </div>
-        <div slot="step-review">
-          ${this._renderStep3()}
-        </div>
-      </or-form-wizard>
+        <p class="page-subtitle">Import agents, skills, queues, and more from CSV</p>
+      </div>
+
+      <div class="wizard-card">
+        <or-form-wizard
+          .steps=${WIZARD_STEPS}
+          .currentStep=${this._wizardStep}
+          hide-nav
+        >
+          <div slot="step-pick">
+            <div class="wizard-body">
+              ${this._renderStep1()}
+            </div>
+          </div>
+          <div slot="step-upload">
+            <div class="wizard-body">
+              ${this._renderStep2()}
+            </div>
+          </div>
+          <div slot="step-review">
+            <div class="wizard-body">
+              ${this._renderStep3()}
+            </div>
+          </div>
+        </or-form-wizard>
+      </div>
     `;
   }
 }

@@ -1,9 +1,8 @@
-// Phase 6 Plan 11 Task 2: <or-adapter-form> — Single-step wizard for Adapter create.
-// D6-17: Adapter is a SIMPLE entity — single-step form (no Skills or Review step).
-// D04_1-02: code field uses or-code-input (required, writable on create).
+// Phase 6 Plan 11 Task 2: <or-adapter-form> — Single-step form for Adapter create.
+// D6-17: Adapter is a SIMPLE entity — single-step form (stepper hidden when steps.length <= 1).
 // ADMIN-04: only this.client.POST — never direct fetch().
 // ajv validateCreateAdapter called on submit.
-// Config field: sl-textarea with monospace font + JSON validation; empty → null.
+// Config field: native <textarea> with JSON validation; empty → null.
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -11,19 +10,12 @@ import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { OrFormWizardStep } from '../primitives/form-wizard.js';
 import validateCreateAdapter from '../../validators/CreateAdapterRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import { nameToCode } from '../primitives/code-input.js';
 import '../primitives/form-wizard.js';
+import '../primitives/code-input.js';
 
 // Single-step wizard (stepper hidden when steps.length <= 1 in or-form-wizard)
 const WIZARD_STEPS: OrFormWizardStep[] = [
@@ -39,77 +31,210 @@ interface FormData {
   enabled: boolean;
 }
 
-/**
- * <or-adapter-form> — Single-step wizard for creating a new Adapter.
- *
- * Step 1 (Basics): code, name, external_id, adapter_type (required), config (JSONB textarea), enabled
- *
- * Config handling:
- * - sl-textarea with monospace font
- * - JSON.parse try/catch on input; "Config must be valid JSON" error copy
- * - Empty textarea → send config: null in POST body
- *
- * On 201 → dispatches open-routing:navigate to /orgs/{orgId}/adapters/{newId}
- * On 409 duplicate_code → inline code error
- *
- * Properties:
- *   - orgId: (attribute 'org-id') — the current org UUID
- *   - client: ApiClient — passed from shell at boot
- */
 @customElement('or-adapter-form')
 export class OrAdapterForm extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
-      max-width: 640px;
+      padding: 20px 24px;
+      max-width: 680px;
     }
 
     .page-header {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 24px;
-    }
-
-    .page-title {
-      font-size: var(--or-text-display, 24px);
-      font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
-      margin: 0;
-    }
-
-    .form-group {
+      gap: 12px;
       margin-bottom: 16px;
     }
 
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
-      margin-top: 4px;
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0;
+      color: var(--foreground);
     }
 
-    .wizard-nav {
-      display: flex;
-      gap: 8px;
-      margin-top: 24px;
-      justify-content: flex-end;
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      padding: 24px;
     }
 
     .step-helper {
       font-size: 13px;
-      color: var(--or-color-text-muted, #737373);
-      margin-bottom: 16px;
+      color: var(--muted-foreground);
+      margin: 0 0 14px;
+    }
+
+    .form-row {
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 4px;
+    }
+
+    .form-label-required::after {
+      content: ' *';
+      color: var(--destructive);
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* Config textarea — same visual treatment as uk-input */
+    .config-textarea {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 160px;
+      padding: 8px 12px;
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 13px;
+      line-height: 1.5;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--foreground);
+      resize: vertical;
+      transition: border-color .12s, box-shadow .12s;
+    }
+
+    .config-textarea:focus,
+    .config-textarea:focus-visible {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent);
+    }
+
+    .config-textarea::placeholder {
+      color: var(--muted-foreground);
+    }
+
+    .config-textarea--error {
+      border-color: var(--destructive);
+    }
+
+    /* Toggle switch */
+    .switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--foreground);
+      user-select: none;
+    }
+
+    .switch-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 9999px;
+      background: var(--border);
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-track {
+      background: var(--primary);
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      transition: transform .15s;
+    }
+
+    .switch-wrap:has(input[type="checkbox"]:checked) .switch-thumb {
+      transform: translateX(16px);
+    }
+
+    /* API error banner */
+    .api-error {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+      color: var(--destructive);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Form action row */
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
     }
   `;
 
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private accessor _currentStep = 0;
-  @state() accessor _formData: FormData = {
+  @state() private _currentStep = 0;
+  @state() _formData: FormData = {
     code: '',
     name: '',
     external_id: '',
@@ -117,11 +242,14 @@ export class OrAdapterForm extends LitElement {
     configText: '',
     enabled: true,
   };
-  @state() private accessor _errors: Record<string, string> = {};
-  @state() private accessor _configError = '';
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _submitting = false;
+  @state() private _errors: Record<string, string> = {};
+  @state() private _configError = '';
+  @state() private _apiError: string | null = null;
+  @state() private _submitting = false;
+  @state() private _codeEditable = false;
+  @state() private _codeDraft = '';
   private _codeAutoFill = true;
+  private _codeDraftTouched = false;
 
   // --- Navigation ---
 
@@ -156,11 +284,10 @@ export class OrAdapterForm extends LitElement {
 
   async _handleSubmit(): Promise<void> {
     if (this._submitting) return;
+    if (!this._ensureCodeEditClosed()) return;
 
-    // Block if config JSON is invalid
     if (this._configError) return;
 
-    // Validate code format client-side
     const errors: Record<string, string> = {};
     if (!this._formData.code) {
       errors['code'] = 'Code is required.';
@@ -178,7 +305,6 @@ export class OrAdapterForm extends LitElement {
       return;
     }
 
-    // Parse config
     let configPayload: Record<string, unknown> | null = null;
     if (this._formData.configText.trim() !== '') {
       try {
@@ -200,7 +326,6 @@ export class OrAdapterForm extends LitElement {
       enabled: this._formData.enabled,
     };
 
-    // Client-side full validation via ajv
     const validateFn = validateCreateAdapter as unknown as {
       (data: unknown): boolean;
       errors: Array<{ instancePath: string; message?: string }> | null;
@@ -227,7 +352,6 @@ export class OrAdapterForm extends LitElement {
       const { data, error } = result as { data: { id: string; code: string } | null; error: unknown };
 
       if (error) {
-        // 409 duplicate_code — inline code error
         if (
           error &&
           typeof error === 'object' &&
@@ -256,23 +380,117 @@ export class OrAdapterForm extends LitElement {
     }
   }
 
+  private _clearFieldError(field: string): void {
+    if (!this._errors[field]) return;
+    const errors = { ...this._errors };
+    delete errors[field];
+    this._errors = errors;
+  }
+
+  private _handleCodeEdit(): void {
+    const code = this._formData.code || nameToCode(this._formData.name);
+    this._codeEditable = true;
+    this._codeDraft = code;
+    this._codeDraftTouched = false;
+    if (this._codeAutoFill && this._formData.code !== code) {
+      this._formData = { ...this._formData, code };
+    }
+  }
+
+  private _handleCodeInput(e: CustomEvent<{ value: string }>): void {
+    this._codeDraft = e.detail.value;
+    this._codeDraftTouched = true;
+    this._clearFieldError('code');
+  }
+
+  private _handleCodeSave(): void {
+    const code = this._codeDraft;
+    if (!code) {
+      this._errors = { ...this._errors, code: 'Code is required.' };
+      return;
+    }
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(code)) {
+      this._errors = { ...this._errors, code: 'Code must start with a lowercase letter and contain only lowercase letters, digits, and underscores.' };
+      return;
+    }
+    this._formData = { ...this._formData, code };
+    this._codeAutoFill = false;
+    this._codeEditable = false;
+    this._codeDraft = '';
+    this._codeDraftTouched = false;
+    this._clearFieldError('code');
+  }
+
+  private _handleCodeCancel(): void {
+    this._codeEditable = false;
+    this._codeDraft = '';
+    this._codeDraftTouched = false;
+    if (this._codeAutoFill) {
+      this._formData = { ...this._formData, code: nameToCode(this._formData.name) };
+    }
+    this._clearFieldError('code');
+  }
+
+  private _handleNameInput(name: string): void {
+    const code = nameToCode(name);
+    this._formData = {
+      ...this._formData,
+      name,
+      ...(this._codeAutoFill ? { code } : {}),
+    };
+    if (this._codeEditable && this._codeAutoFill && !this._codeDraftTouched) {
+      this._codeDraft = code;
+    }
+    if (name) this._clearFieldError('name');
+    if (this._codeAutoFill && code) this._clearFieldError('code');
+  }
+
+  private _ensureCodeEditClosed(): boolean {
+    if (!this._codeEditable) return true;
+    this._errors = { ...this._errors, code: 'Save or cancel code before continuing.' };
+    return false;
+  }
+
   // --- Step content renderer ---
 
   private _renderBasicsStep() {
     return html`
       <p class="step-helper">Define the adapter's identity and configuration. Code cannot be changed after create.</p>
 
-      <div class="form-group">
-        <or-code-input
-          .value=${this._formData.code}
-          .required=${true}
-          @or-code-input=${(e: CustomEvent) => {
-            this._codeAutoFill = false;
-            this._formData = { ...this._formData, code: e.detail.value };
-            if (this._errors['code']) {
-              this._errors = { ...this._errors, code: '' };
-            }
+      <div class="form-row">
+        <label class="form-label form-label-required" for="adapter-name">Name</label>
+        <input
+          id="adapter-name"
+          class="uk-input"
+          type="text"
+          required
+          .value=${this._formData.name}
+          placeholder="e.g. FreeSWITCH Bridge - DC1"
+          @input=${(e: Event) => {
+            this._handleNameInput((e.target as HTMLInputElement).value);
           }}
+        />
+        ${when(
+          this._errors['name'],
+          () => html`<div class="field-error">${this._errors['name']}</div>`
+        )}
+      </div>
+
+      <div class="form-row">
+        <or-code-input
+          .value=${this._codeEditable ? this._codeDraft : this._formData.code}
+          .required=${true}
+          .readonly=${!this._codeEditable}
+          .editButton=${!this._codeEditable}
+          .saveButton=${this._codeEditable}
+          .cancelButton=${this._codeEditable}
+          .helperText=${this._codeEditable
+            ? 'Custom code. Cannot be changed after create.'
+            : 'Generated from name. Cannot be changed after create.'}
+          @or-code-edit=${() => this._handleCodeEdit()}
+          @or-code-input=${(e: CustomEvent<{ value: string }>) => this._handleCodeInput(e)}
+          @or-code-save=${() => this._handleCodeSave()}
+          @or-code-cancel=${() => this._handleCodeCancel()}
         ></or-code-input>
         ${when(
           this._errors['code'],
@@ -280,106 +498,98 @@ export class OrAdapterForm extends LitElement {
         )}
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="Name"
-          required
-          value=${this._formData.name}
-          ?invalid=${!!this._errors['name']}
-          @sl-input=${(e: Event) => {
-            const name = (e.target as HTMLInputElement).value;
-            this._formData = {
-              ...this._formData,
-              name,
-              ...(this._codeAutoFill ? { code: nameToCode(name) } : {}),
-            };
-          }}
-        ></sl-input>
-        ${when(
-          this._errors['name'],
-          () => html`<div class="field-error">${this._errors['name']}</div>`
-        )}
-      </div>
-
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._formData.external_id}
-          @sl-input=${(e: Event) => {
+      <div class="form-row">
+        <label class="form-label" for="adapter-ext-id">External ID</label>
+        <input
+          id="adapter-ext-id"
+          class="uk-input"
+          type="text"
+          .value=${this._formData.external_id}
+          placeholder="Optional reference from your system"
+          @input=${(e: Event) => {
             this._formData = { ...this._formData, external_id: (e.target as HTMLInputElement).value };
           }}
-        ></sl-input>
+        />
+        <div class="field-help">Match an ID from your telephony or integration platform.</div>
       </div>
 
-      <div class="form-group">
-        <sl-input
-          label="Adapter Type"
+      <div class="form-row">
+        <label class="form-label form-label-required" for="adapter-type">Adapter Type</label>
+        <input
+          id="adapter-type"
+          class="uk-input"
+          type="text"
           required
-          value=${this._formData.adapter_type}
-          ?invalid=${!!this._errors['adapter_type']}
-          placeholder="e.g. freeswitch, sip, webrtc"
-          @sl-input=${(e: Event) => {
+          .value=${this._formData.adapter_type}
+          placeholder="e.g. freeswitch, livekit, twilio"
+          @input=${(e: Event) => {
             this._formData = { ...this._formData, adapter_type: (e.target as HTMLInputElement).value };
           }}
-        ></sl-input>
+        />
+        <div class="field-help">Free-text identifier for the adapter kind.</div>
         ${when(
           this._errors['adapter_type'],
           () => html`<div class="field-error">${this._errors['adapter_type']}</div>`
         )}
       </div>
 
-      <div class="form-group">
-        <sl-textarea
-          label="Config (JSON)"
+      <div class="form-row">
+        <label class="form-label" for="adapter-config">Config (JSON)</label>
+        <textarea
+          id="adapter-config"
+          class="config-textarea ${this._configError ? 'config-textarea--error' : ''}"
           rows="8"
-          style="font-family: monospace; white-space: pre;"
-          value=${this._formData.configText}
           placeholder='{"key": "value"}'
-          ?invalid=${!!this._configError}
-          @sl-input=${this._handleConfigInput}
-        ></sl-textarea>
+          .value=${this._formData.configText}
+          @input=${this._handleConfigInput}
+        ></textarea>
         ${when(
           this._configError,
           () => html`<div class="field-error">${this._configError}</div>`
         )}
+        <div class="field-help">Optional JSON configuration blob. Leave blank to send null.</div>
       </div>
 
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._formData.enabled}
-          @sl-change=${(e: Event) => {
-            this._formData = {
-              ...this._formData,
-              enabled: (e.target as HTMLInputElement).checked,
-            };
-          }}
-        >Enabled</sl-switch>
+      <div class="form-row">
+        <label class="switch-wrap">
+          <input
+            type="checkbox"
+            .checked=${this._formData.enabled}
+            @change=${(e: Event) => {
+              this._formData = {
+                ...this._formData,
+                enabled: (e.target as HTMLInputElement).checked,
+              };
+            }}
+          />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span>Enabled</span>
+        </label>
+        <div class="field-help">Disabled adapters do not receive routing traffic.</div>
       </div>
 
       ${when(
         this._apiError,
         () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+          <div class="api-error">
+            <uk-icon icon="x" height="16" width="16"></uk-icon>
             ${this._apiError}
-          </sl-alert>
+          </div>
         `
       )}
 
-      <div class="wizard-nav">
-        <sl-button
-          variant="default"
+      <div class="form-actions">
+        <button
+          class="uk-button uk-button-default"
           @click=${() => this._navigate(`/orgs/${this.orgId}/adapters`)}
-        >Cancel</sl-button>
-        <sl-button
-          variant="primary"
+        >Cancel</button>
+        <button
+          class="uk-button uk-button-primary"
           ?disabled=${this._submitting}
           @click=${this._handleSubmit}
         >
-          ${this._submitting
-            ? html`<sl-spinner></sl-spinner> Creating…`
-            : 'Create adapter'}
-        </sl-button>
+          ${this._submitting ? 'Creating…' : 'Create adapter'}
+        </button>
       </div>
     `;
   }
@@ -389,25 +599,27 @@ export class OrAdapterForm extends LitElement {
   override render() {
     return html`
       <div class="page-header">
-        <sl-button
-          variant="text"
+        <button
+          class="back-btn"
           @click=${() => this._navigate(`/orgs/${this.orgId}/adapters`)}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Adapters
-        </sl-button>
+          <uk-icon icon="chevron-left" height="16" width="16"></uk-icon>
+          Adapters
+        </button>
         <h1 class="page-title">Create adapter</h1>
       </div>
 
-      <or-form-wizard
-        .steps=${WIZARD_STEPS}
-        .currentStep=${this._currentStep}
-        .hideNav=${true}
-      >
-        <div slot="step-basics">
-          ${this._renderBasicsStep()}
-        </div>
-      </or-form-wizard>
+      <div class="form-card">
+        <or-form-wizard
+          .steps=${WIZARD_STEPS}
+          .currentStep=${this._currentStep}
+          .hideNav=${true}
+        >
+          <div slot="step-basics">
+            ${this._renderBasicsStep()}
+          </div>
+        </or-form-wizard>
+      </div>
     `;
   }
 }

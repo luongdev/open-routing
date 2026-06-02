@@ -1,117 +1,233 @@
-// Phase 6 Plan 10 Task 1: <or-channel-list> — Channel entity list page.
-// Uses @lit/task for async state machine; passes typed client as @property.
-// Debounces name search 300ms per UI-SPEC §5.3 + D6-V-11.
-// Per-component Shoelace imports for tree-shaking (D6-08).
-// default_queue_id: null → "—"; non-null → first 8 chars + "…" + sl-tooltip.
-// channel_type: plain text column.
-// ADMIN-04: only this.client.GET/PATCH — never direct fetch().
-
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { components } from '../../api/generated.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-
-// Primitives
 import '../primitives/data-table.js';
 import '../primitives/cursor-paginator.js';
 import type { OrDataTableColumn } from '../primitives/data-table.js';
 
 type Channel = components['schemas']['Channel'];
 
-/**
- * <or-channel-list> — Channel entity list page.
- *
- * Fetches GET /v1/orgs/{org_id}/channels via @lit/task.
- * Renders rows in <or-data-table> with cursor pagination.
- * default_queue_id: null → "—"; non-null → first 8 chars + "…" + full UUID tooltip.
- * channel_type: plain text badge column.
- * Dispatches 'open-routing:navigate' on row click and "+ Create channel" CTA.
- * Debounces name search by 300ms.
- *
- * Properties:
- *   - orgId: (attribute 'org-id') — the current org UUID
- *   - client: ApiClient — passed from the shell at boot
- */
 @customElement('or-channel-list')
 export class OrChannelList extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
     }
 
     .page-header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      margin-bottom: 20px;
+      align-items: flex-start;
+      margin-bottom: 16px;
     }
 
+    .page-header-left {}
+
     .page-title {
-      font-size: var(--or-text-display, 24px);
+      font-size: 22px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
+      margin: 0 0 2px;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
+      color: var(--muted-foreground);
+      font-size: 13px;
       margin: 0;
     }
 
     .filter-row {
       display: flex;
+      gap: 10px;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       flex-wrap: wrap;
     }
 
-    .filter-row sl-input {
-      min-width: 240px;
+    .search-wrap {
+      position: relative;
       flex: 1;
+      max-width: 360px;
+    }
+
+    .search-wrap uk-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted-foreground);
+      pointer-events: none;
+    }
+
+    .search-wrap input {
+      padding-left: 36px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .search-clear {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      padding: 2px;
+      display: flex;
+      align-items: center;
+    }
+
+    .table-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: color-mix(in oklch, var(--primary) 15%, transparent);
+      color: var(--primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .name-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 220px;
+    }
+
+    .name-cell-text {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .channel-name {
+      font-weight: 500;
+      color: var(--foreground);
+      font-size: 14px;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .channel-code {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+      color: var(--muted-foreground);
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .status-pill--success {
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+      color: oklch(0.45 0.18 145);
+    }
+
+    .status-pill--muted {
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+
+    .type-pill {
+      display: inline-flex;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+      background: color-mix(in oklch, var(--primary) 12%, transparent);
+      color: var(--primary);
+      text-transform: capitalize;
+    }
+
+    .queue-id-cell {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity .12s;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color .12s, background .12s;
+    }
+
+    .icon-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .icon-btn--danger:hover {
+      color: var(--destructive);
+      background: color-mix(in oklch, var(--destructive) 12%, transparent);
     }
 
     .empty-state {
       padding: 40px 16px;
       text-align: center;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
     }
 
     .empty-state p {
       margin: 0 0 12px;
     }
 
-    .table-container {
-      width: 100%;
-    }
-
-    .queue-id-cell {
-      font-family: var(--or-font-mono, monospace);
-      font-size: 13px;
-      color: var(--or-color-code-fg, #1f6e77);
-    }
-
-    .queue-id-muted {
-      color: var(--or-color-text-muted, #737373);
+    .include-disabled-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      white-space: nowrap;
     }
   `;
 
-  // --- Properties ---
   @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
   @property({ type: Object }) accessor client!: ApiClient;
 
-  // --- Internal state ---
   @state() private accessor _search = '';
   @state() private accessor _cursor: string | null = null;
   @state() private accessor _cursorStack: string[] = [];
@@ -122,19 +238,42 @@ export class OrChannelList extends LitElement {
 
   private _searchDebounce?: ReturnType<typeof setTimeout>;
 
-  // --- Column definitions per UI-SPEC §5.3 D6-V-10 Channels ---
-  _columns: OrDataTableColumn[] = [
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
+  private _initials(name: string): string {
+    return name.split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase() ?? '').join('') || '?';
+  }
+
+  private _columns: OrDataTableColumn[] = [
     {
-      key: 'code',
-      label: 'Code',
-      render: (row) =>
-        html`<code style="font-family:var(--or-font-mono,monospace);color:var(--or-color-code-fg,#1f6e77)">${String(row['code'] ?? '')}</code>`,
+      key: 'name',
+      label: 'Name',
+      render: (row) => {
+        const name = String(row['name'] ?? '');
+        const code = String(row['code'] ?? '');
+        return html`
+          <div class="name-cell">
+            <div class="avatar">${this._initials(name)}</div>
+            <div class="name-cell-text">
+              <span class="channel-name">${name}</span>
+              <span class="channel-code">${code}</span>
+            </div>
+          </div>
+        `;
+      },
     },
-    { key: 'name', label: 'Name' },
     {
       key: 'channel_type',
       label: 'Type',
-      render: (row) => html`<span>${String(row['channel_type'] ?? '')}</span>`,
+      width: '160px',
+      render: (row) => {
+        const t = String(row['channel_type'] ?? '');
+        return t ? html`<span class="type-pill">${t}</span>` : html`<span style="color:var(--muted-foreground);font-size:12px">—</span>`;
+      },
     },
     {
       key: 'default_queue_id',
@@ -142,51 +281,58 @@ export class OrChannelList extends LitElement {
       render: (row) => {
         const queueId = row['default_queue_id'] as string | null | undefined;
         if (!queueId) {
-          return html`<span class="queue-id-muted">—</span>`;
+          return html`<span style="color:var(--muted-foreground);font-size:12px">—</span>`;
         }
         const truncated = queueId.slice(0, 8);
-        return html`
-          <sl-tooltip content="${queueId}">
-            <code class="queue-id-cell">${truncated}…</code>
-          </sl-tooltip>
-        `;
+        return html`<code class="queue-id-cell" title="${queueId}">${truncated}…</code>`;
       },
     },
     {
       key: 'enabled',
-      label: 'Enabled',
+      label: 'Status',
+      width: '100px',
       render: (row) =>
         row['enabled']
-          ? html`<sl-icon name="check-lg" style="color:var(--sl-color-success-500)"></sl-icon>`
-          : html`<sl-icon name="x-lg" style="color:var(--or-color-text-muted)"></sl-icon>`,
+          ? html`<span class="status-pill status-pill--success">Active</span>`
+          : html`<span class="status-pill status-pill--muted">Disabled</span>`,
     },
     {
       key: 'updated_at',
       label: 'Updated',
+      width: '130px',
       render: (row) => {
         const iso = String(row['updated_at'] ?? '');
-        return html`<sl-tooltip content="${iso}"><span>${this._relativeTime(iso)}</span></sl-tooltip>`;
-      },
-    },
-    {
-      key: '__menu__',
-      label: '',
-      render: (row) => {
-        const channel = row as unknown as Channel;
-        return html`
-          <sl-dropdown>
-            <sl-icon-button slot="trigger" name="three-dots-vertical" label="Actions"></sl-icon-button>
-            <sl-menu>
-              <sl-menu-item @click=${() => this._navigate(`/orgs/${this.orgId}/channels/${channel.id}`)}>Edit</sl-menu-item>
-              <sl-menu-item style="color:var(--sl-color-danger-500)" @click=${() => this._navigate(`/orgs/${this.orgId}/channels/${channel.id}`)}>Delete</sl-menu-item>
-            </sl-menu>
-          </sl-dropdown>
-        `;
+        return html`<span title="${iso}" style="font-size:13px;color:var(--muted-foreground)">${this._relativeTime(iso)}</span>`;
       },
     },
   ];
 
-  // --- Async task ---
+  private async _handleRowAction(e: CustomEvent): Promise<void> {
+    const { row, action } = e.detail as { row: { id: string; name: string; version: number }; action: string };
+    if (!row?.id) return;
+    if (action === 'edit') {
+      this._navigate(`/orgs/${this.orgId}/channels/${row.id}`);
+      return;
+    }
+    if (action === 'disable' || action === 'enable') {
+      const body = { enabled: action === 'enable', version: row.version };
+      await this.client.PATCH('/v1/orgs/{org_id}/channels/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: row.id } },
+        body,
+      } as never);
+      void this._listTask.run();
+      return;
+    }
+    if (action === 'delete') {
+      const ok = window.confirm(`Delete channel "${row.name}"? This cannot be undone.`);
+      if (!ok) return;
+      await this.client.DELETE('/v1/orgs/{org_id}/channels/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: row.id } },
+      } as never);
+      void this._listTask.run();
+    }
+  }
+
   private _listTask = new Task(this, {
     task: async ([orgId, search, cursor, includeDisabled, limit]) => {
       const { data, error } = await this.client.GET('/v1/orgs/{org_id}/channels' as never, {
@@ -209,8 +355,6 @@ export class OrChannelList extends LitElement {
     args: () =>
       [this.orgId, this._search, this._cursor, this._includeDisabled, this._limit] as const,
   });
-
-  // --- Helpers ---
 
   private _relativeTime(iso: string): string {
     try {
@@ -237,8 +381,6 @@ export class OrChannelList extends LitElement {
       })
     );
   }
-
-  // --- Event handlers ---
 
   private _handleSearch(e: Event): void {
     const val = (e.target as HTMLInputElement).value;
@@ -268,7 +410,7 @@ export class OrChannelList extends LitElement {
   }
 
   private _handlePageChanged(e: CustomEvent): void {
-    const { direction, limit } = e.detail as {
+    const { cursor, direction, limit } = e.detail as {
       cursor: string | null;
       direction: 'next' | 'prev';
       limit: number;
@@ -286,36 +428,33 @@ export class OrChannelList extends LitElement {
       const prevCursor = newStack.pop() ?? null;
       this._cursorStack = newStack;
       this._cursor = prevCursor;
+      void cursor;
     }
   }
-
-  // --- Render ---
 
   private _renderEmptyState() {
     if (this._search) {
       return html`
         <div class="empty-state">
           <p>No channels found matching '${this._search}'.</p>
-          <sl-button
-            size="small"
+          <button
+            class="uk-button uk-button-default uk-button-small"
             @click=${() => {
               this._search = '';
               this._cursor = null;
               this._cursorStack = [];
             }}
-          >Clear search</sl-button>
+          >Clear search</button>
         </div>
       `;
     }
     return html`
       <div class="empty-state">
-        <p>No channels yet</p>
-        <p>Channels connect your routing system to external communication platforms.</p>
-        <sl-button
-          variant="primary"
-          size="small"
+        <p>No channels yet. Click <strong>+ Create channel</strong> to add your first.</p>
+        <button
+          class="uk-button uk-button-primary uk-button-small"
           @click=${() => this._navigate(`/orgs/${this.orgId}/channels/new`)}
-        >+ Create channel</sl-button>
+        >+ Create channel</button>
       </div>
     `;
   }
@@ -323,34 +462,48 @@ export class OrChannelList extends LitElement {
   override render() {
     return html`
       <div class="page-header">
-        <h1 class="page-title">Channels</h1>
-        <sl-button
-          variant="primary"
+        <div class="page-header-left">
+          <h1 class="page-title">Channels</h1>
+          <p class="page-subtitle">Manage communication channels routed to agents.</p>
+        </div>
+        <button
+          class="uk-button uk-button-primary"
           @click=${() => this._navigate(`/orgs/${this.orgId}/channels/new`)}
-        >+ Create channel</sl-button>
+        >+ Create channel</button>
       </div>
 
       <div class="filter-row">
-        <sl-input
-          placeholder="Search by name…"
-          clearable
-          @sl-input=${this._handleSearch}
-          aria-label="Search channels"
-        >
-          <sl-icon name="search" slot="prefix"></sl-icon>
-        </sl-input>
-        <sl-checkbox
-          ?checked=${this._includeDisabled}
-          @sl-change=${this._handleIncludeDisabledChange}
-        >Include disabled</sl-checkbox>
-        <sl-icon-button
-          name="arrow-clockwise"
-          label="Refresh"
-          @click=${this._handleRefresh}
-        ></sl-icon-button>
+        <div class="search-wrap">
+          <uk-icon icon="search" height="16" width="16"></uk-icon>
+          <input
+            class="uk-input"
+            type="search"
+            placeholder="Search channels…"
+            .value=${this._search}
+            @input=${this._handleSearch}
+            aria-label="Search channels"
+          />
+          ${this._search ? html`
+            <button class="search-clear" @click=${() => { this._search = ''; this._cursor = null; this._cursorStack = []; }}>
+              <uk-icon icon="x" height="14" width="14"></uk-icon>
+            </button>
+          ` : nothing}
+        </div>
+        <label class="include-disabled-label">
+          <input
+            type="checkbox"
+            class="uk-checkbox"
+            .checked=${this._includeDisabled}
+            @change=${this._handleIncludeDisabledChange}
+          />
+          Include disabled
+        </label>
+        <button class="icon-btn" title="Refresh" @click=${this._handleRefresh}>
+          <uk-icon icon="refresh-cw" height="18" width="18"></uk-icon>
+        </button>
       </div>
 
-      <div class="table-container">
+      <div class="table-card">
         ${this._listTask.render({
           pending: () => html`
             <or-data-table
@@ -370,31 +523,32 @@ export class OrChannelList extends LitElement {
                     .columns=${this._columns}
                     .rows=${rows}
                     @or-row-click=${this._handleRowClick}
+                    @or-row-action=${this._handleRowAction}
                   ></or-data-table>
-                  <or-cursor-paginator
-                    .hasMore=${this._hasMore}
-                    .cursorStack=${this._cursorStack}
-                    .limit=${this._limit}
-                    @or-page-changed=${this._handlePageChanged}
-                  ></or-cursor-paginator>
                 `
               )}
             `;
           },
           error: (err) => html`
-            <sl-alert variant="danger" open>
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+            <div class="uk-alert uk-alert-danger" style="margin:16px;border-radius:8px">
               <strong>Failed to load channels.</strong>
               ${(err as { reason?: string })?.reason ?? String(err)}
-              <sl-button
-                size="small"
-                slot="footer"
+              <button
+                class="uk-button uk-button-default uk-button-small"
+                style="margin-top:8px;display:block"
                 @click=${this._handleRefresh}
-              >Retry</sl-button>
-            </sl-alert>
+              >Retry</button>
+            </div>
           `,
         })}
       </div>
+
+      <or-cursor-paginator
+        .hasMore=${this._hasMore}
+        .cursorStack=${this._cursorStack}
+        .limit=${this._limit}
+        @or-page-changed=${this._handlePageChanged}
+      ></or-cursor-paginator>
     `;
   }
 }

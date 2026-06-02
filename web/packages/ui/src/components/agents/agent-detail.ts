@@ -7,29 +7,13 @@
 // D6-V-40: delete confirm requires typing exact agent.name (case-sensitive).
 // Pitfall 9: never call response.json() — openapi-fetch parses error body for us.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { components } from '../../api/generated.js';
 import validateUpdateAgent from '../../validators/UpdateAgentRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import '../primitives/code-input.js';
@@ -52,11 +36,9 @@ type Form = {
 };
 
 /**
- * <or-agent-detail> — Agent detail / edit page.
+ * <or-agent-detail> — Agent detail / edit page (Ember healthcare-dashboard style).
  *
- * 2-column layout at ≥1280px: 640px form (left) + flex-1 skills sub-table (right).
- * On mobile/tablet: stacks vertically.
- *
+ * Page-header + section cards layout.
  * Properties:
  *   - orgId: (attribute 'org-id') — the current org UUID
  *   - entityId: (attribute 'entity-id') — the agent UUID
@@ -68,81 +50,282 @@ export class OrAgentDetail extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
+      padding: 20px 24px;
+      background: var(--background);
+      min-height: 100%;
     }
 
-    .top-bar {
+    /* ── Page header ─────────────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+      gap: 16px;
+    }
+
+    .page-header-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 2px;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 13px;
+      color: var(--muted-foreground);
+      margin: 0;
+    }
+
+    .page-header-right {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
+      flex-shrink: 0;
     }
 
-    .top-bar-spacer { flex: 1; }
-
-    .page-title {
-      font-size: var(--or-text-display, 24px);
-      font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
-      margin: 0 0 4px;
+    /* ── Status badge ────────────────────────────────────────────── */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
     }
 
-    .two-col {
+    .status-badge--active {
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+      color: oklch(0.45 0.18 145);
+    }
+
+    .status-badge--disabled {
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+
+    .status-badge--wrapup {
+      background: color-mix(in oklch, oklch(0.75 0.18 80) 20%, transparent);
+      color: oklch(0.5 0.18 80);
+    }
+
+    /* ── Stats row ───────────────────────────────────────────────── */
+    .stats-row {
       display: grid;
-      grid-template-columns: 640px 1fr;
-      gap: 32px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
     }
 
-    @media (max-width: 1279px) {
-      .two-col {
-        grid-template-columns: 1fr;
+    @media (max-width: 900px) {
+      .stats-row {
+        grid-template-columns: repeat(2, 1fr);
       }
     }
 
-    .form-col {
-      min-width: 0;
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow-xs);
     }
 
-    .skills-col {
-      min-width: 0;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .footer-meta {
-      font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-      margin-top: 16px;
-      padding-top: 12px;
-      border-top: 1px solid var(--or-color-divider, #e5e5e5);
-    }
-
-    .bottom-bar {
-      display: flex;
-      gap: 8px;
-      margin-top: 24px;
-      justify-content: flex-end;
-    }
-
-    .wrapup-alert {
-      margin-bottom: 16px;
-    }
-
-    .section-heading {
-      font-size: 16px;
+    .stat-label {
+      font-size: 11px;
       font-weight: 600;
-      color: var(--or-color-text-strong, #171717);
-      margin: 0 0 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted-foreground);
+      margin-bottom: 4px;
     }
 
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--foreground);
+    }
+
+    .stat-sub {
+      font-size: 11px;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+    }
+
+    /* ── Info cards ──────────────────────────────────────────────── */
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .card-title uk-icon {
+      color: var(--muted-foreground);
+    }
+
+    /* ── Two-column grid for info row ────────────────────────────── */
+    .two-col-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 20px;
+    }
+
+    @media (max-width: 640px) {
+      .two-col-grid { grid-template-columns: 1fr; }
+    }
+
+    .form-group { margin-bottom: 0; }
+
+    .field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      margin-bottom: 5px;
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    /* ── Toggle row ──────────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+    }
+
+    .toggle-row + .toggle-row {
+      border-top: 1px solid var(--border);
+    }
+
+    .toggle-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--foreground);
+    }
+
+    .toggle-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 1px;
+    }
+
+    /* Frankenstyle checkbox used as toggle */
+    .uk-toggle {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .uk-toggle input { opacity: 0; width: 0; height: 0; }
+
+    .uk-toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--muted);
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .uk-toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      left: 3px;
+      top: 3px;
+      transition: transform .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+
+    .uk-toggle input:checked + .uk-toggle-slider {
+      background: var(--primary);
+    }
+
+    .uk-toggle input:checked + .uk-toggle-slider::before {
+      transform: translateX(18px);
+    }
+
+    /* ── Wrapup alert ────────────────────────────────────────────── */
+    .alert {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .alert--warning {
+      background: color-mix(in oklch, oklch(0.75 0.18 80) 15%, transparent);
+      border: 1px solid color-mix(in oklch, oklch(0.65 0.18 80) 40%, transparent);
+      color: oklch(0.45 0.18 75);
+    }
+
+    .alert--danger {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 35%, transparent);
+      color: var(--destructive);
+    }
+
+    /* ── Skills section ──────────────────────────────────────────── */
     .skills-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 14px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .skills-table th {
@@ -151,44 +334,193 @@ export class OrAgentDetail extends LitElement {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      color: var(--or-color-text-muted, #737373);
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      letter-spacing: 0.05em;
+      color: var(--muted-foreground);
+      border-bottom: 1px solid var(--border);
     }
+
+    .skills-table th.col-proficiency { width: 130px; }
+    .skills-table th.col-action { width: 40px; text-align: right; }
 
     .skills-table td {
-      padding: 8px 10px;
+      padding: 10px;
       vertical-align: middle;
-      border-bottom: 1px solid var(--or-color-divider, #e5e5e5);
+      border-bottom: 1px solid var(--border);
     }
 
-    .skills-table code {
-      font-family: var(--or-font-mono, monospace);
-      color: var(--or-color-code-fg, #1f6e77);
-      font-size: 13px;
+    .skills-table tr:last-child td { border-bottom: none; }
+
+    .skill-name-code {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--foreground);
+    }
+
+    .skill-name-code::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--primary) 60%, transparent);
+      flex-shrink: 0;
+    }
+
+    .skills-table .uk-select {
+      width: 100%;
+      max-width: 110px;
+    }
+
+    .empty-skills {
+      color: var(--muted-foreground);
+      font-size: 14px;
+      padding: 8px 0 4px;
     }
 
     .skill-helper {
       font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
+      color: var(--muted-foreground);
       margin-top: 8px;
     }
 
-    .empty-skills {
-      color: var(--or-color-text-muted, #737373);
-      font-size: 14px;
-      padding: 16px 0;
+    /* ── Skill search dropdown ───────────────────────────────────── */
+    .skill-add-wrap {
+      position: relative;
+      display: inline-block;
+      margin-top: 12px;
     }
 
-    .add-skill-row {
-      margin-top: 8px;
-    }
-
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
+    .skill-dropdown-popup {
+      position: absolute;
+      top: 100%;
+      left: 0;
       margin-top: 4px;
+      min-width: 280px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-md);
+      z-index: 1020;
+      overflow: hidden;
     }
 
+    .skill-search-input-wrap {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .skill-search-results {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .skill-result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--foreground);
+      transition: background .1s;
+    }
+
+    .skill-result-item:hover { background: var(--muted); }
+
+    .skill-result-code {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+      color: var(--muted-foreground);
+    }
+
+    .skill-empty-hint {
+      padding: 12px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+
+    /* ── Footer meta ─────────────────────────────────────────────── */
+    .footer-meta {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .bottom-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      justify-content: flex-end;
+    }
+
+    /* ── Loading / spinner ───────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 40px 0;
+      color: var(--muted-foreground);
+      font-size: 14px;
+    }
+
+    /* ── Delete confirm inline panel (D7-04 pattern) ─────────────── */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--shadow-overlay, oklch(0 0 0 / 0.5));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .confirm-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .confirm-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+
+    .confirm-body {
+      margin: 0 0 16px;
+      font-size: 14px;
+      color: var(--muted-foreground);
+    }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    /* ── Toast ───────────────────────────────────────────────────── */
     .toast-container {
       position: fixed;
       bottom: 24px;
@@ -196,32 +528,68 @@ export class OrAgentDetail extends LitElement {
       z-index: var(--or-z-toast, 9000);
     }
 
-    .delete-btn-danger {
-      color: var(--sl-color-danger-500, #d92d20);
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      box-shadow: var(--shadow-md);
+      font-size: 14px;
+      color: var(--foreground);
+    }
+
+    .toast uk-icon { color: oklch(0.45 0.18 145); }
+
+    /* ── Icon button ─────────────────────────────────────────────── */
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color .12s, background .12s;
+    }
+
+    .icon-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .icon-btn--danger:hover {
+      color: var(--destructive);
+      background: color-mix(in oklch, var(--destructive) 12%, transparent);
     }
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'entity-id' }) accessor entityId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
-  @property({ type: String, attribute: 'wrapup-until' }) accessor wrapupUntil: string | null = null;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'entity-id' }) entityId = '';
+  @property({ type: Object }) client!: ApiClient;
+  @property({ type: String, attribute: 'wrapup-until' }) wrapupUntil: string | null = null;
 
   // --- Internal state ---
-  @state() private accessor _entity: Agent | null = null;
-  @state() private accessor _loading = false;
-  @state() private accessor _saving = false;
-  @state() private accessor _dirty = false;
-  @state() private accessor _conflictServer: Record<string, unknown> | null = null;
-  @state() private accessor _fieldErrors: Record<string, string> = {};
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _showSavedToast = false;
-  @state() private accessor _deleteConfirmOpen = false;
-  @state() private accessor _deleteConfirmName = '';
-  @state() private accessor _wrapupSecondsLeft: number | null = null;
-  @state() private accessor _assignedSkills: SkillRow[] = [];
-  @state() private accessor _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
-  @state() private accessor _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
+  @state() private _entity: Agent | null = null;
+  @state() private _loading = false;
+  @state() private _saving = false;
+  @state() private _dirty = false;
+  @state() private _conflictServer: Record<string, unknown> | null = null;
+  @state() private _fieldErrors: Record<string, string> = {};
+  @state() private _apiError: string | null = null;
+  @state() private _showSavedToast = false;
+  @state() private _deleteConfirmOpen = false;
+  @state() private _deleteConfirmName = '';
+  @state() private _wrapupSecondsLeft: number | null = null;
+  @state() private _assignedSkills: SkillRow[] = [];
+  @state() private _skillSearchResults: Array<{ id: string; name: string; code: string }> = [];
+  @state() private _skillDropdownOpen = false;
+  @state() private _skillSearchDebounce: ReturnType<typeof setTimeout> | undefined;
 
   private _wrapupInterval: ReturnType<typeof setInterval> | null = null;
   private _form: Form = { name: '', email: '', external_id: '', enabled: true };
@@ -233,10 +601,42 @@ export class OrAgentDetail extends LitElement {
   }
 
   // --- Lifecycle ---
+  private _onKeydown?: (e: KeyboardEvent) => void;
+  private _onDocumentClick?: (e: MouseEvent) => void;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     void this._loadEntity();
     this._startWrapupCountdown();
+    this._onKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (this._deleteConfirmOpen) {
+          this._deleteConfirmOpen = false;
+          this._deleteConfirmName = '';
+        }
+        if (this._skillDropdownOpen) {
+          this._skillDropdownOpen = false;
+          this._skillSearchResults = [];
+        }
+      }
+    };
+    this._onDocumentClick = (e: MouseEvent) => {
+      const path = e.composedPath();
+      const inSkillWrap = path.some(
+        (n) => n instanceof Element && n.classList.contains('skill-add-wrap')
+      );
+      if (!inSkillWrap) {
+        this._skillDropdownOpen = false;
+      }
+    };
+    document.addEventListener('keydown', this._onKeydown);
+    document.addEventListener('click', this._onDocumentClick);
   }
 
   override disconnectedCallback(): void {
@@ -245,11 +645,24 @@ export class OrAgentDetail extends LitElement {
       clearInterval(this._wrapupInterval);
       this._wrapupInterval = null;
     }
+    if (this._onKeydown) document.removeEventListener('keydown', this._onKeydown);
+    if (this._onDocumentClick) document.removeEventListener('click', this._onDocumentClick);
   }
 
   override updated(changed: Map<string, unknown>): void {
     if (changed.has('wrapupUntil')) {
       this._startWrapupCountdown();
+    }
+    if (changed.has('_deleteConfirmOpen')) {
+      if (this._deleteConfirmOpen) {
+        this.setAttribute('aria-live', 'polite');
+        void this.updateComplete.then(() => {
+          const input = this.shadowRoot?.querySelector('.confirm-panel input') as HTMLElement | null;
+          if (input) input.focus();
+        });
+      } else {
+        this.removeAttribute('aria-live');
+      }
     }
   }
 
@@ -312,7 +725,7 @@ export class OrAgentDetail extends LitElement {
 
   private _markDirty(): void {
     this._dirty = true;
-    this._conflictServer = null; // clear conflict banner on new edit
+    this._conflictServer = null;
   }
 
   private _navigate(path: string): void {
@@ -340,6 +753,18 @@ export class OrAgentDetail extends LitElement {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  private _relativeTime(iso: string): string {
+    try {
+      const ms = Date.now() - new Date(iso).getTime();
+      const min = Math.floor(ms / 60000);
+      if (min < 1) return 'just now';
+      if (min < 60) return `${min}m ago`;
+      const h = Math.floor(min / 60);
+      if (h < 24) return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    } catch { return iso; }
+  }
+
   // --- Save / PATCH ---
 
   async _handleSave(): Promise<void> {
@@ -359,7 +784,6 @@ export class OrAgentDetail extends LitElement {
       })),
     };
 
-    // Client-side validation
     // ajv standalone validators attach .errors dynamically; cast to access it.
     const validateFn = validateUpdateAgent as unknown as {
       (data: unknown): boolean;
@@ -416,7 +840,7 @@ export class OrAgentDetail extends LitElement {
           if (errObj.field) {
             this._fieldErrors = { [errObj.field]: errObj.reason ?? 'Invalid value' };
           } else {
-            this._apiError = (errObj.reason ?? 'Invalid value');
+            this._apiError = errObj.reason ?? 'Invalid value';
           }
           return;
         }
@@ -531,6 +955,7 @@ export class OrAgentDetail extends LitElement {
       { skill_id: skill.id, name: skill.name, proficiency: 5 },
     ];
     this._skillSearchResults = [];
+    this._skillDropdownOpen = false;
     this._markDirty();
   }
 
@@ -538,7 +963,6 @@ export class OrAgentDetail extends LitElement {
 
   private _handleConflictAcknowledged(e: CustomEvent): void {
     if (e.detail?.action === 'discard') {
-      // Revert to last known entity state
       if (this._entity) {
         this._form = {
           name: this._entity.name ?? '',
@@ -555,18 +979,111 @@ export class OrAgentDetail extends LitElement {
 
   // --- Render helpers ---
 
-  private _renderWrapupBanner() {
-    if (!this._wrapupSecondsLeft || this._wrapupSecondsLeft <= 0) return null;
+  private _renderPageHeader() {
+    const entity = this._entity;
+    const statusBadge = entity
+      ? this._wrapupSecondsLeft && this._wrapupSecondsLeft > 0
+        ? html`<span class="status-badge status-badge--wrapup">
+            <uk-icon icon="clock" width="12" height="12"></uk-icon>
+            Wrapup ${this._formatCountdown(this._wrapupSecondsLeft)}
+          </span>`
+        : entity.enabled
+        ? html`<span class="status-badge status-badge--active">Active</span>`
+        : html`<span class="status-badge status-badge--disabled">Disabled</span>`
+      : nothing;
+
     return html`
-      <sl-alert class="wrapup-alert" variant="warning" open>
-        <sl-icon slot="icon" name="clock"></sl-icon>
+      <div class="page-header">
+        <div class="page-header-left">
+          <button
+            class="back-btn"
+            title="Back to Agents"
+            @click=${() => this._navigate(`/orgs/${this.orgId}/agents`)}
+          >
+            <uk-icon icon="arrow-left" width="18" height="18"></uk-icon>
+          </button>
+          <div>
+            <h1 class="page-title">${entity?.name ?? 'Agent Detail'}</h1>
+            ${entity ? html`<p class="page-subtitle">${entity.code}</p>` : nothing}
+          </div>
+        </div>
+
+        <div class="page-header-right">
+          ${statusBadge}
+
+          ${entity
+            ? html`
+                <button
+                  class="uk-button uk-button-default uk-button-small"
+                  @click=${() => this._navigate(`/orgs/${this.orgId}/agents/${this.entityId}/status`)}
+                >
+                  <uk-icon icon="route" width="14" height="14"></uk-icon>
+                  Status
+                </button>
+
+                ${entity.enabled
+                  ? html`<button class="uk-button uk-button-default uk-button-small" @click=${this._handleDisable}>Disable</button>`
+                  : html`<button class="uk-button uk-button-default uk-button-small" @click=${this._handleEnable}>Enable</button>`}
+
+                <button
+                  class="uk-button uk-button-danger uk-button-small"
+                  @click=${() => {
+                    this._deleteConfirmOpen = true;
+                    this._deleteConfirmName = '';
+                  }}
+                >
+                  <uk-icon icon="trash-2" width="14" height="14"></uk-icon>
+                  Delete
+                </button>
+              `
+            : nothing}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStatsRow() {
+    const entity = this._entity;
+    if (!entity) return nothing;
+
+    return html`
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Skills</div>
+          <div class="stat-value">${this._assignedSkills.length}</div>
+          <div class="stat-sub">assigned</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" style="font-size:14px;padding-top:4px">${entity.enabled ? 'Active' : 'Disabled'}</div>
+          <div class="stat-sub">current</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Version</div>
+          <div class="stat-value">${entity.version}</div>
+          <div class="stat-sub">lock rev</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Last Updated</div>
+          <div class="stat-value" style="font-size:14px;padding-top:4px">${this._relativeTime(entity.updated_at ?? '')}</div>
+          <div class="stat-sub">${entity.updated_at ? new Date(entity.updated_at).toLocaleDateString() : ''}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderWrapupBanner() {
+    if (!this._wrapupSecondsLeft || this._wrapupSecondsLeft <= 0) return nothing;
+    return html`
+      <div class="alert alert--warning">
+        <uk-icon icon="clock" width="16" height="16"></uk-icon>
         Agent in wrapup — ${this._formatCountdown(this._wrapupSecondsLeft)} remaining
-      </sl-alert>
+      </div>
     `;
   }
 
   private _renderConflictBanner() {
-    if (!this._conflictServer) return null;
+    if (!this._conflictServer) return nothing;
     return html`
       <or-conflict-banner
         mode="crud"
@@ -577,12 +1094,133 @@ export class OrAgentDetail extends LitElement {
     `;
   }
 
-  private _renderSkillsColumn() {
+  private _renderIdentityCard() {
+    const entity = this._entity;
+    if (!entity) return nothing;
+
+    return html`
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="users" width="15" height="15"></uk-icon>
+          Identity
+        </h2>
+
+        ${this._apiError
+          ? html`<div class="alert alert--danger" style="margin-bottom:16px">
+              <uk-icon icon="alert-triangle" width="16" height="16"></uk-icon>
+              ${this._apiError}
+            </div>`
+          : nothing}
+
+        <div class="form-group" style="margin-bottom:16px">
+          <or-code-input
+            .value=${entity.code}
+            .readonly=${true}
+          ></or-code-input>
+        </div>
+
+        <div class="two-col-grid">
+          <div class="form-group">
+            <label class="field-label" for="agent-name">Name</label>
+            <input
+              id="agent-name"
+              class="uk-input"
+              type="text"
+              .value=${this._form.name}
+              required
+              @input=${(e: Event) => {
+                this._form = { ...this._form, name: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+            ${this._fieldErrors['name']
+              ? html`<div class="field-error">${this._fieldErrors['name']}</div>`
+              : nothing}
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="agent-email">Email</label>
+            <input
+              id="agent-email"
+              class="uk-input"
+              type="email"
+              .value=${this._form.email}
+              @input=${(e: Event) => {
+                this._form = { ...this._form, email: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+            ${this._fieldErrors['email']
+              ? html`<div class="field-error">${this._fieldErrors['email']}</div>`
+              : nothing}
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="agent-ext-id">External ID</label>
+            <input
+              id="agent-ext-id"
+              class="uk-input"
+              type="text"
+              .value=${this._form.external_id}
+              @input=${(e: Event) => {
+                this._form = { ...this._form, external_id: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="footer-meta">
+          version ${entity.version}
+          · updated ${this._relativeTime(entity.updated_at ?? '')}
+          · created ${entity.created_at ? new Date(entity.created_at).toLocaleDateString() : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStatusCard() {
+    if (!this._entity) return nothing;
+
+    return html`
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="plug" width="15" height="15"></uk-icon>
+          Status &amp; Routing
+        </h2>
+
+        ${this._renderWrapupBanner()}
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Enabled</div>
+            <div class="toggle-sub">Agent receives new interactions when enabled</div>
+          </div>
+          <label class="uk-toggle">
+            <input
+              type="checkbox"
+              ?checked=${this._form.enabled}
+              @change=${(e: Event) => {
+                this._form = { ...this._form, enabled: (e.target as HTMLInputElement).checked };
+                this._markDirty();
+              }}
+            />
+            <span class="uk-toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderSkillsCard() {
     const proficiencyOptions = Array.from({ length: 10 }, (_, i) => i + 1);
 
     return html`
-      <div class="skills-col">
-        <h2 class="section-heading">Skills</h2>
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="tag" width="15" height="15"></uk-icon>
+          Skills
+        </h2>
 
         ${when(
           this._assignedSkills.length === 0,
@@ -592,20 +1230,20 @@ export class OrAgentDetail extends LitElement {
               <thead>
                 <tr>
                   <th>Skill</th>
-                  <th>Proficiency</th>
-                  <th></th>
+                  <th class="col-proficiency">Proficiency</th>
+                  <th class="col-action"></th>
                 </tr>
               </thead>
               <tbody>
                 ${this._assignedSkills.map(
                   (skill) => html`
                     <tr>
-                      <td><code>${skill.name ?? skill.skill_id}</code></td>
+                      <td><span class="skill-name-code">${skill.name ?? skill.skill_id}</span></td>
                       <td>
-                        <sl-select
-                          size="small"
-                          value=${String(skill.proficiency)}
-                          @sl-change=${(e: Event) =>
+                        <select
+                          class="uk-select"
+                          .value=${String(skill.proficiency)}
+                          @change=${(e: Event) =>
                             this._handleProficiencyChange(
                               skill.skill_id,
                               parseInt((e.target as HTMLSelectElement).value, 10)
@@ -613,16 +1251,19 @@ export class OrAgentDetail extends LitElement {
                           aria-label="Proficiency for ${skill.name}"
                         >
                           ${proficiencyOptions.map(
-                            (n) => html`<sl-option value=${String(n)}>${n}</sl-option>`
+                            (n) => html`<option value=${String(n)} ?selected=${n === skill.proficiency}>${n}</option>`
                           )}
-                        </sl-select>
+                        </select>
                       </td>
-                      <td>
-                        <sl-icon-button
-                          name="x-lg"
-                          label="Remove skill"
+                      <td style="text-align:right">
+                        <button
+                          class="icon-btn icon-btn--danger"
+                          title="Remove skill"
+                          aria-label="Remove ${skill.name ?? skill.skill_id}"
                           @click=${() => this._handleRemoveSkill(skill.skill_id)}
-                        ></sl-icon-button>
+                        >
+                          <uk-icon icon="trash-2" width="15" height="15"></uk-icon>
+                        </button>
                       </td>
                     </tr>
                   `
@@ -632,28 +1273,49 @@ export class OrAgentDetail extends LitElement {
           `
         )}
 
-        <div class="add-skill-row">
-          <sl-dropdown>
-            <sl-button slot="trigger" size="small" variant="default">+ Add skill</sl-button>
-            <sl-menu>
-              <sl-input
-                placeholder="Search skills…"
-                size="small"
-                @sl-input=${this._handleSkillSearch}
-              ></sl-input>
-              ${this._skillSearchResults.map(
-                (skill) => html`
-                  <sl-menu-item @click=${() => this._handleAddSkill(skill)}>
-                    ${skill.name} <code>${skill.code}</code>
-                  </sl-menu-item>
-                `
-              )}
-              ${when(
-                this._skillSearchResults.length === 0,
-                () => html`<sl-menu-item disabled>Type to search skills</sl-menu-item>`
-              )}
-            </sl-menu>
-          </sl-dropdown>
+        <div class="skill-add-wrap">
+          <button
+            class="uk-button uk-button-default uk-button-small"
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this._skillDropdownOpen = !this._skillDropdownOpen;
+              if (!this._skillDropdownOpen) this._skillSearchResults = [];
+            }}
+          >
+            <uk-icon icon="plus" width="13" height="13"></uk-icon>
+            Add skill
+          </button>
+
+          ${this._skillDropdownOpen
+            ? html`
+                <div class="skill-dropdown-popup">
+                  <div class="skill-search-input-wrap">
+                    <input
+                      class="uk-input"
+                      type="text"
+                      placeholder="Search skills…"
+                      @click=${(e: Event) => e.stopPropagation()}
+                      @input=${this._handleSkillSearch}
+                    />
+                  </div>
+                  <div class="skill-search-results">
+                    ${this._skillSearchResults.length > 0
+                      ? this._skillSearchResults.map(
+                          (skill) => html`
+                            <div
+                              class="skill-result-item"
+                              @click=${() => this._handleAddSkill(skill)}
+                            >
+                              <span>${skill.name}</span>
+                              <span class="skill-result-code">${skill.code}</span>
+                            </div>
+                          `
+                        )
+                      : html`<div class="skill-empty-hint">Type to search skills</div>`}
+                  </div>
+                </div>
+              `
+            : nothing}
         </div>
 
         <p class="skill-helper">Tip: skill changes save with the form.</p>
@@ -661,259 +1323,130 @@ export class OrAgentDetail extends LitElement {
     `;
   }
 
-  private _renderDeleteDialog() {
+  private _renderFormActions() {
+    if (!this._entity) return nothing;
+    const entity = this._entity;
+
     return html`
-      <sl-dialog
-        label="Delete agent ${this._entity?.name ?? ''}?"
-        ?open=${this._deleteConfirmOpen}
-        @sl-request-close=${() => {
+      <div class="bottom-bar">
+        <button
+          class="uk-button uk-button-default"
+          @click=${() => {
+            if (!this._dirty) {
+              this._navigate(`/orgs/${this.orgId}/agents`);
+            } else {
+              this._form = {
+                name: entity.name ?? '',
+                email: entity.email ?? '',
+                external_id: entity.external_id ?? '',
+                enabled: entity.enabled ?? true,
+              };
+              this._dirty = false;
+            }
+          }}
+        >Cancel</button>
+        <button
+          class="uk-button uk-button-primary"
+          ?disabled=${!this._dirty || this._saving}
+          @click=${this._handleSave}
+        >
+          ${this._saving
+            ? html`<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px"></span> Saving…`
+            : 'Save changes'}
+        </button>
+      </div>
+    `;
+  }
+
+  private _renderDeleteDialog() {
+    return when(this._deleteConfirmOpen, () => html`
+      <div
+        class="confirm-overlay"
+        role="presentation"
+        @click=${() => {
           this._deleteConfirmOpen = false;
           this._deleteConfirmName = '';
         }}
       >
-        <p>This is permanent and cannot be undone.</p>
-        <sl-input
-          placeholder="Type agent name to confirm"
-          value=${this._deleteConfirmName}
-          @sl-input=${(e: Event) => {
-            this._deleteConfirmName = (e.target as HTMLInputElement).value;
-          }}
-          aria-label="Type agent name to confirm deletion"
-        ></sl-input>
-        <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <sl-button
-            variant="default"
-            @click=${() => {
-              this._deleteConfirmOpen = false;
-              this._deleteConfirmName = '';
-            }}
-          >Cancel</sl-button>
-          <sl-button
-            variant="danger"
-            ?disabled=${!this._canDelete}
-            @click=${this._handleDelete}
-          >Delete</sl-button>
-        </div>
-      </sl-dialog>
-    `;
-  }
-
-  private _renderTopBar() {
-    return html`
-      <div class="top-bar">
-        <sl-button
-          variant="text"
-          @click=${() => this._navigate(`/orgs/${this.orgId}/agents`)}
+        <div
+          class="confirm-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+          @click=${(e: Event) => e.stopPropagation()}
         >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Agents
-        </sl-button>
-        <div class="top-bar-spacer"></div>
-
-        ${when(
-          this._entity,
-          () => html`
-            <sl-button
-              variant="default"
-              size="small"
-              @click=${() => this._navigate(`/orgs/${this.orgId}/agents/${this.entityId}/status`)}
-            >
-              <sl-icon slot="prefix" name="activity"></sl-icon>
-              Status
-            </sl-button>
-            ${when(
-              this._entity!.enabled,
-              () => html`
-                <sl-button
-                  variant="default"
-                  size="small"
-                  @click=${this._handleDisable}
-                >Disable</sl-button>
-              `,
-              () => html`
-                <sl-button
-                  variant="default"
-                  size="small"
-                  @click=${this._handleEnable}
-                >Enable</sl-button>
-              `
-            )}
-            <sl-button
-              variant="default"
-              size="small"
-              class="delete-btn-danger"
-              style="color:var(--sl-color-danger-500)"
+          <h3 id="confirm-title" class="confirm-title">Delete agent "${this._entity?.name ?? ''}"?</h3>
+          <p class="confirm-body">This is permanent and cannot be undone. Type the agent name to confirm.</p>
+          <div style="margin-bottom: 20px;">
+            <label class="field-label" for="delete-confirm-input">Agent name</label>
+            <input
+              id="delete-confirm-input"
+              class="uk-input"
+              type="text"
+              placeholder="Type agent name to confirm"
+              .value=${this._deleteConfirmName}
+              aria-label="Type agent name to confirm deletion"
+              @input=${(e: Event) => {
+                this._deleteConfirmName = (e.target as HTMLInputElement).value;
+              }}
+            />
+          </div>
+          <div class="action-row">
+            <button
+              class="uk-button uk-button-default uk-button-small"
               @click=${() => {
-                this._deleteConfirmOpen = true;
+                this._deleteConfirmOpen = false;
                 this._deleteConfirmName = '';
               }}
-            >Delete</sl-button>
-          `
-        )}
-      </div>
-    `;
-  }
-
-  private _renderForm() {
-    if (!this._entity) return null;
-    const entity = this._entity;
-    const relativeTime = (iso: string) => {
-      try {
-        const ms = Date.now() - new Date(iso).getTime();
-        const min = Math.floor(ms / 60000);
-        if (min < 60) return `${min}m ago`;
-        const h = Math.floor(min / 60);
-        if (h < 24) return `${h}h ago`;
-        return `${Math.floor(h / 24)}d ago`;
-      } catch { return iso; }
-    };
-
-    return html`
-      <div class="form-col">
-        <h1 class="page-title">${entity.name}</h1>
-
-        ${this._renderWrapupBanner()}
-        ${this._renderConflictBanner()}
-
-        ${when(
-          this._apiError,
-          () => html`
-            <sl-alert variant="danger" open style="margin-bottom:16px">
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-              ${this._apiError}
-            </sl-alert>
-          `
-        )}
-
-        <div class="form-group">
-          <or-code-input
-            .value=${entity.code}
-            .readonly=${true}
-          ></or-code-input>
-        </div>
-
-        <div class="form-group">
-          <sl-input
-            label="Name"
-            value=${this._form.name}
-            required
-            ?invalid=${!!this._fieldErrors['name']}
-            @sl-input=${(e: Event) => {
-              this._form = { ...this._form, name: (e.target as HTMLInputElement).value };
-              this._markDirty();
-            }}
-          ></sl-input>
-          ${when(
-            this._fieldErrors['name'],
-            () => html`<div class="field-error">${this._fieldErrors['name']}</div>`
-          )}
-        </div>
-
-        <div class="form-group">
-          <sl-input
-            label="Email"
-            type="email"
-            value=${this._form.email}
-            @sl-input=${(e: Event) => {
-              this._form = { ...this._form, email: (e.target as HTMLInputElement).value };
-              this._markDirty();
-            }}
-          ></sl-input>
-          ${when(
-            this._fieldErrors['email'],
-            () => html`<div class="field-error">${this._fieldErrors['email']}</div>`
-          )}
-        </div>
-
-        <div class="form-group">
-          <sl-input
-            label="External ID"
-            value=${this._form.external_id}
-            @sl-input=${(e: Event) => {
-              this._form = { ...this._form, external_id: (e.target as HTMLInputElement).value };
-              this._markDirty();
-            }}
-          ></sl-input>
-        </div>
-
-        <div class="form-group">
-          <sl-switch
-            ?checked=${this._form.enabled}
-            @sl-change=${(e: Event) => {
-              this._form = { ...this._form, enabled: (e.target as HTMLInputElement).checked };
-              this._markDirty();
-            }}
-          >Enabled</sl-switch>
-        </div>
-
-        <div class="footer-meta">
-          version ${entity.version}
-          · updated ${relativeTime(entity.updated_at ?? '')}
-          · created ${entity.created_at ? new Date(entity.created_at).toLocaleDateString() : ''}
-        </div>
-
-        <div class="bottom-bar">
-          <sl-button
-            variant="default"
-            @click=${() => {
-              if (!this._dirty) {
-                this._navigate(`/orgs/${this.orgId}/agents`);
-              } else {
-                // Reset form to entity state (simple cancel — could show dialog)
-                this._form = {
-                  name: entity.name ?? '',
-                  email: entity.email ?? '',
-                  external_id: entity.external_id ?? '',
-                  enabled: entity.enabled ?? true,
-                };
-                this._dirty = false;
-              }
-            }}
-          >Cancel</sl-button>
-          <sl-button
-            variant="primary"
-            ?disabled=${!this._dirty || this._saving}
-            @click=${this._handleSave}
-          >
-            ${this._saving ? html`<sl-spinner></sl-spinner> Saving…` : 'Save changes'}
-          </sl-button>
+            >Cancel</button>
+            <button
+              class="uk-button uk-button-danger uk-button-small"
+              ?disabled=${!this._canDelete}
+              @click=${this._handleDelete}
+            >Delete</button>
+          </div>
         </div>
       </div>
-    `;
+    `);
   }
 
   override render() {
     if (this._loading) {
-      return html`<sl-spinner></sl-spinner>`;
+      return html`
+        <div class="loading-wrap">
+          <span class="spinner"></span>
+          Loading agent…
+        </div>
+      `;
     }
 
     if (!this._entity && this._apiError) {
       return html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+        <div class="alert alert--danger" style="margin:24px 0">
+          <uk-icon icon="alert-triangle" width="16" height="16"></uk-icon>
           ${this._apiError}
-        </sl-alert>
+        </div>
       `;
     }
 
     return html`
-      ${this._renderTopBar()}
-
-      <div class="two-col">
-        ${this._renderForm()}
-        ${this._renderSkillsColumn()}
-      </div>
-
+      ${this._renderPageHeader()}
+      ${this._renderStatsRow()}
+      ${this._renderConflictBanner()}
+      ${this._renderIdentityCard()}
+      ${this._renderStatusCard()}
+      ${this._renderSkillsCard()}
+      ${this._renderFormActions()}
       ${this._renderDeleteDialog()}
 
       ${when(
         this._showSavedToast,
         () => html`
           <div class="toast-container">
-            <sl-alert variant="success" open>
-              <sl-icon slot="icon" name="check-circle"></sl-icon>
+            <div class="toast">
+              <uk-icon icon="check" width="16" height="16"></uk-icon>
               Saved
-            </sl-alert>
+            </div>
           </div>
         `
       )}

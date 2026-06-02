@@ -3,8 +3,8 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "experimentalDecorators": false,
+    "experimentalDecorators": true,
     "useDefineForClassFields": false
   },
-  "include": ["src"]
+  "include": ["src", "../../packages/ui/src/vite-env.d.ts"]
 }

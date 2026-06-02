@@ -5,24 +5,13 @@
 // Pitfall 9: never call response.json() — openapi-fetch parses error body for us.
 // T-06-11-01: config display uses Lit html template literals (auto-escape); no innerHTML with config values.
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import type { components } from '../../api/generated.js';
 import validateUpdateAdapter from '../../validators/UpdateAdapterRequest.js';
-
-// Shoelace per-component imports (D6-08)
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
 // Primitives
 import '../primitives/code-input.js';
@@ -38,68 +27,381 @@ type Form = {
   enabled: boolean;
 };
 
-/**
- * <or-adapter-detail> — Adapter detail / edit page.
- *
- * Simpler than agent-detail (no skills sub-panel, no wrapup countdown).
- * Key feature: JSONB config field displayed as monospace sl-textarea with JSON validation.
- *
- * Properties:
- *   - orgId: (attribute 'org-id') — the current org UUID
- *   - entityId: (attribute 'entity-id') — the adapter UUID
- *   - client: ApiClient — passed from shell at boot
- */
 @customElement('or-adapter-detail')
 export class OrAdapterDetail extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      padding: 24px;
-      max-width: 720px;
+      padding: 20px 24px;
+      background: var(--background);
+      min-height: 100%;
     }
 
-    .top-bar {
+    /* ── Page header ─────────────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+      gap: 16px;
+    }
+
+    .page-header-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+      transition: color .12s, background .12s;
+    }
+
+    .back-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 2px;
+      color: var(--foreground);
+    }
+
+    .page-subtitle {
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 13px;
+      color: var(--muted-foreground);
+      margin: 0;
+    }
+
+    .page-header-right {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
+      flex-shrink: 0;
     }
 
-    .top-bar-spacer { flex: 1; }
+    /* ── Status badge ────────────────────────────────────────────── */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
 
-    .page-title {
-      font-size: var(--or-text-display, 24px);
+    .status-badge--active {
+      background: color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent);
+      color: oklch(0.45 0.18 145);
+    }
+
+    .status-badge--disabled {
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+
+    /* ── Stats row ───────────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    @media (max-width: 640px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow-xs);
+    }
+
+    .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted-foreground);
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 18px;
       font-weight: 700;
-      color: var(--or-color-text-strong, #171717);
-      margin: 0 0 4px;
+      color: var(--foreground);
     }
 
-    .form-group {
-      margin-bottom: 16px;
+    .stat-sub {
+      font-size: 11px;
+      color: var(--muted-foreground);
+      margin-top: 2px;
     }
 
+    /* ── Info cards ──────────────────────────────────────────────── */
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .card-title uk-icon {
+      color: var(--muted-foreground);
+    }
+
+    /* ── Two-column grid ─────────────────────────────────────────── */
+    .two-col-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 20px;
+    }
+
+    @media (max-width: 640px) {
+      .two-col-grid { grid-template-columns: 1fr; }
+    }
+
+    .form-group { margin-bottom: 0; }
+
+    .field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      margin-bottom: 5px;
+    }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--destructive);
+      margin-top: 4px;
+    }
+
+    .field-help {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* ── Toggle row ──────────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+    }
+
+    .toggle-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--foreground);
+    }
+
+    .toggle-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 1px;
+    }
+
+    .uk-toggle {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .uk-toggle input { opacity: 0; width: 0; height: 0; }
+
+    .uk-toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--muted);
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .uk-toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      left: 3px;
+      top: 3px;
+      transition: transform .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+
+    .uk-toggle input:checked + .uk-toggle-slider {
+      background: var(--primary);
+    }
+
+    .uk-toggle input:checked + .uk-toggle-slider::before {
+      transform: translateX(18px);
+    }
+
+    /* ── Config textarea ─────────────────────────────────────────── */
+    .config-textarea {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 160px;
+      padding: 8px 12px;
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 13px;
+      line-height: 1.5;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--foreground);
+      resize: vertical;
+      transition: border-color .12s, box-shadow .12s;
+    }
+
+    .config-textarea:focus,
+    .config-textarea:focus-visible {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent);
+    }
+
+    .config-textarea::placeholder {
+      color: var(--muted-foreground);
+    }
+
+    .config-textarea--error {
+      border-color: var(--destructive);
+    }
+
+    /* ── Alert banners ───────────────────────────────────────────── */
+    .alert {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .alert--danger {
+      background: color-mix(in oklch, var(--destructive) 10%, transparent);
+      border: 1px solid color-mix(in oklch, var(--destructive) 35%, transparent);
+      color: var(--destructive);
+    }
+
+    /* ── Footer meta ─────────────────────────────────────────────── */
     .footer-meta {
       font-size: 12px;
-      color: var(--or-color-text-muted, #737373);
-      margin-top: 16px;
-      padding-top: 12px;
-      border-top: 1px solid var(--or-color-divider, #e5e5e5);
+      color: var(--muted-foreground);
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
     }
 
     .bottom-bar {
       display: flex;
       gap: 8px;
-      margin-top: 24px;
+      margin-top: 14px;
       justify-content: flex-end;
     }
 
-    .field-error {
-      font-size: 12px;
-      color: var(--sl-color-danger-500, #d92d20);
-      margin-top: 4px;
+    /* ── Loading / spinner ───────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
     }
 
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 40px 0;
+      color: var(--muted-foreground);
+      font-size: 14px;
+    }
+
+    /* ── Delete confirm panel ────────────────────────────────────── */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--shadow-overlay, oklch(0 0 0 / 0.5));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .confirm-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .confirm-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+
+    .confirm-body {
+      margin: 0 0 16px;
+      font-size: 14px;
+      color: var(--muted-foreground);
+    }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    /* ── Toast ───────────────────────────────────────────────────── */
     .toast-container {
       position: fixed;
       bottom: 24px;
@@ -107,28 +409,39 @@ export class OrAdapterDetail extends LitElement {
       z-index: var(--or-z-toast, 9000);
     }
 
-    .delete-btn-danger {
-      color: var(--sl-color-danger-500, #d92d20);
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      box-shadow: var(--shadow-md);
+      font-size: 14px;
+      color: var(--foreground);
     }
+
+    .toast uk-icon { color: oklch(0.45 0.18 145); }
   `;
 
   // --- Properties ---
-  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
-  @property({ type: String, attribute: 'entity-id' }) accessor entityId = '';
-  @property({ type: Object }) accessor client!: ApiClient;
+  @property({ type: String, attribute: 'org-id' }) orgId = '';
+  @property({ type: String, attribute: 'entity-id' }) entityId = '';
+  @property({ type: Object }) client!: ApiClient;
 
   // --- Internal state ---
-  @state() private accessor _entity: Adapter | null = null;
-  @state() private accessor _loading = false;
-  @state() private accessor _saving = false;
-  @state() private accessor _dirty = false;
-  @state() private accessor _conflictServer: Record<string, unknown> | null = null;
-  @state() private accessor _fieldErrors: Record<string, string> = {};
-  @state() private accessor _configError = '';
-  @state() private accessor _apiError: string | null = null;
-  @state() private accessor _showSavedToast = false;
-  @state() private accessor _deleteConfirmOpen = false;
-  @state() private accessor _deleteConfirmName = '';
+  @state() private _entity: Adapter | null = null;
+  @state() private _loading = false;
+  @state() private _saving = false;
+  @state() private _dirty = false;
+  @state() private _conflictServer: Record<string, unknown> | null = null;
+  @state() private _fieldErrors: Record<string, string> = {};
+  @state() private _configError = '';
+  @state() private _apiError: string | null = null;
+  @state() private _showSavedToast = false;
+  @state() private _deleteConfirmOpen = false;
+  @state() private _deleteConfirmName = '';
 
   private _form: Form = {
     name: '',
@@ -149,9 +462,45 @@ export class OrAdapterDetail extends LitElement {
   }
 
   // --- Lifecycle ---
+  private _onKeydown?: (e: KeyboardEvent) => void;
+
+  override createRenderRoot() {
+    const root = super.createRenderRoot() as ShadowRoot;
+    adoptShadowSheets(root);
+    return root;
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     void this._loadEntity();
+    this._onKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this._deleteConfirmOpen) {
+        this._deleteConfirmOpen = false;
+        this._deleteConfirmName = '';
+      }
+    };
+    document.addEventListener('keydown', this._onKeydown);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this._onKeydown) {
+      document.removeEventListener('keydown', this._onKeydown);
+    }
+  }
+
+  override updated(changed: Map<string, unknown>): void {
+    if (changed.has('_deleteConfirmOpen')) {
+      if (this._deleteConfirmOpen) {
+        this.setAttribute('aria-live', 'polite');
+        void this.updateComplete.then(() => {
+          const input = this.shadowRoot?.querySelector('.confirm-panel input') as HTMLElement | null;
+          if (input) input.focus();
+        });
+      } else {
+        this.removeAttribute('aria-live');
+      }
+    }
   }
 
   // --- Private methods ---
@@ -173,7 +522,6 @@ export class OrAdapterDetail extends LitElement {
         name: adapter.name ?? '',
         external_id: (adapter as Record<string, unknown>)['external_id'] as string ?? '',
         adapter_type: (adapter as Record<string, unknown>)['adapter_type'] as string ?? '',
-        // JSONB config: display as pretty-printed JSON; null/undefined → empty textarea
         configText: adapter.config != null
           ? JSON.stringify(adapter.config, null, 2)
           : '',
@@ -209,6 +557,18 @@ export class OrAdapterDetail extends LitElement {
     }, 3000);
   }
 
+  private _relativeTime(iso: string): string {
+    try {
+      const ms = Date.now() - new Date(iso).getTime();
+      const min = Math.floor(ms / 60000);
+      if (min < 1) return 'just now';
+      if (min < 60) return `${min}m ago`;
+      const h = Math.floor(min / 60);
+      if (h < 24) return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    } catch { return iso; }
+  }
+
   // --- Config JSON validation ---
 
   private _handleConfigInput(e: Event): void {
@@ -232,10 +592,8 @@ export class OrAdapterDetail extends LitElement {
   async _handleSave(): Promise<void> {
     if (!this._entity || this._saving) return;
 
-    // Block save if config JSON is invalid
     if (this._configError) return;
 
-    // Re-validate config on save
     let configPayload: Record<string, unknown> | null = null;
     if (this._form.configText.trim() !== '') {
       try {
@@ -257,7 +615,6 @@ export class OrAdapterDetail extends LitElement {
       version: this._entity.version,
     };
 
-    // Client-side ajv validation
     const validateFn = validateUpdateAdapter as unknown as {
       (data: unknown): boolean;
       errors: Array<{ instancePath: string; message?: string }> | null;
@@ -283,16 +640,13 @@ export class OrAdapterDetail extends LitElement {
       const { data, error } = result as { data: Adapter | null; error: unknown };
 
       if (error) {
-        // 409 version_conflict — consume from error.current (D6-03: Pitfall 9)
-        // Cross-AI fix: also update _entity.version so a re-submit uses the server-current
-        // version instead of looping into another 409 (Codex review HIGH).
+        // 409 version_conflict — consume from error.current (D6-03 + Codex review HIGH)
         if (error && typeof error === 'object' && 'current' in error) {
           const current = (error as { current: Adapter }).current;
           this._conflictServer = current as unknown as Record<string, unknown>;
           this._entity = current;
           return;
         }
-        // 422 immutable_field
         if (
           error &&
           typeof error === 'object' &&
@@ -302,7 +656,6 @@ export class OrAdapterDetail extends LitElement {
           this._apiError = 'Code cannot be changed after create.';
           return;
         }
-        // 422 invalid_value
         if (
           error &&
           typeof error === 'object' &&
@@ -404,8 +757,83 @@ export class OrAdapterDetail extends LitElement {
 
   // --- Render helpers ---
 
+  private _renderPageHeader() {
+    const entity = this._entity;
+    const statusBadge = entity
+      ? entity.enabled
+        ? html`<span class="status-badge status-badge--active">Active</span>`
+        : html`<span class="status-badge status-badge--disabled">Disabled</span>`
+      : nothing;
+
+    return html`
+      <div class="page-header">
+        <div class="page-header-left">
+          <button
+            class="back-btn"
+            title="Back to Adapters"
+            @click=${() => this._navigate(`/orgs/${this.orgId}/adapters`)}
+          >
+            <uk-icon icon="arrow-left" width="18" height="18"></uk-icon>
+          </button>
+          <div>
+            <h1 class="page-title">${entity?.name ?? 'Adapter Detail'}</h1>
+            ${entity ? html`<p class="page-subtitle">${entity.code}</p>` : nothing}
+          </div>
+        </div>
+
+        <div class="page-header-right">
+          ${statusBadge}
+
+          ${entity
+            ? html`
+                ${entity.enabled
+                  ? html`<button class="uk-button uk-button-default uk-button-small" @click=${this._handleDisable}>Disable</button>`
+                  : html`<button class="uk-button uk-button-default uk-button-small" @click=${this._handleEnable}>Enable</button>`}
+
+                <button
+                  class="uk-button uk-button-danger uk-button-small"
+                  @click=${() => {
+                    this._deleteConfirmOpen = true;
+                    this._deleteConfirmName = '';
+                  }}
+                >
+                  <uk-icon icon="trash-2" width="14" height="14"></uk-icon>
+                  Delete
+                </button>
+              `
+            : nothing}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStatsRow() {
+    const entity = this._entity;
+    if (!entity) return nothing;
+
+    return html`
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" style="font-size:14px;padding-top:4px">${entity.enabled ? 'Active' : 'Disabled'}</div>
+          <div class="stat-sub">current</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Version</div>
+          <div class="stat-value">${entity.version}</div>
+          <div class="stat-sub">lock rev</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Last Updated</div>
+          <div class="stat-value" style="font-size:14px;padding-top:4px">${this._relativeTime(entity.updated_at ?? '')}</div>
+          <div class="stat-sub">${entity.updated_at ? new Date(entity.updated_at).toLocaleDateString() : ''}</div>
+        </div>
+      </div>
+    `;
+  }
+
   private _renderConflictBanner() {
-    if (!this._conflictServer) return null;
+    if (!this._conflictServer) return nothing;
 
     // For config JSONB: show pretty-printed JSON in conflict banner (UI-SPEC §5.7)
     const serverForBanner = { ...this._conflictServer };
@@ -423,207 +851,148 @@ export class OrAdapterDetail extends LitElement {
     `;
   }
 
-  private _renderDeleteDialog() {
-    return html`
-      <sl-dialog
-        label="Delete adapter ${this._entity?.name ?? ''}?"
-        ?open=${this._deleteConfirmOpen}
-        @sl-request-close=${() => {
-          this._deleteConfirmOpen = false;
-          this._deleteConfirmName = '';
-        }}
-      >
-        <p>This is permanent and cannot be undone.</p>
-        <sl-input
-          placeholder="Type adapter name to confirm"
-          value=${this._deleteConfirmName}
-          @sl-input=${(e: Event) => {
-            this._deleteConfirmName = (e.target as HTMLInputElement).value;
-          }}
-          aria-label="Type adapter name to confirm deletion"
-        ></sl-input>
-        <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <sl-button
-            variant="default"
-            @click=${() => {
-              this._deleteConfirmOpen = false;
-              this._deleteConfirmName = '';
-            }}
-          >Cancel</sl-button>
-          <sl-button
-            variant="danger"
-            ?disabled=${!this._canDelete}
-            @click=${this._handleDelete}
-          >Delete</sl-button>
-        </div>
-      </sl-dialog>
-    `;
-  }
-
-  private _renderTopBar() {
-    return html`
-      <div class="top-bar">
-        <sl-button
-          variant="text"
-          @click=${() => this._navigate(`/orgs/${this.orgId}/adapters`)}
-        >
-          <sl-icon slot="prefix" name="arrow-left"></sl-icon>
-          Back to Adapters
-        </sl-button>
-        <div class="top-bar-spacer"></div>
-
-        ${when(
-          this._entity,
-          () => html`
-            ${when(
-              this._entity!.enabled,
-              () => html`
-                <sl-button
-                  variant="default"
-                  size="small"
-                  @click=${this._handleDisable}
-                >Disable</sl-button>
-              `,
-              () => html`
-                <sl-button
-                  variant="default"
-                  size="small"
-                  @click=${this._handleEnable}
-                >Enable</sl-button>
-              `
-            )}
-            <sl-button
-              variant="default"
-              size="small"
-              class="delete-btn-danger"
-              style="color:var(--sl-color-danger-500)"
-              @click=${() => {
-                this._deleteConfirmOpen = true;
-                this._deleteConfirmName = '';
-              }}
-            >Delete</sl-button>
-          `
-        )}
-      </div>
-    `;
-  }
-
-  private _renderForm() {
-    if (!this._entity) return null;
+  private _renderIdentityCard() {
     const entity = this._entity;
-    const relativeTime = (iso: string) => {
-      try {
-        const ms = Date.now() - new Date(iso).getTime();
-        const min = Math.floor(ms / 60000);
-        if (min < 60) return `${min}m ago`;
-        const h = Math.floor(min / 60);
-        if (h < 24) return `${h}h ago`;
-        return `${Math.floor(h / 24)}d ago`;
-      } catch { return iso; }
-    };
+    if (!entity) return nothing;
 
     return html`
-      <h1 class="page-title">${entity.name}</h1>
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="plug" width="15" height="15"></uk-icon>
+          Identity
+        </h2>
 
-      ${this._renderConflictBanner()}
+        ${this._apiError
+          ? html`<div class="alert alert--danger" style="margin-bottom:16px">
+              <uk-icon icon="alert-triangle" width="16" height="16"></uk-icon>
+              ${this._apiError}
+            </div>`
+          : nothing}
 
-      ${when(
-        this._apiError,
-        () => html`
-          <sl-alert variant="danger" open style="margin-bottom:16px">
-            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-            ${this._apiError}
-          </sl-alert>
-        `
-      )}
+        <div class="form-group" style="margin-bottom:16px">
+          <or-code-input
+            .value=${entity.code}
+            .readonly=${true}
+          ></or-code-input>
+        </div>
 
-      <div class="form-group">
-        <or-code-input
-          .value=${entity.code}
-          .readonly=${true}
-        ></or-code-input>
+        <div class="two-col-grid">
+          <div class="form-group">
+            <label class="field-label" for="adapter-name">Name</label>
+            <input
+              id="adapter-name"
+              class="uk-input"
+              type="text"
+              .value=${this._form.name}
+              required
+              @input=${(e: Event) => {
+                this._form = { ...this._form, name: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+            ${this._fieldErrors['name']
+              ? html`<div class="field-error">${this._fieldErrors['name']}</div>`
+              : nothing}
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="adapter-ext-id">External ID</label>
+            <input
+              id="adapter-ext-id"
+              class="uk-input"
+              type="text"
+              .value=${this._form.external_id}
+              @input=${(e: Event) => {
+                this._form = { ...this._form, external_id: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="adapter-type">Adapter Type</label>
+            <input
+              id="adapter-type"
+              class="uk-input"
+              type="text"
+              .value=${this._form.adapter_type}
+              required
+              placeholder="e.g. freeswitch, livekit, twilio"
+              @input=${(e: Event) => {
+                this._form = { ...this._form, adapter_type: (e.target as HTMLInputElement).value };
+                this._markDirty();
+              }}
+            />
+            ${this._fieldErrors['adapter_type']
+              ? html`<div class="field-error">${this._fieldErrors['adapter_type']}</div>`
+              : nothing}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top:12px">
+          <label class="field-label" for="adapter-config">Config (JSON)</label>
+          <textarea
+            id="adapter-config"
+            class="config-textarea ${this._configError ? 'config-textarea--error' : ''}"
+            rows="8"
+            placeholder='{"key": "value"}'
+            .value=${this._form.configText}
+            @input=${this._handleConfigInput}
+          ></textarea>
+          ${this._configError
+            ? html`<div class="field-error">${this._configError}</div>`
+            : nothing}
+          <div class="field-help">Optional JSON configuration blob. Clear to set null.</div>
+        </div>
+
+        <div class="footer-meta">
+          version ${entity.version}
+          · updated ${this._relativeTime(entity.updated_at ?? '')}
+          · created ${entity.created_at ? new Date(entity.created_at).toLocaleDateString() : ''}
+        </div>
       </div>
+    `;
+  }
 
-      <div class="form-group">
-        <sl-input
-          label="Name"
-          value=${this._form.name}
-          required
-          ?invalid=${!!this._fieldErrors['name']}
-          @sl-input=${(e: Event) => {
-            this._form = { ...this._form, name: (e.target as HTMLInputElement).value };
-            this._markDirty();
-          }}
-        ></sl-input>
-        ${when(
-          this._fieldErrors['name'],
-          () => html`<div class="field-error">${this._fieldErrors['name']}</div>`
-        )}
+  private _renderStatusCard() {
+    if (!this._entity) return nothing;
+
+    return html`
+      <div class="info-card">
+        <h2 class="card-title">
+          <uk-icon icon="settings" width="15" height="15"></uk-icon>
+          Status &amp; Routing
+        </h2>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Enabled</div>
+            <div class="toggle-sub">Adapter accepts routing traffic when enabled</div>
+          </div>
+          <label class="uk-toggle">
+            <input
+              type="checkbox"
+              ?checked=${this._form.enabled}
+              @change=${(e: Event) => {
+                this._form = { ...this._form, enabled: (e.target as HTMLInputElement).checked };
+                this._markDirty();
+              }}
+            />
+            <span class="uk-toggle-slider"></span>
+          </label>
+        </div>
       </div>
+    `;
+  }
 
-      <div class="form-group">
-        <sl-input
-          label="External ID"
-          value=${this._form.external_id}
-          @sl-input=${(e: Event) => {
-            this._form = { ...this._form, external_id: (e.target as HTMLInputElement).value };
-            this._markDirty();
-          }}
-        ></sl-input>
-      </div>
+  private _renderFormActions() {
+    if (!this._entity) return nothing;
+    const entity = this._entity;
 
-      <div class="form-group">
-        <sl-input
-          label="Adapter Type"
-          value=${this._form.adapter_type}
-          required
-          ?invalid=${!!this._fieldErrors['adapter_type']}
-          @sl-input=${(e: Event) => {
-            this._form = { ...this._form, adapter_type: (e.target as HTMLInputElement).value };
-            this._markDirty();
-          }}
-        ></sl-input>
-        ${when(
-          this._fieldErrors['adapter_type'],
-          () => html`<div class="field-error">${this._fieldErrors['adapter_type']}</div>`
-        )}
-      </div>
-
-      <div class="form-group">
-        <sl-textarea
-          label="Config (JSON)"
-          rows="8"
-          style="font-family: monospace; white-space: pre;"
-          value=${this._form.configText}
-          placeholder='{"key": "value"}'
-          ?invalid=${!!this._configError}
-          @sl-input=${this._handleConfigInput}
-        ></sl-textarea>
-        ${when(
-          this._configError,
-          () => html`<div class="field-error">${this._configError}</div>`
-        )}
-      </div>
-
-      <div class="form-group">
-        <sl-switch
-          ?checked=${this._form.enabled}
-          @sl-change=${(e: Event) => {
-            this._form = { ...this._form, enabled: (e.target as HTMLInputElement).checked };
-            this._markDirty();
-          }}
-        >Enabled</sl-switch>
-      </div>
-
-      <div class="footer-meta">
-        version ${entity.version}
-        · updated ${relativeTime(entity.updated_at ?? '')}
-        · created ${entity.created_at ? new Date(entity.created_at).toLocaleDateString() : ''}
-      </div>
-
+    return html`
       <div class="bottom-bar">
-        <sl-button
-          variant="default"
+        <button
+          class="uk-button uk-button-default"
           @click=${() => {
             if (!this._dirty) {
               this._navigate(`/orgs/${this.orgId}/adapters`);
@@ -639,45 +1008,108 @@ export class OrAdapterDetail extends LitElement {
               this._configError = '';
             }
           }}
-        >Cancel</sl-button>
-        <sl-button
-          variant="primary"
+        >Cancel</button>
+        <button
+          class="uk-button uk-button-primary"
           ?disabled=${!this._dirty || this._saving || !!this._configError}
           @click=${this._handleSave}
         >
-          ${this._saving ? html`<sl-spinner></sl-spinner> Saving…` : 'Save changes'}
-        </sl-button>
+          ${this._saving
+            ? html`<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px"></span> Saving…`
+            : 'Save changes'}
+        </button>
       </div>
     `;
   }
 
+  private _renderDeleteDialog() {
+    return when(this._deleteConfirmOpen, () => html`
+      <div
+        class="confirm-overlay"
+        role="presentation"
+        @click=${() => {
+          this._deleteConfirmOpen = false;
+          this._deleteConfirmName = '';
+        }}
+      >
+        <div
+          class="confirm-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+          @click=${(e: Event) => e.stopPropagation()}
+        >
+          <h3 id="confirm-title" class="confirm-title">Delete adapter "${this._entity?.name ?? ''}"?</h3>
+          <p class="confirm-body">This is permanent and cannot be undone. Type the adapter name to confirm.</p>
+          <div style="margin-bottom: 20px;">
+            <label class="field-label" for="delete-confirm-input">Adapter name</label>
+            <input
+              id="delete-confirm-input"
+              class="uk-input"
+              type="text"
+              placeholder="Type adapter name to confirm"
+              .value=${this._deleteConfirmName}
+              aria-label="Type adapter name to confirm deletion"
+              @input=${(e: Event) => {
+                this._deleteConfirmName = (e.target as HTMLInputElement).value;
+              }}
+            />
+          </div>
+          <div class="action-row">
+            <button
+              class="uk-button uk-button-default uk-button-small"
+              @click=${() => {
+                this._deleteConfirmOpen = false;
+                this._deleteConfirmName = '';
+              }}
+            >Cancel</button>
+            <button
+              class="uk-button uk-button-danger uk-button-small"
+              ?disabled=${!this._canDelete}
+              @click=${this._handleDelete}
+            >Delete</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
   override render() {
     if (this._loading) {
-      return html`<sl-spinner></sl-spinner>`;
+      return html`
+        <div class="loading-wrap">
+          <span class="spinner"></span>
+          Loading adapter…
+        </div>
+      `;
     }
 
     if (!this._entity && this._apiError) {
       return html`
-        <sl-alert variant="danger" open>
-          <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+        <div class="alert alert--danger" style="margin:24px 0">
+          <uk-icon icon="alert-triangle" width="16" height="16"></uk-icon>
           ${this._apiError}
-        </sl-alert>
+        </div>
       `;
     }
 
     return html`
-      ${this._renderTopBar()}
-      ${this._renderForm()}
+      ${this._renderPageHeader()}
+      ${this._renderStatsRow()}
+      ${this._renderConflictBanner()}
+      ${this._renderIdentityCard()}
+      ${this._renderStatusCard()}
+      ${this._renderFormActions()}
       ${this._renderDeleteDialog()}
 
       ${when(
         this._showSavedToast,
         () => html`
           <div class="toast-container">
-            <sl-alert variant="success" open>
-              <sl-icon slot="icon" name="check-circle"></sl-icon>
+            <div class="toast">
+              <uk-icon icon="check" width="16" height="16"></uk-icon>
               Saved
-            </sl-alert>
+            </div>
           </div>
         `
       )}

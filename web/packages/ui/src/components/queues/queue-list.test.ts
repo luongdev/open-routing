@@ -44,10 +44,12 @@ describe('OrQueueList', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    expect(shadow.textContent).toContain('No queues yet');
+    expect(shadow.textContent).toContain('No queues yet. Click + Create queue to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create queue');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create queue');
   });
 
-  it('renders channel_types as individual sl-badge elements per type', async () => {
+  it('renders channel_types as individual channel-tag spans per type', async () => {
     (el as any).orgId = 'test-org-id';
     (el as any).client = {
       GET: vi.fn().mockResolvedValue({
@@ -62,7 +64,7 @@ describe('OrQueueList', () => {
     const shadow = el.shadowRoot!;
     const table = shadow.querySelector('or-data-table') as any;
     expect(table).toBeTruthy();
-    // Each channel_type should produce an sl-badge
+    // Each channel_type should produce a channel-tag span
     // The data-table renders via column renderers; we inspect rows prop to confirm data is there
     expect(table.rows).toHaveLength(1);
     expect(table.rows[0]?.channel_types).toEqual(['voice', 'chat']);
@@ -168,8 +170,11 @@ describe('OrQueueList', () => {
     await new Promise((r) => setTimeout(r, 50));
     await (el as any).updateComplete;
 
-    // Call _handleDisable directly with the queue
-    await (el as any)._handleDisable(MOCK_QUEUE);
+    // Disable is dispatched via the data-table kebab menu's 'or-row-action' event
+    // (Wave 0.1 polish — _handleDisable folded into _handleRowAction).
+    await (el as any)._handleRowAction(
+      new CustomEvent('or-row-action', { detail: { row: MOCK_QUEUE, action: 'disable' } })
+    );
 
     expect(mockPatch).toHaveBeenCalled();
     const patchCall = mockPatch.mock.calls[0];

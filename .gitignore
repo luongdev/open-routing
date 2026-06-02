@@ -22,7 +22,9 @@ services/api/.air-tmp/
 # ---- Node ----
 node_modules/
 pnpm-store/
+.pnpm-store/
 .turbo/
+cache/
 *.log
 
 # ---- IDE ----

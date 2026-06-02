@@ -3,3 +3,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
+apps/embed/test-results/
+apps/embed/playwright-report/
+apps/embed/*.tgz
+*.tgz

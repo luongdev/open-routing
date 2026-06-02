@@ -65,7 +65,9 @@ describe('OrSkillList', () => {
 
     const shadow = el.shadowRoot!;
     const text = shadow.textContent ?? '';
-    expect(text).toContain('No skills yet');
+    expect(text).toContain('No skills yet. Click + Create skill to add your first.');
+    expect(shadow.querySelector('.empty-state button')?.textContent?.trim()).toBe('+ Create skill');
+    expect(shadow.querySelector('.page-header button.uk-button-primary')?.textContent?.trim()).toBe('+ Create skill');
   });
 
   it('renders 3 rows when task resolves with 3 skills', async () => {

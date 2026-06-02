@@ -6,7 +6,11 @@ v0.1 builds the catalog foundation that every subsequent Open Routing milestone 
 
 ## Milestone
 
-**v0.1 Catalog Foundation** — 53 requirements, 7 phases, 5/7 phases complete (Phase 04.1 + Phase 5 shipped 2026-05-17); Phase 6 is current focus.
+**v0.1 Catalog Foundation** — archived 2026-06-02. All seven milestone phases are complete and current behavior is captured in `openspec/specs/`.
+
+## Archive Note
+
+This GSD roadmap is frozen as historical implementation detail. OpenSpec is the canonical planning/spec source from this point forward. Start the next milestone by creating a new OpenSpec change; do not resume work from unchecked historical plan rows below.
 
 ## Phases
 
@@ -24,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 04.1: Catalog Identity Normalization (INSERTED)** - Introduce universal user-facing `code` (TEXT NOT NULL, UNIQUE per org) on all 6 primary catalog entities. Demote `external_id` to optional with partial unique. Drop `break_reasons.UNIQUE (org_id, name)`. Updates migration 000002 (still editable per D-61), OpenAPI contract, sqlc queries, 6 CRUD handlers, and tests. Unblocks Phase 5 import keyed on `code`. (completed 2026-05-17)
 - [x] **Phase 5: Bulk Import (Go)** - POST import endpoint for all 6 entities keyed on `code`, encoding/csv with BOM/CRLF handling, upsert ON CONFLICT, 207 partial success, import_jobs persistence, 50 MB/500-row cap, and schema versioning. (completed 2026-05-17)
 - [x] **Phase 6: Shared UI Library & Standalone Admin** - `packages/ui` Lit + Shoelace components and generated TS client wrapper; `apps/admin` Vite SPA with CRUD screens for all 6 entities, 409 reload-prompt UX, and theme token support. (completed 2026-05-18)
-- [ ] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped.
+- [x] **Phase 7: Web Component Embed Bundle** - `apps/embed` builds `<open-routing-catalog>` Custom Element with Shadow DOM CSS isolation, theme/modules attributes, auth-expired CustomEvent, and Playwright integration tests in React/Vue/HTML stub hosts with bundle size ≤ 70 KB gzipped. (completed 2026-06-02)
 
 ## Phase Details
 
@@ -354,33 +358,53 @@ Plans:
   4. When the embed bundle receives an HTTP 401 response, it dispatches `open-routing:auth-expired` as a CustomEvent with `composed: true`, bubbling across the Shadow DOM boundary to the host document.
   5. The `modules` attribute filters navigation so only listed entity names appear; unlisted entities are absent from the route table and navigation — not just hidden by CSS.
 
-**Plans**: 13 plans
+**Plans**: 13 plans (+16 in Wave 0.0)
 Plans:
 
-**Wave 0** *(3 plans in parallel — disjoint files; scaffold + Go CORS + Shoelace audit)*
+**Wave 0.0** *(INSERTED 2026-05-18 — UI rewrite: drop Shoelace, adopt Frankenstyle v0.3.8 (Franken UI v3 rebrand) / Lit-based Hardened Web Components + Tailwind v4 + uk-* utility classes. Runs FIRST before Wave 0; existing Phase 7 work paused until W0.0 completes. Plan 07-03 becomes obsolete after W0.0-15.)*
 
-- [ ] 07-01-PLAN.md — Embed package scaffold: package.json + tsconfig + vite.config.ts (library mode) + vitest.config.ts + test-setup.ts + index.html + playwright.config.ts (3-host matrix) + .size-limit.json + 4 e2e spec stubs + 3 stub hosts (react/vue/html with esm.sh CDN imports) + 2 unit test stubs + .gitignore (EMBED-01, EMBED-09, EMBED-10)
-- [ ] 07-02-PLAN.md — Go CORS middleware (go-chi/cors v1.2.2): cors.go + AllowedOriginsFromEnv parser + 12 unit tests + cors_preflight_test.go + cors_cross_origin_test.go (Phase 1 isolation suite extension) + CORSAllowedOrigins config field + Taskfile dev env default (CORS_ALLOWED_ORIGINS=*) + chi chain insert BEFORE OrgContext (EMBED-02, EMBED-10)
-- [ ] 07-03-PLAN.md — Shoelace <sl-dialog> audit + replace in 7 packages/ui components (agents/skills/queues/channels/adapters/break-reasons detail + status-panel) — inline role=dialog with manual Escape-key + focus management (D7-04: <sl-dialog> focus-trap broken in nested Shadow DOM per shoelace#709) (EMBED-04)
+- [ ] 07-w0-01-PLAN.md — Install `frankenstyle@^0.3.8` (npm) + Tailwind v4 in `packages/ui` and `apps/admin`; import `frankenstyle-kit.css` + `hwc-components.iife.js` bundle; verify uk-* classes resolve
+- [x] 07-w0-02-PLAN.md — Ember palette via Tailwind v4 `@theme` directives (OKLCh light + dark) — `--primary`, `--background`, `--foreground`, `--ring` etc.; existing `--or-color-*` aliased to new vars in compat layer
+- [ ] 07-w0-03-PLAN.md — `/playground` route in admin app: theme toggle (`<uk-theme-switcher>`), responsive grid, empty component slots; Ember reference screenshots saved to `apps/admin/src/playground/references/`
+- [ ] 07-w0-10-PLAN.md — `or-button` Lit wrapper around `.uk-btn` (variants default/primary/secondary/ghost/destructive; sizes sm/md/lg; states hover/focus/disabled/loading); playground entry; visual diff vs Ember ref
+- [ ] 07-w0-11-PLAN.md — `or-input` wrapper (.uk-input); update or-code-input to use or-input internally; playground entry covering all states
+- [x] 07-w0-12-PLAN.md — `or-select` wrapper (uk-select markup); playground entry
+- [x] 07-w0-13-PLAN.md — `or-card` wrapper (uk-card with header/body/footer slots); playground entry
+- [ ] 07-w0-14-PLAN.md — `or-badge` wrapper (uk-label variants default/success/warning/destructive/info); playground entry
+- [ ] 07-w0-15-PLAN.md — `or-dialog` wrapper around `<uk-modal>` (Franken UI focus trap built-in — supersedes Plan 07-03); update 7 detail components to use or-dialog; playground entry
+- [ ] 07-w0-16-PLAN.md — `or-tabs` wrapper (uk-tab); playground entry
+- [ ] 07-w0-17-PLAN.md — `or-icon` lucide SVG sprite (replaces sl-icon Bootstrap icons); playground entry showing 20 most-used icons
+- [ ] 07-w0-18-PLAN.md — `or-switch` + `or-checkbox` wrappers (uk-switch + uk-checkbox); single plan covers both; playground entries
+- [ ] 07-w0-19-PLAN.md — `or-table` wrapper (uk-table); update or-data-table to use or-table internally; playground entry
+- [ ] 07-w0-20-PLAN.md — `or-toast` wrapper (uk-notification); `notifyError(err)` helper for API errors; playground entry with all 4 variants
+- [ ] 07-w0-21-PLAN.md — `or-dropdown` wrapper (uk-dropdown); used for row-actions + user menu; playground entry
+- [ ] 07-w0-22-PLAN.md — `or-sidebar` (refactor catalog-shell sidebar — section headers CLINICAL/OPERATIONS/ADMIN/SYSTEM; active state; collapse toggle); playground entry
+- [ ] 07-w0-30-PLAN.md — Migration: search-and-replace all `sl-*` usages in 42 compound components → `or-*` or uk-classes; remove `@shoelace-style/shoelace` from dependencies; remove Vite include hacks; all existing tests still pass
+
+**Wave 0** *(3 plans in parallel — disjoint files; scaffold + Go CORS + Shoelace audit — Plan 07-03 obsoleted by W0.0-15)*
+
+- [x] 07-01-PLAN.md — Embed package scaffold: package.json + tsconfig + vite.config.ts (library mode) + vitest.config.ts + test-setup.ts + index.html + playwright.config.ts (3-host matrix) + .size-limit.json + 4 e2e spec stubs + 3 stub hosts (react/vue/html with esm.sh CDN imports) + 2 unit test stubs + .gitignore (EMBED-01, EMBED-09, EMBED-10)
+- [x] 07-02-PLAN.md — Go CORS middleware (go-chi/cors v1.2.2): cors.go + AllowedOriginsFromEnv parser + 12 unit tests + cors_preflight_test.go + cors_cross_origin_test.go (Phase 1 isolation suite extension) + CORSAllowedOrigins config field + Taskfile dev env default (CORS_ALLOWED_ORIGINS=*) + chi chain insert BEFORE OrgContext (EMBED-02, EMBED-10)
+- [ ] ~~07-03-PLAN.md~~ — OBSOLETE: superseded by 07-w0-15-PLAN.md (or-dialog wrapping uk-modal handles focus trap; standalone sl-dialog audit no longer needed)
 
 **Wave 1** *(blocked on Wave 0)*
 
-- [ ] 07-04-PLAN.md — Shell refactor IN PLACE: convert ~30 static entity imports to lazy via _composedEnter helper that composes _orgRouteEnter guard + await import(); add routingMode reactive property (default history) + routerAdapter injection seam; 7 new shell unit tests (D7-01, D7-02 eager baseline, D7-03, D7-06, D7-10) (EMBED-01, EMBED-03, EMBED-06)
-- [ ] 07-05-PLAN.md — HashRouterAdapter class (~30-50 lines wrapping @lit-labs/router Routes) + 10+ unit tests; HASH_PREFIX='open-routing/' guard for Pitfall 9 (coexist with host hash routing); buildHash static helper (D7-05, D7-06) (EMBED-03, EMBED-06)
-- [ ] 07-13-PLAN.md — Docs + license: README.md (attribute API + event API + theme JSON + CORS + single-embed limitation + browser support + bundle size); LICENSE (MIT or match repo); CHANGELOG.md (0.1.0-pre.1 entry) (D7-15) (EMBED-09)
+- [x] 07-04-PLAN.md — Shell refactor IN PLACE: convert ~30 static entity imports to lazy via _composedEnter helper that composes _orgRouteEnter guard + await import(); add routingMode reactive property (default history) + routerAdapter injection seam; 7 new shell unit tests (D7-01, D7-02 eager baseline, D7-03, D7-06, D7-10) (EMBED-01, EMBED-03, EMBED-06)
+- [x] 07-05-PLAN.md — HashRouterAdapter class (~30-50 lines wrapping @lit-labs/router Routes) + 10+ unit tests; HASH_PREFIX='open-routing/' guard for Pitfall 9 (coexist with host hash routing); buildHash static helper (D7-05, D7-06) (EMBED-03, EMBED-06)
+- [x] 07-13-PLAN.md — Docs + license: README.md (attribute API + event API + theme JSON + CORS + single-embed limitation + browser support + bundle size); LICENSE (MIT or match repo); CHANGELOG.md (0.1.0-pre.1 entry) (D7-15) (EMBED-09)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 07-06-PLAN.md — OpenRoutingCatalog Custom Element class (~250 lines): @customElement decorator, 5 reactive properties with `accessor` keyword (TC39 2023-11), Shadow DOM mode open, UUIDv7 validation with inline error state (D7-08), theme JSON parse with prototype-pollution guard, per-element createApiClient + auth-expired onResponse middleware (D7-14), composed:true events for request-context (D7-13) + auth-expired, HashRouterAdapter injection into shell via routerAdapter prop (EMBED-02, EMBED-04, EMBED-05, EMBED-06, EMBED-07, EMBED-08)
-- [ ] 07-10-PLAN.md — Admin smoke regression: extend Phase 6 smoke.spec.ts with 2 new tests covering 4 lazy chunks (agents/skills/queues/break-reasons) + chunk-not-found console error filter (D7-03 mandate to regression-test admin) (EMBED-03)
+- [x] 07-06-PLAN.md — OpenRoutingCatalog Custom Element class (~250 lines): @customElement decorator, 5 reactive properties with `accessor` keyword (TC39 2023-11), Shadow DOM mode open, UUIDv7 validation with inline error state (D7-08), theme JSON parse with prototype-pollution guard, per-element createApiClient + auth-expired onResponse middleware (D7-14), composed:true events for request-context (D7-13) + auth-expired, HashRouterAdapter injection into shell via routerAdapter prop (EMBED-02, EMBED-04, EMBED-05, EMBED-06, EMBED-07, EMBED-08)
+- [x] 07-10-PLAN.md — Admin smoke regression: extend Phase 6 smoke.spec.ts with 2 new tests covering 4 lazy chunks (agents/skills/queues/break-reasons) + chunk-not-found console error filter (D7-03 mandate to regression-test admin) (EMBED-03)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 07-07-PLAN.md — Library entry index.ts + locale.ts: side-effect import './embed-element.js' registers Custom Element + configureLocalization module-level bootstrap + applyEmbedLocale per-element helper; NO localStorage, NO navigator.language detection (CONTEXT <out_of_scope>) (EMBED-01, EMBED-02)
+- [x] 07-07-PLAN.md — Library entry index.ts + locale.ts: side-effect import './embed-element.js' registers Custom Element + configureLocalization module-level bootstrap + applyEmbedLocale per-element helper; NO localStorage, NO navigator.language detection (CONTEXT <out_of_scope>) (EMBED-01, EMBED-02)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 07-08-PLAN.md — Vitest unit suite for embed-element.test.ts (17+ cases across 4 describe blocks: org-id validation, theme parse, modules forwarding, request-context dispatch, auth-expired event with mock fetch); covers 7-EMBED-02-a/b/c, 7-EMBED-05-a/b/c, 7-EMBED-06-b, 7-EMBED-07-a/b (EMBED-02, EMBED-05, EMBED-06, EMBED-07)
+- [x] 07-08-PLAN.md — Vitest unit suite for embed-element.test.ts (17+ cases across 4 describe blocks: org-id validation, theme parse, modules forwarding, request-context dispatch, auth-expired event with mock fetch); covers 7-EMBED-02-a/b/c, 7-EMBED-05-a/b/c, 7-EMBED-06-b, 7-EMBED-07-a/b (EMBED-02, EMBED-05, EMBED-06, EMBED-07)
 - [ ] 07-09-PLAN.md — Playwright matrix (4 specs × 3 hosts = 30 runs): embed-shadow-dom-isolation (host CSS in + embed CSS out + no portal escape from <sl-dialog> replacement), embed-org-id-header (page.route intercept), embed-auth-expired (addInitScript + composed:true verified), embed-modules-filter (sidebar nav pierce); covers 7-EMBED-04-a/b/c, 7-EMBED-06-a, 7-EMBED-07-c, 7-EMBED-10-a (EMBED-02, EMBED-03, EMBED-04, EMBED-06, EMBED-07, EMBED-10)
 - [ ] 07-12-PLAN.md — Final package.json shape + build smoke: pnpm build emits dist/embed.js valid ES module ≤ 70 KB gzipped + ≥ 6 lazy chunks; pnpm pack --dry-run + scratch-dir install smoke (Pitfall 5 pnpm#10195 mitigation); D7-15 npm tarball contract verified (EMBED-01, EMBED-09)
 
@@ -397,7 +421,7 @@ Plans:
 
 **Execution Order:** 1 → 2 → 3 → 4 → 5 → 6 → 7
 
-**Overall:** 2 / 7 phases complete (29%).
+**Overall:** 7 / 7 phases complete (100%).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -405,9 +429,9 @@ Plans:
 | 2. OpenAPI Contract & Codegen | 6/6 | Complete | 2026-05-16 |
 | 3. Catalog CRUD (Go) | 10/10 | Complete   | 2026-05-16 |
 | 4. Agent State Machine (Go) | 6/6 | Complete   | 2026-05-17 |
-| 5. Bulk Import (Go) | 0/8 | Not started | - |
-| 6. Shared UI Library & Standalone Admin | 0/14 | In progress | - |
-| 7. Web Component Embed Bundle | 0/13 | Not started | - |
+| 5. Bulk Import (Go) | 8/8 | Complete | 2026-05-17 |
+| 6. Shared UI Library & Standalone Admin | 14/14 | Complete | 2026-05-18 |
+| 7. Web Component Embed Bundle | archived | Complete | 2026-06-02 |
 
 ---
 
@@ -434,3 +458,4 @@ Plans:
 *Milestone: v0.1 Catalog Foundation*
 *Stack: Go + chi + sqlc + pgx + golang-migrate + PostgreSQL 17 + Redis + OpenAPI 3.0 + Vite + Lit + Shoelace + Web Components*
 *Phase numbering: sequential, starting at 1*
+*Archived: 2026-06-02 — OpenSpec is canonical for future work*

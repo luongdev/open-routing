@@ -59,7 +59,7 @@ describe('or-channel-detail', () => {
     expect(codeInput?.readonly === true || codeInput?.getAttribute('readonly') !== null || codeInput?._readonly === true).toBe(true);
   });
 
-  it('Test 2: channel_type renders as sl-select with 3 sl-option elements (voice/chat/email)', async () => {
+  it('Test 2: channel_type renders as native select with options (voice/chat/email/sms/social)', async () => {
     (el as any).orgId = '01901b2c-7f3a-7000-8000-000000000001';
     (el as any).entityId = MOCK_CHANNEL.id;
     (el as any).client = {
@@ -79,12 +79,12 @@ describe('or-channel-detail', () => {
     await (el as any).updateComplete;
 
     const shadow = el.shadowRoot!;
-    const selects = shadow.querySelectorAll('sl-select');
-    // At least one sl-select for channel_type
+    // W0.1-15: Ember redesign uses native <select> instead of sl-select
+    const selects = shadow.querySelectorAll('select');
     expect(selects.length).toBeGreaterThan(0);
 
-    // Should have 3 options: voice, chat, email
-    const options = shadow.querySelectorAll('sl-option');
+    // Should have options: voice, chat, email, sms, social
+    const options = shadow.querySelectorAll('select option');
     const optionValues = Array.from(options).map((o) => o.getAttribute('value'));
     expect(optionValues.includes('voice')).toBe(true);
     expect(optionValues.includes('chat')).toBe(true);

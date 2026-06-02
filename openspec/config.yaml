@@ -1,0 +1,32 @@
+schema: spec-driven
+
+context: |
+  Project: Open Routing
+  Migrated from: .planning on 2026-06-02
+  Current active change: define-v0-2-core-routing-runtime-foundation
+
+  Tech stack:
+  - Backend: Go, chi, pgx, sqlc, golang-migrate, slog, OpenTelemetry
+  - Database: PostgreSQL 17 and Redis
+  - API contract: OpenAPI 3.0 with oapi-codegen and openapi-typescript
+  - Frontend: Vite, Lit, Shoelace, TypeScript
+  - Embed: Custom Elements with Shadow DOM
+
+  Product boundary:
+  - Open Routing owns routing behavior, catalog configuration, state projections, flow governance, simulation, and adapter contracts.
+  - It does not own media, channel execution, CRM, ticketing, WFM, or agent desktop surfaces.
+  - Org identity comes from X-Org-Id for v0.1 and must remain explicit in embedded surfaces.
+
+rules:
+  proposal:
+    - Use From, To, Reason, and Impact for each meaningful change.
+    - Identify whether the change is current behavior, an active proposal, or archived planning.
+  specs:
+    - Use behavior-first requirements with `### Requirement:` headings.
+    - Include at least one `#### Scenario:` per requirement.
+    - Keep implementation mechanics in design.md unless they are part of the public contract.
+  design:
+    - Reference existing project patterns before introducing new ones.
+    - Keep admin and embed UI behavior shared through `web/packages/ui` unless a host integration boundary requires a difference.
+  tasks:
+    - Use checklists that can be verified through code, tests, docs, or CI output.
