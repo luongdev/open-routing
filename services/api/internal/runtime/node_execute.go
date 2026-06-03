@@ -82,6 +82,85 @@ func (filterNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	return StepResult{Output: map[string]any{"expr": cfg.Expr, "passed": passed}}, nil
 }
 
+func (routeQueueNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
+	cfg, err := decodeConfig[routeQueueConfig](step.Compiled)
+	if err != nil {
+		return StepResult{}, err
+	}
+	snap := ctx.Snapshot()
+	if snap == nil {
+		return StepResult{Failure: &RoutingFailure{Code: FailMissingCatalogReference, Message: "no snapshot for route_queue"}}, nil
+	}
+	pool, ok := snap.QueueCandidates[cfg.Queue]
+	if !ok {
+		return StepResult{Failure: &RoutingFailure{Code: FailMissingCatalogReference, Message: "queue " + cfg.Queue + " not in snapshot"}}, nil
+	}
+	ctx.SetCandidates(pool)
+	return StepResult{Output: map[string]any{"queue": cfg.Queue, "candidates": len(pool)}}, nil
+}
+
+func (matchSkillNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
+	cfg, err := decodeConfig[matchSkillConfig](step.Compiled)
+	if err != nil {
+		return StepResult{}, err
+	}
+	required := []RequiredSkill{{Code: cfg.Skill, MinProficiency: cfg.MinProficiency}}
+	ranked := RankCandidates(ctx.Candidates(), required)
+	ctx.SetCandidates(ranked)
+	out := map[string]any{"skill": cfg.Skill, "min_proficiency": cfg.MinProficiency, "candidates": len(ranked)}
+	if len(ranked) == 0 {
+		return StepResult{Failure: &RoutingFailure{Code: FailNoEligibleCandidate, Message: "no candidate has skill " + cfg.Skill}, Output: out}, nil
+	}
+	return StepResult{Output: out}, nil
+}
+
+// reservationMaxAttempts clamps max_attempts: omitted/0 -> 1, capped at 10
+// (validate already rejects <0 and >10; this is defense-in-depth at exec time).
+func reservationMaxAttempts(n int) int {
+	if n <= 0 {
+		return 1
+	}
+	if n > 10 {
+		return 10
+	}
+	return n
+}
+
+func (reservationNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
+	cfg, err := decodeConfig[reservationConfig](step.Compiled)
+	if err != nil {
+		return StepResult{}, err
+	}
+	timeout := time.Duration(cfg.TimeoutSec) * time.Second
+	maxAttempts := reservationMaxAttempts(cfg.MaxAttempts)
+	// Working copy of the ranked pool; a rejected/timed-out candidate is removed
+	// before the next offer (driver advances the clock on timeout).
+	pool := append([]Candidate(nil), ctx.Candidates()...)
+	attempts := 0
+	lastTimedOut := false
+	for attempts < maxAttempts && len(pool) > 0 {
+		cand := pool[0]
+		attempts++
+		switch ctx.Reserve(cand.AgentID, timeout) {
+		case ResvAccepted:
+			return StepResult{Port: "accepted", Output: map[string]any{"agent_id": cand.AgentID, "attempts": attempts}}, nil
+		case ResvTimeout:
+			lastTimedOut = true
+			pool = pool[1:]
+		default: // rejected
+			lastTimedOut = false
+			pool = pool[1:]
+		}
+	}
+	// Pool/attempts exhausted: timeout port if the last offer timed out (so the
+	// flow can branch on "nobody answered in time"), else no_candidate.
+	port := "no_candidate"
+	if lastTimedOut {
+		port = "timeout"
+	}
+	return StepResult{Port: port, Output: map[string]any{"attempts": attempts}}, nil
+}
+
 func (waitNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	cfg, err := decodeConfig[waitConfig](step.Compiled)
 	if err != nil {

@@ -11,9 +11,12 @@ import (
 // on auto-resume); nodes see only the ExecCtx surface.
 type execState struct {
 	context.Context
-	clock  Clock
-	vars   map[string]any
-	events []EmittedEvent
+	clock      Clock
+	vars       map[string]any
+	events     []EmittedEvent
+	candidates []Candidate
+	snapshot   *Snapshot
+	driver     RoutingDriver
 }
 
 type EmittedEvent struct {
@@ -26,6 +29,15 @@ func (s *execState) Var(k string) (any, bool) { v, ok := s.vars[k]; return v, ok
 func (s *execState) SetVar(k string, v any)   { s.vars[k] = v }
 func (s *execState) Emit(t string, p any) {
 	s.events = append(s.events, EmittedEvent{Type: t, Payload: p})
+}
+func (s *execState) Candidates() []Candidate     { return s.candidates }
+func (s *execState) SetCandidates(c []Candidate) { s.candidates = c }
+func (s *execState) Snapshot() *Snapshot         { return s.snapshot }
+func (s *execState) Reserve(agentID string, timeout time.Duration) ReservationOutcome {
+	if s.driver == nil {
+		return ResvRejected
+	}
+	return s.driver.Reserve(s.clock, agentID, timeout)
 }
 
 // TraceStep is one executed node's record: routing decision (Port), the node's
@@ -64,14 +76,25 @@ type Executor struct {
 	reg        *Registry
 	autoResume bool
 	maxSteps   int
+	snapshot   *Snapshot
+	driver     RoutingDriver
 }
 
 type ExecutorOption func(*Executor)
 
 // WithAutoResume makes the executor advance the clock through wait/suspension
 // nodes and keep going — used by the simulator. Live execution leaves it off so
-// the continuation worker owns resumption.
+// the continuation worker owns resumption. NOTE: this advances `wait` only; a
+// reservation `timeout` advance is owned by the RoutingDriver, not here, so
+// virtual time is never double-counted.
 func WithAutoResume() ExecutorOption { return func(e *Executor) { e.autoResume = true } }
+
+// WithRouting supplies the pinned snapshot and the reservation driver for a
+// routing run (simulation now; live in 3c). Without it, routing nodes see an
+// empty pool and a reject-only driver.
+func WithRouting(snapshot *Snapshot, driver RoutingDriver) ExecutorOption {
+	return func(e *Executor) { e.snapshot = snapshot; e.driver = driver }
+}
 
 // WithMaxSteps bounds the walk; the default guards against a cycle the
 // validator did not (defensively) reject.
@@ -93,7 +116,7 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 	for k, v := range input {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars}
+	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver}
 
 	stepByID := make(map[string]PlanStep, len(plan.Steps))
 	for _, s := range plan.Steps {

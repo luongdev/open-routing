@@ -107,6 +107,16 @@ type ExecCtx interface {
 	Var(key string) (any, bool)
 	SetVar(key string, val any)
 	Emit(eventType string, payload any)
+
+	// Routing surface (Wave 3 part 2). Candidates is the working candidate pool
+	// threaded route_queue -> match_skill/filter -> reservation. Snapshot is the
+	// pinned catalog+state read-set. Reserve resolves one offer (the driver owns
+	// the clock advance on timeout). Empty/no-op for runs without a routing
+	// driver (pure control-flow tests).
+	Candidates() []Candidate
+	SetCandidates(c []Candidate)
+	Snapshot() *Snapshot
+	Reserve(agentID string, timeout time.Duration) ReservationOutcome
 }
 
 // RoutingFailureCode is the typed taxonomy of routing failures. Mirrors the
