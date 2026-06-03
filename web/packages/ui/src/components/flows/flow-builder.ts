@@ -211,7 +211,9 @@ const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
 function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput[] {
   if (node.kind === 'switch_case') {
     const raw = Array.isArray(node.params?.cases) ? (node.params!.cases as unknown[]) : [];
-    const cases = [...new Set(raw.map(c => String(c).trim()).filter(Boolean))];
+    // Drop a user case literally named "default" — it would collide with the
+    // built-in default port (agy MED-5).
+    const cases = [...new Set(raw.map(c => String(c).trim()).filter(c => c && c !== 'default'))];
     return [
       ...cases.map(c => ({ id: c, label: c, kind: 'branch' as const })),
       { id: 'default', label: 'default', kind: 'default' as const },
@@ -1983,16 +1985,24 @@ export class OrFlowBuilder extends LitElement {
       // nodes/edges) so the canvas .map()/.find() can't crash on render.
       const graph = (flow.graph ?? {}) as { nodes?: unknown; edges?: unknown };
       const nodes = (Array.isArray(graph.nodes) ? structuredClone(graph.nodes) : []) as FlowNode[];
-      // Seed outputs for any runtime node missing them (so ports/connect work),
-      // then drop edges whose from_port no longer exists on its source.
-      for (const n of nodes) {
-        if ((!n.outputs || n.outputs.length === 0) && RUNTIME_KINDS.has(n.kind) && n.kind !== 'end') {
-          n.outputs = outputsForNode(n);
-        }
+      // Normalize the backend/runtime shape (type/config) to the UI shape
+      // (kind/params) — a graph authored elsewhere (or via the API) only carries
+      // type/config, and reading node.kind undefined would crash the render.
+      for (const n of nodes as Array<FlowNode & { type?: FlowNodeKind; config?: FlowNode['params'] }>) {
+        if (n.kind === undefined && n.type !== undefined) n.kind = n.type;
+        if (n.params === undefined && n.config !== undefined) n.params = n.config;
+        // ALWAYS derive runtime ports — stale outputs (yes/no, case_1) would let
+        // the user drag a port the runtime never emits (codex HIGH).
+        if (RUNTIME_KINDS.has(n.kind)) n.outputs = outputsForNode(n);
+      }
+      const rawEdges = (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[];
+      for (const e of rawEdges) {
+        if (e.from_port === undefined && e.label !== undefined) e.from_port = e.label;
       }
       this._nodes = nodes;
-      this._edges = this._pruneEdges(nodes, (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[]);
+      this._edges = this._pruneEdges(nodes, rawEdges);
       this._loaded = flow;
+      this._dirty = false;
       this._selectedNodeId = this._nodes[0]?.id ?? null;
       return flow;
     },
@@ -2005,12 +2015,22 @@ export class OrFlowBuilder extends LitElement {
     return root;
   }
 
-  override firstUpdated(): void {
-    // Wheel must be non-passive to preventDefault the page scroll while zooming;
-    // Lit's @wheel can't guarantee that, so bind it directly.
-    const svg = this._svgEl();
-    svg?.addEventListener('wheel', this._onWheel, { passive: false });
+  override connectedCallback(): void {
+    super.connectedCallback();
     document.addEventListener('keydown', this._onKeyDown);
+  }
+
+  private _wheelBound = false;
+  override updated(): void {
+    // The canvas SVG only exists once the flow has loaded (the first render is
+    // the pending/error state), so bind wheel here, not in firstUpdated — and
+    // non-passive so we can preventDefault the page scroll while zooming.
+    if (this._wheelBound) return;
+    const svg = this._svgEl();
+    if (svg) {
+      svg.addEventListener('wheel', this._onWheel, { passive: false });
+      this._wheelBound = true;
+    }
   }
 
   override disconnectedCallback(): void {
@@ -2082,7 +2102,8 @@ export class OrFlowBuilder extends LitElement {
         return;
       }
       this._loaded = res.data as Flow;
-      this._validation = null; // graph changed — stale issues no longer apply
+      this._validation = null;
+      this._dirty = false; // in sync with the server now
       this._flashAction(`Saved draft · v${(res.data as Flow).version}.`, 'ok');
     } finally {
       this._saving = false;
@@ -2112,6 +2133,11 @@ export class OrFlowBuilder extends LitElement {
     if (this._isCreate || !this._loaded) {
       this._flashAction('Save the draft first.', 'warn');
       return;
+    }
+    // Validate runs server-side on the saved graph — flush pending edits first.
+    if (this._dirty) {
+      await this._saveDraft();
+      if (this._dirty) return; // save failed (conflict/error already surfaced)
     }
     const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/validate' as never, {
       params: { path: { org_id: this.orgId, id: this._loaded.id } },
@@ -2143,6 +2169,11 @@ export class OrFlowBuilder extends LitElement {
     if (!channel || !entryCode) {
       this._flashAction('Channel and entry code are required.', 'error');
       return;
+    }
+    // Publish compiles the saved graph — flush pending edits first.
+    if (this._dirty) {
+      await this._saveDraft();
+      if (this._dirty) return;
     }
     this._publishing = true;
     try {
@@ -2416,7 +2447,9 @@ export class OrFlowBuilder extends LitElement {
     const rect = svg?.getBoundingClientRect();
     const cx = rect ? e.clientX - rect.left : 0;
     const cy = rect ? e.clientY - rect.top : 0;
-    this._zoomAround(cx, cy, e.deltaY < 0 ? 1.1 : 1 / 1.1);
+    // Magnitude-based factor so a trackpad's many small deltas don't zoom
+    // exponentially (agy HIGH-4).
+    this._zoomAround(cx, cy, Math.exp(-e.deltaY / 400));
   };
 
   private _zoomAround(cx: number, cy: number, factor: number): void {
@@ -2465,7 +2498,7 @@ export class OrFlowBuilder extends LitElement {
       const p = byId.get(n.id);
       return p ? { ...n, x: p.x, y: p.y } : n;
     });
-    this._validation = null;
+    this._markDirty();
     void this.updateComplete.then(() => this._fitView());
   }
 
@@ -2479,7 +2512,9 @@ export class OrFlowBuilder extends LitElement {
   private _serializeGraph(): { nodes: unknown[]; edges: unknown[] } {
     return {
       nodes: this._nodes.map(n => ({ ...n, type: n.kind, config: n.params ?? {} })),
-      edges: this._edges.map(e => ({ ...e, label: e.label ?? e.from_port ?? '' })),
+      // The backend compiles the runtime port from `label`, so it MUST equal the
+      // port id (from_port). Prefer from_port over any stale display label (codex HIGH).
+      edges: this._edges.map(e => ({ ...e, label: e.from_port ?? e.label ?? '' })),
     };
   }
 
@@ -2518,7 +2553,7 @@ export class OrFlowBuilder extends LitElement {
       { id, kind, label: entry?.label ?? kind, description: entry?.desc ?? '', x, y, params: {}, outputs: outputsForNode({ kind, params: {} }) },
     ];
     this._selectedNodeId = id;
-    this._validation = null; // graph changed
+    this._markDirty();
     this._flashAction(`Added "${entry?.label ?? kind}" — Save draft to persist.`, 'ok');
   };
 
@@ -2575,14 +2610,23 @@ export class OrFlowBuilder extends LitElement {
   private _connectEdge(fromId: string, fromPort: string, portKind: string, toId: string): void {
     const branch: FlowEdge['branch'] = portKind === 'timeout' ? 'timeout' : portKind === 'error' ? 'fallback' : 'success';
     const fromNode = this._nodes.find(n => n.id === fromId);
-    const isLinear = !fromNode?.outputs || fromNode.outputs.length <= 1;
-    // One edge per (from, port); linear nodes keep a single outgoing edge.
+    const isLinear = (fromNode ? outputsForNode(fromNode) : []).length <= 1;
+    // One edge per (from, port) — compare the NORMALIZED port so a stale
+    // label-only edge is still replaced (codex HIGH). Linear nodes: one outgoing.
     const kept = this._edges.filter(ed => {
       if (ed.from !== fromId) return true;
-      return isLinear ? false : ed.from_port !== fromPort;
+      return isLinear ? false : (ed.from_port ?? ed.label ?? 'done') !== fromPort;
     });
     this._edges = [...kept, { id: this._genEdgeId(), from: fromId, to: toId, from_port: fromPort, label: fromPort, branch }];
+    this._markDirty();
+  }
+
+  // _dirty = the in-memory graph differs from the saved draft. Validate/Publish
+  // act on the SAVED graph, so they auto-save first when dirty (codex MED).
+  private _dirty = false;
+  private _markDirty(): void {
     this._validation = null;
+    this._dirty = true;
   }
 
   private _selectEdge(id: string): void {
@@ -2593,14 +2637,14 @@ export class OrFlowBuilder extends LitElement {
   private _deleteEdge(id: string): void {
     this._edges = this._edges.filter(e => e.id !== id);
     if (this._selectedEdgeId === id) this._selectedEdgeId = null;
-    this._validation = null;
+    this._markDirty();
   }
 
   private _deleteNode(id: string): void {
     this._nodes = this._nodes.filter(n => n.id !== id);
     this._edges = this._edges.filter(e => e.from !== id && e.to !== id);
     if (this._selectedNodeId === id) this._selectedNodeId = null;
-    this._validation = null;
+    this._markDirty();
   }
 
   // Delete/Backspace removes the selected edge or node — but not while typing in
@@ -2608,16 +2652,20 @@ export class OrFlowBuilder extends LitElement {
   private _onKeyDown = (e: KeyboardEvent): void => {
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     if (this._simMode === 'sim') return;
-    const t = e.composedPath()[0] as Element | undefined;
-    const tag = t?.tagName?.toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-    if (this._selectedEdgeId) {
-      e.preventDefault();
-      this._deleteEdge(this._selectedEdgeId);
-    } else if (this._selectedNodeId) {
-      e.preventDefault();
-      this._deleteNode(this._selectedNodeId);
-    }
+    // Only ever acts when THIS canvas has a selection (set by interacting with
+    // it), so it can't touch the graph from unrelated parts of the page.
+    if (!this._selectedEdgeId && !this._selectedNodeId) return;
+    // Never steal Delete/Backspace from a text field — check both the event
+    // target and the focused element so typing anywhere is safe (agy HIGH-1).
+    const editable = (n: unknown): boolean => {
+      const el = n as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || !!el?.isContentEditable;
+    };
+    if (editable(e.composedPath()[0]) || editable(document.activeElement)) return;
+    e.preventDefault();
+    if (this._selectedEdgeId) this._deleteEdge(this._selectedEdgeId);
+    else if (this._selectedNodeId) this._deleteNode(this._selectedNodeId);
   };
 
   private _genEdgeId(): string {
@@ -2645,7 +2693,7 @@ export class OrFlowBuilder extends LitElement {
     const x1 = this._portX(from, d.fromPort);
     const y1 = from.y + 116;
     const dy = Math.max(40, (d.cy - y1) * 0.5);
-    return svg`<path class="edge edge--draft" d=${`M ${x1} ${y1} C ${x1} ${y1 + dy}, ${d.cx} ${d.cy - dy}, ${d.cx} ${d.cy}`} />`;
+    return svg`<path class="edge edge--draft" marker-end="url(#arrow-success)" d=${`M ${x1} ${y1} C ${x1} ${y1 + dy}, ${d.cx} ${d.cy - dy}, ${d.cx} ${d.cy}`} />`;
   }
 
   private _paletteEntry(kind: FlowNodeKind): PaletteEntry | undefined {
@@ -2707,6 +2755,7 @@ export class OrFlowBuilder extends LitElement {
     this._nodes = this._nodes.map(n =>
       n.id === this._drag!.id ? { ...n, x: newX, y: newY } : n
     );
+    this._dirty = true;
   }
 
   private _onNodePointerUp(e: PointerEvent): void {
@@ -2988,9 +3037,9 @@ export class OrFlowBuilder extends LitElement {
         isDragging ? 'is-dragging' : '',
       ].filter(Boolean).join(' ');
 
-      const outs = (node.outputs && node.outputs.length > 0)
-        ? node.outputs
-        : [{ id: 'done', label: 'done', kind: 'success' as const }];
+      // Nullish (not length>0) so a terminal node's explicit [] stays empty —
+      // an `end` must NOT show a fake `done` port (agy HIGH-2).
+      const outs = node.outputs ?? [{ id: 'done', label: 'done', kind: 'success' as const }];
 
       // Input anchor (top-centre): the link target. Hidden for the trigger
       // (no inbound) and in sim. Highlights while a connection is dragged over.
@@ -3258,7 +3307,7 @@ export class OrFlowBuilder extends LitElement {
       return next;
     });
     if (key === 'cases') this._edges = this._pruneEdges(this._nodes, this._edges);
-    this._validation = null;
+    this._markDirty();
   }
 
   override render() {

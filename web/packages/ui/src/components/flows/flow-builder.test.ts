@@ -465,6 +465,27 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._composeCondition({ lhs: 'age', op: '>', rhs: '18' })).toBe('age > 18');
   });
 
+  it('loads a backend-shaped graph (type/config) into the UI shape (kind/params)', async () => {
+    // Graph authored via the API only carries type/config — the UI must map it
+    // to kind/params on load or the render crashes on node.kind.
+    const graph = {
+      nodes: [
+        { id: 't', type: 'trigger' },
+        { id: 'q', type: 'route_queue', config: { queue: 'queue_vip' } },
+      ],
+      edges: [{ from: 't', to: 'q', label: 'done' }],
+    };
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph }, error: null }) };
+    await settle();
+    const q = (el as any)._nodes.find((n: any) => n.id === 'q');
+    expect(q.kind).toBe('route_queue');
+    expect(q.params).toEqual({ queue: 'queue_vip' });
+    expect((el as any)._edges[0].from_port).toBe('done'); // label → from_port
+    expect(el.shadowRoot!.querySelector('.builder-status--error')).toBeNull();
+  });
+
   it('renders the load error state with Retry when GET fails', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
