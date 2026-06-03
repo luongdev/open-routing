@@ -1999,6 +1999,15 @@ export class OrFlowBuilder extends LitElement {
       for (const e of rawEdges) {
         if (e.from_port === undefined && e.label !== undefined) e.from_port = e.label;
       }
+      // Backend-authored graphs carry no x/y — lay them out so they don't
+      // render at NaN coordinates (Playwright caught this on an API-made flow).
+      if (nodes.some(n => !Number.isFinite(n.x) || !Number.isFinite(n.y))) {
+        const pos = new Map(autoArrange(nodes, rawEdges).map(p => [p.id, p]));
+        for (const n of nodes) {
+          const p = pos.get(n.id);
+          if (p) { n.x = p.x; n.y = p.y; }
+        }
+      }
       this._nodes = nodes;
       this._edges = this._pruneEdges(nodes, rawEdges);
       this._loaded = flow;
