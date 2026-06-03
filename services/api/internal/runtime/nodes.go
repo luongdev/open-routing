@@ -1,36 +1,26 @@
 package runtime
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"fmt"
 )
 
-// stubNode is the Layer 1 placeholder implementation of Node: a real Descriptor
-// (so the UI palette is complete now) with Validate/Compile/Execute stubbed.
-// Layer 3 replaces each kind with a purpose-built type; the registry seam and
-// the contract do not change when it does.
-type stubNode struct {
-	desc Descriptor
-}
+// baseNode supplies the kind/descriptor plumbing and a default Execute that
+// reports "not implemented (Wave 3)". The 12 concrete node types embed it and
+// override Validate/Compile; Execute bodies land with the runtime executor.
+type baseNode struct{ desc Descriptor }
 
-func (s stubNode) Kind() NodeKind         { return s.desc.Kind }
-func (s stubNode) Descriptor() Descriptor { return s.desc }
+func (b baseNode) Kind() NodeKind         { return b.desc.Kind }
+func (b baseNode) Descriptor() Descriptor { return b.desc }
 
-func (s stubNode) Validate(_ context.Context, _ GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
-	return nil, nil
-}
-
-func (s stubNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
-	return PlanStep{NodeID: n.ID, Kind: s.desc.Kind}, nil
-}
-
-func (s stubNode) Execute(_ ExecCtx, _ PlanStep) (StepResult, error) {
-	return StepResult{}, fmt.Errorf("runtime: node %q execute not implemented (Layer 3)", s.desc.Kind)
+func (b baseNode) Execute(_ ExecCtx, _ PlanStep) (StepResult, error) {
+	return StepResult{}, fmt.Errorf("runtime: node %q execute not implemented (Wave 3)", b.desc.Kind)
 }
 
 // defaultDescriptors is the v0.2 palette, in V02NodeKinds order. The flow
 // builder renders directly from this, so adding a kind here (plus its entry in
-// V02NodeKinds) is all it takes to surface a new node in the UI.
+// V02NodeKinds and a registration below) is all it takes to surface a new node.
 var defaultDescriptors = []Descriptor{
 	{Kind: NodeTrigger, Title: "Trigger", Category: "entry", Summary: "Flow entry point for a route request."},
 	{Kind: NodeIfElse, Title: "If / Else", Category: "branch", Summary: "Two-way conditional branch."},
@@ -46,12 +36,62 @@ var defaultDescriptors = []Descriptor{
 	{Kind: NodeEnd, Title: "End", Category: "exit", Summary: "Terminate the flow."},
 }
 
+var descriptorByKind = func() map[NodeKind]Descriptor {
+	m := make(map[NodeKind]Descriptor, len(defaultDescriptors))
+	for _, d := range defaultDescriptors {
+		m[d.Kind] = d
+	}
+	return m
+}()
+
+func base(k NodeKind) baseNode { return baseNode{desc: descriptorByKind[k]} }
+
 // DefaultRegistry returns a registry populated with the v0.2 node subset.
-// Construct once per process (cmd/runtime) or per simulation (cmd/api).
+// Construct once per process (cmd/runtime) or per simulation/validation (cmd/api).
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
-	for _, d := range defaultDescriptors {
-		r.Register(stubNode{desc: d})
-	}
+	r.Register(triggerNode{base(NodeTrigger)})
+	r.Register(ifElseNode{base(NodeIfElse)})
+	r.Register(switchCaseNode{base(NodeSwitchCase)})
+	r.Register(waitNode{base(NodeWait)})
+	r.Register(matchSkillNode{base(NodeMatchSkill)})
+	r.Register(filterNode{base(NodeFilter)})
+	r.Register(routeQueueNode{base(NodeRouteQueue)})
+	r.Register(reservationNode{base(NodeReservation)})
+	r.Register(fallbackNode{base(NodeFallback)})
+	r.Register(effectNode{base(NodeEffect)})
+	r.Register(logNode{base(NodeLog)})
+	r.Register(endNode{base(NodeEnd)})
 	return r
+}
+
+// decodeConfig parses a node's opaque config into a typed struct. An absent
+// config decodes to the zero value (each node decides whether that is valid).
+// Unknown fields are tolerated for forward-compat — a node only validates the
+// fields it knows.
+func decodeConfig[T any](raw json.RawMessage) (T, error) {
+	var cfg T
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return cfg, nil
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+// compileConfig re-marshals a node's normalized config into the PlanStep. It
+// round-trips through the typed struct so the compiled plan stores a canonical
+// shape, not the raw author bytes.
+func compileConfig[T any](n GraphNode, cfg T) (PlanStep, error) {
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return PlanStep{}, fmt.Errorf("runtime: compile %q: %w", n.Kind, err)
+	}
+	return PlanStep{NodeID: n.ID, Kind: n.Kind, Compiled: b}, nil
+}
+
+// fieldIssue is a node/field-level validation issue helper.
+func fieldIssue(nodeID, field, code, msg string) ValidationIssue {
+	return ValidationIssue{Code: code, Message: msg, NodeID: nodeID, Field: field}
 }

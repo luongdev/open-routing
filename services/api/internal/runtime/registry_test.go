@@ -36,6 +36,6 @@ func TestRegistry_DuplicatePanics(t *testing.T) {
 		}
 	}()
 	r := NewRegistry()
-	r.Register(stubNode{desc: Descriptor{Kind: NodeEnd, Title: "End", Category: "exit"}})
-	r.Register(stubNode{desc: Descriptor{Kind: NodeEnd, Title: "End", Category: "exit"}})
+	r.Register(endNode{base(NodeEnd)})
+	r.Register(endNode{base(NodeEnd)})
 }
