@@ -205,7 +205,13 @@ const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
   match_skill: DONE_OUT,
   filter: DONE_OUT,
   route_queue: DONE_OUT,
-  reservation: DONE_OUT, // runtime outcomes (accepted/timeout) land in Wave 3 part 2
+  // Reservation outcome ports (runtime emits one of these): wire `accepted` to
+  // the success path and timeout/no_candidate to a fallback.
+  reservation: [
+    { id: 'accepted', label: 'accepted', kind: 'success' },
+    { id: 'timeout', label: 'timeout', kind: 'timeout' },
+    { id: 'no_candidate', label: 'no_candidate', kind: 'error' },
+  ],
   fallback: DONE_OUT,
   effect: DONE_OUT,
   log: DONE_OUT,
@@ -2079,6 +2085,10 @@ export class OrFlowBuilder extends LitElement {
   // Index into the active trace. -1 = "ready to run, no step executed yet".
   @state() private accessor _simStep: number = -1;
   @state() private accessor _simScenario: 'success' | 'fail' = 'success';
+  // Real trace from POST /simulate. When set, it drives sim playback instead of
+  // the mock scenarios.
+  @state() private accessor _liveTrace: TraceStep[] | null = null;
+  @state() private accessor _simRunning = false;
   @state() private accessor _initVars: InitVar[] = MOCK_INIT_VARS.map(v => ({ ...v }));
   // Input draft for the wait_input form. Resets each time the sim lands on a
   // wait_input step. Pre-filled with the "expected" value from the trace so
@@ -2428,6 +2438,7 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private get _activeTrace(): TraceStep[] {
+    if (this._liveTrace) return this._liveTrace;
     return this._simScenario === 'fail' ? MOCK_TRACE_STEPS_FAIL : MOCK_TRACE_STEPS;
   }
 
@@ -2567,11 +2578,75 @@ export class OrFlowBuilder extends LitElement {
   private _toggleSimMode(): void {
     if (this._simMode === 'sim') {
       this._simMode = 'edit';
+      this._liveTrace = null;
       this._restartSim();
     } else {
-      this._simMode = 'sim';
-      this._flashAction('Sample trace preview — live simulation (POST /simulate) lands in Layer 3.', 'warn');
+      void this._runSimulation();
     }
+  }
+
+  // Save the draft, run a real deterministic simulation (POST /simulate), and
+  // play its trace back over the canvas. 422 surfaces the validation issues.
+  private async _runSimulation(): Promise<void> {
+    if (this._isCreate || !this._loaded) {
+      this._flashAction('Save the draft first.', 'warn');
+      return;
+    }
+    if (this._dirty) {
+      await this._saveDraft();
+      if (this._dirty) return; // save failed — surfaced
+    }
+    this._simRunning = true;
+    try {
+      const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/simulate' as never, {
+        params: { path: { org_id: this.orgId, id: this._loaded.id } },
+        body: { interaction_input: {} },
+      } as never)) as {
+        data?: components['schemas']['SimulateFlowResponse'];
+        error?: unknown;
+        response?: { status?: number };
+      };
+      if (res.error || !res.data) {
+        if (res.response?.status === 422) {
+          this._flashAction('Graph is invalid — fix the issues, then simulate.', 'error');
+        } else {
+          this._flashAction(this._errText(res.error, 'Simulate failed.'), 'error');
+        }
+        return;
+      }
+      this._liveTrace = this._mapApiTrace(res.data.trace.steps);
+      this._simMode = 'sim';
+      this._restartSim();
+      const outcome = res.data.trace.outcome ?? 'completed';
+      this._flashAction(`Simulation ${outcome} — ${this._liveTrace.length} step(s).`, outcome === 'failed' ? 'warn' : 'ok');
+    } finally {
+      this._simRunning = false;
+    }
+  }
+
+  // Map the API trace steps to the builder's TraceStep playback shape. The API
+  // duration_ms is CPU time; started_at_ms is the running sum for the timeline.
+  private _mapApiTrace(steps: components['schemas']['TraceStep'][]): TraceStep[] {
+    let elapsed = 0;
+    return steps.map((s, i) => {
+      const dur = s.duration_ms ?? 0;
+      const started = elapsed;
+      elapsed += dur;
+      const status: StepStatus =
+        s.status === 'error' ? 'fail' : s.port === 'timeout' ? 'timeout' : s.status === 'skipped' ? 'skipped' : 'ok';
+      return {
+        id: `s${i}`,
+        node_id: s.node_id,
+        node_kind: s.node_kind as FlowNodeKind,
+        label: s.node_kind.replace('_', ' '),
+        started_at_ms: started,
+        duration_ms: dur,
+        status,
+        inputs: (s.input ?? {}) as Record<string, unknown>,
+        outputs: (s.output ?? {}) as Record<string, unknown>,
+        note: s.port ? `→ ${s.port}` : undefined,
+      };
+    });
   }
 
   private _escapeHtml(s: string): string {

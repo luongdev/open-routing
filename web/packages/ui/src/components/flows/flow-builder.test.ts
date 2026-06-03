@@ -115,6 +115,33 @@ describe('OrFlowBuilder', () => {
     expect([...((el as any)._issueNodeIds as Set<string>)]).toEqual(['n2']);
   });
 
+  it('Simulate POSTs /simulate and plays the returned trace', async () => {
+    const trace = {
+      id: '01935c00-0000-7000-8000-0000000000aa', org_id: 'o', kind: 'simulation',
+      flow_id: MOCK_FLOW.id, outcome: 'completed',
+      steps: [
+        { index: 0, node_id: 'n1', node_kind: 'trigger', status: 'ok', duration_ms: 0.1 },
+        { index: 1, node_id: 'r', node_kind: 'reservation', status: 'ok', port: 'timeout', duration_ms: 0.2 },
+      ],
+    };
+    const mockPost = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
+    await settle();
+    await (el as any)._runSimulation();
+
+    expect((mockPost.mock.calls[0] as [string, any])[0]).toBe('/v1/orgs/{org_id}/flows/{id}/simulate');
+    expect((el as any)._simMode).toBe('sim');
+    const live = (el as any)._liveTrace;
+    expect(live).toHaveLength(2);
+    // status mapping + port→note, and timeout port → timeout status.
+    expect(live[1].status).toBe('timeout');
+    expect(live[1].note).toBe('→ timeout');
+    // started_at_ms is the running sum of CPU durations.
+    expect(live[1].started_at_ms).toBeCloseTo(0.1, 5);
+  });
+
   it('Validate reports a clean graph', async () => {
     const mockPost = vi.fn().mockResolvedValue({ data: { valid: true, issues: [] }, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';
