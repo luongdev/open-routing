@@ -3462,7 +3462,9 @@ export class OrFlowBuilder extends LitElement {
   private _insertFn(node: FlowNode, f: FieldDef, fn: ExprFunction): void {
     const insert = `${fn.ns}.${fn.name}()`;
     const ta = this.shadowRoot?.getElementById('expr-ta-' + node.id) as HTMLTextAreaElement | null;
-    const cur = String(node.params?.[f.key] ?? '');
+    // Read the live textarea, not node.params — the textarea only commits on
+    // change/blur, so unblurred typing would otherwise be clobbered on insert.
+    const cur = ta ? ta.value : String(node.params?.[f.key] ?? '');
     let next: string;
     let caret: number;
     if (ta && ta.selectionStart != null) {

@@ -76,8 +76,16 @@ export function dslToGroup(dsl: string): Group | null {
   const s = dsl.trim();
   if (s === '') return newGroup('AND');
   if (/[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_]+\s*\(/.test(s)) return null; // namespaced fn → Advanced
+  // Single-quoted strings are valid DSL (backend lexer accepts them) but this
+  // parser only round-trips double quotes — bail to Advanced so we never
+  // re-serialize 'x' into "x" and silently change meaning.
+  if (s.includes("'")) return null;
   try {
-    const node = parseOr(new Cursor(s));
+    const cur = new Cursor(s);
+    const node = parseOr(cur);
+    // Trailing tokens (e.g. an unbalanced `vip) OR admin`) mean we parsed only a
+    // prefix — round-tripping would drop the rest, so force Advanced.
+    if (!cur.eof()) return null;
     // Top level must be a Group; wrap a lone comparison in an AND group.
     const g = node.kind === 'group' ? node : { kind: 'group' as const, op: 'AND' as const, children: [node] };
     return g;
@@ -135,6 +143,9 @@ function flattenSameOp(op: 'AND' | 'OR') {
 function parseUnary(c: Cursor): CondNode {
   if (c.peekKw('NOT')) {
     c.takeKw('NOT');
+    // `NOT NOT x` can't be represented (a group has one `not` flag, not a count)
+    // so it would collapse to a single NOT and flip meaning — force Advanced.
+    if (c.peekKw('NOT')) throw new Error('double NOT');
     const inner = parseUnary(c);
     if (inner.kind === 'group') return { ...inner, not: true };
     return { kind: 'group', op: 'AND', not: true, children: [inner] };

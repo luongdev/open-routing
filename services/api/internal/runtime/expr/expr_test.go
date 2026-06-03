@@ -119,6 +119,34 @@ func TestEval_UnknownFunctionAndArity(t *testing.T) {
 	}
 }
 
+func TestCheck_RejectsBadCallsStatically(t *testing.T) {
+	bad := []string{
+		`foo.bar(1)`,      // unknown function
+		`num.abs(1, 2)`,   // too many args
+		`num.abs()`,       // too few args
+		`num.min()`,       // variadic with zero args
+		`vip AND foo.x(1)`, // nested unknown function
+	}
+	for _, src := range bad {
+		node, perr := Parse(src)
+		if perr != nil {
+			t.Fatalf("Parse(%q) unexpected parse error: %v", src, perr)
+		}
+		if err := Check(node); err == nil {
+			t.Errorf("Check(%q) = nil, want semantic error", src)
+		}
+	}
+	for _, src := range []string{`num.abs(1)`, `num.min(1, 2, 3)`, `str.upper(name) == X`, `vip`} {
+		node, perr := Parse(src)
+		if perr != nil {
+			t.Fatalf("Parse(%q) unexpected parse error: %v", src, perr)
+		}
+		if err := Check(node); err != nil {
+			t.Errorf("Check(%q) = %v, want nil", src, err)
+		}
+	}
+}
+
 func TestEvalString_SwitchValue(t *testing.T) {
 	e := env(map[string]any{"lang": "es"})
 	got, err := EvalString(`lang`, e)

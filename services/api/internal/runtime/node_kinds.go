@@ -27,13 +27,18 @@ func malformed(nodeID string, err error) []ValidationIssue {
 }
 
 // checkExpr parses a non-empty expression and returns an invalid_expression
-// issue on a syntax error — the first server-side parse of the DSL.
+// issue on a syntax error or a semantic error (unknown function / wrong arity) —
+// the publish gate rejects what would otherwise fail at runtime mid-flow.
 func checkExpr(nodeID, field, src string) []ValidationIssue {
 	if src == "" {
 		return nil
 	}
-	if _, perr := expr.Parse(src); perr != nil {
+	node, perr := expr.Parse(src)
+	if perr != nil {
 		return []ValidationIssue{fieldIssue(nodeID, field, IssueInvalidExpr, perr.Msg)}
+	}
+	if err := expr.Check(node); err != nil {
+		return []ValidationIssue{fieldIssue(nodeID, field, IssueInvalidExpr, err.Error())}
 	}
 	return nil
 }

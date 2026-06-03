@@ -52,6 +52,9 @@ describe('flow-condition serialize/parse', () => {
     expect(dslToGroup('num.abs(score) > 3')).toBeNull();
     expect(dslToGroup('str.upper(name) == ALICE AND vip')).toBeNull();
     expect(dslToGroup('a < b < c')).toBeNull();
+    expect(dslToGroup('vip) OR admin')).toBeNull(); // trailing tokens after a parsed prefix
+    expect(dslToGroup("name == 'John Doe'")).toBeNull(); // single-quoted string not round-trippable
+    expect(dslToGroup('NOT NOT vip')).toBeNull(); // double NOT collapses to one
   });
 
   it('empty DSL → empty AND group', () => {

@@ -324,11 +324,19 @@ func clampIdx(i, n int) int {
 	return i
 }
 
+// maxPadWidth bounds str.padLeft/Right so a hostile width (e.g. 1e9, or NaN/Inf
+// from int() conversion) can't spin the pad loop into a CPU/memory DoS during
+// flow execution (cross-AI review MED).
+const maxPadWidth = 4096
+
 func pad(a []any, left bool) (any, error) {
 	s := argStr(a, 0)
 	width, err := argFloat(a, 1)
 	if err != nil {
 		return nil, err
+	}
+	if math.IsNaN(width) || width > maxPadWidth {
+		return nil, fmt.Errorf("pad width must be a finite number <= %d", maxPadWidth)
 	}
 	padStr := argStr(a, 2)
 	if padStr == "" {
