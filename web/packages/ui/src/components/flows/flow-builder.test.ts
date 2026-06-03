@@ -83,7 +83,7 @@ describe('OrFlowBuilder', () => {
   });
 
   it('surfaces a 409 version conflict on save instead of swallowing it', async () => {
-    const mockPatch = vi.fn().mockResolvedValue({ data: null, error: { status: 409 } });
+    const mockPatch = vi.fn().mockResolvedValue({ data: null, error: { reason: 'version_conflict' }, response: { status: 409 } });
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
     (el as any).client = {
@@ -96,8 +96,14 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._actionTone).toBe('error');
   });
 
-  it('Validate calls POST /validate and reports the 501 stub honestly', async () => {
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: { status: 501 }, response: { status: 501 } });
+  it('Validate POSTs /validate and reports the not-implemented stub honestly', async () => {
+    // The real Layer-1 stub answers HTTP 500 { reason: 'not_implemented' } —
+    // openapi-fetch puts the body in `error`, the status in `response`.
+    const mockPost = vi.fn().mockResolvedValue({
+      data: null,
+      error: { error: 'internal', reason: 'not_implemented' },
+      response: { status: 500 },
+    });
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
     (el as any).client = {
@@ -111,6 +117,41 @@ describe('OrFlowBuilder', () => {
     expect((mockPost.mock.calls[0] as [string, any])[0]).toBe('/v1/orgs/{org_id}/flows/{id}/validate');
     expect((el as any)._actionToast).toContain('Layer 3');
     expect((el as any)._actionTone).toBe('warn');
+  });
+
+  it('Publish POSTs /publish (with version) and reports the stub honestly', async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: null,
+      error: { reason: 'not_implemented' },
+      response: { status: 500 },
+    });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = {
+      GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }),
+      POST: mockPost,
+    };
+    await settle();
+    await (el as any)._runStubAction('publish', 'Publish');
+
+    const [path, opts] = mockPost.mock.calls[0] as [string, any];
+    expect(path).toBe('/v1/orgs/{org_id}/flows/{id}/publish');
+    expect(opts?.body?.version).toBe(3);
+    expect(opts?.body?.channel).toBeDefined();
+    expect((el as any)._actionToast).toContain('Layer 3');
+  });
+
+  it('tolerates a malformed graph (non-array nodes/edges) without crashing', async () => {
+    const bad = { ...MOCK_FLOW, graph: { nodes: {}, edges: 'oops' } };
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: bad, error: null }) };
+    await settle();
+    expect((el as any)._nodes).toEqual([]);
+    expect((el as any)._edges).toEqual([]);
+    // Loaded fine (not the error state) and the builder still renders its header.
+    expect(el.shadowRoot!.querySelector('.builder-status--error')).toBeNull();
+    expect(el.shadowRoot!.textContent).toContain('Inbound Voice');
   });
 
   it('create mode (no flowId) POSTs a new flow and navigates to its detail', async () => {

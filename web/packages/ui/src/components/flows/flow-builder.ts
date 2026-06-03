@@ -1577,9 +1577,11 @@ export class OrFlowBuilder extends LitElement {
       if (error) throw error;
       if (signal.aborted) return null;
       const flow = data as Flow;
-      const graph = (flow.graph ?? {}) as { nodes?: FlowNode[]; edges?: FlowEdge[] };
-      this._nodes = structuredClone(graph.nodes ?? []) as FlowNode[];
-      this._edges = structuredClone(graph.edges ?? []) as FlowEdge[];
+      // graph is opaque JSONB — guard against drift (missing or non-array
+      // nodes/edges) so the canvas .map()/.find() can't crash on render.
+      const graph = (flow.graph ?? {}) as { nodes?: unknown; edges?: unknown };
+      this._nodes = (Array.isArray(graph.nodes) ? structuredClone(graph.nodes) : []) as FlowNode[];
+      this._edges = (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[];
       this._loaded = flow;
       this._selectedNodeId = this._nodes[0]?.id ?? null;
       return flow;
@@ -1596,6 +1598,7 @@ export class OrFlowBuilder extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     clearTimeout(this._actionToastTimer);
+    clearTimeout(this._saveToastTimer);
   }
 
   private _actionToastTimer?: ReturnType<typeof setTimeout>;
@@ -1604,6 +1607,13 @@ export class OrFlowBuilder extends LitElement {
     this._actionTone = tone;
     clearTimeout(this._actionToastTimer);
     this._actionToastTimer = setTimeout(() => { this._actionToast = null; }, 3200);
+  }
+
+  private _saveToastTimer?: ReturnType<typeof setTimeout>;
+  private _flashSaveToast(message: string): void {
+    this._saveToast = message;
+    clearTimeout(this._saveToastTimer);
+    this._saveToastTimer = setTimeout(() => { this._saveToast = null; }, 2400);
   }
 
   // PATCH the graph (or POST a new draft in create mode). The only write that
@@ -1636,22 +1646,23 @@ export class OrFlowBuilder extends LitElement {
       }
       const current = this._loaded;
       if (!current) return;
-      const { data, error } = await this.client.PATCH('/v1/orgs/{org_id}/flows/{id}' as never, {
+      const res = (await this.client.PATCH('/v1/orgs/{org_id}/flows/{id}' as never, {
         params: { path: { org_id: this.orgId, id: current.id } },
         body: { graph, version: current.version },
-      } as never);
-      if (error) {
-        const status = (error as { status?: number }).status;
+      } as never)) as { data?: unknown; error?: unknown; response?: { status?: number } };
+      if (res.error) {
+        // openapi-fetch puts the HTTP status on `response`, not on the parsed
+        // error body — check response.status for the 409 optimistic-lock case.
         this._flashAction(
-          status === 409
+          res.response?.status === 409
             ? 'Version conflict — this draft changed elsewhere. Reload before saving.'
-            : this._errText(error, 'Save failed.'),
+            : this._errText(res.error, 'Save failed.'),
           'error',
         );
         return;
       }
-      this._loaded = data as Flow;
-      this._flashAction(`Saved draft · v${(data as Flow).version}.`, 'ok');
+      this._loaded = res.data as Flow;
+      this._flashAction(`Saved draft · v${(res.data as Flow).version}.`, 'ok');
     } finally {
       this._saving = false;
     }
@@ -1662,13 +1673,13 @@ export class OrFlowBuilder extends LitElement {
     return r.reason ?? r.message ?? fallback;
   }
 
-  // Validate / Publish / Rollback are 501 stubs until Layer 3. Call the real
-  // endpoint anyway so the contract wiring is exercised, and report the 501
-  // honestly instead of faking a result.
-  private async _runStubAction(
-    op: 'validate' | 'publish' | 'rollback',
-    label: string,
-  ): Promise<void> {
+  // Validate / Publish call the real endpoints so the contract wiring is
+  // exercised, but Layer 1 leaves them as not-implemented stubs. The stub
+  // currently answers HTTP 500 with reason "not_implemented" (a later flip to a
+  // semantic 501 also counts) — report that honestly instead of faking success.
+  // Rollback is a published-version action; it lands with the version-history
+  // UI in Layer 3, so there is no draft-canvas button for it yet.
+  private async _runStubAction(op: 'validate' | 'publish', label: string): Promise<void> {
     if (this._isCreate || !this._loaded) {
       this._flashAction('Save the draft first.', 'warn');
       return;
@@ -1677,28 +1688,28 @@ export class OrFlowBuilder extends LitElement {
     const path =
       op === 'validate'
         ? '/v1/orgs/{org_id}/flows/{id}/validate'
-        : op === 'publish'
-        ? '/v1/orgs/{org_id}/flows/{id}/publish'
-        : '/v1/orgs/{org_id}/flows/{id}/rollback';
+        : '/v1/orgs/{org_id}/flows/{id}/publish';
     const body =
-      op === 'validate'
-        ? undefined
-        : op === 'publish'
+      op === 'publish'
         ? { channel: 'voice', entry_code: 'main', version: this._loaded.version }
-        : { channel: 'voice', entry_code: 'main', to_version_number: 1 };
-    const { error, response } = await this.client.POST(path as never, {
+        : undefined;
+    const res = (await this.client.POST(path as never, {
       params: { path: { org_id: this.orgId, id } },
       ...(body ? { body } : {}),
-    } as never);
-    if (response?.status === 501) {
+    } as never)) as { error?: unknown; response?: { status?: number } };
+    if (this._isNotImplemented(res.error, res.response)) {
       this._flashAction(`${label} lands in Layer 3 (runtime not wired yet).`, 'warn');
       return;
     }
-    if (error) {
-      this._flashAction(this._errText(error, `${label} failed.`), 'error');
+    if (res.error) {
+      this._flashAction(this._errText(res.error, `${label} failed.`), 'error');
       return;
     }
     this._flashAction(`${label} OK.`, 'ok');
+  }
+
+  private _isNotImplemented(error: unknown, response?: { status?: number }): boolean {
+    return response?.status === 501 || (error as { reason?: string })?.reason === 'not_implemented';
   }
 
   private get _activeTrace(): TraceStep[] {
@@ -1788,8 +1799,7 @@ export class OrFlowBuilder extends LitElement {
     };
     this._testCases = [tc, ...this._testCases];
     this._rightTab = 'tests';
-    this._saveToast = `Saved "${name}"`;
-    setTimeout(() => { if (this._saveToast === `Saved "${name}"`) this._saveToast = null; }, 2400);
+    this._flashSaveToast(`Saved "${name}"`);
   }
 
   private _runTestCase(tc: TestCase): void {
@@ -1817,8 +1827,7 @@ export class OrFlowBuilder extends LitElement {
     this._testCases = this._testCases.map(c =>
       c.id === tc.id ? { ...c, last_outcome: tc.scenario === 'success' ? 'pass' : 'fail' } : c
     );
-    this._saveToast = `Replayed "${tc.name}"`;
-    setTimeout(() => { if (this._saveToast === `Replayed "${tc.name}"`) this._saveToast = null; }, 2400);
+    this._flashSaveToast(`Replayed "${tc.name}"`);
   }
 
   private _deleteTestCase(id: string): void {

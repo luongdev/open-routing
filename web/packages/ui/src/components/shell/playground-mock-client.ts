@@ -114,6 +114,14 @@ function mockFetch(req: Request): Promise<Response> {
   const items = entityMap[entity];
   if (!items) return Promise.resolve(notFound());
 
+  // Flow runtime/action sub-paths (validate/publish/rollback/simulate/versions)
+  // are not-implemented stubs in Layer 1. Mirror the real API's
+  // 500 { reason: 'not_implemented' } so the builder shows the honest "lands in
+  // Layer 3" notice instead of the generic POST below faking a 201 success.
+  if (entity === 'flows' && segments[2]) {
+    return Promise.resolve(jsonResponse({ error: 'internal', reason: 'not_implemented' }, 500));
+  }
+
   // LIST
   if (method === 'GET' && !entityId) {
     // Catalog lists send `search`; flows send `name` — accept either.
@@ -140,8 +148,9 @@ function mockFetch(req: Request): Promise<Response> {
   }
 
   // POST create — persist into the store so the created row survives a refetch
-  // (and is retrievable by the builder's GET after create-redirect).
-  if (method === 'POST') {
+  // (and is retrievable by the builder's GET after create-redirect). Only a
+  // collection POST creates; a sub-resource POST must never fall here.
+  if (method === 'POST' && !entityId) {
     return req.json().then((body: Record<string, unknown>) => {
       const newItem = {
         ...body,
