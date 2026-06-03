@@ -96,14 +96,9 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._actionTone).toBe('error');
   });
 
-  it('Validate POSTs /validate and reports the not-implemented stub honestly', async () => {
-    // The real Layer-1 stub answers HTTP 500 { reason: 'not_implemented' } —
-    // openapi-fetch puts the body in `error`, the status in `response`.
-    const mockPost = vi.fn().mockResolvedValue({
-      data: null,
-      error: { error: 'internal', reason: 'not_implemented' },
-      response: { status: 500 },
-    });
+  it('Validate POSTs /validate and surfaces the real issues', async () => {
+    const result = { valid: false, issues: [{ code: 'missing_catalog_reference', message: 'queue "x" not found', node_id: 'n2', field: 'queue' }] };
+    const mockPost = vi.fn().mockResolvedValue({ data: result, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
     (el as any).client = {
@@ -111,34 +106,67 @@ describe('OrFlowBuilder', () => {
       POST: mockPost,
     };
     await settle();
-    await (el as any)._runStubAction('validate', 'Validate');
+    await (el as any)._validateFlow();
 
-    expect(mockPost).toHaveBeenCalled();
     expect((mockPost.mock.calls[0] as [string, any])[0]).toBe('/v1/orgs/{org_id}/flows/{id}/validate');
-    expect((el as any)._actionToast).toContain('Layer 3');
-    expect((el as any)._actionTone).toBe('warn');
+    expect((el as any)._validation).toEqual(result);
+    expect((el as any)._actionToast).toContain('1 issue');
+    // The offending node is highlighted on the canvas.
+    expect([...((el as any)._issueNodeIds as Set<string>)]).toEqual(['n2']);
   });
 
-  it('Publish POSTs /publish (with version) and reports the stub honestly', async () => {
+  it('Validate reports a clean graph', async () => {
+    const mockPost = vi.fn().mockResolvedValue({ data: { valid: true, issues: [] }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
+    await settle();
+    await (el as any)._validateFlow();
+    expect((el as any)._validation.valid).toBe(true);
+    expect((el as any)._actionToast).toContain('Valid');
+  });
+
+  it('Publish POSTs /publish with the binding + draft version and reports success', async () => {
     const mockPost = vi.fn().mockResolvedValue({
-      data: null,
-      error: { reason: 'not_implemented' },
-      response: { status: 500 },
+      data: { version: { version_number: 4 }, binding: { active: true } },
+      error: null,
+      response: { status: 201 },
     });
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
-    (el as any).client = {
-      GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }),
-      POST: mockPost,
-    };
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
     await settle();
-    await (el as any)._runStubAction('publish', 'Publish');
+    await (el as any)._publishFlow();
 
     const [path, opts] = mockPost.mock.calls[0] as [string, any];
     expect(path).toBe('/v1/orgs/{org_id}/flows/{id}/publish');
     expect(opts?.body?.version).toBe(3);
-    expect(opts?.body?.channel).toBeDefined();
-    expect((el as any)._actionToast).toContain('Layer 3');
+    expect(opts?.body?.channel).toBe('voice');
+    expect(opts?.body?.entry_code).toBe('main');
+    expect((el as any)._actionToast).toContain('Published v4');
+  });
+
+  it('Publish 422 surfaces validation issues instead of faking success', async () => {
+    const vr = { valid: false, issues: [{ code: 'no_trigger', message: 'graph has no trigger' }] };
+    const mockPost = vi.fn().mockResolvedValue({ data: null, error: vr, response: { status: 422 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
+    await settle();
+    await (el as any)._publishFlow();
+    expect((el as any)._validation).toEqual(vr);
+    expect((el as any)._actionToast).toContain('blocked');
+  });
+
+  it('Publish 409 surfaces an optimistic conflict', async () => {
+    const mockPost = vi.fn().mockResolvedValue({ data: null, error: { reason: 'draft_version_mismatch' }, response: { status: 409 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
+    await settle();
+    await (el as any)._publishFlow();
+    expect((el as any)._actionToast).toContain('conflict');
+    expect((el as any)._actionTone).toBe('error');
   });
 
   it('tolerates a malformed graph (non-array nodes/edges) without crashing', async () => {

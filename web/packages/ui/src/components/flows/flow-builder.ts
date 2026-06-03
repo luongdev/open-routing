@@ -33,6 +33,21 @@ import {
 
 type Flow = components['schemas']['Flow'];
 
+// Validate/publish responses (Layer 3 backend). Kept as local shapes rather
+// than the generated component aliases so the file has one source for the
+// fields the UI actually reads.
+interface FlowValidationIssue {
+  code: string;
+  message: string;
+  node_id?: string;
+  edge_id?: string;
+  field?: string;
+}
+interface FlowValidationResult {
+  valid: boolean;
+  issues: FlowValidationIssue[];
+}
+
 interface PaletteEntry {
   kind: FlowNodeKind;
   label: string;
@@ -559,6 +574,101 @@ export class OrFlowBuilder extends LitElement {
       border-color: var(--primary);
       box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 25%, transparent), var(--shadow-md);
     }
+    .node-card--invalid {
+      border-color: var(--destructive);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 22%, transparent), var(--shadow-md);
+    }
+
+    /* ----- Validation panel (floats bottom-left over the canvas) ----- */
+    .validation-panel {
+      position: absolute;
+      left: 16px;
+      bottom: 52px;
+      width: 340px;
+      max-height: 45%;
+      overflow-y: auto;
+      background: var(--card);
+      border: 1px solid var(--destructive);
+      border-radius: 10px;
+      box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.18));
+      z-index: 5;
+      font-size: 12px;
+    }
+    .validation-panel-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 12px;
+      color: var(--destructive);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--card);
+    }
+    .validation-panel-close {
+      margin-left: auto;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      padding: 0;
+    }
+    .validation-panel-close:hover { color: var(--foreground); }
+    .validation-list { list-style: none; margin: 0; padding: 6px 0; }
+    .validation-list li {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 6px;
+      padding: 6px 12px;
+      border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+    }
+    .validation-list li:first-child { border-top: none; }
+    .validation-list code {
+      font-size: 11px;
+      color: var(--destructive);
+      background: color-mix(in oklch, var(--destructive) 12%, transparent);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .validation-loc { color: var(--muted-foreground); font-size: 11px; }
+    .validation-msg { flex-basis: 100%; color: var(--foreground); }
+
+    /* ----- Publish popover ----- */
+    .publish-popover {
+      position: absolute;
+      right: 16px;
+      top: 64px;
+      width: 240px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.18));
+      padding: 12px;
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .publish-popover-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+    .publish-field { display: flex; flex-direction: column; gap: 3px; }
+    .publish-field span { font-size: 11px; color: var(--muted-foreground); }
+    .publish-field input {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 9px;
+      font: inherit;
+      font-size: 13px;
+      background: var(--background);
+      color: var(--foreground);
+    }
+    .publish-field input:focus { outline: none; border-color: color-mix(in oklch, var(--primary) 45%, var(--border)); }
+    .publish-actions { display: flex; justify-content: flex-end; gap: 8px; }
     .node-card-head {
       display: flex;
       align-items: center;
@@ -1617,6 +1727,15 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _saving = false;
   // Transient action feedback: Save result, the 501 "lands in Layer 3" notice,
   // and PATCH conflict/error surfacing.
+  // Latest validation result (from Validate, or a 422 publish). null until the
+  // user validates; cleared when the graph changes so stale issues don't linger.
+  @state() private accessor _validation: FlowValidationResult | null = null;
+  // Publish popover: channel + entry-code binding target.
+  @state() private accessor _publishOpen = false;
+  @state() private accessor _publishChannel = 'voice';
+  @state() private accessor _publishEntry = 'main';
+  @state() private accessor _publishing = false;
+
   @state() private accessor _actionToast: string | null = null;
   @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
   // Create-mode draft fields — used only when flowId is empty (first Save POSTs).
@@ -1730,6 +1849,7 @@ export class OrFlowBuilder extends LitElement {
         return;
       }
       this._loaded = res.data as Flow;
+      this._validation = null; // graph changed — stale issues no longer apply
       this._flashAction(`Saved draft · v${(res.data as Flow).version}.`, 'ok');
     } finally {
       this._saving = false;
@@ -1753,43 +1873,83 @@ export class OrFlowBuilder extends LitElement {
     return r.reason ?? r.message ?? fallback;
   }
 
-  // Validate / Publish call the real endpoints so the contract wiring is
-  // exercised, but Layer 1 leaves them as not-implemented stubs. The stub
-  // currently answers HTTP 500 with reason "not_implemented" (a later flip to a
-  // semantic 501 also counts) — report that honestly instead of faking success.
-  // Rollback is a published-version action; it lands with the version-history
-  // UI in Layer 3, so there is no draft-canvas button for it yet.
-  private async _runStubAction(op: 'validate' | 'publish', label: string): Promise<void> {
+  // Validate the saved draft against the real backend (POST /validate) and show
+  // the issues. Always a 200 with {valid, issues}; 404 only if the draft is gone.
+  private async _validateFlow(): Promise<void> {
     if (this._isCreate || !this._loaded) {
       this._flashAction('Save the draft first.', 'warn');
       return;
     }
-    const id = this._loaded.id;
-    const path =
-      op === 'validate'
-        ? '/v1/orgs/{org_id}/flows/{id}/validate'
-        : '/v1/orgs/{org_id}/flows/{id}/publish';
-    const body =
-      op === 'publish'
-        ? { channel: 'voice', entry_code: 'main', version: this._loaded.version }
-        : undefined;
-    const res = (await this.client.POST(path as never, {
-      params: { path: { org_id: this.orgId, id } },
-      ...(body ? { body } : {}),
-    } as never)) as { error?: unknown; response?: { status?: number } };
-    if (this._isNotImplemented(res.error, res.response)) {
-      this._flashAction(`${label} lands in Layer 3 (runtime not wired yet).`, 'warn');
+    const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/validate' as never, {
+      params: { path: { org_id: this.orgId, id: this._loaded.id } },
+    } as never)) as { data?: FlowValidationResult; error?: unknown; response?: { status?: number } };
+    if (res.error || !res.data) {
+      this._flashAction(
+        res.response?.status === 404 ? 'Flow not found — reload.' : this._errText(res.error, 'Validate failed.'),
+        'error',
+      );
       return;
     }
-    if (res.error) {
-      this._flashAction(this._errText(res.error, `${label} failed.`), 'error');
-      return;
-    }
-    this._flashAction(`${label} OK.`, 'ok');
+    this._validation = res.data;
+    this._flashAction(
+      res.data.valid ? 'Valid — no issues.' : `${res.data.issues.length} issue(s) found.`,
+      res.data.valid ? 'ok' : 'warn',
+    );
   }
 
-  private _isNotImplemented(error: unknown, response?: { status?: number }): boolean {
-    return response?.status === 501 || (error as { reason?: string })?.reason === 'not_implemented';
+  // Publish the draft for the (channel, entry_code) binding. 201 succeeds;
+  // 422 returns the validation issues (publish requires a clean graph); 409 is
+  // an optimistic conflict (draft or binding changed) — surfaced, not faked.
+  private async _publishFlow(): Promise<void> {
+    if (this._isCreate || !this._loaded || this._publishing) {
+      if (!this._loaded) this._flashAction('Save the draft first.', 'warn');
+      return;
+    }
+    const channel = this._publishChannel.trim();
+    const entryCode = this._publishEntry.trim();
+    if (!channel || !entryCode) {
+      this._flashAction('Channel and entry code are required.', 'error');
+      return;
+    }
+    this._publishing = true;
+    try {
+      const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/publish' as never, {
+        params: { path: { org_id: this.orgId, id: this._loaded.id } },
+        body: { channel, entry_code: entryCode, version: this._loaded.version },
+      } as never)) as { data?: unknown; error?: unknown; response?: { status?: number } };
+
+      const status = res.response?.status;
+      if (status === 422) {
+        // openapi-fetch puts the non-2xx body on `error`; it's a FlowValidationResult.
+        const vr = res.error as FlowValidationResult;
+        this._validation = vr?.issues ? vr : { valid: false, issues: [] };
+        this._flashAction(`Publish blocked — ${this._validation.issues.length} issue(s).`, 'warn');
+        return;
+      }
+      if (status === 409) {
+        this._flashAction('Publish conflict — draft or binding changed elsewhere. Reload.', 'error');
+        return;
+      }
+      if (res.error || !res.data) {
+        this._flashAction(this._errText(res.error, 'Publish failed.'), 'error');
+        return;
+      }
+      const version = (res.data as { version?: { version_number?: number } })?.version?.version_number;
+      this._validation = { valid: true, issues: [] };
+      this._publishOpen = false;
+      this._flashAction(`Published v${version ?? '?'} → ${channel}/${entryCode}.`, 'ok');
+    } finally {
+      this._publishing = false;
+    }
+  }
+
+  // Node ids carrying a validation issue, for canvas highlighting.
+  private get _issueNodeIds(): Set<string> {
+    const s = new Set<string>();
+    for (const i of this._validation?.issues ?? []) {
+      if (i.node_id) s.add(i.node_id);
+    }
+    return s;
   }
 
   private get _activeTrace(): TraceStep[] {
@@ -2232,6 +2392,7 @@ export class OrFlowBuilder extends LitElement {
     const NODE_H = 116;
     const isSim = this._simMode === 'sim';
     const hitIds = isSim ? this._hitNodeIds : new Set<string>();
+    const issueIds = isSim ? new Set<string>() : this._issueNodeIds;
     const currentNodeId = this._currentStep?.node_id ?? null;
 
     const stepByNode = new Map<string, TraceStep>();
@@ -2258,6 +2419,7 @@ export class OrFlowBuilder extends LitElement {
         isCurrent ? 'node-card--active' : '',
         isHit && !isCurrent ? 'node-card--hit' : '',
         stepHit?.status === 'fail' ? 'node-card--fail' : '',
+        issueIds.has(node.id) ? 'node-card--invalid' : '',
         isSelected && !isSim ? 'node-card--selected' : '',
         isDragging ? 'is-dragging' : '',
       ].filter(Boolean).join(' ');
@@ -2446,7 +2608,7 @@ export class OrFlowBuilder extends LitElement {
         ${isSim
           ? this._renderSimControls()
           : html`
-              <button class="toolbar-btn" @click=${() => this._runStubAction('validate', 'Validate')}>
+              <button class="toolbar-btn" @click=${this._validateFlow}>
                 <uk-icon icon="check-circle" height="14" width="14"></uk-icon>
                 Validate
               </button>
@@ -2470,12 +2632,14 @@ export class OrFlowBuilder extends LitElement {
           ${isSim ? 'Exit sim' : 'Simulate'}
         </button>
         ${isSim ? nothing : html`
-          <button class="toolbar-btn toolbar-btn--primary" @click=${() => this._runStubAction('publish', 'Publish')}>
+          <button class="toolbar-btn toolbar-btn--primary" @click=${() => { this._publishOpen = !this._publishOpen; }}>
             <uk-icon icon="rocket" height="14" width="14"></uk-icon>
             Publish
           </button>
         `}
       </div>
+
+      ${this._publishOpen && !isSim ? this._renderPublishPopover() : nothing}
 
       <div class="body">
         ${this._renderPalette(isSim)}
@@ -2489,12 +2653,17 @@ export class OrFlowBuilder extends LitElement {
             ${this._renderEdges(nodes, edges)}
             ${this._renderNodes(nodes)}
           </svg>
+          ${!isSim && this._validation && this._validation.issues.length > 0 ? this._renderValidationPanel() : nothing}
           <div class="canvas-strip">
             ${isSim ? html`
               <span><span class="dot-ok">●</span> Step <strong>${this._simStep < 0 ? 'ready' : (this._simStep + 1) + ' / ' + this._activeTrace.length}</strong></span>
               <span>Trace <strong>${this._currentStep?.id ?? '—'}</strong></span>
               <span>Scenario <strong>${this._simScenario === 'fail' ? 'failure path' : 'success path'}</strong></span>
-            ` : this._nodes.length === 0
+            ` : this._validation
+              ? (this._validation.valid
+                  ? html`<span><span class="dot-ok">●</span> Validated — <strong>no issues</strong></span>`
+                  : html`<span><span class="dot-warn">●</span> <strong>${this._validation.issues.length}</strong> validation ${this._validation.issues.length === 1 ? 'issue' : 'issues'}</span>`)
+              : this._nodes.length === 0
               ? html`<span><span class="dot-warn">●</span> Empty — drag a node from the palette to start</span>`
               : html`
                 <span><strong>${this._nodes.length}</strong> ${this._nodes.length === 1 ? 'node' : 'nodes'}</span>
@@ -2592,6 +2761,55 @@ export class OrFlowBuilder extends LitElement {
           ` : nothing}
         </div>
       </aside>
+    `;
+  }
+
+  private _renderPublishPopover() {
+    return html`
+      <div class="publish-popover" role="dialog" aria-label="Publish flow">
+        <div class="publish-popover-title">Publish to entry point</div>
+        <label class="publish-field">
+          <span>Channel</span>
+          <input type="text" .value=${this._publishChannel}
+            @input=${(e: Event) => { this._publishChannel = (e.target as HTMLInputElement).value; }} />
+        </label>
+        <label class="publish-field">
+          <span>Entry code</span>
+          <input type="text" .value=${this._publishEntry}
+            @input=${(e: Event) => { this._publishEntry = (e.target as HTMLInputElement).value; }} />
+        </label>
+        <div class="publish-actions">
+          <button class="toolbar-btn" @click=${() => { this._publishOpen = false; }}>Cancel</button>
+          <button class="toolbar-btn toolbar-btn--primary" ?disabled=${this._publishing} @click=${this._publishFlow}>
+            ${this._publishing ? 'Publishing…' : 'Publish'}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderValidationPanel() {
+    const issues = this._validation?.issues ?? [];
+    return html`
+      <div class="validation-panel" role="status">
+        <div class="validation-panel-head">
+          <uk-icon icon="alert-triangle" height="13" width="13"></uk-icon>
+          <strong>${issues.length}</strong> validation ${issues.length === 1 ? 'issue' : 'issues'}
+          <button class="validation-panel-close" title="Dismiss" @click=${() => { this._validation = null; }}>
+            <uk-icon icon="x" height="13" width="13"></uk-icon>
+          </button>
+        </div>
+        <ul class="validation-list">
+          ${issues.map(i => html`
+            <li>
+              <code>${i.code}</code>
+              ${i.node_id ? html`<span class="validation-loc">node ${i.node_id}${i.field ? '.' + i.field : ''}</span>` : nothing}
+              ${i.edge_id ? html`<span class="validation-loc">edge ${i.edge_id}</span>` : nothing}
+              <span class="validation-msg">${i.message}</span>
+            </li>
+          `)}
+        </ul>
+      </div>
     `;
   }
 
