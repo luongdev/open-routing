@@ -122,15 +122,6 @@ export class OrTraceViewer extends LitElement {
     .trace-header-title .meta {
       font-size: 12px; color: var(--muted-foreground);
     }
-    .vnext-tag {
-      display: inline-flex; align-items: center;
-      padding: 2px 8px; border-radius: 9999px;
-      background: color-mix(in oklch, var(--primary) 12%, transparent);
-      color: var(--primary);
-      font-size: 10px; font-weight: 700;
-      letter-spacing: 0.06em; text-transform: uppercase;
-      margin-left: 6px;
-    }
     .header-spacer { flex: 1; }
 
     .summary-pills { display: flex; gap: 6px; }
@@ -342,27 +333,23 @@ export class OrTraceViewer extends LitElement {
   @property({ type: Object }) accessor client!: ApiClient;
 
   @state() private accessor _selectedStepIndex = 4;
-  // True once the real GET confirms the trace endpoint is a Layer-3 stub, so the
-  // banner reads "sample" honestly rather than implying this is live data.
-  @state() private accessor _stub = false;
 
-  // Probe the real endpoint so the contract wiring is exercised. The Layer-1
-  // stub answers 500 { reason: 'not_implemented' } (or a future 501); on
-  // anything that isn't a real trace we keep the sample preview. Live
-  // Trace->viewer mapping lands in Layer 3.
+  // Probe the real endpoint so the contract wiring is exercised, returning the
+  // live Trace or null. The Layer-1 stub answers 500 { reason: 'not_implemented' }
+  // (or a future 501), so the task value is null and the render falls back to the
+  // sample preview + banner. `client` is in the deps so a late-arriving client
+  // (set in a separate update than orgId) reruns the probe. Live Trace->viewer
+  // mapping lands in Layer 3.
   private _loadTask = new Task(this, {
-    task: async ([orgId, traceId], { signal }) => {
-      if (!this.client || !traceId) return null;
-      const res = (await this.client.GET('/v1/orgs/{org_id}/traces/{id}' as never, {
+    task: async ([client, orgId, traceId], { signal }) => {
+      if (!client || !traceId) return null;
+      const res = (await (client as ApiClient).GET('/v1/orgs/{org_id}/traces/{id}' as never, {
         params: { path: { org_id: orgId as string, id: traceId as string } },
         signal,
-      } as never)) as { data?: unknown; error?: unknown; response?: { status?: number } };
-      const notImpl =
-        res.response?.status === 501 || (res.error as { reason?: string })?.reason === 'not_implemented';
-      if (notImpl) this._stub = true;
+      } as never)) as { data?: unknown };
       return res.data ?? null;
     },
-    args: () => [this.orgId, this.traceId] as const,
+    args: () => [this.client, this.orgId, this.traceId] as const,
   });
 
   override createRenderRoot() {
@@ -472,12 +459,17 @@ export class OrTraceViewer extends LitElement {
     const steps = MOCK_TRACE_STEPS;
     const selectedStep = steps[this._selectedStepIndex] ?? steps[0]!;
     const hitNodeIds = new Set(steps.slice(0, this._selectedStepIndex + 1).map(s => s.node_id));
+    // Until the runtime records traces (Layer 3) the probe yields no live trace,
+    // so we render the sample preview and say so. A real Trace hides the banner.
+    const live = this._loadTask.value;
 
     return html`
-      <div class="trace-banner" role="status">
-        <uk-icon icon="info" height="13" width="13"></uk-icon>
-        Sample trace — live trace data (GET /traces/{id}) lands in Layer 3.
-      </div>
+      ${live ? nothing : html`
+        <div class="trace-banner" role="status">
+          <uk-icon icon="info" height="13" width="13"></uk-icon>
+          Sample trace — live trace data (GET /traces/{id}) lands in Layer 3.
+        </div>
+      `}
       <div class="trace-header">
         <uk-icon icon="git-branch" height="22" width="22" style="color:var(--primary)"></uk-icon>
         <div class="trace-header-title">

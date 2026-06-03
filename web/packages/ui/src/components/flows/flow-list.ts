@@ -269,8 +269,8 @@ export class OrFlowList extends LitElement {
   ];
 
   private _listTask = new Task(this, {
-    task: async ([orgId, search, cursor, includeDisabled, limit], { signal }) => {
-      const { data, error } = await this.client.GET('/v1/orgs/{org_id}/flows' as never, {
+    task: async ([client, orgId, search, cursor, includeDisabled, limit], { signal }) => {
+      const { data, error } = await (client as ApiClient).GET('/v1/orgs/{org_id}/flows' as never, {
         params: {
           path: { org_id: orgId as string },
           query: {
@@ -289,8 +289,9 @@ export class OrFlowList extends LitElement {
       this._nextCursor = d?.next_cursor ?? null;
       return data;
     },
+    // client is in the deps so a late-set client (separate update than orgId) reruns.
     args: () =>
-      [this.orgId, this._search, this._cursor, this._includeDisabled, this._limit] as const,
+      [this.client, this.orgId, this._search, this._cursor, this._includeDisabled, this._limit] as const,
   });
 
   private async _handleRowAction(e: CustomEvent): Promise<void> {

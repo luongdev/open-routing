@@ -1563,14 +1563,14 @@ export class OrFlowBuilder extends LitElement {
   // success it hydrates `_nodes`/`_edges`/`_loaded` and returns the flow so the
   // render branch can distinguish pending/error/ready.
   private _loadTask = new Task(this, {
-    task: async ([orgId, flowId], { signal }) => {
-      if (!flowId) {
+    task: async ([client, orgId, flowId], { signal }) => {
+      if (!flowId || !client) {
         this._nodes = [];
         this._edges = [];
         this._loaded = null;
         return null;
       }
-      const { data, error } = await this.client.GET('/v1/orgs/{org_id}/flows/{id}' as never, {
+      const { data, error } = await (client as ApiClient).GET('/v1/orgs/{org_id}/flows/{id}' as never, {
         params: { path: { org_id: orgId as string, id: flowId as string } },
         signal,
       } as never);
@@ -1586,7 +1586,7 @@ export class OrFlowBuilder extends LitElement {
       this._selectedNodeId = this._nodes[0]?.id ?? null;
       return flow;
     },
-    args: () => [this.orgId, this.flowId] as const,
+    args: () => [this.client, this.orgId, this.flowId] as const,
   });
 
   override createRenderRoot() {
