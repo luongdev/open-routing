@@ -16,6 +16,7 @@ const (
 	IssueDanglingEdge     = "dangling_edge"
 	IssueUnreachableNode  = "unreachable_node"
 	IssueNoTerminal       = "no_terminal"
+	IssueNoPathToTerminal = "no_path_to_terminal"
 )
 
 // ValidateGraph runs structural checks over the authoring graph, then each
@@ -91,12 +92,18 @@ func ValidateGraph(ctx context.Context, g *Graph, reg *Registry, refs CatalogRef
 	if triggers == 1 && !hasDanglingEdge(issues) {
 		entry := singleTrigger(g)
 		reachable := reachableFrom(entry, g.Edges)
+		canReachEnd := reverseReachableFromEnds(g)
 		for _, n := range g.Nodes {
 			if n.Kind == NodeTrigger {
 				continue
 			}
-			if !reachable[n.ID] {
+			switch {
+			case !reachable[n.ID]:
 				issues = append(issues, ValidationIssue{Code: IssueUnreachableNode, Message: fmt.Sprintf("node %q is not reachable from the trigger", n.ID), NodeID: n.ID})
+			case n.Kind != NodeEnd && !canReachEnd[n.ID]:
+				// Reachable but no path forward to an end — a dead-end sink or a
+				// cycle with no exit. The bare `end`-exists check misses this.
+				issues = append(issues, ValidationIssue{Code: IssueNoPathToTerminal, Message: fmt.Sprintf("node %q cannot reach an end node", n.ID), NodeID: n.ID})
 			}
 		}
 	}
@@ -120,6 +127,36 @@ func singleTrigger(g *Graph) string {
 		}
 	}
 	return ""
+}
+
+// reverseReachableFromEnds returns the set of nodes that have at least one
+// directed path to some end node (reverse BFS from every end over reversed
+// edges). A reachable node absent from this set is a dead-end/cycle that can
+// never terminate.
+func reverseReachableFromEnds(g *Graph) map[string]bool {
+	radj := make(map[string][]string)
+	for _, e := range g.Edges {
+		radj[e.To] = append(radj[e.To], e.From)
+	}
+	reached := map[string]bool{}
+	var queue []string
+	for _, n := range g.Nodes {
+		if n.Kind == NodeEnd {
+			reached[n.ID] = true
+			queue = append(queue, n.ID)
+		}
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, from := range radj[cur] {
+			if !reached[from] {
+				reached[from] = true
+				queue = append(queue, from)
+			}
+		}
+	}
+	return reached
 }
 
 func reachableFrom(entry string, edges []GraphEdge) map[string]bool {

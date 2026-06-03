@@ -33,6 +33,38 @@ func (q *Queries) DeactivateActiveBinding(ctx context.Context, arg DeactivateAct
 	return result.RowsAffected(), nil
 }
 
+const deactivateBindingIfVersion = `-- name: DeactivateBindingIfVersion :execrows
+UPDATE flow_entry_bindings
+SET active = FALSE, updated_at = NOW()
+WHERE org_id = $1 AND channel = $2 AND entry_code = $3 AND active = TRUE
+  AND flow_version_id = $4
+`
+
+type DeactivateBindingIfVersionParams struct {
+	OrgID         pgtype.UUID `json:"org_id"`
+	Channel       string      `json:"channel"`
+	EntryCode     string      `json:"entry_code"`
+	FlowVersionID pgtype.UUID `json:"flow_version_id"`
+}
+
+// The atomic expected_current_flow_version_id guard: deactivate the active
+// binding only if it still points at the version the caller expected. The row
+// lock taken here serializes concurrent publish/rollback on the same binding,
+// so a non-1 rowcount means another writer already moved it (409), closing the
+// read-then-write TOCTOU on the plain GetActiveBinding check (cross-AI HIGH-1).
+func (q *Queries) DeactivateBindingIfVersion(ctx context.Context, arg DeactivateBindingIfVersionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateBindingIfVersion,
+		arg.OrgID,
+		arg.Channel,
+		arg.EntryCode,
+		arg.FlowVersionID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getActiveBinding = `-- name: GetActiveBinding :one
 
 SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, active, created_at, updated_at

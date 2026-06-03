@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -185,15 +186,20 @@ func (e *Endpoints) PublishFlow(ctx context.Context, req api.PublishFlowRequestO
 	}
 
 	version, binding, pErr := e.activate(ctx, orgID, activation{
-		flowID:    flow.ID,
-		flowCode:  flow.Code,
-		channel:   req.Body.Channel,
-		entryCode: req.Body.EntryCode,
-		expected:  req.Body.ExpectedCurrentFlowVersionId,
-		graph:     flow.Graph,
-		plan:      planBytes,
+		flowID:       flow.ID,
+		flowCode:     flow.Code,
+		draftVersion: req.Body.Version,
+		channel:      req.Body.Channel,
+		entryCode:    req.Body.EntryCode,
+		expected:     req.Body.ExpectedCurrentFlowVersionId,
+		graph:        flow.Graph,
+		plan:         planBytes,
 	})
 	switch {
+	case errors.Is(pErr, errDraftConflict):
+		return api.PublishFlow409JSONResponse(api.ErrorResponse{
+			Error: api.ErrorCodeVersionConflict, Reason: "draft_version_mismatch",
+		}), nil
 	case errors.Is(pErr, errBindingConflict):
 		return api.PublishFlow409JSONResponse(api.ErrorResponse{
 			Error: api.ErrorCodeVersionConflict, Reason: "binding_changed",
@@ -228,6 +234,13 @@ func (e *Endpoints) RollbackFlow(ctx context.Context, req api.RollbackFlowReques
 	if req.Body == nil {
 		return api.RollbackFlow400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
 			Error: api.ErrorCodeInvalidBody, Reason: "missing_body",
+		}}, nil
+	}
+	// version_number is INT4 in PG; reject out-of-range before the int32 cast in
+	// rollback() so a wrap can't resolve to a real version (cross-AI HIGH-3).
+	if req.Body.ToVersionNumber < 1 || req.Body.ToVersionNumber > math.MaxInt32 {
+		return api.RollbackFlow400JSONResponse{BadRequestJSONResponse: api.BadRequestJSONResponse{
+			Error: api.ErrorCodeInvalidBody, Reason: "to_version_number_out_of_range",
 		}}, nil
 	}
 
