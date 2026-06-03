@@ -27,6 +27,9 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 		{"AliasedScaffold", `SELECT a.id FROM _scaffold a WHERE a.org_id = $1 AND a.id = $2`},
 		{"JoinWithAllAliasesScoped", `SELECT a.id FROM _scaffold a JOIN _scaffold b ON a.id = b.id WHERE a.org_id = $1 AND b.org_id = $1`},
 		{"OuterFilterWithSubquery", `SELECT id, org_id FROM _scaffold WHERE org_id = $1 AND EXISTS (SELECT 1 FROM _scaffold s2 WHERE s2.org_id = $1)`},
+		// Cross-AI review 2026-06-02: recursive validation accepts scoped nested queries.
+		{"InsertSelectScopedSource", `INSERT INTO _scaffold (id, org_id, name) SELECT $1, org_id, name FROM _scaffold WHERE org_id = $2 AND id = $3`},
+		{"CteScoped", `WITH x AS (SELECT id FROM _scaffold WHERE org_id = $1) SELECT id, org_id FROM _scaffold WHERE org_id = $1`},
 	}
 	for _, tc := range accept {
 		tc := tc
@@ -62,6 +65,10 @@ func TestSQLChecker_MustContainOrgFilter(t *testing.T) {
 		// DDL without bypass must be rejected — bypass short-circuits before inspector.
 		{"DropTable", `DROP TABLE _scaffold`},
 		{"TruncateTable", `TRUNCATE _scaffold`},
+		// Cross-AI review 2026-06-02: nested-query isolation gaps now fail closed.
+		{"InsertSelectUnscopedSource", `INSERT INTO _scaffold (id, org_id, name) SELECT $1, org_id, name FROM _scaffold`},
+		{"SubqueryInWhereUnscoped", `SELECT id FROM _scaffold WHERE org_id = $1 AND id IN (SELECT id FROM _scaffold s2)`},
+		{"CteUnscoped", `WITH x AS (SELECT id FROM _scaffold) SELECT id, org_id FROM _scaffold WHERE org_id = $1`},
 	}
 	for _, tc := range reject {
 		tc := tc

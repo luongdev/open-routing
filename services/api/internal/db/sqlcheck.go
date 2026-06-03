@@ -30,16 +30,24 @@ var ErrSQLMissingOrgFilter = errors.New("orgdb: SQL string missing org_id filter
 // name would silently bypass the check). For v0.1 we accept the explicit
 // allowlist semantics.
 var tenantTables = map[string]struct{}{
-	"_scaffold":     {}, // legacy Phase 1; removed once scaffold queries drop out
-	"agents":        {}, // CAT-01
-	"skills":        {}, // CAT-02
-	"queues":        {}, // CAT-04
-	"channels":      {}, // CAT-05
-	"adapters":      {}, // CAT-06
-	"break_reasons": {}, // CAT-07
-	"agent_skills":  {}, // CAT-03 (junction; carries denormalized org_id per D-72)
-	"agent_states":  {}, // STATE-01 (Phase 4; denormalized org_id per D-78 — sweeper bypasses ctx-org and relies on this column)
-	"import_jobs":   {}, // IMP-06 (Phase 5; denormalized org_id per RESEARCH §Pattern 8 — sweeper bypasses ctx-org and relies on this column)
+	"_scaffold":           {}, // legacy Phase 1; removed once scaffold queries drop out
+	"agents":              {}, // CAT-01
+	"skills":              {}, // CAT-02
+	"queues":              {}, // CAT-04
+	"channels":            {}, // CAT-05
+	"adapters":            {}, // CAT-06
+	"break_reasons":       {}, // CAT-07
+	"agent_skills":        {}, // CAT-03 (junction; carries denormalized org_id per D-72)
+	"agent_states":        {}, // STATE-01 (Phase 4; denormalized org_id per D-78 — sweeper bypasses ctx-org and relies on this column)
+	"import_jobs":         {}, // IMP-06 (Phase 5; denormalized org_id per RESEARCH §Pattern 8 — sweeper bypasses ctx-org and relies on this column)
+	"flows":               {}, // FLOW (v0.2 — flow drafts)
+	"flow_versions":       {}, // FLOW (v0.2 — immutable published versions)
+	"flow_entry_bindings": {}, // FLOW (v0.2 — route entry → active published version)
+	"route_requests":      {}, // RT (v0.2 — interaction spine)
+	"reservations":        {}, // RT (v0.2 — reservation lifecycle)
+	"continuations":       {}, // RT (v0.2 — durable delayed work, SKIP LOCKED)
+	"runtime_events":      {}, // RT (v0.2 — canonical event envelope, outbox-first)
+	"traces":              {}, // RT (v0.2 — trace read records)
 }
 
 // SQLChecker memoizes the org_id-presence verdict for each unique SQL
@@ -119,45 +127,136 @@ func (c *SQLChecker) classify(sql string) error {
 		return ErrSQLMissingOrgFilter
 	}
 	for _, raw := range tree.Stmts {
-		stmt := raw.Stmt
-		if stmt == nil {
+		if raw.Stmt == nil {
 			return ErrSQLMissingOrgFilter
 		}
-		switch sv := stmt.Node.(type) {
-		case *pg_query.Node_SelectStmt:
-			var whereClause *pg_query.Node
-			var tenantAliases []string
-			whereClause = sv.SelectStmt.WhereClause
-			tenantAliases = tenantAliasesFromNodes(sv.SelectStmt.FromClause)
-			if !whereSatisfiesTenantAliases(whereClause, tenantAliases) {
-				return ErrSQLMissingOrgFilter
-			}
-		case *pg_query.Node_UpdateStmt:
-			whereClause := sv.UpdateStmt.WhereClause
-			tenantAliases := tenantAliasesFromRangeVar(sv.UpdateStmt.Relation)
-			tenantAliases = appendTenantAliasesFromNodes(tenantAliases, sv.UpdateStmt.FromClause)
-			if !whereSatisfiesTenantAliases(whereClause, tenantAliases) {
-				return ErrSQLMissingOrgFilter
-			}
-		case *pg_query.Node_DeleteStmt:
-			whereClause := sv.DeleteStmt.WhereClause
-			tenantAliases := tenantAliasesFromRangeVar(sv.DeleteStmt.Relation)
-			tenantAliases = appendTenantAliasesFromNodes(tenantAliases, sv.DeleteStmt.UsingClause)
-			if !whereSatisfiesTenantAliases(whereClause, tenantAliases) {
-				return ErrSQLMissingOrgFilter
-			}
-		case *pg_query.Node_InsertStmt:
-			ins := sv.InsertStmt
-			if !insertHasOrgIDColumn(ins) {
-				return ErrSQLMissingOrgFilter
+		// Only the four DML statements may reach orgDB; DDL/utility must go
+		// through WithBypass (D-11), so a non-DML top-level statement fails closed.
+		switch raw.Stmt.Node.(type) {
+		case *pg_query.Node_SelectStmt, *pg_query.Node_InsertStmt,
+			*pg_query.Node_UpdateStmt, *pg_query.Node_DeleteStmt:
+			if err := validateNode(raw.Stmt, true); err != nil {
+				return err
 			}
 		default:
-			// DDL and utility statements must go through WithBypass.
-			// If they reach the checker, bypass is absent — reject.
 			return ErrSQLMissingOrgFilter
 		}
 	}
 	return nil
+}
+
+// validateNode validates `node` if it is a query statement — every tenant-table
+// reference must carry a matching org_id filter at the level that introduces it —
+// then recurses into every child that can nest another query: CTEs, FROM/WHERE
+// subqueries, set-operation arms, and INSERT...SELECT sources. This closes the
+// subquery/CTE isolation gap: a nested SELECT from a tenant table without an
+// org_id filter is rejected even when the outer query is scoped (cross-AI review
+// 2026-06-02, Codex/agy CRITICAL).
+//
+// requireTenant is true only for a top-level statement: it must touch a tenant
+// table, so a bare `SELECT 1` issued through orgDB fails closed. Nested queries
+// may legitimately touch no tenant table at their own level; any tenant tables
+// they DO reference are still checked.
+func validateNode(node *pg_query.Node, requireTenant bool) error {
+	if node == nil {
+		return nil
+	}
+	switch n := node.Node.(type) {
+	case *pg_query.Node_SelectStmt:
+		return validateSelectStmt(n.SelectStmt, requireTenant)
+	case *pg_query.Node_InsertStmt:
+		ins := n.InsertStmt
+		if !insertHasOrgIDColumn(ins) {
+			return ErrSQLMissingOrgFilter
+		}
+		// INSERT ... SELECT: the source query must be scoped too (a VALUES list
+		// has no FROM, so validateNode is a no-op for it).
+		if err := validateNode(ins.SelectStmt, false); err != nil {
+			return err
+		}
+		return validateChildren(withCtes(ins.WithClause))
+	case *pg_query.Node_UpdateStmt:
+		u := n.UpdateStmt
+		aliases := tenantAliasesFromRangeVar(u.Relation)
+		aliases = appendTenantAliasesFromNodes(aliases, u.FromClause)
+		if !whereSatisfiesTenantAliases(u.WhereClause, aliases) {
+			return ErrSQLMissingOrgFilter
+		}
+		return validateChildren(u.FromClause, u.TargetList, u.ReturningList,
+			[]*pg_query.Node{u.WhereClause}, withCtes(u.WithClause))
+	case *pg_query.Node_DeleteStmt:
+		d := n.DeleteStmt
+		aliases := tenantAliasesFromRangeVar(d.Relation)
+		aliases = appendTenantAliasesFromNodes(aliases, d.UsingClause)
+		if !whereSatisfiesTenantAliases(d.WhereClause, aliases) {
+			return ErrSQLMissingOrgFilter
+		}
+		return validateChildren(d.UsingClause, d.ReturningList,
+			[]*pg_query.Node{d.WhereClause}, withCtes(d.WithClause))
+	case *pg_query.Node_List:
+		return validateChildren(n.List.Items)
+	case *pg_query.Node_JoinExpr:
+		return validateChildren([]*pg_query.Node{n.JoinExpr.Larg, n.JoinExpr.Rarg, n.JoinExpr.Quals})
+	case *pg_query.Node_RangeSubselect:
+		return validateNode(n.RangeSubselect.Subquery, false)
+	case *pg_query.Node_SubLink:
+		return validateNode(n.SubLink.Subselect, false)
+	case *pg_query.Node_BoolExpr:
+		return validateChildren(n.BoolExpr.Args)
+	case *pg_query.Node_AExpr:
+		return validateChildren([]*pg_query.Node{n.AExpr.Lexpr, n.AExpr.Rexpr})
+	case *pg_query.Node_ResTarget:
+		return validateNode(n.ResTarget.Val, false)
+	case *pg_query.Node_CommonTableExpr:
+		return validateNode(n.CommonTableExpr.Ctequery, false)
+	default:
+		return nil
+	}
+}
+
+// validateSelectStmt enforces tenant scoping for one SELECT level, then recurses
+// into its sub-queries. Set-operation arms (UNION etc.) are themselves SELECTs.
+func validateSelectStmt(s *pg_query.SelectStmt, requireTenant bool) error {
+	if s == nil {
+		return nil
+	}
+	aliases := tenantAliasesFromNodes(s.FromClause)
+	if len(aliases) > 0 {
+		if !whereSatisfiesTenantAliases(s.WhereClause, aliases) {
+			return ErrSQLMissingOrgFilter
+		}
+	} else if requireTenant && len(s.ValuesLists) == 0 {
+		return ErrSQLMissingOrgFilter
+	}
+	if err := validateSelectStmt(s.Larg, false); err != nil {
+		return err
+	}
+	if err := validateSelectStmt(s.Rarg, false); err != nil {
+		return err
+	}
+	return validateChildren(s.FromClause, s.TargetList, s.GroupClause,
+		s.SortClause, s.ValuesLists, []*pg_query.Node{s.WhereClause},
+		[]*pg_query.Node{s.HavingClause}, withCtes(s.WithClause))
+}
+
+// validateChildren recurses validateNode over every node in the given lists.
+// Nested nodes never carry the top-level tenant requirement.
+func validateChildren(lists ...[]*pg_query.Node) error {
+	for _, list := range lists {
+		for _, child := range list {
+			if err := validateNode(child, false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func withCtes(w *pg_query.WithClause) []*pg_query.Node {
+	if w == nil {
+		return nil
+	}
+	return w.GetCtes()
 }
 
 // orgIDColumnQualifier returns the table qualifier for a ColumnRef whose final

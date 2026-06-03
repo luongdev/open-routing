@@ -50,6 +50,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
 )
@@ -185,8 +186,9 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 		*Handlers
 		*state.Server
 		noopImporter
+		*flowrt.Endpoints
 	}
-	apiHandlers := &testApiHandlers{Handlers: h, Server: stateServer}
+	apiHandlers := &testApiHandlers{Handlers: h, Server: stateServer, Endpoints: flowrt.New(flowrt.Deps{OrgDB: orgDB, Cache: c, Logger: logger})}
 	mux := server.NewMux(&server.Deps{
 		Pool:           sharedPool,
 		Redis:          rdb,
@@ -226,7 +228,7 @@ func cleanCatalogTables(t testing.TB, ctx context.Context) {
 		return
 	}
 	// Single round-trip; CASCADE handles the FK graph.
-	_, err := sharedPool.Exec(ctx, `TRUNCATE TABLE agent_skills, break_reasons, adapters, channels, queues, skills, agents CASCADE`)
+	_, err := sharedPool.Exec(ctx, `TRUNCATE TABLE flows, agent_skills, break_reasons, adapters, channels, queues, skills, agents CASCADE`)
 	require.NoError(t, err, "cleanCatalogTables: TRUNCATE failed")
 }
 
@@ -286,7 +288,7 @@ func seedQueueForOrg(t testing.TB, th *TestHandlers, ctx context.Context, orgID 
 		ID:           pgUUID(id),
 		OrgID:        pgUUID(orgID),
 		Code:         "queue_" + sanitizeForCode(name), // Phase 04.1: required column.
-		ExternalID:   &ext,                              // *string post-04.1 (nullable column).
+		ExternalID:   &ext,                             // *string post-04.1 (nullable column).
 		Name:         name,
 		ChannelTypes: []string{"voice"},
 		Priority:     0,

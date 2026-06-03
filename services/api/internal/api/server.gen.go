@@ -67,6 +67,9 @@ type ServerInterface interface {
 	// Transition agent state
 	// (PATCH /v1/orgs/{org_id}/agents/{id}/status)
 	PatchAgentStatus(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List active route entry bindings (the routing table)
+	// (GET /v1/orgs/{org_id}/bindings)
+	ListFlowEntryBindings(w http.ResponseWriter, r *http.Request, orgId OrgIdPath)
 	// List break reasons
 	// (GET /v1/orgs/{org_id}/break-reasons)
 	ListBreakReasons(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListBreakReasonsParams)
@@ -100,6 +103,39 @@ type ServerInterface interface {
 	// Update a channel
 	// (PATCH /v1/orgs/{org_id}/channels/{id})
 	UpdateChannel(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Get a published flow version by ID
+	// (GET /v1/orgs/{org_id}/flow-versions/{id})
+	GetFlowVersion(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List flow drafts
+	// (GET /v1/orgs/{org_id}/flows)
+	ListFlows(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListFlowsParams)
+	// Create a flow draft
+	// (POST /v1/orgs/{org_id}/flows)
+	CreateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath)
+	// Soft-delete a flow draft
+	// (DELETE /v1/orgs/{org_id}/flows/{id})
+	DeleteFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Get a flow draft by ID
+	// (GET /v1/orgs/{org_id}/flows/{id})
+	GetFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Update a flow draft
+	// (PATCH /v1/orgs/{org_id}/flows/{id})
+	UpdateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Publish a flow draft as an immutable version and activate its binding
+	// (POST /v1/orgs/{org_id}/flows/{id}/publish)
+	PublishFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Re-activate a prior published version for a route entry point
+	// (POST /v1/orgs/{org_id}/flows/{id}/rollback)
+	RollbackFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Deterministically simulate a flow draft
+	// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
+	SimulateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Validate a flow draft graph
+	// (POST /v1/orgs/{org_id}/flows/{id}/validate)
+	ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List published versions of a flow
+	// (GET /v1/orgs/{org_id}/flows/{id}/versions)
+	ListFlowVersions(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// Get import job result
 	// (GET /v1/orgs/{org_id}/imports/{import_id})
 	GetImportJob(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, importId ImportJobIdPath)
@@ -118,6 +154,33 @@ type ServerInterface interface {
 	// Update a queue
 	// (PATCH /v1/orgs/{org_id}/queues/{id})
 	UpdateQueue(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Get a reservation by ID
+	// (GET /v1/orgs/{org_id}/reservations/{id})
+	GetReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Accept an offered reservation (test-double / simulator signal)
+	// (POST /v1/orgs/{org_id}/reservations/{id}/accept)
+	AcceptReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Complete an accepted reservation (test-double / simulator signal)
+	// (POST /v1/orgs/{org_id}/reservations/{id}/complete)
+	CompleteReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Reject an offered reservation (test-double / simulator signal)
+	// (POST /v1/orgs/{org_id}/reservations/{id}/reject)
+	RejectReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List route requests (the interaction spine), newest first
+	// (GET /v1/orgs/{org_id}/route-requests)
+	ListRouteRequests(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListRouteRequestsParams)
+	// Drive a route request through the published flow (admin/test entry point)
+	// (POST /v1/orgs/{org_id}/route-requests)
+	CreateRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath)
+	// Get a route request by ID
+	// (GET /v1/orgs/{org_id}/route-requests/{id})
+	GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List the reservations a route request generated (sequential offers)
+	// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
+	ListRouteRequestReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Get the runtime trace for a route request
+	// (GET /v1/orgs/{org_id}/route-requests/{id}/trace)
+	GetRouteRequestTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// List skills
 	// (GET /v1/orgs/{org_id}/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListSkillsParams)
@@ -133,6 +196,9 @@ type ServerInterface interface {
 	// Update a skill
 	// (PATCH /v1/orgs/{org_id}/skills/{id})
 	UpdateSkill(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Get a trace by ID
+	// (GET /v1/orgs/{org_id}/traces/{id})
+	GetTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -235,6 +301,12 @@ func (_ Unimplemented) PatchAgentStatus(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List active route entry bindings (the routing table)
+// (GET /v1/orgs/{org_id}/bindings)
+func (_ Unimplemented) ListFlowEntryBindings(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List break reasons
 // (GET /v1/orgs/{org_id}/break-reasons)
 func (_ Unimplemented) ListBreakReasons(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListBreakReasonsParams) {
@@ -301,6 +373,72 @@ func (_ Unimplemented) UpdateChannel(w http.ResponseWriter, r *http.Request, org
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get a published flow version by ID
+// (GET /v1/orgs/{org_id}/flow-versions/{id})
+func (_ Unimplemented) GetFlowVersion(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List flow drafts
+// (GET /v1/orgs/{org_id}/flows)
+func (_ Unimplemented) ListFlows(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListFlowsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a flow draft
+// (POST /v1/orgs/{org_id}/flows)
+func (_ Unimplemented) CreateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Soft-delete a flow draft
+// (DELETE /v1/orgs/{org_id}/flows/{id})
+func (_ Unimplemented) DeleteFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a flow draft by ID
+// (GET /v1/orgs/{org_id}/flows/{id})
+func (_ Unimplemented) GetFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update a flow draft
+// (PATCH /v1/orgs/{org_id}/flows/{id})
+func (_ Unimplemented) UpdateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Publish a flow draft as an immutable version and activate its binding
+// (POST /v1/orgs/{org_id}/flows/{id}/publish)
+func (_ Unimplemented) PublishFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Re-activate a prior published version for a route entry point
+// (POST /v1/orgs/{org_id}/flows/{id}/rollback)
+func (_ Unimplemented) RollbackFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Deterministically simulate a flow draft
+// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
+func (_ Unimplemented) SimulateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Validate a flow draft graph
+// (POST /v1/orgs/{org_id}/flows/{id}/validate)
+func (_ Unimplemented) ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List published versions of a flow
+// (GET /v1/orgs/{org_id}/flows/{id}/versions)
+func (_ Unimplemented) ListFlowVersions(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get import job result
 // (GET /v1/orgs/{org_id}/imports/{import_id})
 func (_ Unimplemented) GetImportJob(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, importId ImportJobIdPath) {
@@ -337,6 +475,60 @@ func (_ Unimplemented) UpdateQueue(w http.ResponseWriter, r *http.Request, orgId
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get a reservation by ID
+// (GET /v1/orgs/{org_id}/reservations/{id})
+func (_ Unimplemented) GetReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Accept an offered reservation (test-double / simulator signal)
+// (POST /v1/orgs/{org_id}/reservations/{id}/accept)
+func (_ Unimplemented) AcceptReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Complete an accepted reservation (test-double / simulator signal)
+// (POST /v1/orgs/{org_id}/reservations/{id}/complete)
+func (_ Unimplemented) CompleteReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reject an offered reservation (test-double / simulator signal)
+// (POST /v1/orgs/{org_id}/reservations/{id}/reject)
+func (_ Unimplemented) RejectReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List route requests (the interaction spine), newest first
+// (GET /v1/orgs/{org_id}/route-requests)
+func (_ Unimplemented) ListRouteRequests(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListRouteRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Drive a route request through the published flow (admin/test entry point)
+// (POST /v1/orgs/{org_id}/route-requests)
+func (_ Unimplemented) CreateRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a route request by ID
+// (GET /v1/orgs/{org_id}/route-requests/{id})
+func (_ Unimplemented) GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List the reservations a route request generated (sequential offers)
+// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
+func (_ Unimplemented) ListRouteRequestReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get the runtime trace for a route request
+// (GET /v1/orgs/{org_id}/route-requests/{id}/trace)
+func (_ Unimplemented) GetRouteRequestTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List skills
 // (GET /v1/orgs/{org_id}/skills)
 func (_ Unimplemented) ListSkills(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListSkillsParams) {
@@ -364,6 +556,12 @@ func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, orgId Or
 // Update a skill
 // (PATCH /v1/orgs/{org_id}/skills/{id})
 func (_ Unimplemented) UpdateSkill(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a trace by ID
+// (GET /v1/orgs/{org_id}/traces/{id})
+func (_ Unimplemented) GetTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -998,6 +1196,38 @@ func (siw *ServerInterfaceWrapper) PatchAgentStatus(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListFlowEntryBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListFlowEntryBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlowEntryBindings(w, r, orgId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListBreakReasons operation middleware
 func (siw *ServerInterfaceWrapper) ListBreakReasons(w http.ResponseWriter, r *http.Request) {
 
@@ -1564,6 +1794,494 @@ func (siw *ServerInterfaceWrapper) UpdateChannel(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetFlowVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetFlowVersion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFlowVersion(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFlows operation middleware
+func (siw *ServerInterfaceWrapper) ListFlows(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFlowsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "include_disabled" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_disabled", r.URL.Query(), &params.IncludeDisabled, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include_disabled"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include_disabled", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlows(w, r, orgId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFlow operation middleware
+func (siw *ServerInterfaceWrapper) CreateFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFlow(w, r, orgId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFlow operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFlow operation middleware
+func (siw *ServerInterfaceWrapper) GetFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFlow operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PublishFlow operation middleware
+func (siw *ServerInterfaceWrapper) PublishFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PublishFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RollbackFlow operation middleware
+func (siw *ServerInterfaceWrapper) RollbackFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RollbackFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SimulateFlow operation middleware
+func (siw *ServerInterfaceWrapper) SimulateFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SimulateFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ValidateFlow operation middleware
+func (siw *ServerInterfaceWrapper) ValidateFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ValidateFlow(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFlowVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListFlowVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlowVersions(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetImportJob operation middleware
 func (siw *ServerInterfaceWrapper) GetImportJob(w http.ResponseWriter, r *http.Request) {
 
@@ -1847,6 +2565,412 @@ func (siw *ServerInterfaceWrapper) UpdateQueue(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetReservation operation middleware
+func (siw *ServerInterfaceWrapper) GetReservation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReservation(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptReservation operation middleware
+func (siw *ServerInterfaceWrapper) AcceptReservation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptReservation(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteReservation operation middleware
+func (siw *ServerInterfaceWrapper) CompleteReservation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteReservation(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectReservation operation middleware
+func (siw *ServerInterfaceWrapper) RejectReservation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectReservation(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRouteRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListRouteRequests(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRouteRequestsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "channel" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "channel", r.URL.Query(), &params.Channel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "channel"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRouteRequests(w, r, orgId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateRouteRequest operation middleware
+func (siw *ServerInterfaceWrapper) CreateRouteRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateRouteRequest(w, r, orgId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRouteRequest operation middleware
+func (siw *ServerInterfaceWrapper) GetRouteRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRouteRequest(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRouteRequestReservations operation middleware
+func (siw *ServerInterfaceWrapper) ListRouteRequestReservations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRouteRequestReservations(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRouteRequestTrace operation middleware
+func (siw *ServerInterfaceWrapper) GetRouteRequestTrace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRouteRequestTrace(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSkills operation middleware
 func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
 
@@ -2089,6 +3213,47 @@ func (siw *ServerInterfaceWrapper) UpdateSkill(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetTrace operation middleware
+func (siw *ServerInterfaceWrapper) GetTrace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTrace(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2251,6 +3416,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/v1/orgs/{org_id}/agents/{id}/status", wrapper.PatchAgentStatus)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/bindings", wrapper.ListFlowEntryBindings)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/break-reasons", wrapper.ListBreakReasons)
 	})
 	r.Group(func(r chi.Router) {
@@ -2284,6 +3452,39 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/v1/orgs/{org_id}/channels/{id}", wrapper.UpdateChannel)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/flow-versions/{id}", wrapper.GetFlowVersion)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/flows", wrapper.ListFlows)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows", wrapper.CreateFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}", wrapper.DeleteFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}", wrapper.GetFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}", wrapper.UpdateFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/publish", wrapper.PublishFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/rollback", wrapper.RollbackFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/simulate", wrapper.SimulateFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/validate", wrapper.ValidateFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/versions", wrapper.ListFlowVersions)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/imports/{import_id}", wrapper.GetImportJob)
 	})
 	r.Group(func(r chi.Router) {
@@ -2302,6 +3503,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/v1/orgs/{org_id}/queues/{id}", wrapper.UpdateQueue)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/reservations/{id}", wrapper.GetReservation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/reservations/{id}/accept", wrapper.AcceptReservation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/reservations/{id}/complete", wrapper.CompleteReservation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/reservations/{id}/reject", wrapper.RejectReservation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests", wrapper.ListRouteRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/route-requests", wrapper.CreateRouteRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}", wrapper.GetRouteRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/reservations", wrapper.ListRouteRequestReservations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/trace", wrapper.GetRouteRequestTrace)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/skills", wrapper.ListSkills)
 	})
 	r.Group(func(r chi.Router) {
@@ -2315,6 +3543,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/v1/orgs/{org_id}/skills/{id}", wrapper.UpdateSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/traces/{id}", wrapper.GetTrace)
 	})
 
 	return r
@@ -3319,6 +4550,46 @@ func (response PatchAgentStatus500JSONResponse) VisitPatchAgentStatusResponse(w 
 	return err
 }
 
+type ListFlowEntryBindingsRequestObject struct {
+	OrgId OrgIdPath `json:"org_id"`
+}
+
+type ListFlowEntryBindingsResponseObject interface {
+	VisitListFlowEntryBindingsResponse(w http.ResponseWriter) error
+}
+
+type ListFlowEntryBindings200JSONResponse struct {
+	Items []FlowEntryBinding `json:"items"`
+}
+
+func (response ListFlowEntryBindings200JSONResponse) VisitListFlowEntryBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowEntryBindings500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListFlowEntryBindings500JSONResponse) VisitListFlowEntryBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListBreakReasonsRequestObject struct {
 	OrgId  OrgIdPath `json:"org_id"`
 	Params ListBreakReasonsParams
@@ -4134,6 +5405,760 @@ func (response UpdateChannel500JSONResponse) VisitUpdateChannelResponse(w http.R
 	return err
 }
 
+type GetFlowVersionRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type GetFlowVersionResponseObject interface {
+	VisitGetFlowVersionResponse(w http.ResponseWriter) error
+}
+
+type GetFlowVersion200JSONResponse FlowVersion
+
+func (response GetFlowVersion200JSONResponse) VisitGetFlowVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlowVersion404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetFlowVersion404JSONResponse) VisitGetFlowVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlowVersion500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetFlowVersion500JSONResponse) VisitGetFlowVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowsRequestObject struct {
+	OrgId  OrgIdPath `json:"org_id"`
+	Params ListFlowsParams
+}
+
+type ListFlowsResponseObject interface {
+	VisitListFlowsResponse(w http.ResponseWriter) error
+}
+
+type ListFlows200JSONResponse struct {
+	// HasMore `true` when there are more results beyond this page. Prefer `has_more` over checking `next_cursor != null` for clarity.
+	HasMore bool   `json:"has_more"`
+	Items   []Flow `json:"items"`
+
+	// NextCursor Opaque base64 cursor for the next page. `null` when this is the last page. Pass as `?cursor=<value>` on the next request.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+func (response ListFlows200JSONResponse) VisitListFlowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlows400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListFlows400JSONResponse) VisitListFlowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlows500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListFlows500JSONResponse) VisitListFlowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFlowRequestObject struct {
+	OrgId OrgIdPath `json:"org_id"`
+	Body  *CreateFlowJSONRequestBody
+}
+
+type CreateFlowResponseObject interface {
+	VisitCreateFlowResponse(w http.ResponseWriter) error
+}
+
+type CreateFlow201JSONResponse Flow
+
+func (response CreateFlow201JSONResponse) VisitCreateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFlow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateFlow400JSONResponse) VisitCreateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFlow409JSONResponse ErrorResponse
+
+func (response CreateFlow409JSONResponse) VisitCreateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response CreateFlow500JSONResponse) VisitCreateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type DeleteFlowResponseObject interface {
+	VisitDeleteFlowResponse(w http.ResponseWriter) error
+}
+
+type DeleteFlow204Response struct {
+}
+
+func (response DeleteFlow204Response) VisitDeleteFlowResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteFlow404JSONResponse) VisitDeleteFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response DeleteFlow500JSONResponse) VisitDeleteFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type GetFlowResponseObject interface {
+	VisitGetFlowResponse(w http.ResponseWriter) error
+}
+
+type GetFlow200JSONResponse Flow
+
+func (response GetFlow200JSONResponse) VisitGetFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetFlow400JSONResponse) VisitGetFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetFlow404JSONResponse) VisitGetFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetFlow500JSONResponse) VisitGetFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+	Body  *UpdateFlowJSONRequestBody
+}
+
+type UpdateFlowResponseObject interface {
+	VisitUpdateFlowResponse(w http.ResponseWriter) error
+}
+
+type UpdateFlow200JSONResponse Flow
+
+func (response UpdateFlow200JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateFlow400JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateFlow404JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlow409JSONResponse struct {
+	// Current A routing flow draft. The graph is the canonical authoring artifact (UI graph is the source of truth). `version` is the optimistic-lock revision of the draft, distinct from the immutable published versions.
+	Current Flow                               `json:"current"`
+	Error   UpdateFlow409JSONResponseBodyError `json:"error"`
+	Reason  string                             `json:"reason"`
+
+	// RequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+func (response UpdateFlow409JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlow422JSONResponse ErrorResponse
+
+func (response UpdateFlow422JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response UpdateFlow500JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+	Body  *PublishFlowJSONRequestBody
+}
+
+type PublishFlowResponseObject interface {
+	VisitPublishFlowResponse(w http.ResponseWriter) error
+}
+
+type PublishFlow201JSONResponse FlowPublishResult
+
+func (response PublishFlow201JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PublishFlow400JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PublishFlow404JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlow409JSONResponse ErrorResponse
+
+func (response PublishFlow409JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlow422JSONResponse FlowValidationResult
+
+func (response PublishFlow422JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response PublishFlow500JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+	Body  *RollbackFlowJSONRequestBody
+}
+
+type RollbackFlowResponseObject interface {
+	VisitRollbackFlowResponse(w http.ResponseWriter) error
+}
+
+type RollbackFlow200JSONResponse FlowPublishResult
+
+func (response RollbackFlow200JSONResponse) VisitRollbackFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackFlow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RollbackFlow400JSONResponse) VisitRollbackFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RollbackFlow404JSONResponse) VisitRollbackFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response RollbackFlow500JSONResponse) VisitRollbackFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+	Body  *SimulateFlowJSONRequestBody
+}
+
+type SimulateFlowResponseObject interface {
+	VisitSimulateFlowResponse(w http.ResponseWriter) error
+}
+
+type SimulateFlow200JSONResponse Trace
+
+func (response SimulateFlow200JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateFlow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SimulateFlow400JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SimulateFlow404JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateFlow422JSONResponse FlowValidationResult
+
+func (response SimulateFlow422JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response SimulateFlow500JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ValidateFlowRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type ValidateFlowResponseObject interface {
+	VisitValidateFlowResponse(w http.ResponseWriter) error
+}
+
+type ValidateFlow200JSONResponse FlowValidationResult
+
+func (response ValidateFlow200JSONResponse) VisitValidateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ValidateFlow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ValidateFlow404JSONResponse) VisitValidateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ValidateFlow500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ValidateFlow500JSONResponse) VisitValidateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowVersionsRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type ListFlowVersionsResponseObject interface {
+	VisitListFlowVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListFlowVersions200JSONResponse struct {
+	Items []FlowVersion `json:"items"`
+}
+
+func (response ListFlowVersions200JSONResponse) VisitListFlowVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowVersions404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListFlowVersions404JSONResponse) VisitListFlowVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowVersions500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListFlowVersions500JSONResponse) VisitListFlowVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetImportJobRequestObject struct {
 	OrgId    OrgIdPath       `json:"org_id"`
 	ImportId ImportJobIdPath `json:"import_id"`
@@ -4552,6 +6577,534 @@ func (response UpdateQueue500JSONResponse) VisitUpdateQueueResponse(w http.Respo
 	return err
 }
 
+type GetReservationRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type GetReservationResponseObject interface {
+	VisitGetReservationResponse(w http.ResponseWriter) error
+}
+
+type GetReservation200JSONResponse Reservation
+
+func (response GetReservation200JSONResponse) VisitGetReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReservation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetReservation404JSONResponse) VisitGetReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReservation500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetReservation500JSONResponse) VisitGetReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReservationRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type AcceptReservationResponseObject interface {
+	VisitAcceptReservationResponse(w http.ResponseWriter) error
+}
+
+type AcceptReservation200JSONResponse Reservation
+
+func (response AcceptReservation200JSONResponse) VisitAcceptReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReservation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AcceptReservation404JSONResponse) VisitAcceptReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReservation409JSONResponse ErrorResponse
+
+func (response AcceptReservation409JSONResponse) VisitAcceptReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReservation500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response AcceptReservation500JSONResponse) VisitAcceptReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteReservationRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type CompleteReservationResponseObject interface {
+	VisitCompleteReservationResponse(w http.ResponseWriter) error
+}
+
+type CompleteReservation200JSONResponse Reservation
+
+func (response CompleteReservation200JSONResponse) VisitCompleteReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteReservation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CompleteReservation404JSONResponse) VisitCompleteReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteReservation409JSONResponse ErrorResponse
+
+func (response CompleteReservation409JSONResponse) VisitCompleteReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteReservation500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response CompleteReservation500JSONResponse) VisitCompleteReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReservationRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type RejectReservationResponseObject interface {
+	VisitRejectReservationResponse(w http.ResponseWriter) error
+}
+
+type RejectReservation200JSONResponse Reservation
+
+func (response RejectReservation200JSONResponse) VisitRejectReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReservation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RejectReservation404JSONResponse) VisitRejectReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReservation409JSONResponse ErrorResponse
+
+func (response RejectReservation409JSONResponse) VisitRejectReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReservation500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response RejectReservation500JSONResponse) VisitRejectReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequestsRequestObject struct {
+	OrgId  OrgIdPath `json:"org_id"`
+	Params ListRouteRequestsParams
+}
+
+type ListRouteRequestsResponseObject interface {
+	VisitListRouteRequestsResponse(w http.ResponseWriter) error
+}
+
+type ListRouteRequests200JSONResponse struct {
+	// HasMore `true` when there are more results beyond this page. Prefer `has_more` over checking `next_cursor != null` for clarity.
+	HasMore bool           `json:"has_more"`
+	Items   []RouteRequest `json:"items"`
+
+	// NextCursor Opaque base64 cursor for the next page. `null` when this is the last page. Pass as `?cursor=<value>` on the next request.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+func (response ListRouteRequests200JSONResponse) VisitListRouteRequestsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequests400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListRouteRequests400JSONResponse) VisitListRouteRequestsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequests500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListRouteRequests500JSONResponse) VisitListRouteRequestsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRouteRequestRequestObject struct {
+	OrgId OrgIdPath `json:"org_id"`
+	Body  *CreateRouteRequestJSONRequestBody
+}
+
+type CreateRouteRequestResponseObject interface {
+	VisitCreateRouteRequestResponse(w http.ResponseWriter) error
+}
+
+type CreateRouteRequest201JSONResponse RouteRequest
+
+func (response CreateRouteRequest201JSONResponse) VisitCreateRouteRequestResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRouteRequest400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateRouteRequest400JSONResponse) VisitCreateRouteRequestResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRouteRequest500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response CreateRouteRequest500JSONResponse) VisitCreateRouteRequestResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRouteRequestRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type GetRouteRequestResponseObject interface {
+	VisitGetRouteRequestResponse(w http.ResponseWriter) error
+}
+
+type GetRouteRequest200JSONResponse RouteRequest
+
+func (response GetRouteRequest200JSONResponse) VisitGetRouteRequestResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRouteRequest404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetRouteRequest404JSONResponse) VisitGetRouteRequestResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRouteRequest500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetRouteRequest500JSONResponse) VisitGetRouteRequestResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequestReservationsRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type ListRouteRequestReservationsResponseObject interface {
+	VisitListRouteRequestReservationsResponse(w http.ResponseWriter) error
+}
+
+type ListRouteRequestReservations200JSONResponse struct {
+	Items []Reservation `json:"items"`
+}
+
+func (response ListRouteRequestReservations200JSONResponse) VisitListRouteRequestReservationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequestReservations404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListRouteRequestReservations404JSONResponse) VisitListRouteRequestReservationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequestReservations500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListRouteRequestReservations500JSONResponse) VisitListRouteRequestReservationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRouteRequestTraceRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type GetRouteRequestTraceResponseObject interface {
+	VisitGetRouteRequestTraceResponse(w http.ResponseWriter) error
+}
+
+type GetRouteRequestTrace200JSONResponse Trace
+
+func (response GetRouteRequestTrace200JSONResponse) VisitGetRouteRequestTraceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRouteRequestTrace404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetRouteRequestTrace404JSONResponse) VisitGetRouteRequestTraceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRouteRequestTrace500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetRouteRequestTrace500JSONResponse) VisitGetRouteRequestTraceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSkillsRequestObject struct {
 	OrgId  OrgIdPath `json:"org_id"`
 	Params ListSkillsParams
@@ -4903,6 +7456,59 @@ func (response UpdateSkill500JSONResponse) VisitUpdateSkillResponse(w http.Respo
 	return err
 }
 
+type GetTraceRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type GetTraceResponseObject interface {
+	VisitGetTraceResponse(w http.ResponseWriter) error
+}
+
+type GetTrace200JSONResponse Trace
+
+func (response GetTrace200JSONResponse) VisitGetTraceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTrace404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetTrace404JSONResponse) VisitGetTraceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTrace500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetTrace500JSONResponse) VisitGetTraceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Interactive API documentation
@@ -4953,6 +7559,9 @@ type StrictServerInterface interface {
 	// Transition agent state
 	// (PATCH /v1/orgs/{org_id}/agents/{id}/status)
 	PatchAgentStatus(ctx context.Context, request PatchAgentStatusRequestObject) (PatchAgentStatusResponseObject, error)
+	// List active route entry bindings (the routing table)
+	// (GET /v1/orgs/{org_id}/bindings)
+	ListFlowEntryBindings(ctx context.Context, request ListFlowEntryBindingsRequestObject) (ListFlowEntryBindingsResponseObject, error)
 	// List break reasons
 	// (GET /v1/orgs/{org_id}/break-reasons)
 	ListBreakReasons(ctx context.Context, request ListBreakReasonsRequestObject) (ListBreakReasonsResponseObject, error)
@@ -4986,6 +7595,39 @@ type StrictServerInterface interface {
 	// Update a channel
 	// (PATCH /v1/orgs/{org_id}/channels/{id})
 	UpdateChannel(ctx context.Context, request UpdateChannelRequestObject) (UpdateChannelResponseObject, error)
+	// Get a published flow version by ID
+	// (GET /v1/orgs/{org_id}/flow-versions/{id})
+	GetFlowVersion(ctx context.Context, request GetFlowVersionRequestObject) (GetFlowVersionResponseObject, error)
+	// List flow drafts
+	// (GET /v1/orgs/{org_id}/flows)
+	ListFlows(ctx context.Context, request ListFlowsRequestObject) (ListFlowsResponseObject, error)
+	// Create a flow draft
+	// (POST /v1/orgs/{org_id}/flows)
+	CreateFlow(ctx context.Context, request CreateFlowRequestObject) (CreateFlowResponseObject, error)
+	// Soft-delete a flow draft
+	// (DELETE /v1/orgs/{org_id}/flows/{id})
+	DeleteFlow(ctx context.Context, request DeleteFlowRequestObject) (DeleteFlowResponseObject, error)
+	// Get a flow draft by ID
+	// (GET /v1/orgs/{org_id}/flows/{id})
+	GetFlow(ctx context.Context, request GetFlowRequestObject) (GetFlowResponseObject, error)
+	// Update a flow draft
+	// (PATCH /v1/orgs/{org_id}/flows/{id})
+	UpdateFlow(ctx context.Context, request UpdateFlowRequestObject) (UpdateFlowResponseObject, error)
+	// Publish a flow draft as an immutable version and activate its binding
+	// (POST /v1/orgs/{org_id}/flows/{id}/publish)
+	PublishFlow(ctx context.Context, request PublishFlowRequestObject) (PublishFlowResponseObject, error)
+	// Re-activate a prior published version for a route entry point
+	// (POST /v1/orgs/{org_id}/flows/{id}/rollback)
+	RollbackFlow(ctx context.Context, request RollbackFlowRequestObject) (RollbackFlowResponseObject, error)
+	// Deterministically simulate a flow draft
+	// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
+	SimulateFlow(ctx context.Context, request SimulateFlowRequestObject) (SimulateFlowResponseObject, error)
+	// Validate a flow draft graph
+	// (POST /v1/orgs/{org_id}/flows/{id}/validate)
+	ValidateFlow(ctx context.Context, request ValidateFlowRequestObject) (ValidateFlowResponseObject, error)
+	// List published versions of a flow
+	// (GET /v1/orgs/{org_id}/flows/{id}/versions)
+	ListFlowVersions(ctx context.Context, request ListFlowVersionsRequestObject) (ListFlowVersionsResponseObject, error)
 	// Get import job result
 	// (GET /v1/orgs/{org_id}/imports/{import_id})
 	GetImportJob(ctx context.Context, request GetImportJobRequestObject) (GetImportJobResponseObject, error)
@@ -5004,6 +7646,33 @@ type StrictServerInterface interface {
 	// Update a queue
 	// (PATCH /v1/orgs/{org_id}/queues/{id})
 	UpdateQueue(ctx context.Context, request UpdateQueueRequestObject) (UpdateQueueResponseObject, error)
+	// Get a reservation by ID
+	// (GET /v1/orgs/{org_id}/reservations/{id})
+	GetReservation(ctx context.Context, request GetReservationRequestObject) (GetReservationResponseObject, error)
+	// Accept an offered reservation (test-double / simulator signal)
+	// (POST /v1/orgs/{org_id}/reservations/{id}/accept)
+	AcceptReservation(ctx context.Context, request AcceptReservationRequestObject) (AcceptReservationResponseObject, error)
+	// Complete an accepted reservation (test-double / simulator signal)
+	// (POST /v1/orgs/{org_id}/reservations/{id}/complete)
+	CompleteReservation(ctx context.Context, request CompleteReservationRequestObject) (CompleteReservationResponseObject, error)
+	// Reject an offered reservation (test-double / simulator signal)
+	// (POST /v1/orgs/{org_id}/reservations/{id}/reject)
+	RejectReservation(ctx context.Context, request RejectReservationRequestObject) (RejectReservationResponseObject, error)
+	// List route requests (the interaction spine), newest first
+	// (GET /v1/orgs/{org_id}/route-requests)
+	ListRouteRequests(ctx context.Context, request ListRouteRequestsRequestObject) (ListRouteRequestsResponseObject, error)
+	// Drive a route request through the published flow (admin/test entry point)
+	// (POST /v1/orgs/{org_id}/route-requests)
+	CreateRouteRequest(ctx context.Context, request CreateRouteRequestRequestObject) (CreateRouteRequestResponseObject, error)
+	// Get a route request by ID
+	// (GET /v1/orgs/{org_id}/route-requests/{id})
+	GetRouteRequest(ctx context.Context, request GetRouteRequestRequestObject) (GetRouteRequestResponseObject, error)
+	// List the reservations a route request generated (sequential offers)
+	// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
+	ListRouteRequestReservations(ctx context.Context, request ListRouteRequestReservationsRequestObject) (ListRouteRequestReservationsResponseObject, error)
+	// Get the runtime trace for a route request
+	// (GET /v1/orgs/{org_id}/route-requests/{id}/trace)
+	GetRouteRequestTrace(ctx context.Context, request GetRouteRequestTraceRequestObject) (GetRouteRequestTraceResponseObject, error)
 	// List skills
 	// (GET /v1/orgs/{org_id}/skills)
 	ListSkills(ctx context.Context, request ListSkillsRequestObject) (ListSkillsResponseObject, error)
@@ -5019,6 +7688,9 @@ type StrictServerInterface interface {
 	// Update a skill
 	// (PATCH /v1/orgs/{org_id}/skills/{id})
 	UpdateSkill(ctx context.Context, request UpdateSkillRequestObject) (UpdateSkillResponseObject, error)
+	// Get a trace by ID
+	// (GET /v1/orgs/{org_id}/traces/{id})
+	GetTrace(ctx context.Context, request GetTraceRequestObject) (GetTraceResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -5503,6 +8175,32 @@ func (sh *strictHandler) PatchAgentStatus(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// ListFlowEntryBindings operation middleware
+func (sh *strictHandler) ListFlowEntryBindings(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	var request ListFlowEntryBindingsRequestObject
+
+	request.OrgId = orgId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlowEntryBindings(ctx, request.(ListFlowEntryBindingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlowEntryBindings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowEntryBindingsResponseObject); ok {
+		if err := validResponse.VisitListFlowEntryBindingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListBreakReasons operation middleware
 func (sh *strictHandler) ListBreakReasons(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListBreakReasonsParams) {
 	var request ListBreakReasonsRequestObject
@@ -5839,6 +8537,337 @@ func (sh *strictHandler) UpdateChannel(w http.ResponseWriter, r *http.Request, o
 	}
 }
 
+// GetFlowVersion operation middleware
+func (sh *strictHandler) GetFlowVersion(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request GetFlowVersionRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetFlowVersion(ctx, request.(GetFlowVersionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetFlowVersion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetFlowVersionResponseObject); ok {
+		if err := validResponse.VisitGetFlowVersionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFlows operation middleware
+func (sh *strictHandler) ListFlows(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListFlowsParams) {
+	var request ListFlowsRequestObject
+
+	request.OrgId = orgId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlows(ctx, request.(ListFlowsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlows")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowsResponseObject); ok {
+		if err := validResponse.VisitListFlowsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateFlow operation middleware
+func (sh *strictHandler) CreateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	var request CreateFlowRequestObject
+
+	request.OrgId = orgId
+
+	var body CreateFlowJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateFlow(ctx, request.(CreateFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateFlowResponseObject); ok {
+		if err := validResponse.VisitCreateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteFlow operation middleware
+func (sh *strictHandler) DeleteFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request DeleteFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteFlow(ctx, request.(DeleteFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteFlowResponseObject); ok {
+		if err := validResponse.VisitDeleteFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetFlow operation middleware
+func (sh *strictHandler) GetFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request GetFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetFlow(ctx, request.(GetFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetFlowResponseObject); ok {
+		if err := validResponse.VisitGetFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateFlow operation middleware
+func (sh *strictHandler) UpdateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request UpdateFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	var body UpdateFlowJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateFlow(ctx, request.(UpdateFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateFlowResponseObject); ok {
+		if err := validResponse.VisitUpdateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublishFlow operation middleware
+func (sh *strictHandler) PublishFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request PublishFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	var body PublishFlowJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PublishFlow(ctx, request.(PublishFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublishFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PublishFlowResponseObject); ok {
+		if err := validResponse.VisitPublishFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RollbackFlow operation middleware
+func (sh *strictHandler) RollbackFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request RollbackFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	var body RollbackFlowJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RollbackFlow(ctx, request.(RollbackFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RollbackFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RollbackFlowResponseObject); ok {
+		if err := validResponse.VisitRollbackFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SimulateFlow operation middleware
+func (sh *strictHandler) SimulateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request SimulateFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	var body SimulateFlowJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SimulateFlow(ctx, request.(SimulateFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SimulateFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SimulateFlowResponseObject); ok {
+		if err := validResponse.VisitSimulateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ValidateFlow operation middleware
+func (sh *strictHandler) ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request ValidateFlowRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ValidateFlow(ctx, request.(ValidateFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ValidateFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ValidateFlowResponseObject); ok {
+		if err := validResponse.VisitValidateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFlowVersions operation middleware
+func (sh *strictHandler) ListFlowVersions(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request ListFlowVersionsRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlowVersions(ctx, request.(ListFlowVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlowVersions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowVersionsResponseObject); ok {
+		if err := validResponse.VisitListFlowVersionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetImportJob operation middleware
 func (sh *strictHandler) GetImportJob(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, importId ImportJobIdPath) {
 	var request GetImportJobRequestObject
@@ -6014,6 +9043,255 @@ func (sh *strictHandler) UpdateQueue(w http.ResponseWriter, r *http.Request, org
 	}
 }
 
+// GetReservation operation middleware
+func (sh *strictHandler) GetReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request GetReservationRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetReservation(ctx, request.(GetReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetReservationResponseObject); ok {
+		if err := validResponse.VisitGetReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcceptReservation operation middleware
+func (sh *strictHandler) AcceptReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request AcceptReservationRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcceptReservation(ctx, request.(AcceptReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcceptReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcceptReservationResponseObject); ok {
+		if err := validResponse.VisitAcceptReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteReservation operation middleware
+func (sh *strictHandler) CompleteReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request CompleteReservationRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteReservation(ctx, request.(CompleteReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteReservationResponseObject); ok {
+		if err := validResponse.VisitCompleteReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RejectReservation operation middleware
+func (sh *strictHandler) RejectReservation(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request RejectReservationRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RejectReservation(ctx, request.(RejectReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RejectReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RejectReservationResponseObject); ok {
+		if err := validResponse.VisitRejectReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRouteRequests operation middleware
+func (sh *strictHandler) ListRouteRequests(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListRouteRequestsParams) {
+	var request ListRouteRequestsRequestObject
+
+	request.OrgId = orgId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRouteRequests(ctx, request.(ListRouteRequestsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRouteRequests")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRouteRequestsResponseObject); ok {
+		if err := validResponse.VisitListRouteRequestsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateRouteRequest operation middleware
+func (sh *strictHandler) CreateRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	var request CreateRouteRequestRequestObject
+
+	request.OrgId = orgId
+
+	var body CreateRouteRequestJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateRouteRequest(ctx, request.(CreateRouteRequestRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateRouteRequest")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateRouteRequestResponseObject); ok {
+		if err := validResponse.VisitCreateRouteRequestResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetRouteRequest operation middleware
+func (sh *strictHandler) GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request GetRouteRequestRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRouteRequest(ctx, request.(GetRouteRequestRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRouteRequest")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetRouteRequestResponseObject); ok {
+		if err := validResponse.VisitGetRouteRequestResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRouteRequestReservations operation middleware
+func (sh *strictHandler) ListRouteRequestReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request ListRouteRequestReservationsRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRouteRequestReservations(ctx, request.(ListRouteRequestReservationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRouteRequestReservations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRouteRequestReservationsResponseObject); ok {
+		if err := validResponse.VisitListRouteRequestReservationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetRouteRequestTrace operation middleware
+func (sh *strictHandler) GetRouteRequestTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request GetRouteRequestTraceRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRouteRequestTrace(ctx, request.(GetRouteRequestTraceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRouteRequestTrace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetRouteRequestTraceResponseObject); ok {
+		if err := validResponse.VisitGetRouteRequestTraceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListSkills operation middleware
 func (sh *strictHandler) ListSkills(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListSkillsParams) {
 	var request ListSkillsRequestObject
@@ -6155,6 +9433,33 @@ func (sh *strictHandler) UpdateSkill(w http.ResponseWriter, r *http.Request, org
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateSkillResponseObject); ok {
 		if err := validResponse.VisitUpdateSkillResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTrace operation middleware
+func (sh *strictHandler) GetTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request GetTraceRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTrace(ctx, request.(GetTraceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTrace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTraceResponseObject); ok {
+		if err := validResponse.VisitGetTraceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

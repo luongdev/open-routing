@@ -1,10 +1,16 @@
-// vNext preview — Trace viewer. Deterministic replay of a recorded trace.
-// Reads MOCK_FLOW_GRAPH + MOCK_TRACE_STEPS. Read-only; no scenario edit.
-// 3-pane: step list (left) + mini flow-graph (center) + step I/O (right).
+// v0.2 Layer 2 — API-backed trace viewer (read-only). Binds to
+// GET /v1/orgs/{org_id}/traces/{id}, which is a not-implemented stub until
+// Layer 3 (the runtime that records traces). So in Layer 2 it attempts the real
+// fetch, reports the stub honestly via a banner, and keeps the rich sample
+// trace (MOCK_*) visible as a PREVIEW — deterministic replay over a mini
+// flow-graph (step list · graph · step I/O). The Trace->viewer mapping for live
+// data lands with the runtime in Layer 3.
 
 import { LitElement, html, css, svg, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { Task } from '@lit/task';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
+import type { ApiClient } from '../../api/client.js';
 import {
   MOCK_FLOWS,
   MOCK_FLOW_GRAPH,
@@ -83,6 +89,18 @@ export class OrTraceViewer extends LitElement {
       background: var(--background);
     }
 
+    .trace-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 20px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--warning);
+      background: color-mix(in oklch, var(--warning) 12%, transparent);
+      border-bottom: 1px solid color-mix(in oklch, var(--warning) 30%, transparent);
+    }
+
     .trace-header {
       display: flex; align-items: center; gap: 12px;
       padding: 14px 20px;
@@ -103,15 +121,6 @@ export class OrTraceViewer extends LitElement {
     }
     .trace-header-title .meta {
       font-size: 12px; color: var(--muted-foreground);
-    }
-    .vnext-tag {
-      display: inline-flex; align-items: center;
-      padding: 2px 8px; border-radius: 9999px;
-      background: color-mix(in oklch, var(--primary) 12%, transparent);
-      color: var(--primary);
-      font-size: 10px; font-weight: 700;
-      letter-spacing: 0.06em; text-transform: uppercase;
-      margin-left: 6px;
     }
     .header-spacer { flex: 1; }
 
@@ -319,10 +328,29 @@ export class OrTraceViewer extends LitElement {
     .json-null     { color: var(--muted-foreground); font-style: italic; }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'trace-id' }) traceId = MOCK_SIM_OUTCOME.trace_id;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'trace-id' }) accessor traceId = MOCK_SIM_OUTCOME.trace_id;
+  @property({ type: Object }) accessor client!: ApiClient;
 
-  @state() private _selectedStepIndex = 4;
+  @state() private accessor _selectedStepIndex = 4;
+
+  // Probe the real endpoint so the contract wiring is exercised, returning the
+  // live Trace or null. The Layer-1 stub answers 500 { reason: 'not_implemented' }
+  // (or a future 501), so the task value is null and the render falls back to the
+  // sample preview + banner. `client` is in the deps so a late-arriving client
+  // (set in a separate update than orgId) reruns the probe. Live Trace->viewer
+  // mapping lands in Layer 3.
+  private _loadTask = new Task(this, {
+    task: async ([client, orgId, traceId], { signal }) => {
+      if (!client || !traceId) return null;
+      const res = (await (client as ApiClient).GET('/v1/orgs/{org_id}/traces/{id}' as never, {
+        params: { path: { org_id: orgId as string, id: traceId as string } },
+        signal,
+      } as never)) as { data?: unknown };
+      return res.data ?? null;
+    },
+    args: () => [this.client, this.orgId, this.traceId] as const,
+  });
 
   override createRenderRoot() {
     const root = super.createRenderRoot() as ShadowRoot;
@@ -431,12 +459,21 @@ export class OrTraceViewer extends LitElement {
     const steps = MOCK_TRACE_STEPS;
     const selectedStep = steps[this._selectedStepIndex] ?? steps[0]!;
     const hitNodeIds = new Set(steps.slice(0, this._selectedStepIndex + 1).map(s => s.node_id));
+    // Until the runtime records traces (Layer 3) the probe yields no live trace,
+    // so we render the sample preview and say so. A real Trace hides the banner.
+    const live = this._loadTask.value;
 
     return html`
+      ${live ? nothing : html`
+        <div class="trace-banner" role="status">
+          <uk-icon icon="info" height="13" width="13"></uk-icon>
+          Sample trace — live trace data (GET /traces/{id}) lands in Layer 3.
+        </div>
+      `}
       <div class="trace-header">
         <uk-icon icon="git-branch" height="22" width="22" style="color:var(--primary)"></uk-icon>
         <div class="trace-header-title">
-          <strong>Trace viewer<span class="vnext-tag">vNext</span></strong>
+          <strong>Trace viewer</strong>
           <span class="meta">${flow.name} · v${flow.version}</span>
         </div>
 

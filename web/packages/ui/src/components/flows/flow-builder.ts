@@ -1,22 +1,21 @@
-// vNext preview — Flow builder + live simulator. One workspace where the
-// user authors AND runs flows against synthetic inputs. Why merged: the
-// authoring loop is "edit a node → re-run → see vars at each step → fix
-// the failing node in place." Splitting that into separate screens
-// breaks the loop.
+// v0.2 Layer 2 — API-backed flow builder (FLOW authoring). Graduated from the
+// vNext mock onto GET/PATCH/POST /v1/orgs/{org_id}/flows{,/{id},/validate,
+// /publish}. The graph (nodes + edges) loads from and saves to the flow's
+// opaque `graph` JSONB; Save draft is a real optimistic-version PATCH (POST on
+// create).
 //
-// Layout: toolbar (top) + 3-pane (palette · SVG canvas · inspector) + an
-// optional run panel docked at the bottom (init vars · playback ·
-// variable bag). Run panel only renders in sim mode.
-//
-// Pure Lit + Ember tokens. No drag-drop / no real execution — visual
-// demo only; "playback" is just incrementing _simStep across MOCK_TRACE_STEPS.
+// Validate / Publish / Rollback and live Simulate are 501 stubs until Layer 3,
+// so those actions surface "lands in Layer 3" instead of faking success. The
+// rich sim panel stays a sample-trace PREVIEW (mock playback) — kept visible on
+// purpose to surface layout/wiring bugs early (review choice "b").
 
 import { LitElement, html, css, svg, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { Task } from '@lit/task';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
+import type { ApiClient } from '../../api/client.js';
+import type { components } from '../../api/generated.js';
 import {
-  MOCK_FLOW_GRAPH,
-  MOCK_FLOWS,
   MOCK_TRACE_STEPS,
   MOCK_TRACE_STEPS_FAIL,
   MOCK_INIT_VARS,
@@ -31,6 +30,8 @@ import {
   type InitVar,
   type TestCase,
 } from '../shell/playground-mock-data.js';
+
+type Flow = components['schemas']['Flow'];
 
 interface PaletteEntry {
   kind: FlowNodeKind;
@@ -186,6 +187,7 @@ export class OrFlowBuilder extends LitElement {
       min-height: 680px;
       height: calc(100vh - 160px);
       background: var(--background);
+      position: relative;
     }
 
     /* ============ Toolbar ============ */
@@ -272,6 +274,46 @@ export class OrFlowBuilder extends LitElement {
       color: var(--primary-foreground);
       transform: translateY(-1px);
     }
+
+    .toolbar-btn[disabled] { opacity: .55; cursor: default; transform: none; }
+
+    .toolbar-title--create {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .toolbar-title--create input { width: 150px; }
+
+    .builder-status {
+      padding: 48px 24px;
+      text-align: center;
+      color: var(--muted-foreground);
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+    .builder-status--error strong { color: var(--destructive); }
+
+    .action-toast {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,.15));
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--foreground);
+    }
+    .action-toast--ok { border-color: var(--success); color: var(--success); }
+    .action-toast--warn { border-color: var(--warning); color: var(--warning); }
+    .action-toast--error { border-color: var(--destructive); color: var(--destructive); }
 
     /* ============ 3-pane body ============ */
     .body {
@@ -1461,51 +1503,213 @@ export class OrFlowBuilder extends LitElement {
     .step-tag--skipped { background: var(--muted); color: var(--muted-foreground); }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'flow-id' }) flowId = MOCK_FLOWS[0]!.id;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'flow-id' }) accessor flowId = '';
+  @property({ type: Object }) accessor client!: ApiClient;
 
-  @state() private _selectedNodeId: string | null = 'n3';
+  @state() private accessor _selectedNodeId: string | null = null;
 
-  // --- Live graph state (initialised from MOCK_FLOW_GRAPH, mutated by
-  //     drag-drop so node positions persist within the session).
-  //     structuredClone gives a true deep copy — params arrays like
-  //     `required_skills` / `catch_kinds` / `cases` would otherwise share
-  //     references with the module-level mock and could leak via future
-  //     inspector-edit paths. ---
-  @state() private _nodes: FlowNode[] = structuredClone(MOCK_FLOW_GRAPH.nodes) as FlowNode[];
-  @state() private _draggedId: string | null = null;
+  // Live graph state. Loaded from the flow's opaque `graph` JSONB (GET),
+  // mutated by drag, persisted by Save (PATCH). Deep-copied on load so
+  // inspector edits never alias the loaded response.
+  @state() private accessor _nodes: FlowNode[] = [];
+  @state() private accessor _edges: FlowEdge[] = [];
+  @state() private accessor _draggedId: string | null = null;
   private _drag: { id: string; startX: number; startY: number; ox: number; oy: number } | null = null;
   private _svgRef: SVGSVGElement | null = null;
   private _pendingClick: { id: string } | null = null;
 
   // --- Simulator state ---
-  @state() private _simMode: 'edit' | 'sim' = 'edit';
+  @state() private accessor _simMode: 'edit' | 'sim' = 'edit';
   // Index into the active trace. -1 = "ready to run, no step executed yet".
-  @state() private _simStep: number = -1;
-  @state() private _simScenario: 'success' | 'fail' = 'success';
-  @state() private _initVars: InitVar[] = MOCK_INIT_VARS.map(v => ({ ...v }));
+  @state() private accessor _simStep: number = -1;
+  @state() private accessor _simScenario: 'success' | 'fail' = 'success';
+  @state() private accessor _initVars: InitVar[] = MOCK_INIT_VARS.map(v => ({ ...v }));
   // Input draft for the wait_input form. Resets each time the sim lands on a
   // wait_input step. Pre-filled with the "expected" value from the trace so
   // the demo can be stepped through without typing each time.
-  @state() private _inputDraft: string = '';
+  @state() private accessor _inputDraft: string = '';
   // Captured wait_input choices keyed by step id. Populated by _submitInput
   // (or by replaying a TestCase). On Save, these go into the new TestCase.
-  @state() private _capturedInputs: Record<string, string> = {};
+  @state() private accessor _capturedInputs: Record<string, string> = {};
   // Right column toggle — show running variable bag OR list of saved tests.
-  @state() private _rightTab: 'varbag' | 'tests' = 'varbag';
+  @state() private accessor _rightTab: 'varbag' | 'tests' = 'varbag';
   // Saved test cases. Seeded from MOCK so the demo has 3 entries to show.
-  @state() private _testCases: TestCase[] = MOCK_TEST_CASES.map(t => ({
+  @state() private accessor _testCases: TestCase[] = MOCK_TEST_CASES.map(t => ({
     ...t,
     init_var_overrides: { ...t.init_var_overrides },
     captured_inputs: { ...t.captured_inputs },
   }));
   // Banner shown briefly after saving a test case (demo only).
-  @state() private _saveToast: string | null = null;
+  @state() private accessor _saveToast: string | null = null;
+
+  // Loaded draft (null while pending, errored, or in create mode). `_flow`
+  // derives the header (name/code/version/enabled) from it.
+  @state() private accessor _loaded: Flow | null = null;
+  @state() private accessor _saving = false;
+  // Transient action feedback: Save result, the 501 "lands in Layer 3" notice,
+  // and PATCH conflict/error surfacing.
+  @state() private accessor _actionToast: string | null = null;
+  @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
+  // Create-mode draft fields — used only when flowId is empty (first Save POSTs).
+  @state() private accessor _codeDraft = '';
+  @state() private accessor _nameDraft = '';
+
+  private get _isCreate(): boolean {
+    return !this.flowId;
+  }
+
+  // Loads the draft graph. Skips the fetch in create mode (no id yet). On
+  // success it hydrates `_nodes`/`_edges`/`_loaded` and returns the flow so the
+  // render branch can distinguish pending/error/ready.
+  private _loadTask = new Task(this, {
+    task: async ([client, orgId, flowId], { signal }) => {
+      if (!flowId || !client) {
+        this._nodes = [];
+        this._edges = [];
+        this._loaded = null;
+        return null;
+      }
+      const { data, error } = await (client as ApiClient).GET('/v1/orgs/{org_id}/flows/{id}' as never, {
+        params: { path: { org_id: orgId as string, id: flowId as string } },
+        signal,
+      } as never);
+      if (error) throw error;
+      if (signal.aborted) return null;
+      const flow = data as Flow;
+      // graph is opaque JSONB — guard against drift (missing or non-array
+      // nodes/edges) so the canvas .map()/.find() can't crash on render.
+      const graph = (flow.graph ?? {}) as { nodes?: unknown; edges?: unknown };
+      this._nodes = (Array.isArray(graph.nodes) ? structuredClone(graph.nodes) : []) as FlowNode[];
+      this._edges = (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[];
+      this._loaded = flow;
+      this._selectedNodeId = this._nodes[0]?.id ?? null;
+      return flow;
+    },
+    args: () => [this.client, this.orgId, this.flowId] as const,
+  });
 
   override createRenderRoot() {
     const root = super.createRenderRoot() as ShadowRoot;
     adoptShadowSheets(root);
     return root;
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    clearTimeout(this._actionToastTimer);
+    clearTimeout(this._saveToastTimer);
+  }
+
+  private _actionToastTimer?: ReturnType<typeof setTimeout>;
+  private _flashAction(message: string, tone: 'ok' | 'warn' | 'error' = 'ok'): void {
+    this._actionToast = message;
+    this._actionTone = tone;
+    clearTimeout(this._actionToastTimer);
+    this._actionToastTimer = setTimeout(() => { this._actionToast = null; }, 3200);
+  }
+
+  private _saveToastTimer?: ReturnType<typeof setTimeout>;
+  private _flashSaveToast(message: string): void {
+    this._saveToast = message;
+    clearTimeout(this._saveToastTimer);
+    this._saveToastTimer = setTimeout(() => { this._saveToast = null; }, 2400);
+  }
+
+  // PATCH the graph (or POST a new draft in create mode). The only write that
+  // is real in Layer 2 — version is sent for optimistic concurrency; 409 is
+  // surfaced as a conflict rather than silently refreshed.
+  private async _saveDraft(): Promise<void> {
+    if (this._saving) return;
+    this._saving = true;
+    try {
+      const graph = { nodes: this._nodes, edges: this._edges };
+      if (this._isCreate) {
+        const code = this._codeDraft.trim();
+        const name = this._nameDraft.trim();
+        if (!code || !name) {
+          this._flashAction('Code and name are required to create a flow.', 'error');
+          return;
+        }
+        const { data, error } = await this.client.POST('/v1/orgs/{org_id}/flows' as never, {
+          params: { path: { org_id: this.orgId } },
+          body: { code, name, graph, enabled: true },
+        } as never);
+        if (error) {
+          this._flashAction(this._errText(error, 'Could not create flow.'), 'error');
+          return;
+        }
+        const created = data as Flow;
+        this._flashAction(`Created "${created.name}".`, 'ok');
+        this._navigate(`/orgs/${this.orgId}/flows/${created.id}`);
+        return;
+      }
+      const current = this._loaded;
+      if (!current) return;
+      const res = (await this.client.PATCH('/v1/orgs/{org_id}/flows/{id}' as never, {
+        params: { path: { org_id: this.orgId, id: current.id } },
+        body: { graph, version: current.version },
+      } as never)) as { data?: unknown; error?: unknown; response?: { status?: number } };
+      if (res.error) {
+        // openapi-fetch puts the HTTP status on `response`, not on the parsed
+        // error body — check response.status for the 409 optimistic-lock case.
+        this._flashAction(
+          res.response?.status === 409
+            ? 'Version conflict — this draft changed elsewhere. Reload before saving.'
+            : this._errText(res.error, 'Save failed.'),
+          'error',
+        );
+        return;
+      }
+      this._loaded = res.data as Flow;
+      this._flashAction(`Saved draft · v${(res.data as Flow).version}.`, 'ok');
+    } finally {
+      this._saving = false;
+    }
+  }
+
+  private _errText(error: unknown, fallback: string): string {
+    const r = (error as { reason?: string; message?: string }) ?? {};
+    return r.reason ?? r.message ?? fallback;
+  }
+
+  // Validate / Publish call the real endpoints so the contract wiring is
+  // exercised, but Layer 1 leaves them as not-implemented stubs. The stub
+  // currently answers HTTP 500 with reason "not_implemented" (a later flip to a
+  // semantic 501 also counts) — report that honestly instead of faking success.
+  // Rollback is a published-version action; it lands with the version-history
+  // UI in Layer 3, so there is no draft-canvas button for it yet.
+  private async _runStubAction(op: 'validate' | 'publish', label: string): Promise<void> {
+    if (this._isCreate || !this._loaded) {
+      this._flashAction('Save the draft first.', 'warn');
+      return;
+    }
+    const id = this._loaded.id;
+    const path =
+      op === 'validate'
+        ? '/v1/orgs/{org_id}/flows/{id}/validate'
+        : '/v1/orgs/{org_id}/flows/{id}/publish';
+    const body =
+      op === 'publish'
+        ? { channel: 'voice', entry_code: 'main', version: this._loaded.version }
+        : undefined;
+    const res = (await this.client.POST(path as never, {
+      params: { path: { org_id: this.orgId, id } },
+      ...(body ? { body } : {}),
+    } as never)) as { error?: unknown; response?: { status?: number } };
+    if (this._isNotImplemented(res.error, res.response)) {
+      this._flashAction(`${label} lands in Layer 3 (runtime not wired yet).`, 'warn');
+      return;
+    }
+    if (res.error) {
+      this._flashAction(this._errText(res.error, `${label} failed.`), 'error');
+      return;
+    }
+    this._flashAction(`${label} OK.`, 'ok');
+  }
+
+  private _isNotImplemented(error: unknown, response?: { status?: number }): boolean {
+    return response?.status === 501 || (error as { reason?: string })?.reason === 'not_implemented';
   }
 
   private get _activeTrace(): TraceStep[] {
@@ -1595,8 +1799,7 @@ export class OrFlowBuilder extends LitElement {
     };
     this._testCases = [tc, ...this._testCases];
     this._rightTab = 'tests';
-    this._saveToast = `Saved "${name}"`;
-    setTimeout(() => { if (this._saveToast === `Saved "${name}"`) this._saveToast = null; }, 2400);
+    this._flashSaveToast(`Saved "${name}"`);
   }
 
   private _runTestCase(tc: TestCase): void {
@@ -1624,8 +1827,7 @@ export class OrFlowBuilder extends LitElement {
     this._testCases = this._testCases.map(c =>
       c.id === tc.id ? { ...c, last_outcome: tc.scenario === 'success' ? 'pass' : 'fail' } : c
     );
-    this._saveToast = `Replayed "${tc.name}"`;
-    setTimeout(() => { if (this._saveToast === `Replayed "${tc.name}"`) this._saveToast = null; }, 2400);
+    this._flashSaveToast(`Replayed "${tc.name}"`);
   }
 
   private _deleteTestCase(id: string): void {
@@ -1653,6 +1855,7 @@ export class OrFlowBuilder extends LitElement {
       this._restartSim();
     } else {
       this._simMode = 'sim';
+      this._flashAction('Sample trace preview — live simulation (POST /simulate) lands in Layer 3.', 'warn');
     }
   }
 
@@ -1746,8 +1949,23 @@ export class OrFlowBuilder extends LitElement {
     }
   }
 
-  private get _flow() {
-    return MOCK_FLOWS.find(f => f.id === this.flowId) ?? MOCK_FLOWS[0]!;
+  private get _flow(): { name: string; code: string; version: number; status: string } {
+    const f = this._loaded;
+    if (!f) {
+      return {
+        name: this._nameDraft || 'New flow',
+        code: this._codeDraft || 'unsaved',
+        version: 0,
+        status: 'draft',
+      };
+    }
+    return { name: f.name, code: f.code, version: f.version, status: f.enabled ? 'draft' : 'archived' };
+  }
+
+  private _navigate(path: string): void {
+    this.dispatchEvent(
+      new CustomEvent('open-routing:navigate', { detail: { path }, bubbles: true, composed: true }),
+    );
   }
 
   private _toneFor(kind: FlowNodeKind): PaletteEntry['tone'] {
@@ -2097,21 +2315,49 @@ export class OrFlowBuilder extends LitElement {
   }
 
   override render() {
+    return this._loadTask.render({
+      pending: () => html`<div class="builder-status">Loading flow…</div>`,
+      error: (err) => html`
+        <div class="builder-status builder-status--error">
+          <strong>Failed to load flow.</strong>
+          <span>${this._errText(err, String(err))}</span>
+          <button class="toolbar-btn" @click=${() => this._loadTask.run()}>Retry</button>
+        </div>
+      `,
+      complete: () => this._renderBuilder(),
+    });
+  }
+
+  private _renderBuilder() {
     const flow = this._flow;
     const nodes = this._nodes;
-    const edges = MOCK_FLOW_GRAPH.edges;
+    const edges = this._edges;
     const isSim = this._simMode === 'sim';
     const selected = nodes.find(n => n.id === this._selectedNodeId) ?? null;
 
     return html`
+      ${this._actionToast
+        ? html`<div class="action-toast action-toast--${this._actionTone}" role="status">${this._actionToast}</div>`
+        : nothing}
       <div class=${isSim ? 'toolbar toolbar--sim' : 'toolbar'}>
-        <button class="toolbar-back" title="Back to flows">
+        <button class="toolbar-back" title="Back to flows" @click=${() => this._navigate(`/orgs/${this.orgId}/flows`)}>
           <uk-icon icon="arrow-left" height="16" width="16"></uk-icon>
         </button>
-        <div class="toolbar-title">
-          <strong>${flow.name}</strong>
-          <span class="meta">${flow.code}  ·  v${flow.version}</span>
-        </div>
+        ${this._isCreate
+          ? html`
+              <div class="toolbar-title toolbar-title--create">
+                <input class="uk-input uk-form-small" placeholder="flow_code" .value=${this._codeDraft}
+                  @input=${(e: Event) => { this._codeDraft = (e.target as HTMLInputElement).value; }} aria-label="Flow code" />
+                <input class="uk-input uk-form-small" placeholder="Flow name" .value=${this._nameDraft}
+                  @input=${(e: Event) => { this._nameDraft = (e.target as HTMLInputElement).value; }} aria-label="Flow name" />
+              </div>
+            `
+          : html`
+              <div class="toolbar-title">
+                <strong>${flow.name}</strong>
+                <span class="meta">${flow.code}  ·  v${flow.version}</span>
+              </div>
+            `}
         <span class="status-pill">${flow.status}</span>
         ${isSim ? html`<span class="sim-badge"><uk-icon icon="play-circle" height="11" width="11"></uk-icon> SIM</span>` : nothing}
 
@@ -2120,13 +2366,18 @@ export class OrFlowBuilder extends LitElement {
         ${isSim
           ? this._renderSimControls()
           : html`
-              <button class="toolbar-btn">
+              <button class="toolbar-btn" @click=${() => this._runStubAction('validate', 'Validate')}>
+                <uk-icon icon="check-circle" height="14" width="14"></uk-icon>
+                Validate
+              </button>
+              <button class="toolbar-btn" title="Compare draft against the published version (Layer 3)"
+                @click=${() => this._flashAction('Diff vs published lands in Layer 3.', 'warn')}>
                 <uk-icon icon="history" height="14" width="14"></uk-icon>
                 Diff vs published
               </button>
-              <button class="toolbar-btn">
+              <button class="toolbar-btn" ?disabled=${this._saving} @click=${this._saveDraft}>
                 <uk-icon icon="save" height="14" width="14"></uk-icon>
-                Save draft
+                ${this._saving ? 'Saving…' : this._isCreate ? 'Create flow' : 'Save draft'}
               </button>
             `}
 
@@ -2139,7 +2390,7 @@ export class OrFlowBuilder extends LitElement {
           ${isSim ? 'Exit sim' : 'Simulate'}
         </button>
         ${isSim ? nothing : html`
-          <button class="toolbar-btn toolbar-btn--primary">
+          <button class="toolbar-btn toolbar-btn--primary" @click=${() => this._runStubAction('publish', 'Publish')}>
             <uk-icon icon="rocket" height="14" width="14"></uk-icon>
             Publish
           </button>
@@ -2153,7 +2404,8 @@ export class OrFlowBuilder extends LitElement {
             ${PALETTE.map(group => html`
               <div class="palette-group-label">${group.label}</div>
               ${group.items.map(p => html`
-                <button class="palette-item" title=${p.desc} ?disabled=${isSim}>
+                <button class="palette-item" title=${p.desc} ?disabled=${isSim}
+                  @click=${() => this._flashAction(`Adding "${p.label}" nodes lands in Layer 3.`, 'warn')}>
                   <span class="icon-tile icon-tile--${p.tone}">
                     <uk-icon icon=${p.icon} height="14" width="14"></uk-icon>
                   </span>

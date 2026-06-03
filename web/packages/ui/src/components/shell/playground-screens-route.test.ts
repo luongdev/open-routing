@@ -20,12 +20,12 @@ describe('OrPlaygroundScreensRoute', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders side-nav with all 24 screens listed', async () => {
+  it('renders side-nav with all 25 screens listed', async () => {
     await (el as any).updateComplete;
     const sr = el.shadowRoot!;
     const items = sr.querySelectorAll('.screen-item');
     expect(items.length).toBe(SCREENS.length);
-    expect(SCREENS.length).toBe(24);
+    expect(SCREENS.length).toBe(25);
   });
 
   it('groups screens into 8 labeled groups', async () => {

@@ -2,7 +2,7 @@ openapi: 3.0.0
 
 info:
   title: Open Routing API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     REST management API for Open Routing — an embeddable, multi-channel routing
     platform. All catalog CRUD, agent state transitions, bulk import, and
@@ -677,6 +677,506 @@ components:
           example: 1
 
     # Queue (CAT-04)
+    Flow:
+      type: object
+      description: >
+        A routing flow draft. The graph is the canonical authoring artifact
+        (UI graph is the source of truth). `version` is the optimistic-lock
+        revision of the draft, distinct from the immutable published versions.
+      required:
+        - id
+        - org_id
+        - code
+        - name
+        - graph
+        - enabled
+        - version
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        org_id:
+          $ref: "#/components/schemas/UUIDv7"
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+          description: User-facing canonical identifier. Required, immutable after create. Composite UNIQUE (org_id, code).
+          example: flow_inbound_voice
+        name:
+          type: string
+          example: "Inbound Voice"
+        graph:
+          type: object
+          additionalProperties: true
+          description: >
+            Canonical flow graph (nodes + edges). Opaque pass-through in
+            Stage 1; structurally validated before simulation and publish.
+        enabled:
+          type: boolean
+          example: true
+        version:
+          type: integer
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-06-02T00:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-06-02T00:00:00Z"
+
+    CreateFlowRequest:
+      type: object
+      required:
+        - code
+        - name
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+          example: flow_inbound_voice
+        name:
+          type: string
+          example: "Inbound Voice"
+        graph:
+          type: object
+          additionalProperties: true
+          description: Initial flow graph. Defaults to an empty graph when omitted.
+        enabled:
+          type: boolean
+          default: true
+
+    UpdateFlowRequest:
+      type: object
+      required:
+        - version
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+          description: >
+            Must equal the stored value (immutable post-create). A different
+            value returns HTTP 422 with ErrorCode=immutable_field.
+        name:
+          type: string
+        graph:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        version:
+          type: integer
+          description: Expected current version for optimistic concurrency.
+
+    RoutingFailureCode:
+      type: string
+      description: Typed taxonomy of routing failures recorded on a route request and its trace.
+      enum:
+        - missing_published_flow
+        - missing_catalog_reference
+        - no_eligible_candidate
+        - multiple_active_bindings
+        - invalid_graph
+        - reservation_transition_conflict
+
+    FlowEntryBinding:
+      type: object
+      description: Maps a route entry point (channel + entry code) to its active published flow version.
+      required:
+        - id
+        - org_id
+        - channel
+        - entry_code
+        - flow_version_id
+        - flow_code
+        - active
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        org_id:
+          $ref: "#/components/schemas/UUIDv7"
+        channel:
+          type: string
+        entry_code:
+          type: string
+        flow_version_id:
+          $ref: "#/components/schemas/UUIDv7"
+        flow_code:
+          type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    FlowPublishResult:
+      type: object
+      description: The immutable version created/re-activated plus the binding it activated.
+      required:
+        - version
+        - binding
+      properties:
+        version:
+          $ref: "#/components/schemas/FlowVersion"
+        binding:
+          $ref: "#/components/schemas/FlowEntryBinding"
+
+    SimulateScriptedReservationOutcome:
+      type: object
+      description: A scripted reservation outcome for deterministic simulation (applied in order).
+      required:
+        - outcome
+      properties:
+        outcome:
+          type: string
+          enum: [accepted, rejected, timeout]
+        agent_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+
+    FlowVersion:
+      type: object
+      description: >
+        An immutable published version of a flow, created by publish. Route
+        requests pin a flow_version_id at start; traces reference it.
+      required:
+        - id
+        - org_id
+        - flow_id
+        - flow_code
+        - version_number
+        - graph
+        - plan_format_version
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        org_id:
+          $ref: "#/components/schemas/UUIDv7"
+        flow_id:
+          $ref: "#/components/schemas/UUIDv7"
+        flow_code:
+          type: string
+          example: flow_inbound_voice
+        version_number:
+          type: integer
+          example: 1
+        graph:
+          type: object
+          additionalProperties: true
+          description: Immutable snapshot of the authored graph at publish time.
+        plan_format_version:
+          type: integer
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    FlowValidationIssue:
+      type: object
+      description: One validation problem, located at a node, edge, or field.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: missing_catalog_reference
+        message:
+          type: string
+        node_id:
+          type: string
+          nullable: true
+        edge_id:
+          type: string
+          nullable: true
+        field:
+          type: string
+          nullable: true
+
+    FlowValidationResult:
+      type: object
+      required:
+        - valid
+        - issues
+      properties:
+        valid:
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowValidationIssue"
+
+    PublishFlowRequest:
+      type: object
+      description: Publish the current draft graph as an immutable version and activate it for a route entry point.
+      required:
+        - channel
+        - entry_code
+        - version
+      properties:
+        channel:
+          type: string
+          example: voice
+        entry_code:
+          type: string
+          example: main
+        version:
+          type: integer
+          description: Expected current draft version (optimistic concurrency against the draft being published).
+        expected_current_flow_version_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          description: If set, publish only proceeds when the binding's current active version matches (guards against concurrent publish/rollback clobber).
+
+    RollbackFlowRequest:
+      type: object
+      description: Re-activate a prior published version for a route entry point.
+      required:
+        - channel
+        - entry_code
+        - to_version_number
+      properties:
+        channel:
+          type: string
+          example: voice
+        entry_code:
+          type: string
+          example: main
+        to_version_number:
+          type: integer
+          example: 1
+        expected_current_flow_version_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          description: If set, rollback only proceeds when the binding's current active version matches (guards against concurrent clobber).
+
+    SimulateFlowRequest:
+      type: object
+      description: >
+        Deterministic simulation of the draft graph against synthetic input.
+        Does not mutate live reservations or agent state.
+      required:
+        - interaction_input
+      properties:
+        interaction_input:
+          type: object
+          additionalProperties: true
+        channel:
+          type: string
+          example: voice
+        entry_code:
+          type: string
+          example: main
+        virtual_clock_start:
+          type: string
+          format: date-time
+          description: Pins the simulator's virtual clock start so wait/timeout paths replay deterministically.
+        scripted_reservation_outcomes:
+          type: array
+          description: Reservation outcomes applied in order so offers resolve deterministically.
+          items:
+            $ref: "#/components/schemas/SimulateScriptedReservationOutcome"
+        scripted_effect_outputs:
+          type: object
+          additionalProperties: true
+          description: Recorded/mocked effect-node outputs keyed by node id.
+
+    TraceStep:
+      type: object
+      required:
+        - index
+        - node_id
+        - node_kind
+        - status
+      properties:
+        index:
+          type: integer
+        node_id:
+          type: string
+        node_kind:
+          type: string
+        status:
+          type: string
+          enum: [ok, error, skipped, suspended]
+        input:
+          type: object
+          additionalProperties: true
+          nullable: true
+        output:
+          type: object
+          additionalProperties: true
+          nullable: true
+        catalog_refs:
+          type: array
+          items:
+            type: string
+        effect_status:
+          type: string
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    Trace:
+      type: object
+      description: An ordered runtime or simulation trace explaining a routing outcome.
+      required:
+        - id
+        - org_id
+        - kind
+        - steps
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        org_id:
+          $ref: "#/components/schemas/UUIDv7"
+        kind:
+          type: string
+          enum: [runtime, simulation]
+        route_request_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+        flow_version_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+        outcome:
+          type: string
+          nullable: true
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceStep"
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    CreateRouteRequest:
+      type: object
+      description: Admin/test entry point to drive a route through the published flow for a channel + entry code.
+      required:
+        - channel
+        - entry_code
+      properties:
+        channel:
+          type: string
+          example: voice
+        entry_code:
+          type: string
+          example: main
+        interaction_input:
+          type: object
+          additionalProperties: true
+
+    RouteRequest:
+      type: object
+      description: The interaction spine — reservations, events, and traces reference it.
+      required:
+        - id
+        - org_id
+        - channel
+        - entry_code
+        - status
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        org_id:
+          $ref: "#/components/schemas/UUIDv7"
+        channel:
+          type: string
+        entry_code:
+          type: string
+        flow_version_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+        flow_code:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, running, waiting, completed, failed, cancelled]
+        failure_code:
+          allOf:
+            - $ref: "#/components/schemas/RoutingFailureCode"
+        trace_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          description: The trace for this route request, once execution has produced one.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    Reservation:
+      type: object
+      description: An offer of a route request to an agent, with its lifecycle state.
+      required:
+        - id
+        - org_id
+        - route_request_id
+        - agent_id
+        - state
+        - attempt
+        - offered_at
+        - expires_at
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        org_id:
+          $ref: "#/components/schemas/UUIDv7"
+        route_request_id:
+          $ref: "#/components/schemas/UUIDv7"
+        agent_id:
+          $ref: "#/components/schemas/UUIDv7"
+        state:
+          type: string
+          enum: [offered, accepted, rejected, timeout, cancelled, completed]
+        attempt:
+          type: integer
+        offered_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
     Queue:
       type: object
       description: >
@@ -2582,6 +3082,630 @@ paths:
           $ref: "#/components/responses/InternalServerError"
 
   # ── Queues (CAT-04) ──────────────────────────────────────────────────────────
+
+  /v1/orgs/{org_id}/flows:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+
+    post:
+      tags:
+        - Flows
+      operationId: CreateFlow
+      summary: Create a flow draft
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFlowRequest"
+      responses:
+        "201":
+          description: Flow draft created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Duplicate `code` within the org (ErrorCode=duplicate_code).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    get:
+      tags:
+        - Flows
+      operationId: ListFlows
+      summary: List flow drafts
+      security:
+        - OrgHeader: []
+      parameters:
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/IncludeDisabledQuery"
+        - $ref: "#/components/parameters/NameSearchQuery"
+      responses:
+        "200":
+          description: Paginated list of flow drafts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedList"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Flow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+
+    get:
+      tags:
+        - Flows
+      operationId: GetFlow
+      summary: Get a flow draft by ID
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Flow draft record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    patch:
+      tags:
+        - Flows
+      operationId: UpdateFlow
+      summary: Update a flow draft
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFlowRequest"
+      responses:
+        "200":
+          description: Flow draft updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            Optimistic-concurrency conflict (ErrorCode=version_conflict) with the
+            current server-side flow record returned in `current`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/VersionConflictErrorResponse"
+                  - type: object
+                    properties:
+                      current:
+                        $ref: "#/components/schemas/Flow"
+        "422":
+          description: Immutable field violation (ErrorCode=immutable_field) when `code` differs from the stored value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags:
+        - Flows
+      operationId: DeleteFlow
+      summary: Soft-delete a flow draft
+      security:
+        - OrgHeader: []
+      responses:
+        "204":
+          description: Flow draft soft-deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/validate:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Flows]
+      operationId: ValidateFlow
+      summary: Validate a flow draft graph
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Validation result (valid=false with issues is still a 200).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowValidationResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/simulate:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Flows]
+      operationId: SimulateFlow
+      summary: Deterministically simulate a flow draft
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulateFlowRequest"
+      responses:
+        "200":
+          description: Deterministic simulation trace.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Draft graph is invalid and cannot be simulated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowValidationResult"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Flows]
+      operationId: PublishFlow
+      summary: Publish a flow draft as an immutable version and activate its binding
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishFlowRequest"
+      responses:
+        "201":
+          description: Published version created and binding activated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowPublishResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Optimistic-concurrency conflict on the draft being published.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Draft graph is invalid (publish requires validation to pass).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowValidationResult"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/rollback:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Flows]
+      operationId: RollbackFlow
+      summary: Re-activate a prior published version for a route entry point
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RollbackFlowRequest"
+      responses:
+        "200":
+          description: Prior version re-activated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowPublishResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Flows]
+      operationId: ListFlowVersions
+      summary: List published versions of a flow
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Published versions, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FlowVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flow-versions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Flows]
+      operationId: GetFlowVersion
+      summary: Get a published flow version by ID
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Published flow version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+    post:
+      tags: [Runtime]
+      operationId: CreateRouteRequest
+      summary: Drive a route request through the published flow (admin/test entry point)
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRouteRequest"
+      responses:
+        "201":
+          description: Route request created (inspect status/failure_code for the routing outcome).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    get:
+      tags: [Runtime]
+      operationId: ListRouteRequests
+      summary: List route requests (the interaction spine), newest first
+      security:
+        - OrgHeader: []
+      parameters:
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, running, waiting, completed, failed, cancelled]
+        - name: channel
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated list of route requests.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedList"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RouteRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: GetRouteRequest
+      summary: Get a route request by ID
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Route request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}/trace:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: GetRouteRequestTrace
+      summary: Get the runtime trace for a route request
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Runtime trace.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/reservations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: GetReservation
+      summary: Get a reservation by ID
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Reservation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/reservations/{id}/accept:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: AcceptReservation
+      summary: Accept an offered reservation (test-double / simulator signal)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Reservation accepted (or idempotent no-op for the already-accepted winner).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Reservation is no longer offered (lost an accept/timeout race).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/reservations/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: RejectReservation
+      summary: Reject an offered reservation (test-double / simulator signal)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Reservation rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Reservation is no longer offered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/traces/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: GetTrace
+      summary: Get a trace by ID
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Trace.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}/reservations:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: ListRouteRequestReservations
+      summary: List the reservations a route request generated (sequential offers)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Reservations for the route request, oldest attempt first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Reservation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/reservations/{id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: CompleteReservation
+      summary: Complete an accepted reservation (test-double / simulator signal)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Reservation completed (agent moves to WrapUp via agent-state rules).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Reservation is not in the accepted state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/bindings:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+    get:
+      tags: [Flows]
+      operationId: ListFlowEntryBindings
+      summary: List active route entry bindings (the routing table)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Active bindings for the org.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FlowEntryBinding"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /v1/orgs/{org_id}/queues:
     parameters:

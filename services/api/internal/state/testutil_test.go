@@ -48,6 +48,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 )
 
@@ -80,6 +81,7 @@ type TestHandlers struct {
 // TEMP: Wave 2 test-only composite; Wave 4 replaces with cmd/api/main.go ApiHandlers.
 type stateOnlyHandlers struct {
 	*Server
+	*flowrt.Endpoints
 }
 
 // Verify compile-time that stateOnlyHandlers satisfies StrictServerInterface.
@@ -99,6 +101,21 @@ func (stateOnlyHandlers) GetReadyz(_ context.Context, _ api.GetReadyzRequestObje
 }
 func (stateOnlyHandlers) ListAdapters(_ context.Context, _ api.ListAdaptersRequestObject) (api.ListAdaptersResponseObject, error) {
 	panic("state test: ListAdapters not implemented")
+}
+func (stateOnlyHandlers) CreateFlow(_ context.Context, _ api.CreateFlowRequestObject) (api.CreateFlowResponseObject, error) {
+	panic("state test: CreateFlow not implemented")
+}
+func (stateOnlyHandlers) GetFlow(_ context.Context, _ api.GetFlowRequestObject) (api.GetFlowResponseObject, error) {
+	panic("state test: GetFlow not implemented")
+}
+func (stateOnlyHandlers) ListFlows(_ context.Context, _ api.ListFlowsRequestObject) (api.ListFlowsResponseObject, error) {
+	panic("state test: ListFlows not implemented")
+}
+func (stateOnlyHandlers) UpdateFlow(_ context.Context, _ api.UpdateFlowRequestObject) (api.UpdateFlowResponseObject, error) {
+	panic("state test: UpdateFlow not implemented")
+}
+func (stateOnlyHandlers) DeleteFlow(_ context.Context, _ api.DeleteFlowRequestObject) (api.DeleteFlowResponseObject, error) {
+	panic("state test: DeleteFlow not implemented")
 }
 func (stateOnlyHandlers) CreateAdapter(_ context.Context, _ api.CreateAdapterRequestObject) (api.CreateAdapterResponseObject, error) {
 	panic("state test: CreateAdapter not implemented")
@@ -254,7 +271,7 @@ func newTestHandlers(t testing.TB) *TestHandlers {
 		Redis:          rdb,
 		OrgDB:          orgDB,
 		Config:         cfg,
-		StrictHandlers: stateOnlyHandlers{Server: s},
+		StrictHandlers: stateOnlyHandlers{Server: s, Endpoints: flowrt.New(flowrt.Deps{OrgDB: orgDB, Cache: c, Logger: logger})},
 		SpecBytes:      specBytes,
 	})
 	srv := httptest.NewServer(mux)
@@ -312,7 +329,7 @@ func seedAgent(t testing.TB, pool *pgxpool.Pool, orgID, agentID uuid.UUID, exter
 		ID:         pgUUIDv(agentID),
 		OrgID:      pgUUIDv(orgID),
 		Code:       "emp_" + sanitizeForCode(externalID), // Phase 04.1: required.
-		ExternalID: &ext,                                  // *string post-04.1.
+		ExternalID: &ext,                                 // *string post-04.1.
 		Name:       name,
 		Email:      externalID + "@test.example",
 		Enabled:    true,

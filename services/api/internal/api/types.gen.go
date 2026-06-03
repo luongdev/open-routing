@@ -185,19 +185,19 @@ func (e ImportEntityType) Valid() bool {
 
 // Defines values for ImportJobStatus.
 const (
-	Completed ImportJobStatus = "completed"
-	Failed    ImportJobStatus = "failed"
-	Pending   ImportJobStatus = "pending"
+	ImportJobStatusCompleted ImportJobStatus = "completed"
+	ImportJobStatusFailed    ImportJobStatus = "failed"
+	ImportJobStatusPending   ImportJobStatus = "pending"
 )
 
 // Valid indicates whether the value is a known member of the ImportJobStatus enum.
 func (e ImportJobStatus) Valid() bool {
 	switch e {
-	case Completed:
+	case ImportJobStatusCompleted:
 		return true
-	case Failed:
+	case ImportJobStatusFailed:
 		return true
-	case Pending:
+	case ImportJobStatusPending:
 		return true
 	default:
 		return false
@@ -267,6 +267,159 @@ func (e ReadinessResponseStatus) Valid() bool {
 	case ReadinessResponseStatusDegraded:
 		return true
 	case ReadinessResponseStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReservationState.
+const (
+	ReservationStateAccepted  ReservationState = "accepted"
+	ReservationStateCancelled ReservationState = "cancelled"
+	ReservationStateCompleted ReservationState = "completed"
+	ReservationStateOffered   ReservationState = "offered"
+	ReservationStateRejected  ReservationState = "rejected"
+	ReservationStateTimeout   ReservationState = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the ReservationState enum.
+func (e ReservationState) Valid() bool {
+	switch e {
+	case ReservationStateAccepted:
+		return true
+	case ReservationStateCancelled:
+		return true
+	case ReservationStateCompleted:
+		return true
+	case ReservationStateOffered:
+		return true
+	case ReservationStateRejected:
+		return true
+	case ReservationStateTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RouteRequestStatus.
+const (
+	RouteRequestStatusCancelled RouteRequestStatus = "cancelled"
+	RouteRequestStatusCompleted RouteRequestStatus = "completed"
+	RouteRequestStatusFailed    RouteRequestStatus = "failed"
+	RouteRequestStatusPending   RouteRequestStatus = "pending"
+	RouteRequestStatusRunning   RouteRequestStatus = "running"
+	RouteRequestStatusWaiting   RouteRequestStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the RouteRequestStatus enum.
+func (e RouteRequestStatus) Valid() bool {
+	switch e {
+	case RouteRequestStatusCancelled:
+		return true
+	case RouteRequestStatusCompleted:
+		return true
+	case RouteRequestStatusFailed:
+		return true
+	case RouteRequestStatusPending:
+		return true
+	case RouteRequestStatusRunning:
+		return true
+	case RouteRequestStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoutingFailureCode.
+const (
+	InvalidGraph                  RoutingFailureCode = "invalid_graph"
+	MissingCatalogReference       RoutingFailureCode = "missing_catalog_reference"
+	MissingPublishedFlow          RoutingFailureCode = "missing_published_flow"
+	MultipleActiveBindings        RoutingFailureCode = "multiple_active_bindings"
+	NoEligibleCandidate           RoutingFailureCode = "no_eligible_candidate"
+	ReservationTransitionConflict RoutingFailureCode = "reservation_transition_conflict"
+)
+
+// Valid indicates whether the value is a known member of the RoutingFailureCode enum.
+func (e RoutingFailureCode) Valid() bool {
+	switch e {
+	case InvalidGraph:
+		return true
+	case MissingCatalogReference:
+		return true
+	case MissingPublishedFlow:
+		return true
+	case MultipleActiveBindings:
+		return true
+	case NoEligibleCandidate:
+		return true
+	case ReservationTransitionConflict:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SimulateScriptedReservationOutcomeOutcome.
+const (
+	Accepted SimulateScriptedReservationOutcomeOutcome = "accepted"
+	Rejected SimulateScriptedReservationOutcomeOutcome = "rejected"
+	Timeout  SimulateScriptedReservationOutcomeOutcome = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the SimulateScriptedReservationOutcomeOutcome enum.
+func (e SimulateScriptedReservationOutcomeOutcome) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	case Rejected:
+		return true
+	case Timeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TraceKind.
+const (
+	Runtime    TraceKind = "runtime"
+	Simulation TraceKind = "simulation"
+)
+
+// Valid indicates whether the value is a known member of the TraceKind enum.
+func (e TraceKind) Valid() bool {
+	switch e {
+	case Runtime:
+		return true
+	case Simulation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TraceStepStatus.
+const (
+	Error     TraceStepStatus = "error"
+	Ok        TraceStepStatus = "ok"
+	Skipped   TraceStepStatus = "skipped"
+	Suspended TraceStepStatus = "suspended"
+)
+
+// Valid indicates whether the value is a known member of the TraceStepStatus enum.
+func (e TraceStepStatus) Valid() bool {
+	switch e {
+	case Error:
+		return true
+	case Ok:
+		return true
+	case Skipped:
+		return true
+	case Suspended:
 		return true
 	default:
 		return false
@@ -348,6 +501,21 @@ func (e UpdateChannel409JSONResponseBody1Error) Valid() bool {
 	}
 }
 
+// Defines values for UpdateFlow409JSONResponseBodyError.
+const (
+	UpdateFlow409JSONResponseBodyErrorVersionConflict UpdateFlow409JSONResponseBodyError = "version_conflict"
+)
+
+// Valid indicates whether the value is a known member of the UpdateFlow409JSONResponseBodyError enum.
+func (e UpdateFlow409JSONResponseBodyError) Valid() bool {
+	switch e {
+	case UpdateFlow409JSONResponseBodyErrorVersionConflict:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateQueue409JSONResponseBody1Error.
 const (
 	UpdateQueue409JSONResponseBody1ErrorVersionConflict UpdateQueue409JSONResponseBody1Error = "version_conflict"
@@ -363,15 +531,45 @@ func (e UpdateQueue409JSONResponseBody1Error) Valid() bool {
 	}
 }
 
+// Defines values for ListRouteRequestsParamsStatus.
+const (
+	ListRouteRequestsParamsStatusCancelled ListRouteRequestsParamsStatus = "cancelled"
+	ListRouteRequestsParamsStatusCompleted ListRouteRequestsParamsStatus = "completed"
+	ListRouteRequestsParamsStatusFailed    ListRouteRequestsParamsStatus = "failed"
+	ListRouteRequestsParamsStatusPending   ListRouteRequestsParamsStatus = "pending"
+	ListRouteRequestsParamsStatusRunning   ListRouteRequestsParamsStatus = "running"
+	ListRouteRequestsParamsStatusWaiting   ListRouteRequestsParamsStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the ListRouteRequestsParamsStatus enum.
+func (e ListRouteRequestsParamsStatus) Valid() bool {
+	switch e {
+	case ListRouteRequestsParamsStatusCancelled:
+		return true
+	case ListRouteRequestsParamsStatusCompleted:
+		return true
+	case ListRouteRequestsParamsStatusFailed:
+		return true
+	case ListRouteRequestsParamsStatusPending:
+		return true
+	case ListRouteRequestsParamsStatusRunning:
+		return true
+	case ListRouteRequestsParamsStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateSkill409JSONResponseBody1Error.
 const (
-	VersionConflict UpdateSkill409JSONResponseBody1Error = "version_conflict"
+	UpdateSkill409JSONResponseBody1ErrorVersionConflict UpdateSkill409JSONResponseBody1Error = "version_conflict"
 )
 
 // Valid indicates whether the value is a known member of the UpdateSkill409JSONResponseBody1Error enum.
 func (e UpdateSkill409JSONResponseBody1Error) Valid() bool {
 	switch e {
-	case VersionConflict:
+	case UpdateSkill409JSONResponseBody1ErrorVersionConflict:
 		return true
 	default:
 		return false
@@ -760,6 +958,16 @@ type CreateChannelRequest struct {
 	Name       string  `json:"name"`
 }
 
+// CreateFlowRequest defines model for CreateFlowRequest.
+type CreateFlowRequest struct {
+	Code    string `json:"code"`
+	Enabled *bool  `json:"enabled,omitempty"`
+
+	// Graph Initial flow graph. Defaults to an empty graph when omitted.
+	Graph *map[string]interface{} `json:"graph,omitempty"`
+	Name  string                  `json:"name"`
+}
+
 // CreateQueueRequest defines model for CreateQueueRequest.
 type CreateQueueRequest struct {
 	AcwSec       int           `json:"acw_sec"`
@@ -775,6 +983,13 @@ type CreateQueueRequest struct {
 	ExternalId *string `json:"external_id,omitempty"`
 	Name       string  `json:"name"`
 	Priority   int     `json:"priority"`
+}
+
+// CreateRouteRequest Admin/test entry point to drive a route through the published flow for a channel + entry code.
+type CreateRouteRequest struct {
+	Channel          string                  `json:"channel"`
+	EntryCode        string                  `json:"entry_code"`
+	InteractionInput *map[string]interface{} `json:"interaction_input,omitempty"`
 }
 
 // CreateSkillRequest defines model for CreateSkillRequest.
@@ -822,6 +1037,105 @@ type ErrorResponse struct {
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
 	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
 	RequestId *UUIDv7 `json:"request_id,omitempty"`
+}
+
+// Flow A routing flow draft. The graph is the canonical authoring artifact (UI graph is the source of truth). `version` is the optimistic-lock revision of the draft, distinct from the immutable published versions.
+type Flow struct {
+	// Code User-facing canonical identifier. Required, immutable after create. Composite UNIQUE (org_id, code).
+	Code      string     `json:"code"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Enabled   bool       `json:"enabled"`
+
+	// Graph Canonical flow graph (nodes + edges). Opaque pass-through in Stage 1; structurally validated before simulation and publish.
+	Graph map[string]interface{} `json:"graph"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id   UUIDv7 `json:"id"`
+	Name string `json:"name"`
+
+	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	OrgId     UUIDv7     `json:"org_id"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	Version   int        `json:"version"`
+}
+
+// FlowEntryBinding Maps a route entry point (channel + entry code) to its active published flow version.
+type FlowEntryBinding struct {
+	Active    bool       `json:"active"`
+	Channel   string     `json:"channel"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	EntryCode string     `json:"entry_code"`
+	FlowCode  string     `json:"flow_code"`
+
+	// FlowVersionId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	FlowVersionId UUIDv7 `json:"flow_version_id"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id UUIDv7 `json:"id"`
+
+	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	OrgId     UUIDv7     `json:"org_id"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+// FlowPublishResult The immutable version created/re-activated plus the binding it activated.
+type FlowPublishResult struct {
+	// Binding Maps a route entry point (channel + entry code) to its active published flow version.
+	Binding FlowEntryBinding `json:"binding"`
+
+	// Version An immutable published version of a flow, created by publish. Route requests pin a flow_version_id at start; traces reference it.
+	Version FlowVersion `json:"version"`
+}
+
+// FlowValidationIssue One validation problem, located at a node, edge, or field.
+type FlowValidationIssue struct {
+	Code    string  `json:"code"`
+	EdgeId  *string `json:"edge_id,omitempty"`
+	Field   *string `json:"field,omitempty"`
+	Message string  `json:"message"`
+	NodeId  *string `json:"node_id,omitempty"`
+}
+
+// FlowValidationResult defines model for FlowValidationResult.
+type FlowValidationResult struct {
+	Issues []FlowValidationIssue `json:"issues"`
+	Valid  bool                  `json:"valid"`
+}
+
+// FlowVersion An immutable published version of a flow, created by publish. Route requests pin a flow_version_id at start; traces reference it.
+type FlowVersion struct {
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	FlowCode  string     `json:"flow_code"`
+
+	// FlowId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	FlowId UUIDv7 `json:"flow_id"`
+
+	// Graph Immutable snapshot of the authored graph at publish time.
+	Graph map[string]interface{} `json:"graph"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id UUIDv7 `json:"id"`
+
+	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	OrgId             UUIDv7 `json:"org_id"`
+	PlanFormatVersion int    `json:"plan_format_version"`
+	VersionNumber     int    `json:"version_number"`
 }
 
 // HealthResponse Liveness check response (D-17).
@@ -1050,6 +1364,18 @@ type PatchAgentStatusRequest struct {
 // PostInteractionState The state the agent transitions to after the WrapUp period ends (STATE-06). Set by the agent while Engaged. Applied by the system when WrapUp expires.
 type PostInteractionState string
 
+// PublishFlowRequest Publish the current draft graph as an immutable version and activate it for a route entry point.
+type PublishFlowRequest struct {
+	Channel   string `json:"channel"`
+	EntryCode string `json:"entry_code"`
+
+	// ExpectedCurrentFlowVersionId If set, publish only proceeds when the binding's current active version matches (guards against concurrent publish/rollback clobber).
+	ExpectedCurrentFlowVersionId *UUIDv7 `json:"expected_current_flow_version_id,omitempty"`
+
+	// Version Expected current draft version (optimistic concurrency against the draft being published).
+	Version int `json:"version"`
+}
+
 // Queue A queue in the catalog. Queues hold interactions waiting to be assigned to an agent. Queues have a channel type, priority, and an after-contact work (ACW) timer.
 type Queue struct {
 	// AcwSec After-contact work (ACW / WrapUp) timer in seconds. When an interaction ends, the agent enters WrapUp for this many seconds.
@@ -1113,6 +1439,106 @@ type ReadinessResponse struct {
 // ReadinessResponseStatus defines model for ReadinessResponse.Status.
 type ReadinessResponseStatus string
 
+// Reservation An offer of a route request to an agent, with its lifecycle state.
+type Reservation struct {
+	// AgentId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	AgentId   UUIDv7     `json:"agent_id"`
+	Attempt   int        `json:"attempt"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	ExpiresAt time.Time  `json:"expires_at"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id        UUIDv7    `json:"id"`
+	OfferedAt time.Time `json:"offered_at"`
+
+	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	OrgId      UUIDv7     `json:"org_id"`
+	Reason     *string    `json:"reason,omitempty"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+
+	// RouteRequestId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	RouteRequestId UUIDv7           `json:"route_request_id"`
+	State          ReservationState `json:"state"`
+	UpdatedAt      *time.Time       `json:"updated_at,omitempty"`
+}
+
+// ReservationState defines model for Reservation.State.
+type ReservationState string
+
+// RollbackFlowRequest Re-activate a prior published version for a route entry point.
+type RollbackFlowRequest struct {
+	Channel   string `json:"channel"`
+	EntryCode string `json:"entry_code"`
+
+	// ExpectedCurrentFlowVersionId If set, rollback only proceeds when the binding's current active version matches (guards against concurrent clobber).
+	ExpectedCurrentFlowVersionId *UUIDv7 `json:"expected_current_flow_version_id,omitempty"`
+	ToVersionNumber              int     `json:"to_version_number"`
+}
+
+// RouteRequest The interaction spine — reservations, events, and traces reference it.
+type RouteRequest struct {
+	Channel       string              `json:"channel"`
+	CreatedAt     *time.Time          `json:"created_at,omitempty"`
+	EntryCode     string              `json:"entry_code"`
+	FailureCode   *RoutingFailureCode `json:"failure_code,omitempty"`
+	FlowCode      *string             `json:"flow_code,omitempty"`
+	FlowVersionId *UUIDv7             `json:"flow_version_id,omitempty"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id UUIDv7 `json:"id"`
+
+	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	OrgId  UUIDv7             `json:"org_id"`
+	Status RouteRequestStatus `json:"status"`
+
+	// TraceId The trace for this route request, once execution has produced one.
+	TraceId   *UUIDv7    `json:"trace_id,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+// RouteRequestStatus defines model for RouteRequest.Status.
+type RouteRequestStatus string
+
+// RoutingFailureCode Typed taxonomy of routing failures recorded on a route request and its trace.
+type RoutingFailureCode string
+
+// SimulateFlowRequest Deterministic simulation of the draft graph against synthetic input. Does not mutate live reservations or agent state.
+type SimulateFlowRequest struct {
+	Channel          *string                `json:"channel,omitempty"`
+	EntryCode        *string                `json:"entry_code,omitempty"`
+	InteractionInput map[string]interface{} `json:"interaction_input"`
+
+	// ScriptedEffectOutputs Recorded/mocked effect-node outputs keyed by node id.
+	ScriptedEffectOutputs *map[string]interface{} `json:"scripted_effect_outputs,omitempty"`
+
+	// ScriptedReservationOutcomes Reservation outcomes applied in order so offers resolve deterministically.
+	ScriptedReservationOutcomes *[]SimulateScriptedReservationOutcome `json:"scripted_reservation_outcomes,omitempty"`
+
+	// VirtualClockStart Pins the simulator's virtual clock start so wait/timeout paths replay deterministically.
+	VirtualClockStart *time.Time `json:"virtual_clock_start,omitempty"`
+}
+
+// SimulateScriptedReservationOutcome A scripted reservation outcome for deterministic simulation (applied in order).
+type SimulateScriptedReservationOutcome struct {
+	AgentId *UUIDv7                                   `json:"agent_id,omitempty"`
+	Outcome SimulateScriptedReservationOutcomeOutcome `json:"outcome"`
+}
+
+// SimulateScriptedReservationOutcomeOutcome defines model for SimulateScriptedReservationOutcome.Outcome.
+type SimulateScriptedReservationOutcomeOutcome string
+
 // Skill A skill in the catalog. Skills are assigned to agents with a proficiency rating.
 type Skill struct {
 	// Code User-facing canonical identifier (D04_1-01). Required, immutable
@@ -1150,6 +1576,46 @@ type Skill struct {
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	Version   int        `json:"version"`
 }
+
+// Trace An ordered runtime or simulation trace explaining a routing outcome.
+type Trace struct {
+	CreatedAt     *time.Time `json:"created_at,omitempty"`
+	FlowVersionId *UUIDv7    `json:"flow_version_id,omitempty"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id   UUIDv7    `json:"id"`
+	Kind TraceKind `json:"kind"`
+
+	// OrgId A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	OrgId          UUIDv7      `json:"org_id"`
+	Outcome        *string     `json:"outcome,omitempty"`
+	RouteRequestId *UUIDv7     `json:"route_request_id,omitempty"`
+	Steps          []TraceStep `json:"steps"`
+}
+
+// TraceKind defines model for Trace.Kind.
+type TraceKind string
+
+// TraceStep defines model for TraceStep.
+type TraceStep struct {
+	CatalogRefs  *[]string               `json:"catalog_refs,omitempty"`
+	DurationMs   *int                    `json:"duration_ms,omitempty"`
+	EffectStatus *string                 `json:"effect_status,omitempty"`
+	Error        *string                 `json:"error,omitempty"`
+	Index        int                     `json:"index"`
+	Input        *map[string]interface{} `json:"input,omitempty"`
+	NodeId       string                  `json:"node_id"`
+	NodeKind     string                  `json:"node_kind"`
+	Output       *map[string]interface{} `json:"output,omitempty"`
+	Status       TraceStepStatus         `json:"status"`
+}
+
+// TraceStepStatus defines model for TraceStep.Status.
+type TraceStepStatus string
 
 // UUIDv7 A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 // Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -1276,6 +1742,18 @@ type UpdateChannelRequest struct {
 	Name       *string `json:"name,omitempty"`
 
 	// Version Current optimistic-lock version. Mismatch → HTTP 409.
+	Version int `json:"version"`
+}
+
+// UpdateFlowRequest defines model for UpdateFlowRequest.
+type UpdateFlowRequest struct {
+	// Code Must equal the stored value (immutable post-create). A different value returns HTTP 422 with ErrorCode=immutable_field.
+	Code    *string                 `json:"code,omitempty"`
+	Enabled *bool                   `json:"enabled,omitempty"`
+	Graph   *map[string]interface{} `json:"graph,omitempty"`
+	Name    *string                 `json:"name,omitempty"`
+
+	// Version Expected current version for optimistic concurrency.
 	Version int `json:"version"`
 }
 
@@ -1591,6 +2069,24 @@ type UpdateChannel409JSONResponseBody struct {
 	union json.RawMessage
 }
 
+// ListFlowsParams defines parameters for ListFlows.
+type ListFlowsParams struct {
+	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
+	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
+	Limit *LimitQuery `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeDisabled When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09).
+	IncludeDisabled *IncludeDisabledQuery `form:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+
+	// Name Case-insensitive substring search on the `name` field (ILIKE `%?%`). Returns entities whose name contains the value anywhere (not prefix-only — OQ-4B resolution). Add `pg_trgm` index for performance at larger catalog sizes.
+	Name *NameSearchQuery `form:"name,omitempty" json:"name,omitempty"`
+}
+
+// UpdateFlow409JSONResponseBodyError defines parameters for UpdateFlow.
+type UpdateFlow409JSONResponseBodyError string
+
 // ListQueuesParams defines parameters for ListQueues.
 type ListQueuesParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
@@ -1626,6 +2122,20 @@ type UpdateQueue409JSONResponseBody1Error string
 type UpdateQueue409JSONResponseBody struct {
 	union json.RawMessage
 }
+
+// ListRouteRequestsParams defines parameters for ListRouteRequests.
+type ListRouteRequestsParams struct {
+	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
+	Cursor *CursorQuery `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit Maximum number of items to return per page. Defaults to 25. Maximum 100.
+	Limit   *LimitQuery                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Status  *ListRouteRequestsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Channel *string                        `form:"channel,omitempty" json:"channel,omitempty"`
+}
+
+// ListRouteRequestsParamsStatus defines parameters for ListRouteRequests.
+type ListRouteRequestsParamsStatus string
 
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
@@ -1693,11 +2203,29 @@ type CreateChannelJSONRequestBody = CreateChannelRequest
 // UpdateChannelJSONRequestBody defines body for UpdateChannel for application/json ContentType.
 type UpdateChannelJSONRequestBody = UpdateChannelRequest
 
+// CreateFlowJSONRequestBody defines body for CreateFlow for application/json ContentType.
+type CreateFlowJSONRequestBody = CreateFlowRequest
+
+// UpdateFlowJSONRequestBody defines body for UpdateFlow for application/json ContentType.
+type UpdateFlowJSONRequestBody = UpdateFlowRequest
+
+// PublishFlowJSONRequestBody defines body for PublishFlow for application/json ContentType.
+type PublishFlowJSONRequestBody = PublishFlowRequest
+
+// RollbackFlowJSONRequestBody defines body for RollbackFlow for application/json ContentType.
+type RollbackFlowJSONRequestBody = RollbackFlowRequest
+
+// SimulateFlowJSONRequestBody defines body for SimulateFlow for application/json ContentType.
+type SimulateFlowJSONRequestBody = SimulateFlowRequest
+
 // CreateQueueJSONRequestBody defines body for CreateQueue for application/json ContentType.
 type CreateQueueJSONRequestBody = CreateQueueRequest
 
 // UpdateQueueJSONRequestBody defines body for UpdateQueue for application/json ContentType.
 type UpdateQueueJSONRequestBody = UpdateQueueRequest
+
+// CreateRouteRequestJSONRequestBody defines body for CreateRouteRequest for application/json ContentType.
+type CreateRouteRequestJSONRequestBody = CreateRouteRequest
 
 // CreateSkillJSONRequestBody defines body for CreateSkill for application/json ContentType.
 type CreateSkillJSONRequestBody = CreateSkillRequest

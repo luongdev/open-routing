@@ -280,6 +280,526 @@ export interface paths {
         patch: operations["UpdateSkill"];
         trace?: never;
     };
+    "/v1/orgs/{org_id}/flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List flow drafts */
+        get: operations["ListFlows"];
+        put?: never;
+        /** Create a flow draft */
+        post: operations["CreateFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flows/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get a flow draft by ID */
+        get: operations["GetFlow"];
+        put?: never;
+        post?: never;
+        /** Soft-delete a flow draft */
+        delete: operations["DeleteFlow"];
+        options?: never;
+        head?: never;
+        /** Update a flow draft */
+        patch: operations["UpdateFlow"];
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flows/{id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate a flow draft graph */
+        post: operations["ValidateFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flows/{id}/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deterministically simulate a flow draft */
+        post: operations["SimulateFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flows/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish a flow draft as an immutable version and activate its binding */
+        post: operations["PublishFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flows/{id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-activate a prior published version for a route entry point */
+        post: operations["RollbackFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flows/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List published versions of a flow */
+        get: operations["ListFlowVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/flow-versions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get a published flow version by ID */
+        get: operations["GetFlowVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/route-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List route requests (the interaction spine), newest first */
+        get: operations["ListRouteRequests"];
+        put?: never;
+        /** Drive a route request through the published flow (admin/test entry point) */
+        post: operations["CreateRouteRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/route-requests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get a route request by ID */
+        get: operations["GetRouteRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/route-requests/{id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get the runtime trace for a route request */
+        get: operations["GetRouteRequestTrace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/reservations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get a reservation by ID */
+        get: operations["GetReservation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/reservations/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an offered reservation (test-double / simulator signal) */
+        post: operations["AcceptReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/reservations/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject an offered reservation (test-double / simulator signal) */
+        post: operations["RejectReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/traces/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get a trace by ID */
+        get: operations["GetTrace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/route-requests/{id}/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List the reservations a route request generated (sequential offers) */
+        get: operations["ListRouteRequestReservations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/reservations/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete an accepted reservation (test-double / simulator signal) */
+        post: operations["CompleteReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List active route entry bindings (the routing table) */
+        get: operations["ListFlowEntryBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/queues": {
         parameters: {
             query?: never;
@@ -1028,6 +1548,242 @@ export interface components {
              * @example 1
              */
             version: number;
+        };
+        /** @description A routing flow draft. The graph is the canonical authoring artifact (UI graph is the source of truth). `version` is the optimistic-lock revision of the draft, distinct from the immutable published versions. */
+        Flow: {
+            id: components["schemas"]["UUIDv7"];
+            org_id: components["schemas"]["UUIDv7"];
+            /**
+             * @description User-facing canonical identifier. Required, immutable after create. Composite UNIQUE (org_id, code).
+             * @example flow_inbound_voice
+             */
+            code: string;
+            /** @example Inbound Voice */
+            name: string;
+            /** @description Canonical flow graph (nodes + edges). Opaque pass-through in Stage 1; structurally validated before simulation and publish. */
+            graph: {
+                [key: string]: unknown;
+            };
+            /** @example true */
+            enabled: boolean;
+            /** @example 1 */
+            version: number;
+            /**
+             * Format: date-time
+             * @example 2026-06-02T00:00:00Z
+             */
+            readonly created_at: string;
+            /**
+             * Format: date-time
+             * @example 2026-06-02T00:00:00Z
+             */
+            readonly updated_at: string;
+        };
+        CreateFlowRequest: {
+            /** @example flow_inbound_voice */
+            code: string;
+            /** @example Inbound Voice */
+            name: string;
+            /** @description Initial flow graph. Defaults to an empty graph when omitted. */
+            graph?: {
+                [key: string]: unknown;
+            };
+            /** @default true */
+            enabled: boolean;
+        };
+        UpdateFlowRequest: {
+            /** @description Must equal the stored value (immutable post-create). A different value returns HTTP 422 with ErrorCode=immutable_field. */
+            code?: string;
+            name?: string;
+            graph?: {
+                [key: string]: unknown;
+            };
+            enabled?: boolean;
+            /** @description Expected current version for optimistic concurrency. */
+            version: number;
+        };
+        /**
+         * @description Typed taxonomy of routing failures recorded on a route request and its trace.
+         * @enum {string}
+         */
+        RoutingFailureCode: "missing_published_flow" | "missing_catalog_reference" | "no_eligible_candidate" | "multiple_active_bindings" | "invalid_graph" | "reservation_transition_conflict";
+        /** @description Maps a route entry point (channel + entry code) to its active published flow version. */
+        FlowEntryBinding: {
+            id: components["schemas"]["UUIDv7"];
+            org_id: components["schemas"]["UUIDv7"];
+            channel: string;
+            entry_code: string;
+            flow_version_id: components["schemas"]["UUIDv7"];
+            flow_code: string;
+            active: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
+        };
+        /** @description The immutable version created/re-activated plus the binding it activated. */
+        FlowPublishResult: {
+            version: components["schemas"]["FlowVersion"];
+            binding: components["schemas"]["FlowEntryBinding"];
+        };
+        /** @description A scripted reservation outcome for deterministic simulation (applied in order). */
+        SimulateScriptedReservationOutcome: {
+            /** @enum {string} */
+            outcome: "accepted" | "rejected" | "timeout";
+            agent_id?: components["schemas"]["UUIDv7"];
+        };
+        /** @description An immutable published version of a flow, created by publish. Route requests pin a flow_version_id at start; traces reference it. */
+        FlowVersion: {
+            id: components["schemas"]["UUIDv7"];
+            org_id: components["schemas"]["UUIDv7"];
+            flow_id: components["schemas"]["UUIDv7"];
+            /** @example flow_inbound_voice */
+            flow_code: string;
+            /** @example 1 */
+            version_number: number;
+            /** @description Immutable snapshot of the authored graph at publish time. */
+            graph: {
+                [key: string]: unknown;
+            };
+            /** @example 1 */
+            plan_format_version: number;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description One validation problem, located at a node, edge, or field. */
+        FlowValidationIssue: {
+            /** @example missing_catalog_reference */
+            code: string;
+            message: string;
+            node_id?: string | null;
+            edge_id?: string | null;
+            field?: string | null;
+        };
+        FlowValidationResult: {
+            valid: boolean;
+            issues: components["schemas"]["FlowValidationIssue"][];
+        };
+        /** @description Publish the current draft graph as an immutable version and activate it for a route entry point. */
+        PublishFlowRequest: {
+            /** @example voice */
+            channel: string;
+            /** @example main */
+            entry_code: string;
+            /** @description Expected current draft version (optimistic concurrency against the draft being published). */
+            version: number;
+            /** @description If set, publish only proceeds when the binding's current active version matches (guards against concurrent publish/rollback clobber). */
+            expected_current_flow_version_id?: components["schemas"]["UUIDv7"];
+        };
+        /** @description Re-activate a prior published version for a route entry point. */
+        RollbackFlowRequest: {
+            /** @example voice */
+            channel: string;
+            /** @example main */
+            entry_code: string;
+            /** @example 1 */
+            to_version_number: number;
+            /** @description If set, rollback only proceeds when the binding's current active version matches (guards against concurrent clobber). */
+            expected_current_flow_version_id?: components["schemas"]["UUIDv7"];
+        };
+        /** @description Deterministic simulation of the draft graph against synthetic input. Does not mutate live reservations or agent state. */
+        SimulateFlowRequest: {
+            interaction_input: {
+                [key: string]: unknown;
+            };
+            /** @example voice */
+            channel?: string;
+            /** @example main */
+            entry_code?: string;
+            /**
+             * Format: date-time
+             * @description Pins the simulator's virtual clock start so wait/timeout paths replay deterministically.
+             */
+            virtual_clock_start?: string;
+            /** @description Reservation outcomes applied in order so offers resolve deterministically. */
+            scripted_reservation_outcomes?: components["schemas"]["SimulateScriptedReservationOutcome"][];
+            /** @description Recorded/mocked effect-node outputs keyed by node id. */
+            scripted_effect_outputs?: {
+                [key: string]: unknown;
+            };
+        };
+        TraceStep: {
+            index: number;
+            node_id: string;
+            node_kind: string;
+            /** @enum {string} */
+            status: "ok" | "error" | "skipped" | "suspended";
+            input?: {
+                [key: string]: unknown;
+            } | null;
+            output?: {
+                [key: string]: unknown;
+            } | null;
+            catalog_refs?: string[];
+            effect_status?: string | null;
+            duration_ms?: number | null;
+            error?: string | null;
+        };
+        /** @description An ordered runtime or simulation trace explaining a routing outcome. */
+        Trace: {
+            id: components["schemas"]["UUIDv7"];
+            org_id: components["schemas"]["UUIDv7"];
+            /** @enum {string} */
+            kind: "runtime" | "simulation";
+            route_request_id?: components["schemas"]["UUIDv7"];
+            flow_version_id?: components["schemas"]["UUIDv7"];
+            outcome?: string | null;
+            steps: components["schemas"]["TraceStep"][];
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Admin/test entry point to drive a route through the published flow for a channel + entry code. */
+        CreateRouteRequest: {
+            /** @example voice */
+            channel: string;
+            /** @example main */
+            entry_code: string;
+            interaction_input?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description The interaction spine — reservations, events, and traces reference it. */
+        RouteRequest: {
+            id: components["schemas"]["UUIDv7"];
+            org_id: components["schemas"]["UUIDv7"];
+            channel: string;
+            entry_code: string;
+            flow_version_id?: components["schemas"]["UUIDv7"];
+            flow_code?: string | null;
+            /** @enum {string} */
+            status: "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+            failure_code?: components["schemas"]["RoutingFailureCode"];
+            /** @description The trace for this route request, once execution has produced one. */
+            trace_id?: components["schemas"]["UUIDv7"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
+        };
+        /** @description An offer of a route request to an agent, with its lifecycle state. */
+        Reservation: {
+            id: components["schemas"]["UUIDv7"];
+            org_id: components["schemas"]["UUIDv7"];
+            route_request_id: components["schemas"]["UUIDv7"];
+            agent_id: components["schemas"]["UUIDv7"];
+            /** @enum {string} */
+            state: "offered" | "accepted" | "rejected" | "timeout" | "cancelled" | "completed";
+            attempt: number;
+            /** Format: date-time */
+            offered_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            resolved_at?: string | null;
+            reason?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
         };
         /** @description A queue in the catalog. Queues hold interactions waiting to be assigned to an agent. Queues have a channel type, priority, and an after-contact work (ACW) timer. */
         Queue: {
@@ -2535,6 +3291,882 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListFlows: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
+                cursor?: components["parameters"]["CursorQuery"];
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
+                limit?: components["parameters"]["LimitQuery"];
+                /** @description When `true`, include disabled entities (`enabled=false`) in list responses. Default `false` (CAT-09). */
+                include_disabled?: components["parameters"]["IncludeDisabledQuery"];
+                /** @description Case-insensitive substring search on the `name` field (ILIKE `%?%`). Returns entities whose name contains the value anywhere (not prefix-only — OQ-4B resolution). Add `pg_trgm` index for performance at larger catalog sizes. */
+                name?: components["parameters"]["NameSearchQuery"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated list of flow drafts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedList"] & {
+                        items?: components["schemas"]["Flow"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    CreateFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description Flow draft created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Duplicate `code` within the org (ErrorCode=duplicate_code). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flow draft record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    DeleteFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flow draft soft-deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    UpdateFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description Flow draft updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description Optimistic-concurrency conflict (ErrorCode=version_conflict) with the
+             *     current server-side flow record returned in `current`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionConflictErrorResponse"] & {
+                        current?: components["schemas"]["Flow"];
+                    };
+                };
+            };
+            /** @description Immutable field violation (ErrorCode=immutable_field) when `code` differs from the stored value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ValidateFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation result (valid=false with issues is still a 200). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowValidationResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    SimulateFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description Deterministic simulation trace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Draft graph is invalid and cannot be simulated. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowValidationResult"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    PublishFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description Published version created and binding activated. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowPublishResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Optimistic-concurrency conflict on the draft being published. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Draft graph is invalid (publish requires validation to pass). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowValidationResult"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    RollbackFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description Prior version re-activated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowPublishResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListFlowVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published versions, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FlowVersion"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetFlowVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published flow version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowVersion"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListRouteRequests: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page. */
+                cursor?: components["parameters"]["CursorQuery"];
+                /** @description Maximum number of items to return per page. Defaults to 25. Maximum 100. */
+                limit?: components["parameters"]["LimitQuery"];
+                status?: "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+                channel?: string;
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated list of route requests. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedList"] & {
+                        items?: components["schemas"]["RouteRequest"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    CreateRouteRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRouteRequest"];
+            };
+        };
+        responses: {
+            /** @description Route request created (inspect status/failure_code for the routing outcome). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRequest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetRouteRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Route request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRequest"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetRouteRequestTrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runtime trace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    AcceptReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservation accepted (or idempotent no-op for the already-accepted winner). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Reservation is no longer offered (lost an accept/timeout race). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    RejectReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservation rejected. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Reservation is no longer offered. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetTrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListRouteRequestReservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations for the route request, oldest attempt first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Reservation"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    CompleteReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservation completed (agent moves to WrapUp via agent-state rules). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Reservation is not in the accepted state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListFlowEntryBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active bindings for the org. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FlowEntryBinding"][];
+                    };
                 };
             };
             500: components["responses"]["InternalServerError"];
