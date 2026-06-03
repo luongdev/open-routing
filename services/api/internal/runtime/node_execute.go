@@ -107,11 +107,11 @@ func (matchSkillNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	required := []RequiredSkill{{Code: cfg.Skill, MinProficiency: cfg.MinProficiency}}
 	ranked := RankCandidates(ctx.Candidates(), required)
 	ctx.SetCandidates(ranked)
-	out := map[string]any{"skill": cfg.Skill, "min_proficiency": cfg.MinProficiency, "candidates": len(ranked)}
-	if len(ranked) == 0 {
-		return StepResult{Failure: &RoutingFailure{Code: FailNoEligibleCandidate, Message: "no candidate has skill " + cfg.Skill}, Output: out}, nil
-	}
-	return StepResult{Output: out}, nil
+	// An empty pool is NOT a terminal failure: it flows downstream to the
+	// reservation node, which yields its `no_candidate` port (→ fallback). A
+	// terminal failure here would make the no_candidate routing path unreachable
+	// (cross-AI review BLOCK).
+	return StepResult{Output: map[string]any{"skill": cfg.Skill, "min_proficiency": cfg.MinProficiency, "candidates": len(ranked)}}, nil
 }
 
 // reservationMaxAttempts clamps max_attempts: omitted/0 -> 1, capped at 10

@@ -121,10 +121,10 @@ func TestEval_UnknownFunctionAndArity(t *testing.T) {
 
 func TestCheck_RejectsBadCallsStatically(t *testing.T) {
 	bad := []string{
-		`foo.bar(1)`,      // unknown function
-		`num.abs(1, 2)`,   // too many args
-		`num.abs()`,       // too few args
-		`num.min()`,       // variadic with zero args
+		`foo.bar(1)`,       // unknown function
+		`num.abs(1, 2)`,    // too many args
+		`num.abs()`,        // too few args
+		`num.min()`,        // variadic with zero args
 		`vip AND foo.x(1)`, // nested unknown function
 	}
 	for _, src := range bad {

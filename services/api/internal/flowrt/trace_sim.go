@@ -166,9 +166,14 @@ func (e *Endpoints) SimulateFlow(ctx context.Context, req api.SimulateFlowReques
 		return api.SimulateFlow500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "compile_failed"}}, nil
 	}
 
-	// Resolve the virtual clock: request value, else server-chosen NOW — either
-	// way it is returned + persisted so a replay is exact.
-	clockStart := time.Now().UTC()
+	// Resolve the virtual clock. Default to the draft's updated_at (deterministic
+	// per draft version — NOT time.Now(), which would make an omitted-clock
+	// simulation non-reproducible). Either way it is returned + persisted in
+	// simulation_input so a replay is exact (cross-AI review BLOCK/HIGH).
+	clockStart := time.Unix(0, 0).UTC()
+	if flow.UpdatedAt.Valid {
+		clockStart = flow.UpdatedAt.Time.UTC()
+	}
 	if req.Body != nil && req.Body.VirtualClockStart != nil {
 		clockStart = req.Body.VirtualClockStart.UTC()
 	}
@@ -196,10 +201,21 @@ func (e *Endpoints) SimulateFlow(ctx context.Context, req api.SimulateFlowReques
 
 	apiSteps := mapTraceSteps(trace)
 	traceID := uuid.Must(uuid.NewV7())
-	stepsJSON, _ := json.Marshal(apiSteps)
-	planJSON, _ := json.Marshal(plan)
-	inputJSON, _ := json.Marshal(req.Body)
-	readSetJSON, _ := json.Marshal(snapshot)
+	// Persist the RESOLVED clock (not the raw request, which may have a nil
+	// virtual_clock_start) so simulation_input replays the exact run.
+	var body api.SimulateFlowRequest
+	if req.Body != nil {
+		body = *req.Body
+	}
+	body.VirtualClockStart = &clockStart
+	stepsJSON, mErr1 := json.Marshal(apiSteps)
+	planJSON, mErr2 := json.Marshal(plan)
+	inputJSON, mErr3 := json.Marshal(body)
+	readSetJSON, mErr4 := json.Marshal(snapshot)
+	if err := errors.Join(mErr1, mErr2, mErr3, mErr4); err != nil {
+		e.deps.Logger.ErrorContext(ctx, "simulate: marshal trace", "err", err)
+		return api.SimulateFlow500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "trace_marshal_failed"}}, nil
+	}
 	sum := sha256.Sum256(flow.Graph)
 	graphHash := hex.EncodeToString(sum[:])
 	pfv := int32(runtime.PlanFormatVersion)
@@ -216,7 +232,11 @@ func (e *Endpoints) SimulateFlow(ctx context.Context, req api.SimulateFlowReques
 		return api.SimulateFlow500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "trace_persist_failed"}}, nil
 	}
 
-	apiTrace, _ := rowToAPITrace(row)
+	apiTrace, tErr := rowToAPITrace(row)
+	if tErr != nil {
+		e.deps.Logger.ErrorContext(ctx, "simulate: map trace", "err", tErr)
+		return api.SimulateFlow500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "trace_map_failed"}}, nil
+	}
 	return api.SimulateFlow200JSONResponse(api.SimulateFlowResponse{VirtualClockStart: clockStart, Trace: apiTrace}), nil
 }
 
@@ -225,9 +245,17 @@ func (e *Endpoints) ListFlowTraces(ctx context.Context, req api.ListFlowTracesRe
 	if !ok {
 		return api.ListFlowTraces500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
 	}
+	// Clamp to the OpenAPI bounds (1..100, default 20) so a hostile/odd limit
+	// can't bypass the cap or hit a DB error.
 	limit := int32(20)
 	if req.Params.Limit != nil {
 		limit = int32(*req.Params.Limit)
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
 	}
 	rows, err := generated.New(e.deps.OrgDB).ListFlowTraces(ctx, generated.ListFlowTracesParams{
 		OrgID: pgUUID(orgID), FlowID: pgUUID(uuid.UUID(req.Id)), Limit: limit,
@@ -240,7 +268,9 @@ func (e *Endpoints) ListFlowTraces(ctx context.Context, req api.ListFlowTracesRe
 	for _, r := range rows {
 		t, mErr := rowToAPITrace(r)
 		if mErr != nil {
-			continue
+			// A corrupt persisted trace is a server fault, not a row to hide.
+			e.deps.Logger.ErrorContext(ctx, "list flow traces: map row", "err", mErr)
+			return api.ListFlowTraces500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "trace_map_failed"}}, nil
 		}
 		out = append(out, t)
 	}
@@ -266,6 +296,14 @@ func rowToAPITrace(row generated.Trace) (api.Trace, error) {
 	if row.FlowID.Valid {
 		f := api.UUIDv7(uuid.UUID(row.FlowID.Bytes))
 		t.FlowId = &f
+	}
+	if row.FlowVersionID.Valid {
+		v := api.UUIDv7(uuid.UUID(row.FlowVersionID.Bytes))
+		t.FlowVersionId = &v
+	}
+	if row.RouteRequestID.Valid {
+		rr := api.UUIDv7(uuid.UUID(row.RouteRequestID.Bytes))
+		t.RouteRequestId = &rr
 	}
 	if row.CreatedAt.Valid {
 		ct := row.CreatedAt.Time

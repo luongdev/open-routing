@@ -7,9 +7,10 @@ import (
 )
 
 // routingPlan: trigger -> route_queue(q1) -> match_skill(sales) -> reservation
-//   reservation -accepted->     end(routed)
-//   reservation -timeout->      fb -> end
-//   reservation -no_candidate-> fb
+//
+//	reservation -accepted->     end(routed)
+//	reservation -timeout->      fb -> end
+//	reservation -no_candidate-> fb
 func routingPlan(t *testing.T) CompiledPlan {
 	t.Helper()
 	g := &Graph{
@@ -100,6 +101,30 @@ func TestSimulate_ReservationTimeoutToFallback(t *testing.T) {
 	}
 	if !took {
 		t.Fatalf("expected fallback after both offers timed out: %v", stepIDs(tr))
+	}
+}
+
+func TestSimulate_EmptyPoolToNoCandidateFallback(t *testing.T) {
+	// match_skill on an empty pool must NOT fail terminally — it flows to the
+	// reservation, which yields no_candidate -> fallback (review BLOCK).
+	tr, err := Simulate(context.Background(), DefaultRegistry(), routingPlan(t), SimInput{
+		Snapshot:   &Snapshot{QueueCandidates: map[string][]Candidate{"q1": {}}},
+		ClockStart: time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("simulate: %v", err)
+	}
+	if got := portOf(tr, "rsv"); got != "no_candidate" {
+		t.Fatalf("reservation port = %q, want no_candidate (steps=%v)", got, stepIDs(tr))
+	}
+	took := false
+	for _, s := range tr.Steps {
+		if s.NodeID == "fb" {
+			took = true
+		}
+	}
+	if !took {
+		t.Fatalf("expected fallback on empty pool: %v", stepIDs(tr))
 	}
 }
 

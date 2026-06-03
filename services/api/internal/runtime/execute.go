@@ -143,14 +143,19 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 			return ex.finish(&res, state, "failed", "", fmt.Errorf("runtime: no registered node for kind %q", step.Kind))
 		}
 
-		t0 := clock.Now()
+		// Duration is wall-clock CPU time, measured with the real monotonic clock
+		// — NOT the run clock. A node (reservation timeout, wait) advances the
+		// VIRTUAL clock, which would otherwise be recorded as execution time and
+		// contradict the trace contract (cross-AI review BLOCK/HIGH). This field
+		// is observability only and is excluded from replay equality.
+		t0 := time.Now()
 		out, err := node.Execute(state, step)
 		ts := TraceStep{
 			NodeID:     cur,
 			Kind:       step.Kind,
 			Port:       out.Port,
 			Output:     out.Output,
-			DurationMs: float64(clock.Now().Sub(t0).Microseconds()) / 1000,
+			DurationMs: float64(time.Since(t0).Microseconds()) / 1000,
 		}
 		if err != nil {
 			ts.Status, ts.Error = "failed", err.Error()
