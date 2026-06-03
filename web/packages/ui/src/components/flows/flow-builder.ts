@@ -681,7 +681,14 @@ export class OrFlowBuilder extends LitElement {
     .edge-label--error   { fill: var(--destructive); }
     .edge-label--timeout { fill: var(--warning); }
     .edge-label--fallback{ fill: var(--destructive); }
-    .edge--draft { stroke: var(--primary); stroke-dasharray: 5 4; stroke-width: 2; pointer-events: none; }
+    .edge--draft {
+      stroke: var(--primary);
+      stroke-dasharray: 2 5;
+      stroke-width: 2;
+      stroke-linecap: round;
+      opacity: 0.8;
+      pointer-events: none;
+    }
     /* Wide invisible hit-target so thin edges are easy to click-select. */
     .edge-hit { stroke: transparent; stroke-width: 14; fill: none; cursor: pointer; }
     .edge--selected { stroke: var(--primary) !important; stroke-width: 2.5; }
@@ -2702,7 +2709,7 @@ export class OrFlowBuilder extends LitElement {
     const x1 = this._portX(from, d.fromPort);
     const y1 = from.y + 116;
     const dy = Math.max(40, (d.cy - y1) * 0.5);
-    return svg`<path class="edge edge--draft" marker-end="url(#arrow-success)" d=${`M ${x1} ${y1} C ${x1} ${y1 + dy}, ${d.cx} ${d.cy - dy}, ${d.cx} ${d.cy}`} />`;
+    return svg`<path class="edge edge--draft" marker-end="url(#arrow-draft)" d=${`M ${x1} ${y1} C ${x1} ${y1 + dy}, ${d.cx} ${d.cy - dy}, ${d.cx} ${d.cy}`} />`;
   }
 
   private _paletteEntry(kind: FlowNodeKind): PaletteEntry | undefined {
@@ -2935,6 +2942,10 @@ export class OrFlowBuilder extends LitElement {
                 markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--destructive)"/>
         </marker>
+        <marker id="arrow-draft" viewBox="0 0 10 10" refX="8" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--primary)"/>
+        </marker>
       </defs>
       ${edges.map((e) => {
         const from = byId.get(e.from);
@@ -3057,9 +3068,9 @@ export class OrFlowBuilder extends LitElement {
       return svg`
         ${showInput ? svg`<circle class=${'node-input-anchor' + (node.id === this._edgeDraftTarget ? ' node-input-anchor--active' : '')}
           cx=${node.x + NODE_W / 2} cy=${node.y} r="5"></circle>` : nothing}
-        <foreignObject x=${node.x} y=${node.y} width=${NODE_W} height=${NODE_H} overflow="visible">
+        <foreignObject x=${node.x - 8} y=${node.y - 8} width=${NODE_W + 16} height=${NODE_H + 16} overflow="visible">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="padding:8px;box-sizing:border-box">
           <div
-            xmlns="http://www.w3.org/1999/xhtml"
             class=${cls}
             title=${node.label}
             role="button"
@@ -3095,6 +3106,7 @@ export class OrFlowBuilder extends LitElement {
                   @pointercancel=${isSim ? nothing : this._onPortPointerUp}>${o.label}</span>
               `)}
             </div>
+          </div>
           </div>
         </foreignObject>
       `;
