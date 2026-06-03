@@ -259,8 +259,10 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
 // Fraction (0..1) of card WIDTH where output port `idx` sits along the
 // bottom edge. Matches CSS `justify-content: space-around` on
 // .node-card-ports — equal half-gaps at left/right, even spacing between.
-// Consumed by portX() (edge anchoring) — single source of truth.
-const NODE_W_PX = 168;
+// Consumed by portX() (edge anchoring) — single source of truth. MUST stay in
+// sync with the .node-card width/height in `static styles`.
+const NODE_W_PX = 220;
+const NODE_H_PX = 132;
 const _portFracsCache = new Map<number, ReadonlyArray<number>>();
 function portFracs(count: number): ReadonlyArray<number> {
   const cached = _portFracsCache.get(count);
@@ -412,7 +414,7 @@ export class OrFlowBuilder extends LitElement {
     /* ============ 3-pane body ============ */
     .body {
       display: grid;
-      grid-template-columns: 220px 1fr 320px;
+      grid-template-columns: 220px 1fr 344px;
       flex: 1;
       min-height: 0;
     }
@@ -577,8 +579,20 @@ export class OrFlowBuilder extends LitElement {
       border-color: color-mix(in oklch, var(--primary) 25%, var(--border));
     }
     .palette-item:active { cursor: grabbing; }
-    .palette-item--disabled { cursor: default; opacity: .55; }
+    .palette-item--disabled { cursor: default; opacity: .7; }
     .palette-item--disabled:hover { background: transparent; border-color: transparent; }
+    .palette-soon {
+      flex-shrink: 0;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 1px 6px;
+    }
     .palette-item .icon-tile {
       width: 28px; height: 28px;
       border-radius: 7px;
@@ -593,6 +607,7 @@ export class OrFlowBuilder extends LitElement {
 
     .palette-item-text {
       min-width: 0;
+      flex: 1;
       display: flex;
       flex-direction: column;
       gap: 1px;
@@ -708,8 +723,8 @@ export class OrFlowBuilder extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 4px;
-      width: 168px;
-      height: 116px;
+      width: 220px;
+      height: 132px;
       padding: 9px 11px;
       border-radius: 10px;
       background: var(--card);
@@ -874,9 +889,16 @@ export class OrFlowBuilder extends LitElement {
       font-size: 11px;
       color: var(--muted-foreground);
       font-family: var(--uk-font-monospace, monospace);
-      white-space: nowrap;
+      line-height: 1.3;
+      /* Wrap to 2 lines then ellipsis — long expressions were truncated to ~20
+         chars at the old 168px width. Full text still on hover via title= on the
+         element. */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
+      word-break: break-word;
     }
 
     /* Mini status strip */
@@ -962,6 +984,17 @@ export class OrFlowBuilder extends LitElement {
       outline: none;
       border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
     }
+    /* One consistent chevron for every <select> — the raw native arrow differs
+       per OS/browser, which read as "each dropdown a different style". */
+    .form-section select.form-input {
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 26px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      cursor: pointer;
+    }
     .form-section label { display: flex; align-items: center; justify-content: space-between; }
     .expr-mode {
       border: 1px solid var(--border);
@@ -975,8 +1008,12 @@ export class OrFlowBuilder extends LitElement {
       border-radius: 999px;
     }
     .expr-mode:hover { color: var(--foreground); border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
-    .cond-builder { display: grid; grid-template-columns: 1fr auto 1fr; gap: 5px; }
-    .cond-builder .cond-op { min-width: 52px; }
+    /* Variable on its own full-width row, then [op][value] below — a single
+       line truncated long dotted vars (customer.tier → "custome") in the
+       narrow inspector, worse once a group nests. */
+    .cond-builder { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px; }
+    .cond-builder .cond-lhs { grid-column: 1 / -1; }
+    .cond-builder .cond-op { min-width: 64px; padding-right: 24px; }
     .expr-hint { font-size: 10.5px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.4; }
     .expr-hint code {
       background: var(--muted);
@@ -1367,7 +1404,7 @@ export class OrFlowBuilder extends LitElement {
        row's actual visual position deterministically (design review MUST). */
     .node-card-ports {
       display: flex;
-      gap: 2px;             /* tightened from 3px so SWITCH/CASE 5 chips fit at 168px card width */
+      gap: 2px;             /* tightened from 3px so SWITCH/CASE 5 chips fit the card width */
       flex-wrap: nowrap;
       overflow: hidden;
       align-items: center;
@@ -1406,7 +1443,7 @@ export class OrFlowBuilder extends LitElement {
        across the seam. Design review caught this. */
     .run-panel {
       display: grid;
-      grid-template-columns: 220px 1fr 320px;
+      grid-template-columns: 220px 1fr 344px;
       gap: 0;
       flex-shrink: 0;
       background: var(--card);
@@ -2648,7 +2685,7 @@ export class OrFlowBuilder extends LitElement {
     const minX = Math.min(...this._nodes.map(n => n.x));
     const minY = Math.min(...this._nodes.map(n => n.y));
     const maxX = Math.max(...this._nodes.map(n => n.x + NODE_W_PX));
-    const maxY = Math.max(...this._nodes.map(n => n.y + 116));
+    const maxY = Math.max(...this._nodes.map(n => n.y + NODE_H_PX));
     const rect = this._svgEl()?.getBoundingClientRect();
     const w = rect?.width ?? 800;
     const h = rect?.height ?? 600;
@@ -2772,7 +2809,7 @@ export class OrFlowBuilder extends LitElement {
   // Topmost node whose bounds contain the world point (reverse render order).
   private _nodeAt(x: number, y: number): FlowNode | undefined {
     return [...this._nodes].reverse().find(n =>
-      x >= n.x && x <= n.x + NODE_W_PX && y >= n.y && y <= n.y + 116);
+      x >= n.x && x <= n.x + NODE_W_PX && y >= n.y && y <= n.y + NODE_H_PX);
   }
 
   private _connectEdge(fromId: string, fromPort: string, portKind: string, toId: string): void {
@@ -2859,7 +2896,7 @@ export class OrFlowBuilder extends LitElement {
     const from = this._nodes.find(n => n.id === d.fromId);
     if (!from) return nothing;
     const x1 = this._portX(from, d.fromPort);
-    const y1 = from.y + 116;
+    const y1 = from.y + NODE_H_PX;
     const dy = Math.max(40, (d.cy - y1) * 0.5);
     return svg`<path class="edge edge--draft" marker-end="url(#arrow-draft)" d=${`M ${x1} ${y1} C ${x1} ${y1 + dy}, ${d.cx} ${d.cy - dy}, ${d.cx} ${d.cy}`} />`;
   }
@@ -3059,8 +3096,8 @@ export class OrFlowBuilder extends LitElement {
 
   private _renderEdges(nodes: FlowNode[], edges: FlowEdge[]) {
     const byId = new Map(nodes.map(n => [n.id, n]));
-    const NODE_W = 168;
-    const NODE_H = 116;
+    const NODE_W = NODE_W_PX;
+    const NODE_H = NODE_H_PX;
     const isSim = this._simMode === 'sim';
 
     // Vertical layout — ports distribute horizontally along the bottom
@@ -3172,8 +3209,8 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private _renderNodes(nodes: FlowNode[]) {
-    const NODE_W = 168;
-    const NODE_H = 116;
+    const NODE_W = NODE_W_PX;
+    const NODE_H = NODE_H_PX;
     const isSim = this._simMode === 'sim';
     const hitIds = isSim ? this._hitNodeIds : new Set<string>();
     const issueIds = isSim ? new Set<string>() : this._issueNodeIds;
@@ -3538,7 +3575,7 @@ export class OrFlowBuilder extends LitElement {
   private _renderCmpRow(node: FlowNode, f: FieldDef, c: Comparison) {
     return html`
       <div class="cond-builder">
-        <input class="form-input" list="or-var-list" placeholder="variable" .value=${c.lhs}
+        <input class="form-input cond-lhs" list="or-var-list" placeholder="variable" .value=${c.lhs}
           @input=${(e: Event) => { c.lhs = (e.target as HTMLInputElement).value; this._touchGroup(node, f); }}>
         <select class="form-input cond-op" @change=${(e: Event) => {
           const val = (e.target as HTMLSelectElement).value;
@@ -3700,7 +3737,7 @@ export class OrFlowBuilder extends LitElement {
 
       ${this._publishOpen && !isSim ? this._renderPublishPopover() : nothing}
 
-      <div class="body" style=${`grid-template-columns: ${this._paletteCollapsed ? '34px' : '220px'} 1fr ${this._inspectorCollapsed ? '34px' : '320px'}`}>
+      <div class="body" style=${`grid-template-columns: ${this._paletteCollapsed ? '34px' : '220px'} 1fr ${this._inspectorCollapsed ? '34px' : '344px'}`}>
         ${this._paletteCollapsed
           ? this._renderRail('Nodes', 'chevrons-right', () => { this._paletteCollapsed = false; })
           : this._renderPalette(isSim)}
@@ -3781,15 +3818,20 @@ export class OrFlowBuilder extends LitElement {
     const q = this._paletteQuery.trim().toLowerCase();
     const searching = q.length > 0;
     const groups = PALETTE
-      .map(group => ({
-        group,
-        items: searching
+      .map(group => {
+        const items = searching
           ? group.items.filter(p =>
               p.label.toLowerCase().includes(q) ||
               p.desc.toLowerCase().includes(q) ||
               p.kind.toLowerCase().includes(q))
-          : group.items,
-      }))
+          : group.items;
+        // Runtime-supported nodes float to the top of each group; the "Soon"
+        // placeholders sink below so the draggable set reads first.
+        const sorted = [...items].sort(
+          (a, b) => Number(RUNTIME_KINDS.has(b.kind)) - Number(RUNTIME_KINDS.has(a.kind)),
+        );
+        return { group, items: sorted };
+      })
       .filter(g => g.items.length > 0);
 
     return html`
@@ -3845,6 +3887,7 @@ export class OrFlowBuilder extends LitElement {
                       <span class="palette-item-label">${p.label}</span>
                       <span class="palette-item-desc">${p.desc}</span>
                     </span>
+                    ${supported ? nothing : html`<span class="palette-soon" title="Planned — the v0.2 runtime doesn't execute this node yet">Soon</span>`}
                   </div>
                 `;
               })}

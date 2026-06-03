@@ -100,15 +100,19 @@ class Cursor {
   constructor(s: string) { this.s = s; }
   ws() { while (this.i < this.s.length && /\s/.test(this.s[this.i]!)) this.i++; }
   eof() { this.ws(); return this.i >= this.s.length; }
-  // Peek a keyword (AND/OR/NOT) without consuming.
+  // Peek a keyword (AND/OR/NOT) WITHOUT consuming — must not mutate `i`. An
+  // earlier version skipped whitespace via ws() here; called mid-scan in
+  // parseLeaf that advanced the cursor onto a following quote and desynced the
+  // loop's `ch`, swallowing `"x" AND …` into one leaf.
   peekKw(kw: string): boolean {
-    this.ws();
-    const seg = this.s.slice(this.i, this.i + kw.length);
+    let j = this.i;
+    while (j < this.s.length && /\s/.test(this.s[j]!)) j++;
+    const seg = this.s.slice(j, j + kw.length);
     if (seg.toUpperCase() !== kw) return false;
-    const after = this.s[this.i + kw.length];
+    const after = this.s[j + kw.length];
     return after === undefined || /\s|\(/.test(after);
   }
-  takeKw(kw: string) { this.i += kw.length; }
+  takeKw(kw: string) { this.ws(); this.i += kw.length; }
 }
 
 function parseOr(c: Cursor): CondNode {

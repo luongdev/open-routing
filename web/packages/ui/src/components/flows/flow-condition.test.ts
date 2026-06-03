@@ -41,6 +41,10 @@ describe('flow-condition serialize/parse', () => {
       'vip OR name == "John Doe"',
       '(a == 1 AND b == 2) OR c',
       'NOT (a == 1 OR b == 2)',
+      // A quoted value FOLLOWED BY more clauses — regression for a parser bug
+      // where the leaf scan swallowed everything after the close quote.
+      'name == "John Doe" AND vip',
+      '(customer.region == "us-west" AND age > 18) OR vip',
     ]) {
       const g = dslToGroup(dsl);
       expect(g, dsl).not.toBeNull();
