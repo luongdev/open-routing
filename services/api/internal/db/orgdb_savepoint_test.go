@@ -12,7 +12,7 @@
 //     the smallest catalog table that exists post-Phase-04.1 (the legacy
 //     `_scaffold` table was dropped by 000002). Schema essentials:
 //     (id, org_id, code, external_id?, name, description?, skill_type,
-//      enabled, version, created_at, updated_at) — minimum non-null INSERT
+//     enabled, version, created_at, updated_at) — minimum non-null INSERT
 //     columns: id, org_id, code, name, skill_type.
 //   - testing.Short() skips: docker not needed for the existing -short
 //     unit tests in this package (TestOrgDB_*_NoOrg suite).

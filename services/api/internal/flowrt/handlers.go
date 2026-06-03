@@ -374,13 +374,7 @@ func (e *Endpoints) GetFlowVersion(ctx context.Context, req api.GetFlowVersionRe
 
 // ---- Wave 3/4 stubs ----
 
-func (*Endpoints) SimulateFlow(_ context.Context, _ api.SimulateFlowRequestObject) (api.SimulateFlowResponseObject, error) {
-	return api.SimulateFlow500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) ListFlowTraces(_ context.Context, _ api.ListFlowTracesRequestObject) (api.ListFlowTracesResponseObject, error) {
-	return api.ListFlowTraces500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
+// SimulateFlow + ListFlowTraces live in trace_sim.go (3b).
 
 func (*Endpoints) CreateRouteRequest(_ context.Context, _ api.CreateRouteRequestRequestObject) (api.CreateRouteRequestResponseObject, error) {
 	return api.CreateRouteRequest500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
@@ -406,8 +400,24 @@ func (*Endpoints) RejectReservation(_ context.Context, _ api.RejectReservationRe
 	return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
 
-func (*Endpoints) GetTrace(_ context.Context, _ api.GetTraceRequestObject) (api.GetTraceResponseObject, error) {
-	return api.GetTrace500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+func (e *Endpoints) GetTrace(ctx context.Context, req api.GetTraceRequestObject) (api.GetTraceResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.GetTrace500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	row, err := generated.New(e.deps.OrgDB).GetTrace(ctx, generated.GetTraceParams{ID: pgUUID(uuid.UUID(req.Id)), OrgID: pgUUID(orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return api.GetTrace404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{Error: api.ErrorCodeNotFound, Reason: "trace_not_found"}}, nil
+	}
+	if err != nil {
+		e.deps.Logger.ErrorContext(ctx, "get trace", "err", err)
+		return api.GetTrace500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "load_failed"}}, nil
+	}
+	t, mErr := rowToAPITrace(row)
+	if mErr != nil {
+		return api.GetTrace500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "trace_map_failed"}}, nil
+	}
+	return api.GetTrace200JSONResponse(t), nil
 }
 
 func (*Endpoints) ListRouteRequests(_ context.Context, _ api.ListRouteRequestsRequestObject) (api.ListRouteRequestsResponseObject, error) {

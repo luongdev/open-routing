@@ -224,12 +224,18 @@ type Skill struct {
 }
 
 type Trace struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrgID          pgtype.UUID        `json:"org_id"`
-	RouteRequestID pgtype.UUID        `json:"route_request_id"`
-	Kind           string             `json:"kind"`
-	FlowVersionID  pgtype.UUID        `json:"flow_version_id"`
-	Steps          []byte             `json:"steps"`
-	Outcome        *string            `json:"outcome"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	OrgID                pgtype.UUID        `json:"org_id"`
+	RouteRequestID       pgtype.UUID        `json:"route_request_id"`
+	Kind                 string             `json:"kind"`
+	FlowVersionID        pgtype.UUID        `json:"flow_version_id"`
+	Steps                []byte             `json:"steps"`
+	Outcome              *string            `json:"outcome"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	FlowID               pgtype.UUID        `json:"flow_id"`
+	CompiledPlanSnapshot []byte             `json:"compiled_plan_snapshot"`
+	PlanFormatVersion    *int32             `json:"plan_format_version"`
+	SimulationInput      []byte             `json:"simulation_input"`
+	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
+	GraphHash            *string            `json:"graph_hash"`
 }
