@@ -508,6 +508,19 @@ export class OrCatalogShell extends LitElement {
         html`<or-flow-list .orgId=${org_id ?? ''} .client=${this._client!}></or-flow-list>`,
     },
     {
+      // `/new` must precede `/:id` — first-match wins, else "new" binds as :id.
+      path: '/orgs/:org_id/flows/new',
+      enter: (params) => this._composedEnter(params, () => import('../flows/flow-builder.js'), 'flows'),
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-flow-builder .orgId=${org_id ?? ''} .flowId=${''} .client=${this._client!}></or-flow-builder>`,
+    },
+    {
+      path: '/orgs/:org_id/flows/:id',
+      enter: (params) => this._composedEnter(params, () => import('../flows/flow-builder.js'), 'flows'),
+      render: ({ org_id, id }: Record<string, string | undefined>) =>
+        html`<or-flow-builder .orgId=${org_id ?? ''} .flowId=${id ?? ''} .client=${this._client!}></or-flow-builder>`,
+    },
+    {
       // Channels — wired in Wave 4 (Plan 06-10)
       path: '/orgs/:org_id/channels',
       enter: (params) => this._composedEnter(params, () => import('../channels/channel-list.js'), 'channels'),

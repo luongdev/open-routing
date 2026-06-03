@@ -9,6 +9,7 @@ import {
   MOCK_ADAPTERS,
   MOCK_BREAK_REASONS,
   MOCK_FLOWS,
+  MOCK_FLOW_GRAPH,
   MOCK_AGENT_STATES,
   MOCK_IMPORT_JOB,
 } from './playground-mock-data.js';
@@ -19,6 +20,22 @@ function nextMockId(): string {
   const hex = _mockIdCounter.toString(16).padStart(12, '0');
   return `01919f00-ffff-7000-9000-${hex}`;
 }
+
+// Module-scoped so PATCH/DELETE persist across a playground session — the map
+// must not regenerate per request, or e.g. archiving a flow snaps back on the
+// refetch. FlowSummary -> api.Flow shape; the first flow carries the rich graph
+// so the builder canvas isn't empty (the rest get an empty graph).
+const mockFlowsStore: Record<string, unknown>[] = MOCK_FLOWS.map((f, i) => ({
+  id: f.id,
+  org_id: f.org_id,
+  code: f.code,
+  name: f.name,
+  graph: i === 0 ? { nodes: MOCK_FLOW_GRAPH.nodes, edges: MOCK_FLOW_GRAPH.edges } : {},
+  enabled: f.status !== 'archived',
+  version: f.version,
+  created_at: f.updated_at,
+  updated_at: f.updated_at,
+}));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -91,19 +108,7 @@ function mockFetch(req: Request): Promise<Response> {
     channels:      MOCK_CHANNELS,
     adapters:      MOCK_ADAPTERS,
     'break-reasons': MOCK_BREAK_REASONS,
-    // Map the FlowSummary fixture onto the api.Flow shape the real or-flow-list
-    // reads (status -> enabled; graph/created_at synthesised).
-    flows: MOCK_FLOWS.map((f) => ({
-      id: f.id,
-      org_id: f.org_id,
-      code: f.code,
-      name: f.name,
-      graph: {},
-      enabled: f.status !== 'archived',
-      version: f.version,
-      created_at: f.updated_at,
-      updated_at: f.updated_at,
-    })),
+    flows: mockFlowsStore,
   };
 
   const items = entityMap[entity];
@@ -111,7 +116,8 @@ function mockFetch(req: Request): Promise<Response> {
 
   // LIST
   if (method === 'GET' && !entityId) {
-    const search = (url.searchParams.get('search') ?? '').toLowerCase();
+    // Catalog lists send `search`; flows send `name` — accept either.
+    const search = (url.searchParams.get('name') ?? url.searchParams.get('search') ?? '').toLowerCase();
     const includeDisabled = url.searchParams.get('include_disabled') === 'true';
     let filtered = items as Array<{ enabled: boolean; name?: string; code?: string }>;
     if (!includeDisabled) {
@@ -133,7 +139,8 @@ function mockFetch(req: Request): Promise<Response> {
     return Promise.resolve(jsonResponse(item));
   }
 
-  // POST create — echo back with generated id
+  // POST create — persist into the store so the created row survives a refetch
+  // (and is retrievable by the builder's GET after create-redirect).
   if (method === 'POST') {
     return req.json().then((body: Record<string, unknown>) => {
       const newItem = {
@@ -144,24 +151,30 @@ function mockFetch(req: Request): Promise<Response> {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+      (items as Record<string, unknown>[]).push(newItem);
       return jsonResponse(newItem, 201);
     });
   }
 
-  // PATCH update — echo back with version bumped
+  // PATCH update — mutate in place so the change persists across refetch
   if (method === 'PATCH' && entityId) {
-    const existing = (items as Array<{ id: string; version: number }>).find(i => i.id === entityId);
-    if (!existing) return Promise.resolve(notFound());
+    const store = items as Record<string, unknown>[];
+    const idx = store.findIndex(i => i['id'] === entityId);
+    if (idx < 0) return Promise.resolve(notFound());
     return req.json().then((body: Record<string, unknown>) => {
-      const updated = { ...existing, ...body, updated_at: new Date().toISOString(), version: existing.version + 1 };
+      const cur = store[idx]!;
+      const updated = { ...cur, ...body, updated_at: new Date().toISOString(), version: (cur['version'] as number) + 1 };
+      store[idx] = updated;
       return jsonResponse(updated);
     });
   }
 
-  // DELETE
+  // DELETE — remove from the store so it doesn't reappear on refetch
   if (method === 'DELETE' && entityId) {
-    const exists = (items as Array<{ id: string }>).some(i => i.id === entityId);
-    if (!exists) return Promise.resolve(notFound());
+    const store = items as Array<{ id: string }>;
+    const idx = store.findIndex(i => i.id === entityId);
+    if (idx < 0) return Promise.resolve(notFound());
+    store.splice(idx, 1);
     return Promise.resolve(new Response(null, { status: 204 }));
   }
 

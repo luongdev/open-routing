@@ -3,6 +3,7 @@ import type { ApiClient } from '../../api/client.js';
 import { MOCK_ORG_ID, MOCK_AGENTS, MOCK_SKILLS, MOCK_QUEUES, MOCK_CHANNELS, MOCK_ADAPTERS, MOCK_BREAK_REASONS, MOCK_IMPORT_JOB, MOCK_FLOWS } from './playground-mock-data.js';
 import '../vnext/index.js';
 import '../flows/flow-list.js';
+import '../flows/flow-builder.js';
 
 export interface ScreenEntry {
   id: string;
@@ -160,8 +161,9 @@ export const SCREENS: ReadonlyArray<ScreenEntry> = [
     render: (c) => html`<or-import-result .client=${c} .orgId=${MOCK_ORG_ID} .importId=${IMPORT_JOB_ID}></or-import-result>`,
   },
 
-  // vNext Preview — design-only screens for the v0.2+ workflow milestone.
-  // Mocks read from playground-mock-data; no real API behind them.
+  // vNext Preview — v0.2 workflow screens. flow-list + flow-builder are REAL
+  // API-backed components driven by the playground mock client; only
+  // trace-viewer is still a static mock (GET /traces is a 501 stub until Layer 3).
   {
     id: 'vnext-flow-list',
     label: 'Flow List',
@@ -172,7 +174,13 @@ export const SCREENS: ReadonlyArray<ScreenEntry> = [
     id: 'vnext-flow-builder',
     label: 'Flow Builder',
     group: 'vNext Preview',
-    render: () => html`<or-flow-builder .orgId=${MOCK_ORG_ID} .flowId=${MOCK_FLOWS[0]!.id}></or-flow-builder>`,
+    render: (c) => html`<or-flow-builder .client=${c} .orgId=${MOCK_ORG_ID} .flowId=${MOCK_FLOWS[0]!.id}></or-flow-builder>`,
+  },
+  {
+    id: 'vnext-flow-create',
+    label: 'Create Flow',
+    group: 'vNext Preview',
+    render: (c) => html`<or-flow-builder .client=${c} .orgId=${MOCK_ORG_ID} .flowId=${''}></or-flow-builder>`,
   },
   // Simulator merged into Flow Builder (sim mode toggle in toolbar). The
   // standalone 3-pane runner was the wrong shape — authoring + running

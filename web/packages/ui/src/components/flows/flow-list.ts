@@ -195,13 +195,19 @@ export class OrFlowList extends LitElement {
 
   @state() private accessor _search = '';
   @state() private accessor _cursor: string | null = null;
-  @state() private accessor _cursorStack: string[] = [];
+  @state() private accessor _cursorStack: (string | null)[] = [];
   @state() private accessor _includeDisabled = false;
   @state() private accessor _limit = 25;
   @state() private accessor _nextCursor: string | null = null;
   @state() private accessor _hasMore = false;
+  @state() private accessor _actionError: string | null = null;
 
   private _searchDebounce?: ReturnType<typeof setTimeout>;
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    clearTimeout(this._searchDebounce);
+  }
 
   override createRenderRoot() {
     const root = super.createRenderRoot() as ShadowRoot;
@@ -263,7 +269,7 @@ export class OrFlowList extends LitElement {
   ];
 
   private _listTask = new Task(this, {
-    task: async ([orgId, search, cursor, includeDisabled, limit]) => {
+    task: async ([orgId, search, cursor, includeDisabled, limit], { signal }) => {
       const { data, error } = await this.client.GET('/v1/orgs/{org_id}/flows' as never, {
         params: {
           path: { org_id: orgId as string },
@@ -274,8 +280,10 @@ export class OrFlowList extends LitElement {
             limit: limit as number,
           },
         },
+        signal,
       } as never);
       if (error) throw error;
+      if (signal.aborted) return data;
       const d = data as { has_more?: boolean; next_cursor?: string | null };
       this._hasMore = d?.has_more ?? false;
       this._nextCursor = d?.next_cursor ?? null;
@@ -293,21 +301,46 @@ export class OrFlowList extends LitElement {
       return;
     }
     if (action === 'disable' || action === 'enable') {
-      await this.client.PATCH('/v1/orgs/{org_id}/flows/{id}' as never, {
+      const { error } = await this.client.PATCH('/v1/orgs/{org_id}/flows/{id}' as never, {
         params: { path: { org_id: this.orgId, id: row.id } },
         body: { enabled: action === 'enable', version: row.version },
       } as never);
+      if (error) {
+        this._actionError = this._errorMessage(error);
+        // 409 means our cached version is stale — refresh to pull the current
+        // one so the next attempt can succeed, but keep the conflict visible.
+        if (this._isConflict(error)) void this._listTask.run();
+        return;
+      }
+      this._actionError = null;
       void this._listTask.run();
       return;
     }
     if (action === 'delete') {
       const ok = window.confirm(`Delete flow "${row.name}"? This cannot be undone.`);
       if (!ok) return;
-      await this.client.DELETE('/v1/orgs/{org_id}/flows/{id}' as never, {
+      const { error } = await this.client.DELETE('/v1/orgs/{org_id}/flows/{id}' as never, {
         params: { path: { org_id: this.orgId, id: row.id } },
       } as never);
+      if (error) {
+        this._actionError = this._errorMessage(error);
+        if (this._isConflict(error)) void this._listTask.run();
+        return;
+      }
+      this._actionError = null;
       void this._listTask.run();
     }
+  }
+
+  private _errorMessage(error: unknown): string {
+    const reason = (error as { reason?: string; message?: string })?.reason
+      ?? (error as { message?: string })?.message;
+    return reason ?? String(error);
+  }
+
+  private _isConflict(error: unknown): boolean {
+    const reason = (error as { reason?: string })?.reason ?? '';
+    return reason === 'version_conflict' || /conflict/i.test(reason);
   }
 
   private _relativeTime(iso: string): string {
@@ -332,14 +365,17 @@ export class OrFlowList extends LitElement {
     );
   }
 
+  private _setSearch(val: string): void {
+    clearTimeout(this._searchDebounce);
+    this._search = val;
+    this._cursor = null;
+    this._cursorStack = [];
+  }
+
   private _handleSearch(e: Event): void {
     const val = (e.target as HTMLInputElement).value;
     clearTimeout(this._searchDebounce);
-    this._searchDebounce = setTimeout(() => {
-      this._search = val;
-      this._cursor = null;
-      this._cursorStack = [];
-    }, 300);
+    this._searchDebounce = setTimeout(() => this._setSearch(val), 300);
   }
 
   private _handleIncludeDisabledChange(e: Event): void {
@@ -361,11 +397,18 @@ export class OrFlowList extends LitElement {
 
   private _handlePageChanged(e: CustomEvent): void {
     const { direction, limit } = e.detail as { cursor: string | null; direction: 'next' | 'prev'; limit: number };
-    this._limit = limit;
+
+    // The paginator reports a page-size change as direction:'next', so detect it
+    // by comparing against the prior limit and treat it as a fresh page 1.
+    if (limit !== this._limit) {
+      this._limit = limit;
+      this._cursor = null;
+      this._cursorStack = [];
+      return;
+    }
+
     if (direction === 'next') {
-      if (this._cursor !== null) {
-        this._cursorStack = [...this._cursorStack, this._cursor];
-      }
+      this._cursorStack = [...this._cursorStack, this._cursor];
       this._cursor = this._nextCursor;
     } else {
       const newStack = [...this._cursorStack];
@@ -382,7 +425,7 @@ export class OrFlowList extends LitElement {
           <p>No flows found matching '${this._search}'.</p>
           <button
             class="uk-button uk-button-default uk-button-small"
-            @click=${() => { this._search = ''; this._cursor = null; this._cursorStack = []; }}
+            @click=${() => this._setSearch('')}
           >Clear search</button>
         </div>
       `;
@@ -423,7 +466,7 @@ export class OrFlowList extends LitElement {
             aria-label="Search flows"
           />
           ${this._search ? html`
-            <button class="search-clear" @click=${() => { this._search = ''; this._cursor = null; this._cursorStack = []; }}>
+            <button class="search-clear" aria-label="Clear search" @click=${() => this._setSearch('')}>
               <uk-icon icon="x" height="14" width="14"></uk-icon>
             </button>
           ` : nothing}
@@ -437,10 +480,26 @@ export class OrFlowList extends LitElement {
           />
           Include archived
         </label>
-        <button class="icon-btn" title="Refresh" @click=${this._handleRefresh}>
+        <button class="icon-btn" title="Refresh" aria-label="Refresh" @click=${this._handleRefresh}>
           <uk-icon icon="refresh-cw" height="18" width="18"></uk-icon>
         </button>
       </div>
+
+      ${this._actionError
+        ? html`
+            <div class="uk-alert uk-alert-danger" style="margin:0 0 12px;border-radius:8px" role="alert">
+              <button
+                class="uk-alert-close"
+                type="button"
+                aria-label="Dismiss"
+                @click=${() => { this._actionError = null; }}
+              >
+                <uk-icon icon="x" height="14" width="14"></uk-icon>
+              </button>
+              <strong>Action failed.</strong> ${this._actionError}
+            </div>
+          `
+        : nothing}
 
       <div class="table-card">
         ${this._listTask.render({

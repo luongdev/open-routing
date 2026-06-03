@@ -102,4 +102,78 @@ describe('OrFlowList', () => {
     expect(mockPatch.mock.calls[0]?.[1]?.body?.enabled).toBe(false);
     expect(mockPatch.mock.calls[0]?.[1]?.body?.version).toBe(1);
   });
+
+  it('GETs /v1/orgs/{org_id}/flows with include_disabled and limit in the query', async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: { items: [], has_more: false, next_cursor: null }, error: null });
+    (el as any).orgId = 'test-org';
+    (el as any).client = { GET: mockGet };
+    await settle();
+    expect(mockGet).toHaveBeenCalled();
+    const [path, opts] = mockGet.mock.calls[0] as [string, any];
+    expect(path).toBe('/v1/orgs/{org_id}/flows');
+    expect(opts?.params?.path?.org_id).toBe('test-org');
+    expect(opts?.params?.query).toHaveProperty('include_disabled');
+    expect(opts?.params?.query).toHaveProperty('limit');
+    expect(opts?.params?.query?.limit).toBe(25);
+  });
+
+  it('delete action confirms then DELETEs with the right path params', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const mockDelete = vi.fn().mockResolvedValue({ data: null, error: null });
+    (el as any).orgId = 'test-org';
+    (el as any).client = {
+      GET: vi.fn().mockResolvedValue({ data: { items: [MOCK_FLOW], has_more: false, next_cursor: null }, error: null }),
+      DELETE: mockDelete,
+    };
+    await settle();
+    el.shadowRoot!
+      .querySelector('or-data-table')!
+      .dispatchEvent(
+        new CustomEvent('or-row-action', { detail: { row: MOCK_FLOW, action: 'delete' }, bubbles: true, composed: true })
+      );
+    await settle();
+    expect(window.confirm).toHaveBeenCalled();
+    expect(mockDelete).toHaveBeenCalled();
+    const [path, opts] = mockDelete.mock.calls[0] as [string, any];
+    expect(path).toBe('/v1/orgs/{org_id}/flows/{id}');
+    expect(opts?.params?.path?.org_id).toBe('test-org');
+    expect(opts?.params?.path?.id).toBe(MOCK_FLOW.id);
+  });
+
+  it('surfaces a version_conflict from a disable action and does not treat it as success', async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: { items: [MOCK_FLOW], has_more: false, next_cursor: null }, error: null });
+    const mockPatch = vi.fn().mockResolvedValue({ data: null, error: { reason: 'version_conflict' } });
+    (el as any).orgId = 'test-org';
+    (el as any).client = { GET: mockGet, PATCH: mockPatch };
+    await settle();
+    const getCallsBefore = mockGet.mock.calls.length;
+    el.shadowRoot!
+      .querySelector('or-data-table')!
+      .dispatchEvent(
+        new CustomEvent('or-row-action', { detail: { row: MOCK_FLOW, action: 'disable' }, bubbles: true, composed: true })
+      );
+    await settle();
+    expect(mockPatch).toHaveBeenCalled();
+    const alert = el.shadowRoot!.querySelector('.uk-alert-danger');
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain('version_conflict');
+    expect((el as any)._actionError).toBe('version_conflict');
+    // A 409 re-pulls the current version (one extra GET) but never silently
+    // succeeds — the conflict banner above proves it was not swallowed.
+    expect(mockGet.mock.calls.length).toBe(getCallsBefore + 1);
+  });
+
+  it('renders the error alert with Retry when the list GET returns an error', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).client = {
+      GET: vi.fn().mockResolvedValue({ data: null, error: { reason: 'boom' } }),
+    };
+    await settle();
+    const alert = el.shadowRoot!.querySelector('.uk-alert-danger');
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain('Failed to load flows');
+    expect(alert?.textContent).toContain('boom');
+    const retry = Array.from(alert!.querySelectorAll('button')).find((b) => b.textContent?.includes('Retry'));
+    expect(retry).toBeTruthy();
+  });
 });
