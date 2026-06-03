@@ -101,6 +101,13 @@ function mockFetch(req: Request): Promise<Response> {
   const entityId = segments[1];
   if (!entity) return Promise.resolve(notFound());
 
+  // v0.2 runtime read endpoints are not-implemented stubs until Layer 3 — mirror
+  // the real API's 500 { reason: 'not_implemented' } so the trace viewer reports
+  // the stub honestly instead of a 404.
+  if (entity === 'traces' || entity === 'route-requests' || entity === 'reservations') {
+    return Promise.resolve(jsonResponse({ error: 'internal', reason: 'not_implemented' }, 500));
+  }
+
   const entityMap: Record<string, unknown[]> = {
     agents:        MOCK_AGENTS,
     skills:        MOCK_SKILLS,

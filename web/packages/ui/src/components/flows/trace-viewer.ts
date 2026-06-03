@@ -1,10 +1,16 @@
-// vNext preview — Trace viewer. Deterministic replay of a recorded trace.
-// Reads MOCK_FLOW_GRAPH + MOCK_TRACE_STEPS. Read-only; no scenario edit.
-// 3-pane: step list (left) + mini flow-graph (center) + step I/O (right).
+// v0.2 Layer 2 — API-backed trace viewer (read-only). Binds to
+// GET /v1/orgs/{org_id}/traces/{id}, which is a not-implemented stub until
+// Layer 3 (the runtime that records traces). So in Layer 2 it attempts the real
+// fetch, reports the stub honestly via a banner, and keeps the rich sample
+// trace (MOCK_*) visible as a PREVIEW — deterministic replay over a mini
+// flow-graph (step list · graph · step I/O). The Trace->viewer mapping for live
+// data lands with the runtime in Layer 3.
 
 import { LitElement, html, css, svg, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { Task } from '@lit/task';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
+import type { ApiClient } from '../../api/client.js';
 import {
   MOCK_FLOWS,
   MOCK_FLOW_GRAPH,
@@ -81,6 +87,18 @@ export class OrTraceViewer extends LitElement {
       min-height: 680px;
       height: calc(100vh - 160px);
       background: var(--background);
+    }
+
+    .trace-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 20px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--warning);
+      background: color-mix(in oklch, var(--warning) 12%, transparent);
+      border-bottom: 1px solid color-mix(in oklch, var(--warning) 30%, transparent);
     }
 
     .trace-header {
@@ -319,10 +337,33 @@ export class OrTraceViewer extends LitElement {
     .json-null     { color: var(--muted-foreground); font-style: italic; }
   `;
 
-  @property({ type: String, attribute: 'org-id' }) orgId = '';
-  @property({ type: String, attribute: 'trace-id' }) traceId = MOCK_SIM_OUTCOME.trace_id;
+  @property({ type: String, attribute: 'org-id' }) accessor orgId = '';
+  @property({ type: String, attribute: 'trace-id' }) accessor traceId = MOCK_SIM_OUTCOME.trace_id;
+  @property({ type: Object }) accessor client!: ApiClient;
 
-  @state() private _selectedStepIndex = 4;
+  @state() private accessor _selectedStepIndex = 4;
+  // True once the real GET confirms the trace endpoint is a Layer-3 stub, so the
+  // banner reads "sample" honestly rather than implying this is live data.
+  @state() private accessor _stub = false;
+
+  // Probe the real endpoint so the contract wiring is exercised. The Layer-1
+  // stub answers 500 { reason: 'not_implemented' } (or a future 501); on
+  // anything that isn't a real trace we keep the sample preview. Live
+  // Trace->viewer mapping lands in Layer 3.
+  private _loadTask = new Task(this, {
+    task: async ([orgId, traceId], { signal }) => {
+      if (!this.client || !traceId) return null;
+      const res = (await this.client.GET('/v1/orgs/{org_id}/traces/{id}' as never, {
+        params: { path: { org_id: orgId as string, id: traceId as string } },
+        signal,
+      } as never)) as { data?: unknown; error?: unknown; response?: { status?: number } };
+      const notImpl =
+        res.response?.status === 501 || (res.error as { reason?: string })?.reason === 'not_implemented';
+      if (notImpl) this._stub = true;
+      return res.data ?? null;
+    },
+    args: () => [this.orgId, this.traceId] as const,
+  });
 
   override createRenderRoot() {
     const root = super.createRenderRoot() as ShadowRoot;
@@ -433,10 +474,14 @@ export class OrTraceViewer extends LitElement {
     const hitNodeIds = new Set(steps.slice(0, this._selectedStepIndex + 1).map(s => s.node_id));
 
     return html`
+      <div class="trace-banner" role="status">
+        <uk-icon icon="info" height="13" width="13"></uk-icon>
+        Sample trace — live trace data (GET /traces/{id}) lands in Layer 3.
+      </div>
       <div class="trace-header">
         <uk-icon icon="git-branch" height="22" width="22" style="color:var(--primary)"></uk-icon>
         <div class="trace-header-title">
-          <strong>Trace viewer<span class="vnext-tag">vNext</span></strong>
+          <strong>Trace viewer</strong>
           <span class="meta">${flow.name} · v${flow.version}</span>
         </div>
 

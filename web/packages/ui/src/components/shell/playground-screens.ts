@@ -1,9 +1,9 @@
 import { html, type TemplateResult } from 'lit';
 import type { ApiClient } from '../../api/client.js';
 import { MOCK_ORG_ID, MOCK_AGENTS, MOCK_SKILLS, MOCK_QUEUES, MOCK_CHANNELS, MOCK_ADAPTERS, MOCK_BREAK_REASONS, MOCK_IMPORT_JOB, MOCK_FLOWS } from './playground-mock-data.js';
-import '../vnext/index.js';
 import '../flows/flow-list.js';
 import '../flows/flow-builder.js';
+import '../flows/trace-viewer.js';
 
 export interface ScreenEntry {
   id: string;
@@ -189,6 +189,6 @@ export const SCREENS: ReadonlyArray<ScreenEntry> = [
     id: 'vnext-trace-viewer',
     label: 'Trace Viewer',
     group: 'vNext Preview',
-    render: () => html`<or-trace-viewer .orgId=${MOCK_ORG_ID}></or-trace-viewer>`,
+    render: (c) => html`<or-trace-viewer .client=${c} .orgId=${MOCK_ORG_ID}></or-trace-viewer>`,
   },
 ];

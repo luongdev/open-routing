@@ -14,5 +14,5 @@ export * from './adapters/index.js';
 export * from './channels/index.js';
 export * from './status/index.js';
 export * from './imports/index.js';
-// vNext (v0.2+) preview — flows, simulator, trace viewer. Design-only.
-export * from './vnext/index.js';
+// v0.2 Layer 2: Flows (list + builder + trace viewer), graduated onto the contract.
+export * from './flows/index.js';
