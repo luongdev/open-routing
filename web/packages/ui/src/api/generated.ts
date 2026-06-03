@@ -84,6 +84,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meta/expr-functions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Condition-expression function catalog
+         * @description Static, org-independent catalog of the functions available in the flow condition DSL (str.*, num.*, arr.*, logic.*, date.*). The flow builder's Advanced editor fetches this for autocomplete. Cacheable.
+         */
+        get: operations["GetExprFunctions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/agents": {
         parameters: {
             query?: never;
@@ -1167,6 +1187,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One condition-DSL function (str.*, num.*, arr.*, logic.*, date.*). */
+        ExprFunction: {
+            /** @example str */
+            ns: string;
+            /** @example upper */
+            name: string;
+            /**
+             * @description Fixed argument count, or -1 for variadic.
+             * @example 1
+             */
+            arity: number;
+            /** @example str.upper(s) -> string */
+            signature: string;
+            /** @example Uppercase */
+            summary: string;
+        };
+        ExprFunctionCatalog: {
+            functions: components["schemas"]["ExprFunction"][];
+        };
         /**
          * Format: uuid
          * @description A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
@@ -2714,6 +2753,26 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+        };
+    };
+    GetExprFunctions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The expression function catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExprFunctionCatalog"];
                 };
             };
         };

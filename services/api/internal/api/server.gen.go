@@ -31,6 +31,9 @@ type ServerInterface interface {
 	// Readiness probe
 	// (GET /readyz)
 	GetReadyz(w http.ResponseWriter, r *http.Request)
+	// Condition-expression function catalog
+	// (GET /v1/meta/expr-functions)
+	GetExprFunctions(w http.ResponseWriter, r *http.Request)
 	// List adapters
 	// (GET /v1/orgs/{org_id}/adapters)
 	ListAdapters(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListAdaptersParams)
@@ -226,6 +229,12 @@ func (_ Unimplemented) GetOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 // Readiness probe
 // (GET /readyz)
 func (_ Unimplemented) GetReadyz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Condition-expression function catalog
+// (GET /v1/meta/expr-functions)
+func (_ Unimplemented) GetExprFunctions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -621,6 +630,20 @@ func (siw *ServerInterfaceWrapper) GetReadyz(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadyz(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetExprFunctions operation middleware
+func (siw *ServerInterfaceWrapper) GetExprFunctions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetExprFunctions(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3380,6 +3403,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/readyz", wrapper.GetReadyz)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/meta/expr-functions", wrapper.GetExprFunctions)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/adapters", wrapper.ListAdapters)
 	})
 	r.Group(func(r chi.Router) {
@@ -3667,6 +3693,27 @@ func (response GetReadyz503JSONResponse) VisitGetReadyzResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetExprFunctionsRequestObject struct {
+}
+
+type GetExprFunctionsResponseObject interface {
+	VisitGetExprFunctionsResponse(w http.ResponseWriter) error
+}
+
+type GetExprFunctions200JSONResponse ExprFunctionCatalog
+
+func (response GetExprFunctions200JSONResponse) VisitGetExprFunctionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -7523,6 +7570,9 @@ type StrictServerInterface interface {
 	// Readiness probe
 	// (GET /readyz)
 	GetReadyz(ctx context.Context, request GetReadyzRequestObject) (GetReadyzResponseObject, error)
+	// Condition-expression function catalog
+	// (GET /v1/meta/expr-functions)
+	GetExprFunctions(ctx context.Context, request GetExprFunctionsRequestObject) (GetExprFunctionsResponseObject, error)
 	// List adapters
 	// (GET /v1/orgs/{org_id}/adapters)
 	ListAdapters(ctx context.Context, request ListAdaptersRequestObject) (ListAdaptersResponseObject, error)
@@ -7811,6 +7861,30 @@ func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetReadyzResponseObject); ok {
 		if err := validResponse.VisitGetReadyzResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetExprFunctions operation middleware
+func (sh *strictHandler) GetExprFunctions(w http.ResponseWriter, r *http.Request) {
+	var request GetExprFunctionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetExprFunctions(ctx, request.(GetExprFunctionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetExprFunctions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetExprFunctionsResponseObject); ok {
+		if err := validResponse.VisitGetExprFunctionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

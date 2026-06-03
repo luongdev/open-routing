@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+
+	"github.com/luongdev/open-routing/services/api/internal/runtime/expr"
 )
 
 // node_kinds.go holds the v0.2 executable subset. Each kind owns its config
@@ -17,10 +19,23 @@ const (
 	IssueMissingCatalog  = "missing_catalog_reference"
 	IssueInvalidConfig   = "invalid_config"
 	IssueMalformedConfig = "malformed_config"
+	IssueInvalidExpr     = "invalid_expression"
 )
 
 func malformed(nodeID string, err error) []ValidationIssue {
 	return []ValidationIssue{fieldIssue(nodeID, "config", IssueMalformedConfig, fmt.Sprintf("config is not valid JSON: %v", err))}
+}
+
+// checkExpr parses a non-empty expression and returns an invalid_expression
+// issue on a syntax error — the first server-side parse of the DSL.
+func checkExpr(nodeID, field, src string) []ValidationIssue {
+	if src == "" {
+		return nil
+	}
+	if _, perr := expr.Parse(src); perr != nil {
+		return []ValidationIssue{fieldIssue(nodeID, field, IssueInvalidExpr, perr.Msg)}
+	}
+	return nil
 }
 
 // ---- trigger ----
@@ -69,7 +84,7 @@ func (ifElseNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRe
 	if cfg.Expr == "" {
 		return []ValidationIssue{fieldIssue(n.ID, "expr", IssueMissingField, "if_else requires a condition expression")}, nil
 	}
-	return nil, nil
+	return checkExpr(n.ID, "expr", cfg.Expr), nil
 }
 
 func (ifElseNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
@@ -101,7 +116,7 @@ func (switchCaseNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ Catal
 	if len(cfg.Cases) == 0 {
 		issues = append(issues, fieldIssue(n.ID, "cases", IssueMissingField, "switch_case requires at least one case"))
 	}
-	return issues, nil
+	return append(issues, checkExpr(n.ID, "expr", cfg.Expr)...), nil
 }
 
 func (switchCaseNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
@@ -189,7 +204,7 @@ func (filterNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRe
 	if cfg.Expr == "" {
 		return []ValidationIssue{fieldIssue(n.ID, "expr", IssueMissingField, "filter requires a predicate expression")}, nil
 	}
-	return nil, nil
+	return checkExpr(n.ID, "expr", cfg.Expr), nil
 }
 
 func (filterNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {

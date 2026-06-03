@@ -48,29 +48,5 @@ func TestSelectCandidate_NoneEligible(t *testing.T) {
 	}
 }
 
-func TestEvalCondition(t *testing.T) {
-	vars := map[string]any{"tier": "gold", "age": float64(30), "vip": true}
-	get := func(k string) (any, bool) { v, ok := vars[k]; return v, ok }
-	cases := []struct {
-		expr string
-		want bool
-	}{
-		{`tier == gold`, true},
-		{`tier == "silver"`, false},
-		{`tier != silver`, true},
-		{`age > 18`, true},
-		{`age <= 30`, true},
-		{`age < 30`, false},
-		{`vip`, true},
-		{`missing`, false},
-	}
-	for _, c := range cases {
-		got, err := evalCondition(c.expr, get)
-		if err != nil {
-			t.Fatalf("evalCondition(%q): %v", c.expr, err)
-		}
-		if got != c.want {
-			t.Errorf("evalCondition(%q) = %v, want %v", c.expr, got, c.want)
-		}
-	}
-}
+// Expression-engine tests now live in internal/runtime/expr (the engine moved
+// into its own package). See expr/eval_test.go.

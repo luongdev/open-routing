@@ -1039,6 +1039,21 @@ type ErrorResponse struct {
 	RequestId *UUIDv7 `json:"request_id,omitempty"`
 }
 
+// ExprFunction One condition-DSL function (str.*, num.*, arr.*, logic.*, date.*).
+type ExprFunction struct {
+	// Arity Fixed argument count, or -1 for variadic.
+	Arity     int    `json:"arity"`
+	Name      string `json:"name"`
+	Ns        string `json:"ns"`
+	Signature string `json:"signature"`
+	Summary   string `json:"summary"`
+}
+
+// ExprFunctionCatalog defines model for ExprFunctionCatalog.
+type ExprFunctionCatalog struct {
+	Functions []ExprFunction `json:"functions"`
+}
+
 // Flow A routing flow draft. The graph is the canonical authoring artifact (UI graph is the source of truth). `version` is the optimistic-lock revision of the draft, distinct from the immutable published versions.
 type Flow struct {
 	// Code User-facing canonical identifier. Required, immutable after create. Composite UNIQUE (org_id, code).

@@ -95,6 +95,45 @@ components:
 
   schemas:
 
+    # ── Expression DSL catalog ───────────────────────────────────────────────────
+
+    ExprFunction:
+      type: object
+      description: One condition-DSL function (str.*, num.*, arr.*, logic.*, date.*).
+      required:
+        - ns
+        - name
+        - arity
+        - signature
+        - summary
+      properties:
+        ns:
+          type: string
+          example: str
+        name:
+          type: string
+          example: upper
+        arity:
+          type: integer
+          description: Fixed argument count, or -1 for variadic.
+          example: 1
+        signature:
+          type: string
+          example: "str.upper(s) -> string"
+        summary:
+          type: string
+          example: Uppercase
+
+    ExprFunctionCatalog:
+      type: object
+      required:
+        - functions
+      properties:
+        functions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExprFunction"
+
     # ── Identifiers ────────────────────────────────────────────────────────────
 
     UUIDv7:
@@ -2583,6 +2622,25 @@ paths:
             text/html:
               schema:
                 type: string
+
+  /v1/meta/expr-functions:
+    get:
+      tags:
+        - Infrastructure
+      operationId: GetExprFunctions
+      summary: Condition-expression function catalog
+      description: >
+        Static, org-independent catalog of the functions available in the flow
+        condition DSL (str.*, num.*, arr.*, logic.*, date.*). The flow builder's
+        Advanced editor fetches this for autocomplete. Cacheable.
+      security: []
+      responses:
+        "200":
+          description: The expression function catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExprFunctionCatalog"
 
   # ── Agents (CAT-01, CAT-03) ──────────────────────────────────────────────────
 

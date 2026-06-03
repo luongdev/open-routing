@@ -37,7 +37,7 @@ func (ifElseNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	if err != nil {
 		return StepResult{}, err
 	}
-	result, err := evalCondition(cfg.Expr, ctx.Var)
+	result, err := evalBool(cfg.Expr, ctx)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -53,7 +53,10 @@ func (switchCaseNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	if err != nil {
 		return StepResult{}, err
 	}
-	val := evalValue(cfg.Expr, ctx.Var)
+	val, err := evalString(cfg.Expr, ctx)
+	if err != nil {
+		return StepResult{}, err
+	}
 	port := "default"
 	for _, c := range cfg.Cases {
 		if c == val {
@@ -62,6 +65,21 @@ func (switchCaseNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 		}
 	}
 	return StepResult{Port: port, Output: map[string]any{"value": val}}, nil
+}
+
+func (filterNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
+	cfg, err := decodeConfig[filterConfig](step.Compiled)
+	if err != nil {
+		return StepResult{}, err
+	}
+	// v0.2: filter is a predicate gate — evaluate and record the result; the
+	// candidate-pool narrowing it informs lands with the assignment subsystem
+	// (Wave 3 part 2). Routing is linear (the single out edge).
+	passed, err := evalBool(cfg.Expr, ctx)
+	if err != nil {
+		return StepResult{}, err
+	}
+	return StepResult{Output: map[string]any{"expr": cfg.Expr, "passed": passed}}, nil
 }
 
 func (waitNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
