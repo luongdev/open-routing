@@ -124,11 +124,11 @@ export class OrDataTable extends LitElement {
     }
 
     /* ── Menu popup ────────────────────────────────────────────────── */
+    /* Fixed-positioned (coords set inline from the kebab's rect on open) so the
+       host's overflow-x:auto can't clip it — an absolute popup got cut off by
+       the scroll container's edge. */
     .menu-popup {
-      position: absolute;
-      top: 100%;
-      right: 8px;
-      margin-top: 4px;
+      position: fixed;
       min-width: 168px;
       background: var(--card);
       border: 1px solid var(--border);
@@ -247,17 +247,43 @@ export class OrDataTable extends LitElement {
   @property({ type: Number }) skeletonRows = 5;
 
   @state() private _openMenuRowKey: string | number | null = null;
+  @state() private _menuPos: { top: number; left: number } | null = null;
 
   override connectedCallback(): void {
     super.connectedCallback();
     document.addEventListener('click', this._handleOutsideClick);
     document.addEventListener('keydown', this._handleEsc);
+    // A fixed popup detaches from the kebab on scroll — close it rather than
+    // letting it float in the wrong place. Capture phase catches inner scrolls.
+    window.addEventListener('scroll', this._closeMenu, true);
+    window.addEventListener('resize', this._closeMenu);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener('click', this._handleOutsideClick);
     document.removeEventListener('keydown', this._handleEsc);
+    window.removeEventListener('scroll', this._closeMenu, true);
+    window.removeEventListener('resize', this._closeMenu);
+  }
+
+  private _closeMenu = (): void => {
+    if (this._openMenuRowKey !== null) {
+      this._openMenuRowKey = null;
+      this._menuPos = null;
+    }
+  };
+
+  // Anchor the fixed popup to the kebab button: right-aligned under it, flipped
+  // above when it would overflow the viewport bottom, clamped to the left edge.
+  private _openMenuAt(btn: HTMLElement, rowKey: string | number): void {
+    const r = btn.getBoundingClientRect();
+    const width = 168;
+    const estHeight = 112;
+    const top = r.bottom + estHeight > window.innerHeight ? r.top - estHeight - 4 : r.bottom + 4;
+    const left = Math.max(8, r.right - width);
+    this._menuPos = { top, left };
+    this._openMenuRowKey = rowKey;
   }
 
   private _handleOutsideClick = (e: MouseEvent): void => {
@@ -326,14 +352,16 @@ export class OrDataTable extends LitElement {
           aria-label="Row actions"
           @click=${(e: Event) => {
             e.stopPropagation();
-            this._openMenuRowKey = isOpen ? null : rowKey;
+            if (isOpen) this._closeMenu();
+            else this._openMenuAt(e.currentTarget as HTMLElement, rowKey);
           }}
         >
           <uk-icon icon="more-vertical" height="16" width="16"></uk-icon>
         </button>
         ${isOpen
           ? html`
-              <div class="menu-popup" role="menu">
+              <div class="menu-popup" role="menu"
+                style="top:${this._menuPos?.top ?? 0}px;left:${this._menuPos?.left ?? 0}px">
                 <button
                   class="menu-item"
                   role="menuitem"

@@ -346,13 +346,55 @@ export class OrFlowBuilder extends LitElement {
     }
 
     .pane-header {
-      padding: 14px 16px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px 12px 8px 16px;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--muted-foreground);
       border-bottom: 1px solid var(--border);
+    }
+    .pane-collapse {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      padding: 2px;
+      border-radius: 5px;
+    }
+    .pane-collapse:hover { background: var(--muted); color: var(--foreground); }
+
+    /* Collapsed pane = a thin rail with an expand button + rotated label. */
+    .pane-rail {
+      border-right: 1px solid var(--border);
+      align-items: center;
+      padding-top: 10px;
+      gap: 10px;
+      overflow: hidden;
+    }
+    .pane.inspector + .pane-rail, .pane-rail:last-child { border-right: none; border-left: 1px solid var(--border); }
+    .pane-rail-btn {
+      border: 1px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      padding: 5px;
+      border-radius: 7px;
+    }
+    .pane-rail-btn:hover { color: var(--foreground); border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
+    .pane-rail-label {
+      writing-mode: vertical-rl;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
     }
 
     /* ----- Palette ----- */
@@ -445,15 +487,19 @@ export class OrFlowBuilder extends LitElement {
       padding: 9px 10px;
       border-radius: 8px;
       border: 1px solid transparent;
-      cursor: pointer;
+      cursor: grab;
       transition: background .12s, border-color .12s;
       background: transparent;
       text-align: left;
+      user-select: none;
     }
     .palette-item:hover {
       background: var(--muted);
       border-color: color-mix(in oklch, var(--primary) 25%, var(--border));
     }
+    .palette-item:active { cursor: grabbing; }
+    .palette-item--disabled { cursor: default; opacity: .55; }
+    .palette-item--disabled:hover { background: transparent; border-color: transparent; }
     .palette-item .icon-tile {
       width: 28px; height: 28px;
       border-radius: 7px;
@@ -579,20 +625,14 @@ export class OrFlowBuilder extends LitElement {
       box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 22%, transparent), var(--shadow-md);
     }
 
-    /* ----- Validation panel (floats bottom-left over the canvas) ----- */
+    /* ----- Validation panel (docked in the inspector) ----- */
     .validation-panel {
-      position: absolute;
-      left: 16px;
-      bottom: 52px;
-      width: 340px;
-      max-height: 45%;
-      overflow-y: auto;
-      background: var(--card);
+      margin: 10px 12px;
       border: 1px solid var(--destructive);
       border-radius: 10px;
-      box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.18));
-      z-index: 5;
+      background: color-mix(in oklch, var(--destructive) 5%, var(--card));
       font-size: 12px;
+      overflow: hidden;
     }
     .validation-panel-head {
       display: flex;
@@ -601,10 +641,10 @@ export class OrFlowBuilder extends LitElement {
       padding: 9px 12px;
       color: var(--destructive);
       border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
       background: var(--card);
     }
+    .validation-panel--ok { border-color: var(--success); background: color-mix(in oklch, var(--success) 6%, var(--card)); }
+    .validation-panel-head--ok { color: var(--success); border-bottom: none; }
     .validation-panel-close {
       margin-left: auto;
       border: none;
@@ -1736,6 +1776,10 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _publishEntry = 'main';
   @state() private accessor _publishing = false;
 
+  // Collapsible side panes (small screens). Each collapses to a thin rail.
+  @state() private accessor _paletteCollapsed = false;
+  @state() private accessor _inspectorCollapsed = false;
+
   @state() private accessor _actionToast: string | null = null;
   @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
   // Create-mode draft fields — used only when flowId is empty (first Save POSTs).
@@ -1810,7 +1854,7 @@ export class OrFlowBuilder extends LitElement {
     if (this._saving) return;
     this._saving = true;
     try {
-      const graph = { nodes: this._nodes, edges: this._edges };
+      const graph = this._serializeGraph();
       if (this._isCreate) {
         const code = this._codeDraft.trim();
         const name = this._nameDraft.trim();
@@ -2128,6 +2172,84 @@ export class OrFlowBuilder extends LitElement {
     const rect = svg.getBoundingClientRect();
     const vbWidth = svg.viewBox.baseVal.width || NODE_W_PX;
     return rect.width > 0 ? vbWidth / rect.width : 1;
+  }
+
+  // Drag-and-drop authoring: a palette item is dragged (dataTransfer carries
+  // its kind) and dropped on the canvas, which creates a node at the drop point.
+  // Persist a graph the runtime can parse: the backend GraphNode reads `type`
+  // and `config`, the UI reads `kind` and `params`. We store a superset so a
+  // saved graph round-trips in the builder AND validates/publishes on the
+  // server without a separate translation step. Edge `label` carries the
+  // branch port the runtime resolves on.
+  private _serializeGraph(): { nodes: unknown[]; edges: unknown[] } {
+    return {
+      nodes: this._nodes.map(n => ({ ...n, type: n.kind, config: n.params ?? {} })),
+      edges: this._edges.map(e => ({ ...e, label: e.label ?? e.from_port ?? '' })),
+    };
+  }
+
+  private _onPaletteDragStart(e: DragEvent, kind: FlowNodeKind): void {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.setData('application/x-or-node', kind);
+    e.dataTransfer.effectAllowed = 'copy';
+  }
+
+  private _onCanvasDragOver = (e: DragEvent): void => {
+    if (e.dataTransfer?.types.includes('application/x-or-node')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  private _onCanvasDrop = (e: DragEvent): void => {
+    const kind = e.dataTransfer?.getData('application/x-or-node') as FlowNodeKind;
+    if (!kind) return;
+    e.preventDefault();
+    const svg = this._svgRef ?? (this.shadowRoot?.querySelector('svg.canvas-svg') as SVGSVGElement | null);
+    let x = 80;
+    let y = 80;
+    if (svg) {
+      const rect = svg.getBoundingClientRect();
+      const scale = this._svgPerCssPx();
+      x = Math.max(0, (e.clientX - rect.left) * scale - 84);
+      y = Math.max(0, (e.clientY - rect.top) * scale - 58);
+    }
+    const entry = this._paletteEntry(kind);
+    const id = this._genNodeId();
+    this._nodes = [
+      ...this._nodes,
+      { id, kind, label: entry?.label ?? kind, description: entry?.desc ?? '', x, y, params: {} },
+    ];
+    this._selectedNodeId = id;
+    this._validation = null; // graph changed
+    this._flashAction(`Added "${entry?.label ?? kind}" — Save draft to persist.`, 'ok');
+  };
+
+  private _paletteEntry(kind: FlowNodeKind): PaletteEntry | undefined {
+    for (const g of PALETTE) {
+      const hit = g.items.find(i => i.kind === kind);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+
+  private _genNodeId(): string {
+    let id = '';
+    do {
+      id = 'n_' + Math.random().toString(36).slice(2, 8);
+    } while (this._nodes.some(n => n.id === id));
+    return id;
+  }
+
+  private _renderRail(label: string, onExpand: () => void) {
+    return html`
+      <aside class="pane pane-rail">
+        <button class="pane-rail-btn" title="Expand ${label}" @click=${onExpand}>
+          <uk-icon icon="chevrons-right" height="14" width="14"></uk-icon>
+        </button>
+        <span class="pane-rail-label">${label}</span>
+      </aside>
+    `;
   }
 
   private _onNodePointerDown(e: PointerEvent, node: FlowNode): void {
@@ -2641,10 +2763,14 @@ export class OrFlowBuilder extends LitElement {
 
       ${this._publishOpen && !isSim ? this._renderPublishPopover() : nothing}
 
-      <div class="body">
-        ${this._renderPalette(isSim)}
+      <div class="body" style=${`grid-template-columns: ${this._paletteCollapsed ? '34px' : '220px'} 1fr ${this._inspectorCollapsed ? '34px' : '320px'}`}>
+        ${this._paletteCollapsed
+          ? this._renderRail('Nodes', () => { this._paletteCollapsed = false; })
+          : this._renderPalette(isSim)}
 
-        <main class=${isSim ? 'pane canvas-wrap canvas-wrap--sim' : 'pane canvas-wrap'}>
+        <main class=${isSim ? 'pane canvas-wrap canvas-wrap--sim' : 'pane canvas-wrap'}
+          @dragover=${isSim ? nothing : this._onCanvasDragOver}
+          @drop=${isSim ? nothing : this._onCanvasDrop}>
           <svg
             class="canvas-svg"
             viewBox="0 0 560 2720"
@@ -2653,7 +2779,6 @@ export class OrFlowBuilder extends LitElement {
             ${this._renderEdges(nodes, edges)}
             ${this._renderNodes(nodes)}
           </svg>
-          ${!isSim && this._validation && this._validation.issues.length > 0 ? this._renderValidationPanel() : nothing}
           <div class="canvas-strip">
             ${isSim ? html`
               <span><span class="dot-ok">●</span> Step <strong>${this._simStep < 0 ? 'ready' : (this._simStep + 1) + ' / ' + this._activeTrace.length}</strong></span>
@@ -2676,12 +2801,23 @@ export class OrFlowBuilder extends LitElement {
           </div>
         </main>
 
-        <aside class="pane inspector">
-          <div class="pane-header">${isSim && this._currentStep ? 'Step I/O' : 'Inspector'}</div>
-          ${isSim && this._currentStep
-            ? this._renderSimInspector(this._currentStep)
-            : this._renderInspector(selected)}
-        </aside>
+        ${this._inspectorCollapsed && !isSim
+          ? this._renderRail('Inspector', () => { this._inspectorCollapsed = false; })
+          : html`
+            <aside class="pane inspector">
+              <div class="pane-header">
+                <span>${isSim && this._currentStep ? 'Step I/O' : 'Inspector'}</span>
+                ${isSim ? nothing : html`
+                  <button class="pane-collapse" title="Collapse inspector" @click=${() => { this._inspectorCollapsed = true; }}>
+                    <uk-icon icon="chevrons-right" height="14" width="14"></uk-icon>
+                  </button>`}
+              </div>
+              ${!isSim && this._validation ? this._renderValidationPanel() : nothing}
+              ${isSim && this._currentStep
+                ? this._renderSimInspector(this._currentStep)
+                : this._renderInspector(selected)}
+            </aside>
+          `}
       </div>
 
       ${isSim ? this._renderSimRunPanel() : nothing}
@@ -2712,7 +2848,13 @@ export class OrFlowBuilder extends LitElement {
 
     return html`
       <aside class="pane palette">
-        <div class="pane-header">${isSim ? 'Nodes (read-only)' : 'Nodes'}</div>
+        <div class="pane-header">
+          <span>${isSim ? 'Nodes (read-only)' : 'Nodes'}</span>
+          ${isSim ? nothing : html`
+            <button class="pane-collapse" title="Collapse palette" @click=${() => { this._paletteCollapsed = true; }}>
+              <uk-icon icon="chevrons-left" height="14" width="14"></uk-icon>
+            </button>`}
+        </div>
         <div class="palette-search">
           <div class="palette-search-box">
             <uk-icon icon="search" height="14" width="14"></uk-icon>
@@ -2743,8 +2885,9 @@ export class OrFlowBuilder extends LitElement {
                 <span class="grp-count">${items.length}</span>
               </button>
               ${collapsed ? nothing : items.map(p => html`
-                <button class="palette-item" title=${p.desc} ?disabled=${isSim}
-                  @click=${() => this._flashAction(`Adding "${p.label}" nodes lands in Layer 3.`, 'warn')}>
+                <div class="palette-item ${isSim ? 'palette-item--disabled' : ''}" title=${isSim ? p.desc : 'Drag onto the canvas to add'}
+                  draggable=${!isSim}
+                  @dragstart=${(e: DragEvent) => this._onPaletteDragStart(e, p.kind)}>
                   <span class="icon-tile icon-tile--${p.tone}">
                     <uk-icon icon=${p.icon} height="14" width="14"></uk-icon>
                   </span>
@@ -2752,7 +2895,7 @@ export class OrFlowBuilder extends LitElement {
                     <span class="palette-item-label">${p.label}</span>
                     <span class="palette-item-desc">${p.desc}</span>
                   </span>
-                </button>
+                </div>
               `)}
             `;
           })}
@@ -2790,6 +2933,19 @@ export class OrFlowBuilder extends LitElement {
 
   private _renderValidationPanel() {
     const issues = this._validation?.issues ?? [];
+    if (this._validation?.valid) {
+      return html`
+        <div class="validation-panel validation-panel--ok" role="status">
+          <div class="validation-panel-head validation-panel-head--ok">
+            <uk-icon icon="check-circle" height="13" width="13"></uk-icon>
+            Validated — no issues
+            <button class="validation-panel-close" title="Dismiss" @click=${() => { this._validation = null; }}>
+              <uk-icon icon="x" height="13" width="13"></uk-icon>
+            </button>
+          </div>
+        </div>
+      `;
+    }
     return html`
       <div class="validation-panel" role="status">
         <div class="validation-panel-head">

@@ -306,6 +306,37 @@ describe('OrFlowBuilder', () => {
     expect(strip.textContent).not.toContain('errors');
   });
 
+  it('dropping a palette node creates it on the canvas', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes: [], edges: [] } }, error: null }) };
+    await settle();
+    expect((el as any)._nodes).toHaveLength(0);
+
+    const drop = {
+      preventDefault() {},
+      clientX: 300,
+      clientY: 200,
+      dataTransfer: { types: ['application/x-or-node'], getData: () => 'log' },
+    };
+    (el as any)._onCanvasDrop(drop);
+    await (el as any).updateComplete;
+
+    expect((el as any)._nodes).toHaveLength(1);
+    expect((el as any)._nodes[0].kind).toBe('log');
+    expect((el as any)._selectedNodeId).toBe((el as any)._nodes[0].id);
+    expect((el as any)._actionToast).toContain('Added');
+  });
+
+  it('_serializeGraph maps kind->type and params->config for the backend', () => {
+    (el as any)._nodes = [{ id: 'n1', kind: 'route_queue', label: 'Q', description: '', x: 10, y: 20, params: { queue: 'queue_vip' } }];
+    (el as any)._edges = [{ id: 'e1', from: 'n1', to: 'n2', from_port: 'true' }];
+    const g = (el as any)._serializeGraph();
+    expect(g.nodes[0].type).toBe('route_queue');
+    expect(g.nodes[0].config).toEqual({ queue: 'queue_vip' });
+    expect(g.edges[0].label).toBe('true');
+  });
+
   it('renders the load error state with Retry when GET fails', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
