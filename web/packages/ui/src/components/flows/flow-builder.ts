@@ -1733,7 +1733,7 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _nodes: FlowNode[] = [];
   @state() private accessor _edges: FlowEdge[] = [];
   @state() private accessor _draggedId: string | null = null;
-  private _drag: { id: string; startX: number; startY: number; ox: number; oy: number } | null = null;
+  private _drag: { id: string; startX: number; startY: number; offX: number; offY: number } | null = null;
   private _svgRef: SVGSVGElement | null = null;
   private _pendingClick: { id: string } | null = null;
 
@@ -2174,6 +2174,23 @@ export class OrFlowBuilder extends LitElement {
     return rect.width > 0 ? vbWidth / rect.width : 1;
   }
 
+  // Map a viewport point to SVG user units via the screen CTM — correct under
+  // any viewBox scaling / scroll / letterboxing, unlike a width-ratio guess
+  // (that mismatch was making dropped + dragged nodes jump). Falls back to the
+  // raw coords when getScreenCTM is unavailable (jsdom).
+  private _clientToSvg(cx: number, cy: number): { x: number; y: number } {
+    const svg = this._svgRef ?? (this.shadowRoot?.querySelector('svg.canvas-svg') as SVGSVGElement | null);
+    this._svgRef = svg;
+    try {
+      const ctm = svg?.getScreenCTM?.();
+      if (!svg || !ctm || typeof DOMPoint === 'undefined') return { x: cx, y: cy };
+      const p = new DOMPoint(cx, cy).matrixTransform(ctm.inverse());
+      return { x: p.x, y: p.y };
+    } catch {
+      return { x: cx, y: cy };
+    }
+  }
+
   // Drag-and-drop authoring: a palette item is dragged (dataTransfer carries
   // its kind) and dropped on the canvas, which creates a node at the drop point.
   // Persist a graph the runtime can parse: the backend GraphNode reads `type`
@@ -2205,15 +2222,9 @@ export class OrFlowBuilder extends LitElement {
     const kind = e.dataTransfer?.getData('application/x-or-node') as FlowNodeKind;
     if (!kind) return;
     e.preventDefault();
-    const svg = this._svgRef ?? (this.shadowRoot?.querySelector('svg.canvas-svg') as SVGSVGElement | null);
-    let x = 80;
-    let y = 80;
-    if (svg) {
-      const rect = svg.getBoundingClientRect();
-      const scale = this._svgPerCssPx();
-      x = Math.max(0, (e.clientX - rect.left) * scale - 84);
-      y = Math.max(0, (e.clientY - rect.top) * scale - 58);
-    }
+    const p = this._clientToSvg(e.clientX, e.clientY);
+    const x = Math.max(0, Math.round((p.x - 84) / 10) * 10);
+    const y = Math.max(0, Math.round((p.y - 58) / 10) * 10);
     const entry = this._paletteEntry(kind);
     const id = this._genNodeId();
     this._nodes = [
@@ -2241,11 +2252,11 @@ export class OrFlowBuilder extends LitElement {
     return id;
   }
 
-  private _renderRail(label: string, onExpand: () => void) {
+  private _renderRail(label: string, icon: string, onExpand: () => void) {
     return html`
       <aside class="pane pane-rail">
         <button class="pane-rail-btn" title="Expand ${label}" @click=${onExpand}>
-          <uk-icon icon="chevrons-right" height="14" width="14"></uk-icon>
+          <uk-icon icon=${icon} height="14" width="14"></uk-icon>
         </button>
         <span class="pane-rail-label">${label}</span>
       </aside>
@@ -2264,23 +2275,22 @@ export class OrFlowBuilder extends LitElement {
     const target = e.target as HTMLElement;
     if (target.closest('.node-card-ports')) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    this._drag = { id: node.id, startX: e.clientX, startY: e.clientY, ox: node.x, oy: node.y };
+    // Grab offset in SVG units = where on the card the user grabbed, so the
+    // node follows the cursor without snapping its origin to the pointer.
+    const p = this._clientToSvg(e.clientX, e.clientY);
+    this._drag = { id: node.id, startX: e.clientX, startY: e.clientY, offX: p.x - node.x, offY: p.y - node.y };
     this._pendingClick = { id: node.id };
   }
 
   private _onNodePointerMove(e: PointerEvent): void {
     if (!this._drag) return;
-    const dxPx = e.clientX - this._drag.startX;
-    const dyPx = e.clientY - this._drag.startY;
-    // 4px threshold before promoting to drag (vs click)
-    if (this._draggedId == null && Math.hypot(dxPx, dyPx) < 4) return;
-    const ratio = this._svgPerCssPx();
-    const dx = dxPx * ratio;
-    const dy = dyPx * ratio;
+    // 4px threshold before promoting to drag (vs click).
+    if (this._draggedId == null && Math.hypot(e.clientX - this._drag.startX, e.clientY - this._drag.startY) < 4) return;
     this._draggedId = this._drag.id;
-    this._pendingClick = null;  // movement promoted past click threshold
-    const newX = Math.max(0, Math.round((this._drag.ox + dx) / 10) * 10);
-    const newY = Math.max(0, Math.round((this._drag.oy + dy) / 10) * 10);
+    this._pendingClick = null;
+    const p = this._clientToSvg(e.clientX, e.clientY);
+    const newX = Math.max(0, Math.round((p.x - this._drag.offX) / 10) * 10);
+    const newY = Math.max(0, Math.round((p.y - this._drag.offY) / 10) * 10);
     this._nodes = this._nodes.map(n =>
       n.id === this._drag!.id ? { ...n, x: newX, y: newY } : n
     );
@@ -2765,7 +2775,7 @@ export class OrFlowBuilder extends LitElement {
 
       <div class="body" style=${`grid-template-columns: ${this._paletteCollapsed ? '34px' : '220px'} 1fr ${this._inspectorCollapsed ? '34px' : '320px'}`}>
         ${this._paletteCollapsed
-          ? this._renderRail('Nodes', () => { this._paletteCollapsed = false; })
+          ? this._renderRail('Nodes', 'chevrons-right', () => { this._paletteCollapsed = false; })
           : this._renderPalette(isSim)}
 
         <main class=${isSim ? 'pane canvas-wrap canvas-wrap--sim' : 'pane canvas-wrap'}
@@ -2802,7 +2812,7 @@ export class OrFlowBuilder extends LitElement {
         </main>
 
         ${this._inspectorCollapsed && !isSim
-          ? this._renderRail('Inspector', () => { this._inspectorCollapsed = false; })
+          ? this._renderRail('Inspector', 'chevrons-left', () => { this._inspectorCollapsed = false; })
           : html`
             <aside class="pane inspector">
               <div class="pane-header">
