@@ -133,6 +133,9 @@ type ServerInterface interface {
 	// Deterministically simulate a flow draft
 	// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
 	SimulateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List simulation/runtime traces for a flow, newest first
+	// (GET /v1/orgs/{org_id}/flows/{id}/traces)
+	ListFlowTraces(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath, params ListFlowTracesParams)
 	// Validate a flow draft graph
 	// (POST /v1/orgs/{org_id}/flows/{id}/validate)
 	ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
@@ -433,6 +436,12 @@ func (_ Unimplemented) RollbackFlow(w http.ResponseWriter, r *http.Request, orgI
 // Deterministically simulate a flow draft
 // (POST /v1/orgs/{org_id}/flows/{id}/simulate)
 func (_ Unimplemented) SimulateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List simulation/runtime traces for a flow, newest first
+// (GET /v1/orgs/{org_id}/flows/{id}/traces)
+func (_ Unimplemented) ListFlowTraces(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath, params ListFlowTracesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2223,6 +2232,63 @@ func (siw *ServerInterfaceWrapper) SimulateFlow(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListFlowTraces operation middleware
+func (siw *ServerInterfaceWrapper) ListFlowTraces(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFlowTracesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlowTraces(w, r, orgId, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ValidateFlow operation middleware
 func (siw *ServerInterfaceWrapper) ValidateFlow(w http.ResponseWriter, r *http.Request) {
 
@@ -3503,6 +3569,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/simulate", wrapper.SimulateFlow)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/traces", wrapper.ListFlowTraces)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/validate", wrapper.ValidateFlow)
@@ -6026,7 +6095,7 @@ type SimulateFlowResponseObject interface {
 	VisitSimulateFlowResponse(w http.ResponseWriter) error
 }
 
-type SimulateFlow200JSONResponse Trace
+type SimulateFlow200JSONResponse SimulateFlowResponse
 
 func (response SimulateFlow200JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
 
@@ -6087,6 +6156,62 @@ type SimulateFlow500JSONResponse struct {
 }
 
 func (response SimulateFlow500JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowTracesRequestObject struct {
+	OrgId  OrgIdPath    `json:"org_id"`
+	Id     EntityIdPath `json:"id"`
+	Params ListFlowTracesParams
+}
+
+type ListFlowTracesResponseObject interface {
+	VisitListFlowTracesResponse(w http.ResponseWriter) error
+}
+
+type ListFlowTraces200JSONResponse struct {
+	Traces []Trace `json:"traces"`
+}
+
+func (response ListFlowTraces200JSONResponse) VisitListFlowTracesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowTraces404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListFlowTraces404JSONResponse) VisitListFlowTracesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowTraces500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListFlowTraces500JSONResponse) VisitListFlowTracesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -7672,6 +7797,9 @@ type StrictServerInterface interface {
 	// Deterministically simulate a flow draft
 	// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
 	SimulateFlow(ctx context.Context, request SimulateFlowRequestObject) (SimulateFlowResponseObject, error)
+	// List simulation/runtime traces for a flow, newest first
+	// (GET /v1/orgs/{org_id}/flows/{id}/traces)
+	ListFlowTraces(ctx context.Context, request ListFlowTracesRequestObject) (ListFlowTracesResponseObject, error)
 	// Validate a flow draft graph
 	// (POST /v1/orgs/{org_id}/flows/{id}/validate)
 	ValidateFlow(ctx context.Context, request ValidateFlowRequestObject) (ValidateFlowResponseObject, error)
@@ -8881,6 +9009,34 @@ func (sh *strictHandler) SimulateFlow(w http.ResponseWriter, r *http.Request, or
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SimulateFlowResponseObject); ok {
 		if err := validResponse.VisitSimulateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFlowTraces operation middleware
+func (sh *strictHandler) ListFlowTraces(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath, params ListFlowTracesParams) {
+	var request ListFlowTracesRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlowTraces(ctx, request.(ListFlowTracesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlowTraces")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowTracesResponseObject); ok {
+		if err := validResponse.VisitListFlowTracesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

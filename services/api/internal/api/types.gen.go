@@ -1545,6 +1545,15 @@ type SimulateFlowRequest struct {
 	VirtualClockStart *time.Time `json:"virtual_clock_start,omitempty"`
 }
 
+// SimulateFlowResponse A simulation trace plus the resolved virtual clock start (so replay is exact even when the request omitted it).
+type SimulateFlowResponse struct {
+	// Trace An ordered runtime or simulation trace explaining a routing outcome.
+	Trace Trace `json:"trace"`
+
+	// VirtualClockStart The virtual clock origin actually used (echoed from the request, or server-chosen when omitted).
+	VirtualClockStart time.Time `json:"virtual_clock_start"`
+}
+
 // SimulateScriptedReservationOutcome A scripted reservation outcome for deterministic simulation (applied in order).
 type SimulateScriptedReservationOutcome struct {
 	AgentId *UUIDv7                                   `json:"agent_id,omitempty"`
@@ -1594,8 +1603,11 @@ type Skill struct {
 
 // Trace An ordered runtime or simulation trace explaining a routing outcome.
 type Trace struct {
-	CreatedAt     *time.Time `json:"created_at,omitempty"`
-	FlowVersionId *UUIDv7    `json:"flow_version_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// FlowId Set for simulation traces (which pin a draft, not a published version).
+	FlowId        *UUIDv7 `json:"flow_id,omitempty"`
+	FlowVersionId *UUIDv7 `json:"flow_version_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -1617,8 +1629,10 @@ type TraceKind string
 
 // TraceStep defines model for TraceStep.
 type TraceStep struct {
-	CatalogRefs  *[]string               `json:"catalog_refs,omitempty"`
-	DurationMs   *int                    `json:"duration_ms,omitempty"`
+	CatalogRefs *[]string `json:"catalog_refs,omitempty"`
+
+	// DurationMs Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation.
+	DurationMs   *float32                `json:"duration_ms,omitempty"`
 	EffectStatus *string                 `json:"effect_status,omitempty"`
 	Error        *string                 `json:"error,omitempty"`
 	Index        int                     `json:"index"`
@@ -1626,7 +1640,10 @@ type TraceStep struct {
 	NodeId       string                  `json:"node_id"`
 	NodeKind     string                  `json:"node_kind"`
 	Output       *map[string]interface{} `json:"output,omitempty"`
-	Status       TraceStepStatus         `json:"status"`
+
+	// Port The output port the node took (e.g. true/false, accepted/timeout).
+	Port   *string         `json:"port,omitempty"`
+	Status TraceStepStatus `json:"status"`
 }
 
 // TraceStepStatus defines model for TraceStep.Status.
@@ -2101,6 +2118,11 @@ type ListFlowsParams struct {
 
 // UpdateFlow409JSONResponseBodyError defines parameters for UpdateFlow.
 type UpdateFlow409JSONResponseBodyError string
+
+// ListFlowTracesParams defines parameters for ListFlowTraces.
+type ListFlowTracesParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // ListQueuesParams defines parameters for ListQueues.
 type ListQueuesParams struct {

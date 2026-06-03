@@ -1049,6 +1049,10 @@ components:
         status:
           type: string
           enum: [ok, error, skipped, suspended]
+        port:
+          type: string
+          nullable: true
+          description: The output port the node took (e.g. true/false, accepted/timeout).
         input:
           type: object
           additionalProperties: true
@@ -1065,8 +1069,9 @@ components:
           type: string
           nullable: true
         duration_ms:
-          type: integer
+          type: number
           nullable: true
+          description: Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation.
         error:
           type: string
           nullable: true
@@ -1094,6 +1099,10 @@ components:
         flow_version_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
+        flow_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          description: Set for simulation traces (which pin a draft, not a published version).
         outcome:
           type: string
           nullable: true
@@ -1105,6 +1114,20 @@ components:
           type: string
           format: date-time
           readOnly: true
+
+    SimulateFlowResponse:
+      type: object
+      description: A simulation trace plus the resolved virtual clock start (so replay is exact even when the request omitted it).
+      required:
+        - virtual_clock_start
+        - trace
+      properties:
+        virtual_clock_start:
+          type: string
+          format: date-time
+          description: The virtual clock origin actually used (echoed from the request, or server-chosen when omitted).
+        trace:
+          $ref: "#/components/schemas/Trace"
 
     CreateRouteRequest:
       type: object
@@ -3338,7 +3361,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Trace"
+                $ref: "#/components/schemas/SimulateFlowResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
@@ -3349,6 +3372,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FlowValidationResult"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/traces:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Flows]
+      operationId: ListFlowTraces
+      summary: List simulation/runtime traces for a flow, newest first
+      security:
+        - OrgHeader: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Traces for the flow, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [traces]
+                properties:
+                  traces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Trace"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalServerError"
 

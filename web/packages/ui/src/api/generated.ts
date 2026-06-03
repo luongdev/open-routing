@@ -417,6 +417,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org_id}/flows/{id}/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List simulation/runtime traces for a flow, newest first */
+        get: operations["ListFlowTraces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/flows/{id}/publish": {
         parameters: {
             query?: never;
@@ -1751,6 +1780,8 @@ export interface components {
             node_kind: string;
             /** @enum {string} */
             status: "ok" | "error" | "skipped" | "suspended";
+            /** @description The output port the node took (e.g. true/false, accepted/timeout). */
+            port?: string | null;
             input?: {
                 [key: string]: unknown;
             } | null;
@@ -1759,6 +1790,7 @@ export interface components {
             } | null;
             catalog_refs?: string[];
             effect_status?: string | null;
+            /** @description Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation. */
             duration_ms?: number | null;
             error?: string | null;
         };
@@ -1770,10 +1802,21 @@ export interface components {
             kind: "runtime" | "simulation";
             route_request_id?: components["schemas"]["UUIDv7"];
             flow_version_id?: components["schemas"]["UUIDv7"];
+            /** @description Set for simulation traces (which pin a draft, not a published version). */
+            flow_id?: components["schemas"]["UUIDv7"];
             outcome?: string | null;
             steps: components["schemas"]["TraceStep"][];
             /** Format: date-time */
             readonly created_at: string;
+        };
+        /** @description A simulation trace plus the resolved virtual clock start (so replay is exact even when the request omitted it). */
+        SimulateFlowResponse: {
+            /**
+             * Format: date-time
+             * @description The virtual clock origin actually used (echoed from the request, or server-chosen when omitted).
+             */
+            virtual_clock_start: string;
+            trace: components["schemas"]["Trace"];
         };
         /** @description Admin/test entry point to drive a route through the published flow for a channel + entry code. */
         CreateRouteRequest: {
@@ -3637,7 +3680,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Trace"];
+                    "application/json": components["schemas"]["SimulateFlowResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3651,6 +3694,44 @@ export interface operations {
                     "application/json": components["schemas"]["FlowValidationResult"];
                 };
             };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListFlowTraces: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Traces for the flow, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        traces: components["schemas"]["Trace"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
     };

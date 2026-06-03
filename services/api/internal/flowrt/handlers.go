@@ -378,6 +378,10 @@ func (*Endpoints) SimulateFlow(_ context.Context, _ api.SimulateFlowRequestObjec
 	return api.SimulateFlow500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
 
+func (*Endpoints) ListFlowTraces(_ context.Context, _ api.ListFlowTracesRequestObject) (api.ListFlowTracesResponseObject, error) {
+	return api.ListFlowTraces500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
+}
+
 func (*Endpoints) CreateRouteRequest(_ context.Context, _ api.CreateRouteRequestRequestObject) (api.CreateRouteRequestResponseObject, error) {
 	return api.CreateRouteRequest500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
