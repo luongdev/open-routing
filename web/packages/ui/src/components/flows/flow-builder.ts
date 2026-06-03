@@ -15,7 +15,13 @@ import { Task } from '@lit/task';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 import type { ApiClient } from '../../api/client.js';
 import { autoArrange } from './flow-layout.js';
+import {
+  groupToDsl, dslToGroup, newComparison, newGroup, COND_OPS,
+  type Group, type CondNode, type Comparison,
+} from './flow-condition.js';
 import type { components } from '../../api/generated.js';
+
+type ExprFunction = components['schemas']['ExprFunction'];
 import {
   MOCK_TRACE_STEPS,
   MOCK_TRACE_STEPS_FAIL,
@@ -977,6 +983,131 @@ export class OrFlowBuilder extends LitElement {
       border-radius: 4px;
       padding: 0 3px;
       font-size: 10px;
+    }
+    .expr-toolbar { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+    .expr-fn-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 10.5px;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .expr-fn-btn:hover { color: var(--foreground); border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
+    .expr-picker {
+      margin-top: 6px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      max-height: 220px;
+      overflow-y: auto;
+      padding: 4px;
+    }
+    .expr-picker-ns {
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+      padding: 5px 6px 2px;
+    }
+    .expr-picker-item {
+      display: block; width: 100%; text-align: left;
+      border: 0; background: transparent;
+      color: var(--foreground);
+      cursor: pointer;
+      font-family: var(--font-mono, monospace);
+      font-size: 11px;
+      padding: 4px 6px;
+      border-radius: 5px;
+    }
+    .expr-picker-item:hover { background: var(--muted); }
+    .expr-preview {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 6px;
+      padding: 5px 7px;
+      background: var(--muted);
+      border-radius: 6px;
+    }
+    .expr-preview code {
+      flex: 1; min-width: 0;
+      font-size: 10.5px;
+      color: var(--foreground);
+      overflow-wrap: anywhere;
+    }
+    .expr-copy {
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 5px;
+      display: inline-flex; align-items: center;
+    }
+    .expr-copy:hover:not([disabled]) { color: var(--foreground); }
+    .expr-copy[disabled] { opacity: 0.4; cursor: default; }
+    .cond-group {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .cond-group--nested {
+      border-left: 2px solid color-mix(in oklch, var(--primary) 40%, var(--border));
+      background: color-mix(in oklch, var(--muted) 45%, transparent);
+    }
+    .cond-group-head { display: flex; align-items: center; gap: 10px; }
+    .cond-andor {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .cond-andor button {
+      border: 0; background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 10.5px; font-weight: 600;
+      padding: 2px 10px;
+    }
+    .cond-andor button.on { background: var(--primary); color: var(--primary-foreground); }
+    .cond-not {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10.5px; color: var(--muted-foreground); cursor: pointer;
+    }
+    .cond-child { display: flex; align-items: flex-start; gap: 6px; }
+    .cond-child > :first-child { flex: 1; min-width: 0; }
+    .cond-rm {
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      padding: 4px 5px;
+      border-radius: 5px;
+      display: inline-flex; align-items: center;
+      margin-top: 1px;
+    }
+    .cond-rm:hover { color: var(--destructive, #e5484d); border-color: color-mix(in oklch, var(--destructive, #e5484d) 35%, var(--border)); }
+    .cond-add { display: flex; gap: 6px; }
+    .cond-add button {
+      border: 1px dashed var(--border);
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 10.5px;
+      padding: 3px 9px;
+      border-radius: 6px;
+    }
+    .cond-add button:hover { color: var(--foreground); border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
+    .cond-truthy {
+      display: inline-flex; align-items: center;
+      font-size: 10.5px; font-style: italic;
+      color: var(--muted-foreground);
+      padding: 0 4px;
     }
     .form-section .chip-row {
       display: flex;
@@ -1959,6 +2090,13 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _selectedEdgeId: string | null = null;
   // Node ids whose condition field is in raw "advanced" mode.
   @state() private accessor _exprAdvanced: Set<string> = new Set();
+  // Condition-DSL function catalog (fetched once from /v1/meta/expr-functions).
+  @state() private accessor _exprCatalog: ExprFunction[] = [];
+  private _catalogFetched = false;
+  // Which node's Advanced editor has the function picker open.
+  @state() private accessor _exprPickerNode: string | null = null;
+  // Ephemeral Visual-builder group per node id (derived from the stored DSL).
+  @state() private accessor _condGroups: Map<string, Group> = new Map();
 
   @state() private accessor _actionToast: string | null = null;
   @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
@@ -2041,11 +2179,25 @@ export class OrFlowBuilder extends LitElement {
     // The canvas SVG only exists once the flow has loaded (the first render is
     // the pending/error state), so bind wheel here, not in firstUpdated — and
     // non-passive so we can preventDefault the page scroll while zooming.
+    if (!this._catalogFetched && this.client) {
+      this._catalogFetched = true;
+      void this._fetchExprCatalog();
+    }
     if (this._wheelBound) return;
     const svg = this._svgEl();
     if (svg) {
       svg.addEventListener('wheel', this._onWheel, { passive: false });
       this._wheelBound = true;
+    }
+  }
+
+  private async _fetchExprCatalog(): Promise<void> {
+    try {
+      const { data } = (await this.client.GET('/v1/meta/expr-functions' as never, {} as never)) as
+        { data?: { functions?: ExprFunction[] } };
+      this._exprCatalog = data?.functions ?? [];
+    } catch {
+      this._exprCatalog = []; // picker just stays empty if the fetch fails
     }
   }
 
@@ -3240,46 +3392,171 @@ export class OrFlowBuilder extends LitElement {
     const next = new Set(this._exprAdvanced);
     next.has(id) ? next.delete(id) : next.add(id);
     this._exprAdvanced = next;
+    // Drop the cached Visual model so re-entering Visual re-parses the DSL the
+    // user may have just hand-edited in Advanced.
+    const groups = new Map(this._condGroups);
+    groups.delete(id);
+    this._condGroups = groups;
   }
 
   private _varSuggestions(): string[] {
     return MOCK_INIT_VARS.map(v => v.key);
   }
 
+  // ----- Condition field: Visual AND/OR builder ⇄ Advanced DSL -----
+
+  private _renderConditionField(node: FlowNode, f: FieldDef) {
+    const exprStr = String(node.params?.[f.key] ?? '');
+    const parseable = dslToGroup(exprStr) !== null; // simple subset → Visual OK
+    const advanced = this._exprAdvanced.has(node.id) || !parseable;
+    return html`
+      <div class="form-section">
+        <label>
+          <span>${f.label}</span>
+          <button class="expr-mode" ?disabled=${advanced && !parseable}
+            title=${advanced && !parseable ? 'Uses functions — edit as text' : ''}
+            @click=${() => this._toggleExprMode(node.id)}>
+            ${advanced ? 'Visual' : 'Advanced'}
+          </button>
+        </label>
+        ${advanced ? this._renderAdvancedExpr(node, f, exprStr) : this._renderVisualExpr(node, f)}
+      </div>`;
+  }
+
+  private _renderAdvancedExpr(node: FlowNode, f: FieldDef, exprStr: string) {
+    return html`
+      <textarea id=${'expr-ta-' + node.id} class="form-input" rows="2"
+        placeholder="customer.tier == gold AND num.abs(score) > 3"
+        .value=${exprStr}
+        @change=${(e: Event) => this._updateNodeParam(node.id, f.key, (e.target as HTMLTextAreaElement).value.trim())}></textarea>
+      <div class="expr-toolbar">
+        <button class="expr-fn-btn"
+          @click=${(e: Event) => { e.stopPropagation(); this._exprPickerNode = this._exprPickerNode === node.id ? null : node.id; }}>
+          <uk-icon icon="function-square" height="12" width="12"></uk-icon> fn
+        </button>
+        <span class="expr-hint">AND/OR/NOT · ( ) · == != &lt; &gt; &lt;= &gt;= · ns.fn(…) · dotted vars · "quoted"</span>
+      </div>
+      ${this._exprPickerNode === node.id ? this._renderExprPicker(node, f) : nothing}`;
+  }
+
+  private _renderExprPicker(node: FlowNode, f: FieldDef) {
+    if (this._exprCatalog.length === 0) {
+      return html`<div class="expr-picker"><div class="expr-hint" style="padding:8px">No functions available.</div></div>`;
+    }
+    const byNs = new Map<string, ExprFunction[]>();
+    for (const fn of this._exprCatalog) {
+      (byNs.get(fn.ns) ?? byNs.set(fn.ns, []).get(fn.ns)!).push(fn);
+    }
+    return html`
+      <div class="expr-picker">
+        ${[...byNs.entries()].map(([ns, fns]) => html`
+          <div class="expr-picker-ns">${ns}</div>
+          ${fns.map(fn => html`
+            <button class="expr-picker-item" title=${fn.summary} @click=${() => this._insertFn(node, f, fn)}>
+              ${fn.signature}
+            </button>`)}
+        `)}
+      </div>`;
+  }
+
+  private _insertFn(node: FlowNode, f: FieldDef, fn: ExprFunction): void {
+    const insert = `${fn.ns}.${fn.name}()`;
+    const ta = this.shadowRoot?.getElementById('expr-ta-' + node.id) as HTMLTextAreaElement | null;
+    const cur = String(node.params?.[f.key] ?? '');
+    let next: string;
+    let caret: number;
+    if (ta && ta.selectionStart != null) {
+      const s = ta.selectionStart;
+      next = cur.slice(0, s) + insert + cur.slice(ta.selectionEnd ?? s);
+      caret = s + insert.length - 1; // place cursor inside the ()
+    } else {
+      next = cur + insert;
+      caret = next.length - 1;
+    }
+    this._updateNodeParam(node.id, f.key, next);
+    this._exprPickerNode = null;
+    void this.updateComplete.then(() => {
+      const t = this.shadowRoot?.getElementById('expr-ta-' + node.id) as HTMLTextAreaElement | null;
+      if (t) { t.focus(); t.setSelectionRange(caret, caret); }
+    });
+  }
+
+  private _condGroupFor(node: FlowNode, key: string): Group {
+    let g = this._condGroups.get(node.id);
+    if (!g) {
+      g = dslToGroup(String(node.params?.[key] ?? '')) ?? newGroup('AND');
+      this._condGroups.set(node.id, g);
+    }
+    return g;
+  }
+
+  private _touchGroup(node: FlowNode, f: FieldDef): void {
+    this._condGroups = new Map(this._condGroups); // new ref → re-render
+    this._updateNodeParam(node.id, f.key, groupToDsl(this._condGroups.get(node.id)!));
+  }
+
+  private _renderVisualExpr(node: FlowNode, f: FieldDef) {
+    const group = this._condGroupFor(node, f.key);
+    const dsl = groupToDsl(group);
+    return html`
+      ${this._renderGroup(node, f, group, 0)}
+      <datalist id="or-var-list">${this._varSuggestions().map(s => html`<option value=${s}></option>`)}</datalist>
+      <div class="expr-preview">
+        <code>${dsl || '(empty — add a condition)'}</code>
+        <button class="expr-copy" title="Copy DSL" ?disabled=${!dsl}
+          @click=${() => navigator.clipboard?.writeText(dsl)}><uk-icon icon="copy" height="12" width="12"></uk-icon></button>
+      </div>`;
+  }
+
+  private _renderGroup(node: FlowNode, f: FieldDef, group: Group, depth: number): unknown {
+    return html`
+      <div class=${'cond-group' + (depth > 0 ? ' cond-group--nested' : '')}>
+        <div class="cond-group-head">
+          <div class="cond-andor">
+            <button class=${group.op === 'AND' ? 'on' : ''} @click=${() => { group.op = 'AND'; this._touchGroup(node, f); }}>AND</button>
+            <button class=${group.op === 'OR' ? 'on' : ''} @click=${() => { group.op = 'OR'; this._touchGroup(node, f); }}>OR</button>
+          </div>
+          ${depth > 0 ? html`<label class="cond-not"><input type="checkbox" .checked=${!!group.not}
+            @change=${(e: Event) => { group.not = (e.target as HTMLInputElement).checked; this._touchGroup(node, f); }}> NOT</label>` : nothing}
+        </div>
+        ${group.children.map((ch: CondNode, i: number) => html`
+          <div class="cond-child">
+            ${ch.kind === 'group' ? this._renderGroup(node, f, ch, depth + 1) : this._renderCmpRow(node, f, ch)}
+            <button class="cond-rm" title="Remove" @click=${() => { group.children.splice(i, 1); this._touchGroup(node, f); }}>
+              <uk-icon icon="x" height="12" width="12"></uk-icon>
+            </button>
+          </div>`)}
+        <div class="cond-add">
+          <button @click=${() => { group.children.push(newComparison()); this._touchGroup(node, f); }}>+ condition</button>
+          <button @click=${() => { group.children.push(newGroup('AND')); this._touchGroup(node, f); }}>+ group</button>
+        </div>
+      </div>`;
+  }
+
+  private _renderCmpRow(node: FlowNode, f: FieldDef, c: Comparison) {
+    return html`
+      <div class="cond-builder">
+        <input class="form-input" list="or-var-list" placeholder="variable" .value=${c.lhs}
+          @input=${(e: Event) => { c.lhs = (e.target as HTMLInputElement).value; this._touchGroup(node, f); }}>
+        <select class="form-input cond-op" @change=${(e: Event) => {
+          const val = (e.target as HTMLSelectElement).value;
+          if (val === 'truthy') { c.mode = 'truthy'; } else { c.mode = 'cmp'; c.op = val as Comparison['op']; }
+          this._touchGroup(node, f);
+        }}>
+          <option value="truthy" ?selected=${c.mode === 'truthy'}>is set</option>
+          ${COND_OPS.map(o => html`<option value=${o} ?selected=${c.mode === 'cmp' && c.op === o}>${o}</option>`)}
+        </select>
+        ${c.mode === 'truthy'
+          ? html`<span class="cond-truthy">truthy</span>`
+          : html`<input class="form-input" placeholder="value" .value=${c.rhs}
+              @input=${(e: Event) => { c.rhs = (e.target as HTMLInputElement).value; this._touchGroup(node, f); }}>`}
+      </div>`;
+  }
+
   private _renderField(node: FlowNode, f: FieldDef) {
     const v = node.params?.[f.key];
     if (f.type === 'condition') {
-      const expr = String(v ?? '');
-      const parsed = this._parseCondition(expr);
-      const advanced = this._exprAdvanced.has(node.id) || (expr !== '' && parsed === null);
-      return html`
-        <div class="form-section">
-          <label>
-            <span>${f.label}</span>
-            <button class="expr-mode" @click=${() => this._toggleExprMode(node.id)}>
-              ${advanced ? 'Basic' : 'Advanced'}
-            </button>
-          </label>
-          ${advanced ? html`
-            <textarea class="form-input" rows="2" placeholder="customer.tier == gold"
-              .value=${expr}
-              @change=${(e: Event) => this._updateNodeParam(node.id, f.key, (e.target as HTMLTextAreaElement).value.trim())}></textarea>
-            <div class="expr-hint">Grammar: <code>variable</code> or <code>variable OP value</code>. OP: == != &lt; &gt; &lt;= &gt;=. Strings are bare or "quoted".</div>
-          ` : html`
-            <div class="cond-builder">
-              <input class="form-input" list="or-var-list" placeholder="variable" .value=${parsed?.lhs ?? ''}
-                @input=${(e: Event) => this._setCondition(node.id, f.key, { lhs: (e.target as HTMLInputElement).value })}>
-              <select class="form-input cond-op"
-                @change=${(e: Event) => this._setCondition(node.id, f.key, { op: (e.target as HTMLSelectElement).value })}>
-                ${EXPR_OPS.map(o => html`<option value=${o} ?selected=${(parsed?.op ?? '==') === o}>${o}</option>`)}
-              </select>
-              <input class="form-input" placeholder="value" .value=${parsed?.rhs ?? ''}
-                @input=${(e: Event) => this._setCondition(node.id, f.key, { rhs: (e.target as HTMLInputElement).value })}>
-            </div>
-            <datalist id="or-var-list">${this._varSuggestions().map(s => html`<option value=${s}></option>`)}</datalist>
-            <div class="expr-hint">Leave the value empty for a truthy test. Switch to Advanced for a raw expression.</div>
-          `}
-        </div>`;
+      return this._renderConditionField(node, f);
     }
     if (f.type === 'cases') {
       const arr = Array.isArray(v) ? (v as string[]) : [];

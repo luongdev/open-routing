@@ -465,6 +465,36 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._composeCondition({ lhs: 'age', op: '>', rhs: '18' })).toBe('age > 18');
   });
 
+  it('Visual builder caches a parsed group and writes canonical DSL on edit', () => {
+    const node = { id: 'iff', kind: 'if_else', params: { condition: 'age > 18' } };
+    (el as any)._nodes = [node];
+    const f = { key: 'condition', label: 'Condition', type: 'condition' };
+    const g = (el as any)._condGroupFor(node, 'condition');
+    expect(g.kind).toBe('group');
+    expect(g.children).toHaveLength(1);
+    // mutate the cached model, then touch → node param re-serialized from the group
+    g.children.push({ kind: 'cmp', mode: 'truthy', lhs: 'vip', op: '==', rhs: '' });
+    (el as any)._touchGroup(node, f);
+    expect((el as any)._nodes[0].params.condition).toBe('age > 18 AND vip');
+  });
+
+  it('toggling expr mode drops the cached Visual group so it re-parses', () => {
+    const node = { id: 'iff', kind: 'if_else', params: { condition: 'age > 18' } };
+    (el as any)._nodes = [node];
+    (el as any)._condGroupFor(node, 'condition');
+    expect((el as any)._condGroups.has('iff')).toBe(true);
+    (el as any)._toggleExprMode('iff');
+    expect((el as any)._condGroups.has('iff')).toBe(false);
+  });
+
+  it('inserts ns.name() at the caret and parks the cursor inside the parens', () => {
+    const node = { id: 'iff', kind: 'if_else', params: { condition: '' } };
+    (el as any)._nodes = [node];
+    const f = { key: 'condition', label: 'Condition', type: 'condition' };
+    (el as any)._insertFn(node, f, { ns: 'num', name: 'abs', arity: 1, signature: 'num.abs(x)', summary: '' });
+    expect((el as any)._nodes[0].params.condition).toBe('num.abs()');
+  });
+
   it('loads a backend-shaped graph (type/config) into the UI shape (kind/params)', async () => {
     // Graph authored via the API only carries type/config — the UI must map it
     // to kind/params on load or the render crashes on node.kind.
