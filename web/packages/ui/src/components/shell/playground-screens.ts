@@ -2,6 +2,7 @@ import { html, type TemplateResult } from 'lit';
 import type { ApiClient } from '../../api/client.js';
 import { MOCK_ORG_ID, MOCK_AGENTS, MOCK_SKILLS, MOCK_QUEUES, MOCK_CHANNELS, MOCK_ADAPTERS, MOCK_BREAK_REASONS, MOCK_IMPORT_JOB, MOCK_FLOWS } from './playground-mock-data.js';
 import '../vnext/index.js';
+import '../flows/flow-list.js';
 
 export interface ScreenEntry {
   id: string;
@@ -165,7 +166,7 @@ export const SCREENS: ReadonlyArray<ScreenEntry> = [
     id: 'vnext-flow-list',
     label: 'Flow List',
     group: 'vNext Preview',
-    render: () => html`<or-flow-list .orgId=${MOCK_ORG_ID}></or-flow-list>`,
+    render: (c) => html`<or-flow-list .client=${c} .orgId=${MOCK_ORG_ID}></or-flow-list>`,
   },
   {
     id: 'vnext-flow-builder',

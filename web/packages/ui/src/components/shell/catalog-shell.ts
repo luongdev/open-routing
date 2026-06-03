@@ -58,6 +58,7 @@ const NAV_ENTRIES: readonly NavEntry[] = [
   { key: 'channels',      label: 'Channels',       icon: 'radio',        path: '/orgs/{orgId}/channels' },
   { key: 'adapters',      label: 'Adapters',       icon: 'plug',         path: '/orgs/{orgId}/adapters' },
   { key: 'break-reasons', label: 'Break Reasons',  icon: 'pause-circle', path: '/orgs/{orgId}/break-reasons' },
+  { key: 'flows',         label: 'Flows',          icon: 'git-branch',   path: '/orgs/{orgId}/flows' },
   { key: '__divider__',   label: '',               icon: '',             path: '' },
   { key: 'imports',       label: 'Bulk Import',    icon: 'upload',       path: '/orgs/{orgId}/imports/new' },
   { key: 'status',        label: 'Agent Status',   icon: 'activity',     path: '/orgs/{orgId}/agents/status' },
@@ -498,6 +499,13 @@ export class OrCatalogShell extends LitElement {
       enter: (params) => this._composedEnter(params, () => import('../queues/queue-detail.js'), 'queues'),
       render: ({ org_id, id }: Record<string, string | undefined>) =>
         html`<or-queue-detail .orgId=${org_id ?? ''} .entityId=${id ?? ''} .client=${this._client!}></or-queue-detail>`,
+    },
+    {
+      // Flows — v0.2 Layer 2 (graduated from the vNext mock onto the contract).
+      path: '/orgs/:org_id/flows',
+      enter: (params) => this._composedEnter(params, () => import('../flows/flow-list.js'), 'flows'),
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-flow-list .orgId=${org_id ?? ''} .client=${this._client!}></or-flow-list>`,
     },
     {
       // Channels — wired in Wave 4 (Plan 06-10)

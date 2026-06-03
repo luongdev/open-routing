@@ -8,6 +8,7 @@ import {
   MOCK_CHANNELS,
   MOCK_ADAPTERS,
   MOCK_BREAK_REASONS,
+  MOCK_FLOWS,
   MOCK_AGENT_STATES,
   MOCK_IMPORT_JOB,
 } from './playground-mock-data.js';
@@ -90,6 +91,19 @@ function mockFetch(req: Request): Promise<Response> {
     channels:      MOCK_CHANNELS,
     adapters:      MOCK_ADAPTERS,
     'break-reasons': MOCK_BREAK_REASONS,
+    // Map the FlowSummary fixture onto the api.Flow shape the real or-flow-list
+    // reads (status -> enabled; graph/created_at synthesised).
+    flows: MOCK_FLOWS.map((f) => ({
+      id: f.id,
+      org_id: f.org_id,
+      code: f.code,
+      name: f.name,
+      graph: {},
+      enabled: f.status !== 'archived',
+      version: f.version,
+      created_at: f.updated_at,
+      updated_at: f.updated_at,
+    })),
   };
 
   const items = entityMap[entity];
