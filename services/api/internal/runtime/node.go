@@ -139,10 +139,21 @@ type Suspension struct {
 }
 
 // StepResult is what Execute returns. Exactly one outcome is expected: follow
-// Next, suspend (park a continuation due at ResumeAt), fail (typed), or
-// terminate.
+// an edge (by explicit Next node id, or by Port for a branch node), suspend
+// (park a continuation due at ResumeAt), fail (typed), or terminate.
+//
+// Port selects which labelled out-edge to follow when a node has several
+// (if_else -> "true"/"false", switch_case -> the case value). The executor
+// resolves (node, Port) against the compiled edges. Next is the escape hatch
+// for a node that names its successor directly; an empty Port + single out-edge
+// means "follow the only edge".
+//
+// Output is recorded on the trace step (node-reported outputs for debugging);
+// it does not affect routing.
 type StepResult struct {
 	Next       string          `json:"next,omitempty"`
+	Port       string          `json:"port,omitempty"`
+	Output     map[string]any  `json:"output,omitempty"`
 	Terminal   bool            `json:"terminal,omitempty"`
 	Suspension *Suspension     `json:"-"`
 	Failure    *RoutingFailure `json:"-"`
