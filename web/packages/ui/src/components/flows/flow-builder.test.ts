@@ -337,6 +337,85 @@ describe('OrFlowBuilder', () => {
     expect(g.edges[0].label).toBe('true');
   });
 
+  it('dragging from a port to a node creates an edge with from_port=label', async () => {
+    const nodes = [
+      { id: 'n1', kind: 'if_else', label: 'If', description: '', x: 0, y: 0, params: { expr: 'x' }, outputs: [{ id: 'true', label: 'true', kind: 'branch' }, { id: 'false', label: 'false', kind: 'default' }] },
+      { id: 'n2', kind: 'end', label: 'End', description: '', x: 0, y: 200 },
+    ];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges: [] } }, error: null }) };
+    await settle();
+
+    (el as any)._connectEdge('n1', 'true', 'branch', 'n2');
+    await (el as any).updateComplete;
+    const edges = (el as any)._edges;
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ from: 'n1', to: 'n2', from_port: 'true', label: 'true' });
+    expect((el as any)._validation).toBeNull();
+  });
+
+  it('connecting a linear node replaces its single outgoing edge', async () => {
+    const nodes = [
+      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 0 },
+      { id: 'b', kind: 'end', label: 'B', description: '', x: 0, y: 100 },
+      { id: 'c', kind: 'end', label: 'C', description: '', x: 0, y: 200 },
+    ];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges: [] } }, error: null }) };
+    await settle();
+    (el as any)._connectEdge('a', 'done', 'success', 'b');
+    (el as any)._connectEdge('a', 'done', 'success', 'c');
+    await (el as any).updateComplete;
+    expect((el as any)._edges).toHaveLength(1);
+    expect((el as any)._edges[0].to).toBe('c');
+  });
+
+  it('editing config mutates node.params and clears validation', async () => {
+    const nodes = [{ id: 'q', kind: 'route_queue', label: 'Q', description: '', x: 0, y: 0, params: {} }];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges: [] } }, error: null }) };
+    await settle();
+    (el as any)._validation = { valid: false, issues: [] };
+    (el as any)._updateNodeParam('q', 'queue', 'queue_vip');
+    expect((el as any)._nodes[0].params.queue).toBe('queue_vip');
+    expect((el as any)._validation).toBeNull();
+  });
+
+  it('editing switch_case cases regenerates outputs and prunes stale edges', async () => {
+    const nodes = [
+      { id: 's', kind: 'switch_case', label: 'S', description: '', x: 0, y: 0, params: { cases: ['a', 'b'] }, outputs: [{ id: 'a', label: 'a', kind: 'branch' }, { id: 'b', label: 'b', kind: 'branch' }, { id: 'default', label: 'default', kind: 'default' }] },
+      { id: 'x', kind: 'end', label: 'X', description: '', x: 0, y: 200 },
+    ];
+    const edges = [{ id: 'e1', from: 's', to: 'x', from_port: 'b', label: 'b' }];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges } }, error: null }) };
+    await settle();
+    // Remove case 'b' → its edge must be pruned and outputs regenerated.
+    (el as any)._updateNodeParam('s', 'cases', ['a']);
+    await (el as any).updateComplete;
+    const sNode = (el as any)._nodes.find((n: any) => n.id === 's');
+    expect(sNode.outputs.map((o: any) => o.id)).toEqual(['a', 'default']);
+    expect((el as any)._edges).toHaveLength(0); // edge on removed port 'b' pruned
+  });
+
+  it('zoom-around-cursor keeps the world point under the cursor fixed', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    (el as any)._zoom = 1; (el as any)._panX = 0; (el as any)._panY = 0;
+    // world point under cursor (100,100) at zoom 1 = (100,100). After zoom it must still map there.
+    (el as any)._zoomAround(100, 100, 2);
+    expect((el as any)._zoom).toBe(2);
+    // screen 100 = panX + world*zoom → world = (100 - panX)/zoom
+    const world = (100 - (el as any)._panX) / (el as any)._zoom;
+    expect(world).toBeCloseTo(100, 5);
+  });
+
   it('renders the load error state with Retry when GET fails', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;

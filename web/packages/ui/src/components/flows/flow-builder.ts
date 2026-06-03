@@ -14,6 +14,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 import type { ApiClient } from '../../api/client.js';
+import { autoArrange } from './flow-layout.js';
 import type { components } from '../../api/generated.js';
 import {
   MOCK_TRACE_STEPS,
@@ -25,6 +26,7 @@ import {
   type FlowNode,
   type FlowEdge,
   type FlowNodeKind,
+  type FlowNodeOutput,
   type TraceStep,
   type StepStatus,
   type InitVar,
@@ -176,6 +178,71 @@ const KIND_PROPS: Record<FlowNodeKind, { tone: PaletteEntry['tone']; icon: strin
   }
   return map;
 })();
+
+// ── Runtime contract registries (Phase 0) ──────────────────────────────────
+// The 12 node kinds the v0.2 backend runtime supports. Only these are
+// draggable; authoring any other kind would validate as `unknown_node_kind`.
+const RUNTIME_KINDS = new Set<FlowNodeKind>([
+  'trigger', 'if_else', 'switch_case', 'wait', 'match_skill', 'filter',
+  'route_queue', 'reservation', 'fallback', 'effect', 'log', 'end',
+]);
+
+const DONE_OUT: FlowNodeOutput[] = [{ id: 'done', label: 'done', kind: 'success' }];
+
+// Output ports per kind. `FlowNodeOutput.id` IS the runtime port the backend
+// compiles from the edge label (compile.go) — if_else→true/false,
+// switch_case→case value/default, end→none (terminal), everything else→done.
+const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
+  trigger: DONE_OUT,
+  if_else: [{ id: 'true', label: 'true', kind: 'branch' }, { id: 'false', label: 'false', kind: 'default' }],
+  wait: DONE_OUT,
+  match_skill: DONE_OUT,
+  filter: DONE_OUT,
+  route_queue: DONE_OUT,
+  reservation: DONE_OUT, // runtime outcomes (accepted/timeout) land in Wave 3 part 2
+  fallback: DONE_OUT,
+  effect: DONE_OUT,
+  log: DONE_OUT,
+  end: [],
+};
+
+// switch_case ports are dynamic (one per case + default); everything else is
+// static from KIND_OUTPUTS. Used to (re)seed node.outputs.
+function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput[] {
+  if (node.kind === 'switch_case') {
+    const raw = Array.isArray(node.params?.cases) ? (node.params!.cases as unknown[]) : [];
+    const cases = [...new Set(raw.map(c => String(c).trim()).filter(Boolean))];
+    return [
+      ...cases.map(c => ({ id: c, label: c, kind: 'branch' as const })),
+      { id: 'default', label: 'default', kind: 'default' as const },
+    ];
+  }
+  return KIND_OUTPUTS[node.kind] ?? DONE_OUT;
+}
+
+interface FieldDef {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'select' | 'cases';
+  options?: string[];
+}
+
+// Editable config fields per kind. Keys match the backend config structs
+// (internal/runtime/node_kinds.go) — authoritative.
+const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
+  trigger: [{ key: 'channel', label: 'Channel', type: 'text' }, { key: 'entry_code', label: 'Entry code', type: 'text' }],
+  if_else: [{ key: 'expr', label: 'Condition', type: 'text' }],
+  switch_case: [{ key: 'expr', label: 'Value expression', type: 'text' }, { key: 'cases', label: 'Cases', type: 'cases' }],
+  wait: [{ key: 'duration_ms', label: 'Duration (ms)', type: 'number' }],
+  match_skill: [{ key: 'skill', label: 'Skill code', type: 'text' }, { key: 'min_proficiency', label: 'Min proficiency', type: 'number' }],
+  filter: [{ key: 'expr', label: 'Predicate', type: 'text' }],
+  route_queue: [{ key: 'queue', label: 'Queue code', type: 'text' }],
+  reservation: [{ key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' }, { key: 'max_attempts', label: 'Max attempts', type: 'number' }],
+  fallback: [{ key: 'reason', label: 'Reason', type: 'text' }],
+  effect: [{ key: 'adapter', label: 'Adapter code', type: 'text' }, { key: 'action', label: 'Action', type: 'text' }],
+  log: [{ key: 'message', label: 'Message', type: 'text' }, { key: 'level', label: 'Level', type: 'select', options: ['debug', 'info', 'warn', 'error'] }],
+  end: [{ key: 'outcome', label: 'Outcome', type: 'text' }],
+};
 
 // Fraction (0..1) of card WIDTH where output port `idx` sits along the
 // bottom edge. Matches CSS `justify-content: space-around` on
@@ -530,25 +597,51 @@ export class OrFlowBuilder extends LitElement {
     }
 
     /* ----- Canvas ----- */
+    /* Fixed viewport: the SVG fills the pane and pan/zoom happen via a <g>
+       transform (react-flow style). No scrollbars — the dot grid is bound to
+       pan/zoom inline so it tracks the world. */
     .canvas-wrap {
       position: relative;
-      overflow: auto;
-      /* Prevent the SVG's min-width from inflating this grid track and
-         pushing the inspector off-screen. The SVG scrolls inside this pane
-         instead. */
+      overflow: hidden;
       min-width: 0;
-      background:
+      background-image:
         radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 18%, transparent) 1px, transparent 1px);
-      background-size: 24px 24px;
       background-color: var(--background);
     }
     .canvas-svg {
       display: block;
       width: 100%;
-      min-width: 560px;
-      height: auto;
-      min-height: 2720px;
+      height: 100%;
+      touch-action: none;
     }
+    .canvas-svg .canvas-bg { cursor: grab; }
+    .canvas-svg.is-panning .canvas-bg { cursor: grabbing; }
+    .zoom-controls {
+      position: absolute;
+      right: 14px;
+      bottom: 44px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      box-shadow: var(--shadow-md);
+      padding: 2px;
+      z-index: 4;
+    }
+    .zoom-controls button {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      padding: 5px;
+      border-radius: 6px;
+    }
+    .zoom-controls button:hover { background: var(--muted); color: var(--foreground); }
+    .zoom-controls .zoom-pct { font-size: 11px; font-variant-numeric: tabular-nums; min-width: 38px; text-align: center; }
 
     .edge {
       fill: none;
@@ -582,6 +675,16 @@ export class OrFlowBuilder extends LitElement {
     .edge-label--error   { fill: var(--destructive); }
     .edge-label--timeout { fill: var(--warning); }
     .edge-label--fallback{ fill: var(--destructive); }
+    .edge--draft { stroke: var(--primary); stroke-dasharray: 5 4; stroke-width: 2; pointer-events: none; }
+    .edge-del { cursor: pointer; opacity: 0.35; transition: opacity .12s; }
+    .edge-del:hover { opacity: 1; }
+    .edge-del circle { fill: var(--card); stroke: var(--destructive); }
+    .edge-del text { fill: var(--destructive); font-size: 11px; font-weight: 700; pointer-events: none; }
+    .node-card-port--handle { cursor: crosshair; }
+    .node-card-port--handle:hover {
+      outline: 2px solid color-mix(in oklch, var(--primary) 50%, transparent);
+      outline-offset: 1px;
+    }
 
     .node-card {
       display: flex;
@@ -814,6 +917,22 @@ export class OrFlowBuilder extends LitElement {
       border-radius: 6px;
       padding: 6px 9px;
       word-break: break-all;
+    }
+    .form-section .form-input {
+      font: inherit;
+      font-size: 13px;
+      color: var(--foreground);
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 9px;
+      width: 100%;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .form-section .form-input:focus {
+      outline: none;
+      border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
     }
     .form-section .chip-row {
       display: flex;
@@ -1780,6 +1899,17 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _paletteCollapsed = false;
   @state() private accessor _inspectorCollapsed = false;
 
+  // Viewport pan/zoom (react-flow style). World coords are unchanged; only the
+  // <g> transform moves. Default pan gives the origin some margin (no left wall).
+  @state() private accessor _zoom = 1;
+  @state() private accessor _panX = 48;
+  @state() private accessor _panY = 48;
+  private _panState: { startX: number; startY: number; ox: number; oy: number } | null = null;
+  private _viewportRef: SVGGElement | null = null;
+
+  // In-progress edge connection (port drag). Cursor is in world coords.
+  @state() private accessor _edgeDraft: { fromId: string; fromPort: string; portKind: string; cx: number; cy: number } | null = null;
+
   @state() private accessor _actionToast: string | null = null;
   @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
   // Create-mode draft fields — used only when flowId is empty (first Save POSTs).
@@ -1811,8 +1941,16 @@ export class OrFlowBuilder extends LitElement {
       // graph is opaque JSONB — guard against drift (missing or non-array
       // nodes/edges) so the canvas .map()/.find() can't crash on render.
       const graph = (flow.graph ?? {}) as { nodes?: unknown; edges?: unknown };
-      this._nodes = (Array.isArray(graph.nodes) ? structuredClone(graph.nodes) : []) as FlowNode[];
-      this._edges = (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[];
+      const nodes = (Array.isArray(graph.nodes) ? structuredClone(graph.nodes) : []) as FlowNode[];
+      // Seed outputs for any runtime node missing them (so ports/connect work),
+      // then drop edges whose from_port no longer exists on its source.
+      for (const n of nodes) {
+        if ((!n.outputs || n.outputs.length === 0) && RUNTIME_KINDS.has(n.kind) && n.kind !== 'end') {
+          n.outputs = outputsForNode(n);
+        }
+      }
+      this._nodes = nodes;
+      this._edges = this._pruneEdges(nodes, (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[]);
       this._loaded = flow;
       this._selectedNodeId = this._nodes[0]?.id ?? null;
       return flow;
@@ -1826,8 +1964,16 @@ export class OrFlowBuilder extends LitElement {
     return root;
   }
 
+  override firstUpdated(): void {
+    // Wheel must be non-passive to preventDefault the page scroll while zooming;
+    // Lit's @wheel can't guarantee that, so bind it directly.
+    const svg = this._svgEl();
+    svg?.addEventListener('wheel', this._onWheel, { passive: false });
+  }
+
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this._svgRef?.removeEventListener('wheel', this._onWheel);
     clearTimeout(this._actionToastTimer);
     clearTimeout(this._saveToastTimer);
   }
@@ -2174,21 +2320,109 @@ export class OrFlowBuilder extends LitElement {
     return rect.width > 0 ? vbWidth / rect.width : 1;
   }
 
-  // Map a viewport point to SVG user units via the screen CTM — correct under
-  // any viewBox scaling / scroll / letterboxing, unlike a width-ratio guess
-  // (that mismatch was making dropped + dragged nodes jump). Falls back to the
-  // raw coords when getScreenCTM is unavailable (jsdom).
+  // Map a viewport point to WORLD coords via the transformed <g>'s screen CTM —
+  // correct under any pan/zoom. Falls back to raw coords when getScreenCTM is
+  // unavailable (jsdom).
   private _clientToSvg(cx: number, cy: number): { x: number; y: number } {
-    const svg = this._svgRef ?? (this.shadowRoot?.querySelector('svg.canvas-svg') as SVGSVGElement | null);
-    this._svgRef = svg;
+    const g = this._viewportRef ?? (this.shadowRoot?.querySelector('g.viewport') as SVGGElement | null);
+    this._viewportRef = g;
     try {
-      const ctm = svg?.getScreenCTM?.();
-      if (!svg || !ctm || typeof DOMPoint === 'undefined') return { x: cx, y: cy };
+      const ctm = g?.getScreenCTM?.();
+      if (!g || !ctm || typeof DOMPoint === 'undefined') return { x: cx, y: cy };
       const p = new DOMPoint(cx, cy).matrixTransform(ctm.inverse());
       return { x: p.x, y: p.y };
     } catch {
       return { x: cx, y: cy };
     }
+  }
+
+  private _svgEl(): SVGSVGElement | null {
+    const svg = this._svgRef ?? (this.shadowRoot?.querySelector('svg.canvas-svg') as SVGSVGElement | null);
+    this._svgRef = svg;
+    return svg;
+  }
+
+  // ----- Pan / zoom -----
+  private _onCanvasPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
+    const t = e.target as Element;
+    // Only pan from the background — node/port pointerdowns stopPropagation.
+    if (!t.classList?.contains('canvas-bg') && t.tagName?.toLowerCase() !== 'svg') return;
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    this._panState = { startX: e.clientX, startY: e.clientY, ox: this._panX, oy: this._panY };
+    this._selectedNodeId = null;
+  };
+
+  private _onCanvasPointerMove = (e: PointerEvent): void => {
+    if (!this._panState) return;
+    this._panX = this._panState.ox + (e.clientX - this._panState.startX);
+    this._panY = this._panState.oy + (e.clientY - this._panState.startY);
+  };
+
+  private _onCanvasPointerUp = (e: PointerEvent): void => {
+    if (this._panState) {
+      (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+      this._panState = null;
+    }
+  };
+
+  private _onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    const svg = this._svgEl();
+    const rect = svg?.getBoundingClientRect();
+    const cx = rect ? e.clientX - rect.left : 0;
+    const cy = rect ? e.clientY - rect.top : 0;
+    this._zoomAround(cx, cy, e.deltaY < 0 ? 1.1 : 1 / 1.1);
+  };
+
+  private _zoomAround(cx: number, cy: number, factor: number): void {
+    const z2 = Math.min(2.5, Math.max(0.25, this._zoom * factor));
+    if (z2 === this._zoom) return;
+    this._panX = cx - (cx - this._panX) * (z2 / this._zoom);
+    this._panY = cy - (cy - this._panY) * (z2 / this._zoom);
+    this._zoom = z2;
+  }
+
+  private _zoomButton(factor: number): void {
+    const svg = this._svgEl();
+    const rect = svg?.getBoundingClientRect();
+    this._zoomAround(rect ? rect.width / 2 : 0, rect ? rect.height / 2 : 0, factor);
+  }
+
+  private _resetView(): void {
+    this._zoom = 1;
+    this._panX = 48;
+    this._panY = 48;
+  }
+
+  private _fitView(): void {
+    if (this._nodes.length === 0) {
+      this._resetView();
+      return;
+    }
+    const minX = Math.min(...this._nodes.map(n => n.x));
+    const minY = Math.min(...this._nodes.map(n => n.y));
+    const maxX = Math.max(...this._nodes.map(n => n.x + NODE_W_PX));
+    const maxY = Math.max(...this._nodes.map(n => n.y + 116));
+    const rect = this._svgEl()?.getBoundingClientRect();
+    const w = rect?.width ?? 800;
+    const h = rect?.height ?? 600;
+    const pad = 60;
+    const z = Math.min(1.5, Math.max(0.25, Math.min((w - 2 * pad) / (maxX - minX || 1), (h - 2 * pad) / (maxY - minY || 1))));
+    this._zoom = z;
+    this._panX = (w - (maxX - minX) * z) / 2 - minX * z;
+    this._panY = (h - (maxY - minY) * z) / 2 - minY * z;
+  }
+
+  private _doAutoArrange(): void {
+    if (this._nodes.length === 0) return;
+    const byId = new Map(autoArrange(this._nodes, this._edges).map(p => [p.id, p]));
+    this._nodes = this._nodes.map(n => {
+      const p = byId.get(n.id);
+      return p ? { ...n, x: p.x, y: p.y } : n;
+    });
+    this._validation = null;
+    void this.updateComplete.then(() => this._fitView());
   }
 
   // Drag-and-drop authoring: a palette item is dragged (dataTransfer carries
@@ -2206,7 +2440,10 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private _onPaletteDragStart(e: DragEvent, kind: FlowNodeKind): void {
-    if (!e.dataTransfer) return;
+    if (!e.dataTransfer || !RUNTIME_KINDS.has(kind)) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData('application/x-or-node', kind);
     e.dataTransfer.effectAllowed = 'copy';
   }
@@ -2222,19 +2459,113 @@ export class OrFlowBuilder extends LitElement {
     const kind = e.dataTransfer?.getData('application/x-or-node') as FlowNodeKind;
     if (!kind) return;
     e.preventDefault();
+    if (!RUNTIME_KINDS.has(kind)) {
+      this._flashAction(`"${kind}" is not a v0.2 runtime node.`, 'warn');
+      return;
+    }
     const p = this._clientToSvg(e.clientX, e.clientY);
-    const x = Math.max(0, Math.round((p.x - 84) / 10) * 10);
-    const y = Math.max(0, Math.round((p.y - 58) / 10) * 10);
+    // 10px world snap; no Math.max(0) — the canvas pans, so negative coords are fine.
+    const x = Math.round((p.x - 84) / 10) * 10;
+    const y = Math.round((p.y - 58) / 10) * 10;
     const entry = this._paletteEntry(kind);
     const id = this._genNodeId();
     this._nodes = [
       ...this._nodes,
-      { id, kind, label: entry?.label ?? kind, description: entry?.desc ?? '', x, y, params: {} },
+      { id, kind, label: entry?.label ?? kind, description: entry?.desc ?? '', x, y, params: {}, outputs: outputsForNode({ kind, params: {} }) },
     ];
     this._selectedNodeId = id;
     this._validation = null; // graph changed
     this._flashAction(`Added "${entry?.label ?? kind}" — Save draft to persist.`, 'ok');
   };
+
+  // Drop edges that no longer make sense: missing endpoints, a terminal source,
+  // or a from_port that isn't one of the source's current outputs (e.g. after a
+  // switch_case case was removed). Single-'done' sources accept any edge.
+  private _pruneEdges(nodes: FlowNode[], edges: FlowEdge[]): FlowEdge[] {
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    return edges.filter(e => {
+      const from = byId.get(e.from);
+      if (!from || !byId.has(e.to)) return false;
+      const ports = outputsForNode(from);
+      if (ports.length === 0) return false;
+      const port = e.from_port ?? e.label ?? 'done';
+      return ports.some(o => o.id === port) || (ports.length === 1 && ports[0]!.id === 'done');
+    });
+  }
+
+  // ----- Edge connecting (port drag) -----
+  private _onPortPointerDown(e: PointerEvent, node: FlowNode, o: FlowNodeOutput): void {
+    if (e.button !== 0 || this._simMode === 'sim') return;
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    const p = this._clientToSvg(e.clientX, e.clientY);
+    this._edgeDraft = { fromId: node.id, fromPort: o.id, portKind: o.kind, cx: p.x, cy: p.y };
+  }
+
+  private _onPortPointerMove = (e: PointerEvent): void => {
+    if (!this._edgeDraft) return;
+    const p = this._clientToSvg(e.clientX, e.clientY);
+    this._edgeDraft = { ...this._edgeDraft, cx: p.x, cy: p.y };
+  };
+
+  private _onPortPointerUp = (e: PointerEvent): void => {
+    const draft = this._edgeDraft;
+    if (!draft) return;
+    (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+    this._edgeDraft = null;
+    const p = this._clientToSvg(e.clientX, e.clientY);
+    // Topmost node under the cursor wins (reverse render order).
+    const target = [...this._nodes].reverse().find(n =>
+      p.x >= n.x && p.x <= n.x + NODE_W_PX && p.y >= n.y && p.y <= n.y + 116);
+    if (!target || target.id === draft.fromId) return;
+    this._connectEdge(draft.fromId, draft.fromPort, draft.portKind, target.id);
+  };
+
+  private _connectEdge(fromId: string, fromPort: string, portKind: string, toId: string): void {
+    const branch: FlowEdge['branch'] = portKind === 'timeout' ? 'timeout' : portKind === 'error' ? 'fallback' : 'success';
+    const fromNode = this._nodes.find(n => n.id === fromId);
+    const isLinear = !fromNode?.outputs || fromNode.outputs.length <= 1;
+    // One edge per (from, port); linear nodes keep a single outgoing edge.
+    const kept = this._edges.filter(ed => {
+      if (ed.from !== fromId) return true;
+      return isLinear ? false : ed.from_port !== fromPort;
+    });
+    this._edges = [...kept, { id: this._genEdgeId(), from: fromId, to: toId, from_port: fromPort, label: fromPort, branch }];
+    this._validation = null;
+  }
+
+  private _deleteEdge(id: string): void {
+    this._edges = this._edges.filter(e => e.id !== id);
+    this._validation = null;
+  }
+
+  private _genEdgeId(): string {
+    let id = '';
+    do {
+      id = 'e_' + Math.random().toString(36).slice(2, 8);
+    } while (this._edges.some(e => e.id === id));
+    return id;
+  }
+
+  // X of a node's output port anchor (mirrors _renderEdges' portX).
+  private _portX(node: FlowNode, portId: string): number {
+    const outs = node.outputs;
+    if (!outs || outs.length <= 1) return node.x + NODE_W_PX / 2;
+    const idx = outs.findIndex(o => o.id === portId);
+    if (idx < 0) return node.x + NODE_W_PX / 2;
+    return node.x + portFracs(outs.length)[idx]! * NODE_W_PX;
+  }
+
+  private _renderEdgeDraft() {
+    const d = this._edgeDraft;
+    if (!d) return nothing;
+    const from = this._nodes.find(n => n.id === d.fromId);
+    if (!from) return nothing;
+    const x1 = this._portX(from, d.fromPort);
+    const y1 = from.y + 116;
+    const dy = Math.max(40, (d.cy - y1) * 0.5);
+    return svg`<path class="edge edge--draft" d=${`M ${x1} ${y1} C ${x1} ${y1 + dy}, ${d.cx} ${d.cy - dy}, ${d.cx} ${d.cy}`} />`;
+  }
 
   private _paletteEntry(kind: FlowNodeKind): PaletteEntry | undefined {
     for (const g of PALETTE) {
@@ -2274,6 +2605,7 @@ export class OrFlowBuilder extends LitElement {
     if (this._simMode === 'sim') return;
     const target = e.target as HTMLElement;
     if (target.closest('.node-card-ports')) return;
+    e.stopPropagation(); // don't let the canvas start a pan
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     // Grab offset in SVG units = where on the card the user grabbed, so the
     // node follows the cursor without snapping its origin to the pointer.
@@ -2289,8 +2621,8 @@ export class OrFlowBuilder extends LitElement {
     this._draggedId = this._drag.id;
     this._pendingClick = null;
     const p = this._clientToSvg(e.clientX, e.clientY);
-    const newX = Math.max(0, Math.round((p.x - this._drag.offX) / 10) * 10);
-    const newY = Math.max(0, Math.round((p.y - this._drag.offY) / 10) * 10);
+    const newX = Math.round((p.x - this._drag.offX) / 10) * 10;
+    const newY = Math.round((p.y - this._drag.offY) / 10) * 10;
     this._nodes = this._nodes.map(n =>
       n.id === this._drag!.id ? { ...n, x: newX, y: newY } : n
     );
@@ -2350,6 +2682,20 @@ export class OrFlowBuilder extends LitElement {
 
   private _previewParam(node: FlowNode): string {
     const p = node.params ?? {};
+    // Runtime kinds: derive the preview from the authoritative config keys
+    // (KIND_FIELDS) so it never shows stale names or `undefined`.
+    if (RUNTIME_KINDS.has(node.kind)) {
+      const parts = (KIND_FIELDS[node.kind] ?? []).map(f => {
+        const v = p[f.key];
+        if (f.type === 'cases') {
+          const arr = Array.isArray(v) ? (v as string[]) : [];
+          return arr.length ? `${arr.length} case${arr.length === 1 ? '' : 's'}` : '';
+        }
+        if (v === undefined || v === '' || v === null) return '';
+        return `${f.key}: ${Array.isArray(v) ? (v as string[]).join(', ') : v}`;
+      }).filter(Boolean);
+      return parts.join('  ·  ');
+    }
     switch (node.kind) {
       case 'trigger':      return `channel: ${p['channel']}`;
       case 'set_var':      return `${p['name']} = ${p['value_expr']}`;
@@ -2417,6 +2763,7 @@ export class OrFlowBuilder extends LitElement {
     const byId = new Map(nodes.map(n => [n.id, n]));
     const NODE_W = 168;
     const NODE_H = 116;
+    const isSim = this._simMode === 'sim';
 
     // Vertical layout — ports distribute horizontally along the bottom
     // edge of the card (matching the .node-card-ports chip row that lives
@@ -2514,6 +2861,12 @@ export class OrFlowBuilder extends LitElement {
               text-anchor="middle"
             >${labelText}</text>
           ` : nothing}
+          ${isSim ? nothing : svg`
+            <g class="edge-del" @click=${(ev: Event) => { ev.stopPropagation(); this._deleteEdge(e.id); }}>
+              <circle cx=${labelX} cy=${labelText ? labelY - 13 : labelY} r="7"></circle>
+              <text x=${labelX} y=${(labelText ? labelY - 13 : labelY) + 3.5} text-anchor="middle">×</text>
+            </g>
+          `}
         `;
       })}
     `;
@@ -2591,7 +2944,12 @@ export class OrFlowBuilder extends LitElement {
               : preview ? html`<div class="node-card-param" title=${preview}>${preview}</div>` : ''}
             <div class="node-card-ports" title="Output cases this node can produce">
               ${outs.map(o => html`
-                <span class=${'node-card-port node-card-port--' + o.kind}>${o.label}</span>
+                <span class=${'node-card-port node-card-port--' + o.kind + (isSim ? '' : ' node-card-port--handle')}
+                  title=${isSim ? o.label : 'Drag to another node to connect'}
+                  @pointerdown=${isSim ? nothing : (e: PointerEvent) => this._onPortPointerDown(e, node, o)}
+                  @pointermove=${isSim ? nothing : this._onPortPointerMove}
+                  @pointerup=${isSim ? nothing : this._onPortPointerUp}
+                  @pointercancel=${isSim ? nothing : this._onPortPointerUp}>${o.label}</span>
               `)}
             </div>
           </div>
@@ -2679,13 +3037,69 @@ export class OrFlowBuilder extends LitElement {
           </div>
         </div>
 
-        ${paramRows.length === 0
-          ? html`<div style="font-size:12px;color:var(--muted-foreground);font-style:italic;margin-bottom:14px">No parameters.</div>`
-          : paramRows}
+        ${RUNTIME_KINDS.has(node.kind)
+          ? ((KIND_FIELDS[node.kind] ?? []).length
+              ? (KIND_FIELDS[node.kind] ?? []).map(f => this._renderField(node, f))
+              : html`<div style="font-size:12px;color:var(--muted-foreground);font-style:italic;margin-bottom:14px">No parameters.</div>`)
+          : html`<div style="font-size:12px;color:var(--muted-foreground);font-style:italic;margin-bottom:14px">
+              Not a v0.2 runtime node — read-only.</div>
+            ${paramRows}`}
 
         ${outputsSection}
       </div>
     `;
+  }
+
+  private _renderField(node: FlowNode, f: FieldDef) {
+    const v = node.params?.[f.key];
+    if (f.type === 'cases') {
+      const arr = Array.isArray(v) ? (v as string[]) : [];
+      return html`
+        <div class="form-section">
+          <label>${f.label}</label>
+          <textarea class="form-input" rows="3" placeholder="one case value per line"
+            .value=${arr.join('\n')}
+            @change=${(e: Event) => {
+              const lines = (e.target as HTMLTextAreaElement).value.split('\n').map(s => s.trim()).filter(Boolean);
+              this._updateNodeParam(node.id, 'cases', [...new Set(lines)]);
+            }}></textarea>
+        </div>`;
+    }
+    if (f.type === 'select') {
+      return html`
+        <div class="form-section">
+          <label>${f.label}</label>
+          <select class="form-input"
+            @change=${(e: Event) => this._updateNodeParam(node.id, f.key, (e.target as HTMLSelectElement).value)}>
+            <option value="" ?selected=${v === undefined || v === ''}>—</option>
+            ${(f.options ?? []).map(o => html`<option value=${o} ?selected=${v === o}>${o}</option>`)}
+          </select>
+        </div>`;
+    }
+    return html`
+      <div class="form-section">
+        <label>${f.label}</label>
+        <input class="form-input" type=${f.type === 'number' ? 'number' : 'text'}
+          .value=${v === undefined || v === null ? '' : String(v)}
+          @input=${(e: Event) => {
+            const raw = (e.target as HTMLInputElement).value;
+            this._updateNodeParam(node.id, f.key, f.type === 'number' ? (raw === '' ? undefined : Number(raw)) : raw);
+          }}>
+      </div>`;
+  }
+
+  private _updateNodeParam(id: string, key: string, value: unknown): void {
+    this._nodes = this._nodes.map(n => {
+      if (n.id !== id) return n;
+      const params = { ...(n.params ?? {}) } as Record<string, unknown>;
+      if (value === undefined) delete params[key];
+      else params[key] = value;
+      const next = { ...n, params: params as FlowNode['params'] };
+      if (n.kind === 'switch_case' && key === 'cases') next.outputs = outputsForNode(next);
+      return next;
+    });
+    if (key === 'cases') this._edges = this._pruneEdges(this._nodes, this._edges);
+    this._validation = null;
   }
 
   override render() {
@@ -2744,6 +3158,11 @@ export class OrFlowBuilder extends LitElement {
                 <uk-icon icon="check-circle" height="14" width="14"></uk-icon>
                 Validate
               </button>
+              <button class="toolbar-btn" title="Auto-arrange nodes" ?disabled=${this._nodes.length === 0}
+                @click=${() => this._doAutoArrange()}>
+                <uk-icon icon="layout-grid" height="14" width="14"></uk-icon>
+                Arrange
+              </button>
               <button class="toolbar-btn" title="Compare draft against the published version (Layer 3)"
                 @click=${() => this._flashAction('Diff vs published lands in Layer 3.', 'warn')}>
                 <uk-icon icon="history" height="14" width="14"></uk-icon>
@@ -2779,16 +3198,25 @@ export class OrFlowBuilder extends LitElement {
           : this._renderPalette(isSim)}
 
         <main class=${isSim ? 'pane canvas-wrap canvas-wrap--sim' : 'pane canvas-wrap'}
+          style=${`background-position:${this._panX}px ${this._panY}px;background-size:${24 * this._zoom}px ${24 * this._zoom}px`}
           @dragover=${isSim ? nothing : this._onCanvasDragOver}
           @drop=${isSim ? nothing : this._onCanvasDrop}>
           <svg
-            class="canvas-svg"
-            viewBox="0 0 560 2720"
+            class=${'canvas-svg' + (this._panState ? ' is-panning' : '')}
             xmlns="http://www.w3.org/2000/svg"
+            @pointerdown=${isSim ? nothing : this._onCanvasPointerDown}
+            @pointermove=${isSim ? nothing : this._onCanvasPointerMove}
+            @pointerup=${isSim ? nothing : this._onCanvasPointerUp}
+            @pointercancel=${isSim ? nothing : this._onCanvasPointerUp}
           >
-            ${this._renderEdges(nodes, edges)}
-            ${this._renderNodes(nodes)}
+            <rect class="canvas-bg" x="0" y="0" width="100%" height="100%" fill="transparent"></rect>
+            <g class="viewport" transform=${`translate(${this._panX} ${this._panY}) scale(${this._zoom})`}>
+              ${this._renderEdges(nodes, edges)}
+              ${this._renderNodes(nodes)}
+              ${this._edgeDraft ? this._renderEdgeDraft() : nothing}
+            </g>
           </svg>
+          ${this._renderZoomControls()}
           <div class="canvas-strip">
             ${isSim ? html`
               <span><span class="dot-ok">●</span> Step <strong>${this._simStep < 0 ? 'ready' : (this._simStep + 1) + ' / ' + this._activeTrace.length}</strong></span>
@@ -2805,7 +3233,7 @@ export class OrFlowBuilder extends LitElement {
                 <span><strong>${this._edges.length}</strong> ${this._edges.length === 1 ? 'edge' : 'edges'}</span>
               `}
             <div style="flex:1"></div>
-            <span>Zoom: <strong>100%</strong></span>
+            <span>Zoom: <strong>${Math.round(this._zoom * 100)}%</strong></span>
             ${isSim || !this._loaded?.updated_at ? nothing
               : html`<span>Last saved <strong>${this._relTime(this._loaded.updated_at)}</strong></span>`}
           </div>
@@ -2894,19 +3322,24 @@ export class OrFlowBuilder extends LitElement {
                 <span>${group.label}</span>
                 <span class="grp-count">${items.length}</span>
               </button>
-              ${collapsed ? nothing : items.map(p => html`
-                <div class="palette-item ${isSim ? 'palette-item--disabled' : ''}" title=${isSim ? p.desc : 'Drag onto the canvas to add'}
-                  draggable=${!isSim}
-                  @dragstart=${(e: DragEvent) => this._onPaletteDragStart(e, p.kind)}>
-                  <span class="icon-tile icon-tile--${p.tone}">
-                    <uk-icon icon=${p.icon} height="14" width="14"></uk-icon>
-                  </span>
-                  <span class="palette-item-text">
-                    <span class="palette-item-label">${p.label}</span>
-                    <span class="palette-item-desc">${p.desc}</span>
-                  </span>
-                </div>
-              `)}
+              ${collapsed ? nothing : items.map(p => {
+                const supported = RUNTIME_KINDS.has(p.kind);
+                const draggable = !isSim && supported;
+                return html`
+                  <div class="palette-item ${draggable ? '' : 'palette-item--disabled'}"
+                    title=${isSim ? p.desc : supported ? 'Drag onto the canvas to add' : 'Not supported by the v0.2 runtime yet'}
+                    draggable=${draggable}
+                    @dragstart=${(e: DragEvent) => this._onPaletteDragStart(e, p.kind)}>
+                    <span class="icon-tile icon-tile--${p.tone}">
+                      <uk-icon icon=${p.icon} height="14" width="14"></uk-icon>
+                    </span>
+                    <span class="palette-item-text">
+                      <span class="palette-item-label">${p.label}</span>
+                      <span class="palette-item-desc">${p.desc}</span>
+                    </span>
+                  </div>
+                `;
+              })}
             `;
           })}
           ${groups.length === 0 ? html`
@@ -2914,6 +3347,19 @@ export class OrFlowBuilder extends LitElement {
           ` : nothing}
         </div>
       </aside>
+    `;
+  }
+
+  private _renderZoomControls() {
+    if (this._simMode === 'sim') return nothing;
+    return html`
+      <div class="zoom-controls">
+        <button title="Zoom out" @click=${() => this._zoomButton(1 / 1.2)}><uk-icon icon="minus" height="14" width="14"></uk-icon></button>
+        <span class="zoom-pct">${Math.round(this._zoom * 100)}%</span>
+        <button title="Zoom in" @click=${() => this._zoomButton(1.2)}><uk-icon icon="plus" height="14" width="14"></uk-icon></button>
+        <button title="Fit to content" @click=${() => this._fitView()}><uk-icon icon="maximize" height="14" width="14"></uk-icon></button>
+        <button title="Reset view" @click=${() => this._resetView()}><uk-icon icon="locate-fixed" height="14" width="14"></uk-icon></button>
+      </div>
     `;
   }
 
