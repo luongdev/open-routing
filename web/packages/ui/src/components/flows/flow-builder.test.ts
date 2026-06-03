@@ -188,6 +188,96 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._actionToast).toContain('required');
   });
 
+  it('palette search filters items and hides non-matching groups', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+
+    const labelsBefore = [...el.shadowRoot!.querySelectorAll('.palette-item-label')].length;
+    expect(labelsBefore).toBeGreaterThan(5);
+
+    (el as any)._paletteQuery = 'dtmf';
+    await (el as any).updateComplete;
+
+    const labels = [...el.shadowRoot!.querySelectorAll('.palette-item-label')].map((n) => n.textContent);
+    expect(labels).toEqual(['Get DTMF']);
+    // Only the matching group header survives.
+    expect(el.shadowRoot!.querySelectorAll('.palette-group-label')).toHaveLength(1);
+  });
+
+  it('palette search shows an empty state when nothing matches', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+
+    (el as any)._paletteQuery = 'zzz-nope';
+    await (el as any).updateComplete;
+    expect(el.shadowRoot!.querySelector('.palette-empty')).toBeTruthy();
+    expect(el.shadowRoot!.querySelectorAll('.palette-item')).toHaveLength(0);
+  });
+
+  it('collapsing a group hides its items but keeps the header', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+
+    const before = [...el.shadowRoot!.querySelectorAll('.palette-item-label')].map((n) => n.textContent);
+    expect(before).toContain('If / Else');
+
+    (el as any)._toggleGroup('Control flow');
+    await (el as any).updateComplete;
+    const after = [...el.shadowRoot!.querySelectorAll('.palette-item-label')].map((n) => n.textContent);
+    expect(after).not.toContain('If / Else');
+    // Trigger (a different group) is untouched.
+    expect(after).toContain('Trigger');
+    // The collapsed header is still present and shows the collapsed chevron.
+    const headers = [...el.shadowRoot!.querySelectorAll('.palette-group-label')];
+    const collapsed = headers.find((h) => h.textContent?.includes('Control flow'));
+    expect(collapsed?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('an active search force-expands collapsed groups so matches are visible', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+
+    (el as any)._toggleGroup('Control flow');
+    (el as any)._paletteQuery = 'branch';
+    await (el as any).updateComplete;
+
+    const labels = [...el.shadowRoot!.querySelectorAll('.palette-item-label')].map((n) => n.textContent);
+    expect(labels).toContain('If / Else');
+  });
+
+  it('footer reflects the real graph: node/edge counts, not a hardcoded warning', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+
+    const strip = el.shadowRoot!.querySelector('.canvas-strip')!;
+    expect(strip.textContent).toContain('2 nodes');
+    expect(strip.textContent).toContain('1 edge');
+    // The leftover mock warning must be gone.
+    expect(strip.textContent).not.toContain('Notify CRM');
+  });
+
+  it('footer shows an empty hint when the graph has no nodes', async () => {
+    const empty = { ...MOCK_FLOW, graph: { nodes: [], edges: [] } };
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: empty, error: null }) };
+    await settle();
+
+    const strip = el.shadowRoot!.querySelector('.canvas-strip')!;
+    expect(strip.textContent).toContain('Empty');
+    expect(strip.textContent).not.toContain('errors');
+  });
+
   it('renders the load error state with Retry when GET fails', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;

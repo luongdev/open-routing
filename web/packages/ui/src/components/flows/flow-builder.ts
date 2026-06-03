@@ -341,17 +341,64 @@ export class OrFlowBuilder extends LitElement {
     }
 
     /* ----- Palette ----- */
+    /* overflow:hidden keeps the search box pinned; only .palette-list scrolls. */
     .palette {
       border-right: 1px solid var(--border);
-      overflow-y: auto;
+      overflow: hidden;
     }
+    .palette-search {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .palette-search-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--background);
+      color: var(--muted-foreground);
+    }
+    .palette-search-box:focus-within {
+      border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+    }
+    .palette-search-input {
+      border: none;
+      background: transparent;
+      outline: none;
+      font: inherit;
+      font-size: 13px;
+      color: var(--foreground);
+      width: 100%;
+      min-width: 0;
+    }
+    .palette-search-clear {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .palette-search-clear:hover { color: var(--foreground); }
     .palette-list {
       padding: 8px;
       display: flex;
       flex-direction: column;
       gap: 2px;
+      flex: 1;
+      overflow-y: auto;
     }
     .palette-group-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      border: none;
+      background: transparent;
+      cursor: pointer;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.05em;
@@ -359,8 +406,23 @@ export class OrFlowBuilder extends LitElement {
       color: var(--muted-foreground);
       padding: 10px 10px 4px;
       margin-top: 4px;
+      border-radius: 6px;
     }
+    .palette-group-label:hover { color: var(--foreground); }
     .palette-group-label:first-child { margin-top: 0; padding-top: 4px; }
+    .palette-group-label .chev { flex-shrink: 0; }
+    .palette-group-label .grp-count {
+      margin-left: auto;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .palette-empty {
+      padding: 20px 10px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      text-align: center;
+      line-height: 1.4;
+    }
     .palette-item {
       display: flex;
       align-items: center;
@@ -1509,6 +1571,12 @@ export class OrFlowBuilder extends LitElement {
 
   @state() private accessor _selectedNodeId: string | null = null;
 
+  // Palette filter + per-group collapse. A non-empty query force-expands every
+  // matching group (collapse state is ignored while searching) so a hit is
+  // never hidden behind a folded header.
+  @state() private accessor _paletteQuery = '';
+  @state() private accessor _collapsedGroups: Set<string> = new Set();
+
   // Live graph state. Loaded from the flow's opaque `graph` JSONB (GET),
   // mutated by drag, persisted by Save (PATCH). Deep-copied on load so
   // inspector edits never alias the loaded response.
@@ -1666,6 +1734,18 @@ export class OrFlowBuilder extends LitElement {
     } finally {
       this._saving = false;
     }
+  }
+
+  private _relTime(iso: string): string {
+    const t = Date.parse(iso);
+    if (Number.isNaN(t)) return '—';
+    const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (sec < 45) return 'just now';
+    const min = Math.round(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.round(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    return `${Math.round(hr / 24)}d ago`;
   }
 
   private _errText(error: unknown, fallback: string): string {
@@ -2398,26 +2478,7 @@ export class OrFlowBuilder extends LitElement {
       </div>
 
       <div class="body">
-        <aside class="pane palette">
-          <div class="pane-header">${isSim ? 'Nodes (read-only)' : 'Nodes'}</div>
-          <div class="palette-list">
-            ${PALETTE.map(group => html`
-              <div class="palette-group-label">${group.label}</div>
-              ${group.items.map(p => html`
-                <button class="palette-item" title=${p.desc} ?disabled=${isSim}
-                  @click=${() => this._flashAction(`Adding "${p.label}" nodes lands in Layer 3.`, 'warn')}>
-                  <span class="icon-tile icon-tile--${p.tone}">
-                    <uk-icon icon=${p.icon} height="14" width="14"></uk-icon>
-                  </span>
-                  <span class="palette-item-text">
-                    <span class="palette-item-label">${p.label}</span>
-                    <span class="palette-item-desc">${p.desc}</span>
-                  </span>
-                </button>
-              `)}
-            `)}
-          </div>
-        </aside>
+        ${this._renderPalette(isSim)}
 
         <main class=${isSim ? 'pane canvas-wrap canvas-wrap--sim' : 'pane canvas-wrap'}>
           <svg
@@ -2433,13 +2494,16 @@ export class OrFlowBuilder extends LitElement {
               <span><span class="dot-ok">●</span> Step <strong>${this._simStep < 0 ? 'ready' : (this._simStep + 1) + ' / ' + this._activeTrace.length}</strong></span>
               <span>Trace <strong>${this._currentStep?.id ?? '—'}</strong></span>
               <span>Scenario <strong>${this._simScenario === 'fail' ? 'failure path' : 'success path'}</strong></span>
-            ` : html`
-              <span><span class="dot-ok">●</span> <strong>0</strong> errors</span>
-              <span><span class="dot-warn">●</span> <strong>1</strong> warning <em style="color:var(--muted-foreground)">— effect 'Notify CRM' has no retry policy</em></span>
-            `}
+            ` : this._nodes.length === 0
+              ? html`<span><span class="dot-warn">●</span> Empty — drag a node from the palette to start</span>`
+              : html`
+                <span><strong>${this._nodes.length}</strong> ${this._nodes.length === 1 ? 'node' : 'nodes'}</span>
+                <span><strong>${this._edges.length}</strong> ${this._edges.length === 1 ? 'edge' : 'edges'}</span>
+              `}
             <div style="flex:1"></div>
             <span>Zoom: <strong>100%</strong></span>
-            ${isSim ? nothing : html`<span>Last saved <strong>2m ago</strong></span>`}
+            ${isSim || !this._loaded?.updated_at ? nothing
+              : html`<span>Last saved <strong>${this._relTime(this._loaded.updated_at)}</strong></span>`}
           </div>
         </main>
 
@@ -2452,6 +2516,82 @@ export class OrFlowBuilder extends LitElement {
       </div>
 
       ${isSim ? this._renderSimRunPanel() : nothing}
+    `;
+  }
+
+  private _toggleGroup(label: string): void {
+    const next = new Set(this._collapsedGroups);
+    if (next.has(label)) next.delete(label);
+    else next.add(label);
+    this._collapsedGroups = next;
+  }
+
+  private _renderPalette(isSim: boolean) {
+    const q = this._paletteQuery.trim().toLowerCase();
+    const searching = q.length > 0;
+    const groups = PALETTE
+      .map(group => ({
+        group,
+        items: searching
+          ? group.items.filter(p =>
+              p.label.toLowerCase().includes(q) ||
+              p.desc.toLowerCase().includes(q) ||
+              p.kind.toLowerCase().includes(q))
+          : group.items,
+      }))
+      .filter(g => g.items.length > 0);
+
+    return html`
+      <aside class="pane palette">
+        <div class="pane-header">${isSim ? 'Nodes (read-only)' : 'Nodes'}</div>
+        <div class="palette-search">
+          <div class="palette-search-box">
+            <uk-icon icon="search" height="14" width="14"></uk-icon>
+            <input
+              class="palette-search-input"
+              type="text"
+              placeholder="Search nodes…"
+              aria-label="Search nodes"
+              .value=${this._paletteQuery}
+              @input=${(e: Event) => { this._paletteQuery = (e.target as HTMLInputElement).value; }}
+            />
+            ${searching ? html`
+              <button class="palette-search-clear" title="Clear search" aria-label="Clear search"
+                @click=${() => { this._paletteQuery = ''; }}>
+                <uk-icon icon="x" height="14" width="14"></uk-icon>
+              </button>
+            ` : nothing}
+          </div>
+        </div>
+        <div class="palette-list">
+          ${groups.map(({ group, items }) => {
+            const collapsed = !searching && this._collapsedGroups.has(group.label);
+            return html`
+              <button class="palette-group-label" aria-expanded=${!collapsed}
+                @click=${() => this._toggleGroup(group.label)}>
+                <uk-icon class="chev" icon=${collapsed ? 'chevron-right' : 'chevron-down'} height="12" width="12"></uk-icon>
+                <span>${group.label}</span>
+                <span class="grp-count">${items.length}</span>
+              </button>
+              ${collapsed ? nothing : items.map(p => html`
+                <button class="palette-item" title=${p.desc} ?disabled=${isSim}
+                  @click=${() => this._flashAction(`Adding "${p.label}" nodes lands in Layer 3.`, 'warn')}>
+                  <span class="icon-tile icon-tile--${p.tone}">
+                    <uk-icon icon=${p.icon} height="14" width="14"></uk-icon>
+                  </span>
+                  <span class="palette-item-text">
+                    <span class="palette-item-label">${p.label}</span>
+                    <span class="palette-item-desc">${p.desc}</span>
+                  </span>
+                </button>
+              `)}
+            `;
+          })}
+          ${groups.length === 0 ? html`
+            <div class="palette-empty">No nodes match “${this._paletteQuery}”.</div>
+          ` : nothing}
+        </div>
+      </aside>
     `;
   }
 
