@@ -989,6 +989,7 @@ export class OrFlowBuilder extends LitElement {
     .form-section select.form-input {
       appearance: none;
       -webkit-appearance: none;
+      -moz-appearance: none;
       padding-right: 26px;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
@@ -2634,12 +2635,24 @@ export class OrFlowBuilder extends LitElement {
   };
 
   private _onCanvasPointerMove = (e: PointerEvent): void => {
+    // A port-drag started inside a foreignObject often loses pointer capture
+    // once the pointer crosses onto the SVG canvas, so the move/up land here
+    // instead of the port. Keep the draft tracking (and finalize on up) here too
+    // or the connection line freezes / never clears.
+    if (this._edgeDraft) {
+      const p = this._clientToSvg(e.clientX, e.clientY);
+      this._edgeDraft = { ...this._edgeDraft, cx: p.x, cy: p.y };
+      const t = this._nodeAt(p.x, p.y);
+      this._edgeDraftTarget = t && t.id !== this._edgeDraft.fromId ? t.id : null;
+      return;
+    }
     if (!this._panState) return;
     this._panX = this._panState.ox + (e.clientX - this._panState.startX);
     this._panY = this._panState.oy + (e.clientY - this._panState.startY);
   };
 
   private _onCanvasPointerUp = (e: PointerEvent): void => {
+    if (this._edgeDraft) this._finishEdgeDraft(e.clientX, e.clientY);
     if (this._panState) {
       (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
       this._panState = null;
@@ -2748,9 +2761,10 @@ export class OrFlowBuilder extends LitElement {
       return;
     }
     const p = this._clientToSvg(e.clientX, e.clientY);
-    // 10px world snap; no Math.max(0) — the canvas pans, so negative coords are fine.
-    const x = Math.round((p.x - 84) / 10) * 10;
-    const y = Math.round((p.y - 58) / 10) * 10;
+    // Center the card under the cursor (half its size), then 10px world-snap; no
+    // Math.max(0) — the canvas pans, so negative coords are fine.
+    const x = Math.round((p.x - NODE_W_PX / 2) / 10) * 10;
+    const y = Math.round((p.y - NODE_H_PX / 2) / 10) * 10;
     const entry = this._paletteEntry(kind);
     const id = this._genNodeId();
     this._nodes = [
@@ -2795,16 +2809,24 @@ export class OrFlowBuilder extends LitElement {
   };
 
   private _onPortPointerUp = (e: PointerEvent): void => {
+    if (!this._edgeDraft) return;
+    (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+    this._finishEdgeDraft(e.clientX, e.clientY);
+  };
+
+  // Single exit for an edge drag: always clears the draft (so a drop on empty
+  // canvas can't leave a stuck red line), then connects only if it landed on a
+  // different node. Called from both the port and the canvas pointerup.
+  private _finishEdgeDraft(clientX: number, clientY: number): void {
     const draft = this._edgeDraft;
     if (!draft) return;
-    (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
     this._edgeDraft = null;
     this._edgeDraftTarget = null;
-    const p = this._clientToSvg(e.clientX, e.clientY);
+    const p = this._clientToSvg(clientX, clientY);
     const target = this._nodeAt(p.x, p.y);
     if (!target || target.id === draft.fromId) return;
     this._connectEdge(draft.fromId, draft.fromPort, draft.portKind, target.id);
-  };
+  }
 
   // Topmost node whose bounds contain the world point (reverse render order).
   private _nodeAt(x: number, y: number): FlowNode | undefined {
@@ -3224,7 +3246,16 @@ export class OrFlowBuilder extends LitElement {
       }
     }
 
-    return nodes.map(node => {
+    // Paint the dragged (else selected) node LAST so it sits on top: each node
+    // is its own <foreignObject> and SVG paints them in document order, so
+    // z-index is inert — a node dragged over a later sibling would otherwise be
+    // covered (its bottom ports/"done" chip vanish behind the sibling).
+    const topId = this._draggedId ?? this._selectedNodeId;
+    const ordered = topId && nodes.some(n => n.id === topId)
+      ? [...nodes.filter(n => n.id !== topId), nodes.find(n => n.id === topId)!]
+      : nodes;
+
+    return ordered.map(node => {
       const tone = this._toneFor(node.kind);
       const icon = this._iconFor(node.kind);
       const isSelected = node.id === this._selectedNodeId;

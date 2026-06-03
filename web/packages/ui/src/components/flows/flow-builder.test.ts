@@ -495,6 +495,31 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._nodes[0].params.condition).toBe('num.abs()');
   });
 
+  it('a port-drag dropped on empty canvas clears the draft (no stuck connection line)', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    (el as any)._edgeDraft = { fromId: 'n1', fromPort: 'done', portKind: 'success', cx: 9999, cy: 9999 };
+    const edgesBefore = (el as any)._edges.length;
+    (el as any)._onCanvasPointerUp({ clientX: 4, clientY: 4, currentTarget: { releasePointerCapture() {} }, pointerId: 1 });
+    expect((el as any)._edgeDraft).toBeNull();
+    expect((el as any)._edgeDraftTarget).toBeNull();
+    expect((el as any)._edges.length).toBe(edgesBefore); // dropped on nothing → no edge
+  });
+
+  it('paints the dragged node last so it is not covered by a later sibling', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    (el as any)._draggedId = 'n1'; // first in the array → would otherwise paint behind n2
+    await (el as any).updateComplete;
+    const fos = [...el.shadowRoot!.querySelectorAll('foreignObject')];
+    const lastKind = fos[fos.length - 1]?.querySelector('.node-card-kind')?.textContent?.trim();
+    expect(lastKind).toBe('trigger'); // n1 (trigger) reordered to the end
+  });
+
   it('loads a backend-shaped graph (type/config) into the UI shape (kind/params)', async () => {
     // Graph authored via the API only carries type/config — the UI must map it
     // to kind/params on load or the render crashes on node.kind.

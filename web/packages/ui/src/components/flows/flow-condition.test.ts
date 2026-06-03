@@ -59,6 +59,7 @@ describe('flow-condition serialize/parse', () => {
     expect(dslToGroup('vip) OR admin')).toBeNull(); // trailing tokens after a parsed prefix
     expect(dslToGroup("name == 'John Doe'")).toBeNull(); // single-quoted string not round-trippable
     expect(dslToGroup('NOT NOT vip')).toBeNull(); // double NOT collapses to one
+    expect(dslToGroup('name == "a \\" b" AND vip')).toBeNull(); // escaped quote not handled
   });
 
   it('empty DSL → empty AND group', () => {

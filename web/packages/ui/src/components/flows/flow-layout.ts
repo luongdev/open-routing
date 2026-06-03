@@ -11,8 +11,10 @@ export interface NodePos {
   y: number;
 }
 
-const V_GAP = 180; // vertical distance between layers
-const H_GAP = 220; // horizontal distance between siblings in a layer
+// Spacing is top-left to top-left, so it must exceed the card size (220x132 in
+// flow-builder.ts) or siblings touch edge-to-edge. Leaves a ~60-68px clear gap.
+const V_GAP = 200; // vertical distance between layers
+const H_GAP = 280; // horizontal distance between siblings in a layer
 const ORIGIN_X = 80;
 const ORIGIN_Y = 60;
 

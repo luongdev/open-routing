@@ -78,8 +78,10 @@ export function dslToGroup(dsl: string): Group | null {
   if (/[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_]+\s*\(/.test(s)) return null; // namespaced fn → Advanced
   // Single-quoted strings are valid DSL (backend lexer accepts them) but this
   // parser only round-trips double quotes — bail to Advanced so we never
-  // re-serialize 'x' into "x" and silently change meaning.
-  if (s.includes("'")) return null;
+  // re-serialize 'x' into "x" and silently change meaning. Backslashes mean
+  // escaped quotes inside a string, which the leaf scanner doesn't track —
+  // bail rather than mis-scan `"a \" b" AND …` (cross-AI review LOW).
+  if (s.includes("'") || s.includes('\\')) return null;
   try {
     const cur = new Cursor(s);
     const node = parseOr(cur);
