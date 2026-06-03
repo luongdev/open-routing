@@ -416,6 +416,55 @@ describe('OrFlowBuilder', () => {
     expect(world).toBeCloseTo(100, 5);
   });
 
+  it('select an edge then Delete removes it; typing in an input does not', async () => {
+    const nodes = [
+      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 0 },
+      { id: 'b', kind: 'end', label: 'B', description: '', x: 0, y: 100 },
+    ];
+    const edges = [{ id: 'e1', from: 'a', to: 'b', from_port: 'done', label: 'done' }];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges } }, error: null }) };
+    await settle();
+
+    (el as any)._selectEdge('e1');
+    // Backspace while focused in a text input must NOT delete.
+    (el as any)._onKeyDown({ key: 'Backspace', preventDefault() {}, composedPath: () => [{ tagName: 'INPUT' }] });
+    expect((el as any)._edges).toHaveLength(1);
+    // Delete on the canvas removes the selected edge.
+    (el as any)._onKeyDown({ key: 'Delete', preventDefault() {}, composedPath: () => [{ tagName: 'DIV' }] });
+    expect((el as any)._edges).toHaveLength(0);
+    expect((el as any)._selectedEdgeId).toBeNull();
+  });
+
+  it('Delete removes the selected node and its incident edges', async () => {
+    const nodes = [
+      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 0 },
+      { id: 'b', kind: 'end', label: 'B', description: '', x: 0, y: 100 },
+    ];
+    const edges = [{ id: 'e1', from: 'a', to: 'b', from_port: 'done', label: 'done' }];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges } }, error: null }) };
+    await settle();
+    (el as any)._selectedNodeId = 'a';
+    (el as any)._onKeyDown({ key: 'Delete', preventDefault() {}, composedPath: () => [{ tagName: 'DIV' }] });
+    expect((el as any)._nodes.map((n: any) => n.id)).toEqual(['b']);
+    expect((el as any)._edges).toHaveLength(0);
+  });
+
+  it('condition builder parses and composes lhs/op/rhs round-trip', () => {
+    const p = (el as any)._parseCondition('customer.tier == gold');
+    expect(p).toEqual({ lhs: 'customer.tier', op: '==', rhs: 'gold' });
+    // multi-operator → not basic-representable
+    expect((el as any)._parseCondition('a == b == c')).toBeNull();
+    // bare variable → truthy test (empty rhs)
+    expect((el as any)._parseCondition('vip')).toEqual({ lhs: 'vip', op: '==', rhs: '' });
+    // compose drops the operator when rhs is empty
+    expect((el as any)._composeCondition({ lhs: 'vip', op: '==', rhs: '' })).toBe('vip');
+    expect((el as any)._composeCondition({ lhs: 'age', op: '>', rhs: '18' })).toBe('age > 18');
+  });
+
   it('renders the load error state with Retry when GET fails', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;

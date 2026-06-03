@@ -223,19 +223,23 @@ function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput
 interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'cases';
+  type: 'text' | 'number' | 'select' | 'cases' | 'condition';
   options?: string[];
 }
+
+// Comparison operators for the basic condition builder — longest first so
+// `<=`/`>=`/`==`/`!=` match before `<`/`>`. Mirrors the backend expr grammar.
+const EXPR_OPS = ['==', '!=', '<=', '>=', '<', '>'] as const;
 
 // Editable config fields per kind. Keys match the backend config structs
 // (internal/runtime/node_kinds.go) — authoritative.
 const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   trigger: [{ key: 'channel', label: 'Channel', type: 'text' }, { key: 'entry_code', label: 'Entry code', type: 'text' }],
-  if_else: [{ key: 'expr', label: 'Condition', type: 'text' }],
+  if_else: [{ key: 'expr', label: 'Condition', type: 'condition' }],
   switch_case: [{ key: 'expr', label: 'Value expression', type: 'text' }, { key: 'cases', label: 'Cases', type: 'cases' }],
   wait: [{ key: 'duration_ms', label: 'Duration (ms)', type: 'number' }],
   match_skill: [{ key: 'skill', label: 'Skill code', type: 'text' }, { key: 'min_proficiency', label: 'Min proficiency', type: 'number' }],
-  filter: [{ key: 'expr', label: 'Predicate', type: 'text' }],
+  filter: [{ key: 'expr', label: 'Predicate', type: 'condition' }],
   route_queue: [{ key: 'queue', label: 'Queue code', type: 'text' }],
   reservation: [{ key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' }, { key: 'max_attempts', label: 'Max attempts', type: 'number' }],
   fallback: [{ key: 'reason', label: 'Reason', type: 'text' }],
@@ -676,10 +680,9 @@ export class OrFlowBuilder extends LitElement {
     .edge-label--timeout { fill: var(--warning); }
     .edge-label--fallback{ fill: var(--destructive); }
     .edge--draft { stroke: var(--primary); stroke-dasharray: 5 4; stroke-width: 2; pointer-events: none; }
-    .edge-del { cursor: pointer; opacity: 0.35; transition: opacity .12s; }
-    .edge-del:hover { opacity: 1; }
-    .edge-del circle { fill: var(--card); stroke: var(--destructive); }
-    .edge-del text { fill: var(--destructive); font-size: 11px; font-weight: 700; pointer-events: none; }
+    /* Wide invisible hit-target so thin edges are easy to click-select. */
+    .edge-hit { stroke: transparent; stroke-width: 14; fill: none; cursor: pointer; }
+    .edge--selected { stroke: var(--primary) !important; stroke-width: 2.5; }
     .node-card-port--handle { cursor: crosshair; }
     .node-card-port--handle:hover {
       outline: 2px solid color-mix(in oklch, var(--primary) 50%, transparent);
@@ -727,6 +730,16 @@ export class OrFlowBuilder extends LitElement {
       border-color: var(--destructive);
       box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 22%, transparent), var(--shadow-md);
     }
+    .node-card--drop-target {
+      border-color: var(--success);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 30%, transparent), var(--shadow-md);
+    }
+    .node-input-anchor {
+      fill: var(--card);
+      stroke: var(--muted-foreground);
+      stroke-width: 1.5;
+    }
+    .node-input-anchor--active { fill: var(--success); stroke: var(--success); }
 
     /* ----- Validation panel (docked in the inspector) ----- */
     .validation-panel {
@@ -933,6 +946,28 @@ export class OrFlowBuilder extends LitElement {
     .form-section .form-input:focus {
       outline: none;
       border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+    }
+    .form-section label { display: flex; align-items: center; justify-content: space-between; }
+    .expr-mode {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 10px;
+      text-transform: none;
+      letter-spacing: 0;
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+    .expr-mode:hover { color: var(--foreground); border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
+    .cond-builder { display: grid; grid-template-columns: 1fr auto 1fr; gap: 5px; }
+    .cond-builder .cond-op { min-width: 52px; }
+    .expr-hint { font-size: 10.5px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.4; }
+    .expr-hint code {
+      background: var(--muted);
+      border-radius: 4px;
+      padding: 0 3px;
+      font-size: 10px;
     }
     .form-section .chip-row {
       display: flex;
@@ -1909,6 +1944,12 @@ export class OrFlowBuilder extends LitElement {
 
   // In-progress edge connection (port drag). Cursor is in world coords.
   @state() private accessor _edgeDraft: { fromId: string; fromPort: string; portKind: string; cx: number; cy: number } | null = null;
+  // Node id currently under the connect cursor (drop-target highlight).
+  @state() private accessor _edgeDraftTarget: string | null = null;
+  // Selected edge (click to select, Delete to remove).
+  @state() private accessor _selectedEdgeId: string | null = null;
+  // Node ids whose condition field is in raw "advanced" mode.
+  @state() private accessor _exprAdvanced: Set<string> = new Set();
 
   @state() private accessor _actionToast: string | null = null;
   @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
@@ -1969,11 +2010,13 @@ export class OrFlowBuilder extends LitElement {
     // Lit's @wheel can't guarantee that, so bind it directly.
     const svg = this._svgEl();
     svg?.addEventListener('wheel', this._onWheel, { passive: false });
+    document.addEventListener('keydown', this._onKeyDown);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._svgRef?.removeEventListener('wheel', this._onWheel);
+    document.removeEventListener('keydown', this._onKeyDown);
     clearTimeout(this._actionToastTimer);
     clearTimeout(this._saveToastTimer);
   }
@@ -2351,6 +2394,7 @@ export class OrFlowBuilder extends LitElement {
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     this._panState = { startX: e.clientX, startY: e.clientY, ox: this._panX, oy: this._panY };
     this._selectedNodeId = null;
+    this._selectedEdgeId = null;
   };
 
   private _onCanvasPointerMove = (e: PointerEvent): void => {
@@ -2506,6 +2550,8 @@ export class OrFlowBuilder extends LitElement {
     if (!this._edgeDraft) return;
     const p = this._clientToSvg(e.clientX, e.clientY);
     this._edgeDraft = { ...this._edgeDraft, cx: p.x, cy: p.y };
+    const t = this._nodeAt(p.x, p.y);
+    this._edgeDraftTarget = t && t.id !== this._edgeDraft.fromId ? t.id : null;
   };
 
   private _onPortPointerUp = (e: PointerEvent): void => {
@@ -2513,13 +2559,18 @@ export class OrFlowBuilder extends LitElement {
     if (!draft) return;
     (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
     this._edgeDraft = null;
+    this._edgeDraftTarget = null;
     const p = this._clientToSvg(e.clientX, e.clientY);
-    // Topmost node under the cursor wins (reverse render order).
-    const target = [...this._nodes].reverse().find(n =>
-      p.x >= n.x && p.x <= n.x + NODE_W_PX && p.y >= n.y && p.y <= n.y + 116);
+    const target = this._nodeAt(p.x, p.y);
     if (!target || target.id === draft.fromId) return;
     this._connectEdge(draft.fromId, draft.fromPort, draft.portKind, target.id);
   };
+
+  // Topmost node whose bounds contain the world point (reverse render order).
+  private _nodeAt(x: number, y: number): FlowNode | undefined {
+    return [...this._nodes].reverse().find(n =>
+      x >= n.x && x <= n.x + NODE_W_PX && y >= n.y && y <= n.y + 116);
+  }
 
   private _connectEdge(fromId: string, fromPort: string, portKind: string, toId: string): void {
     const branch: FlowEdge['branch'] = portKind === 'timeout' ? 'timeout' : portKind === 'error' ? 'fallback' : 'success';
@@ -2534,10 +2585,40 @@ export class OrFlowBuilder extends LitElement {
     this._validation = null;
   }
 
+  private _selectEdge(id: string): void {
+    this._selectedEdgeId = id;
+    this._selectedNodeId = null;
+  }
+
   private _deleteEdge(id: string): void {
     this._edges = this._edges.filter(e => e.id !== id);
+    if (this._selectedEdgeId === id) this._selectedEdgeId = null;
     this._validation = null;
   }
+
+  private _deleteNode(id: string): void {
+    this._nodes = this._nodes.filter(n => n.id !== id);
+    this._edges = this._edges.filter(e => e.from !== id && e.to !== id);
+    if (this._selectedNodeId === id) this._selectedNodeId = null;
+    this._validation = null;
+  }
+
+  // Delete/Backspace removes the selected edge or node — but not while typing in
+  // a config input (else Backspace nukes the node mid-edit).
+  private _onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    if (this._simMode === 'sim') return;
+    const t = e.composedPath()[0] as Element | undefined;
+    const tag = t?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (this._selectedEdgeId) {
+      e.preventDefault();
+      this._deleteEdge(this._selectedEdgeId);
+    } else if (this._selectedNodeId) {
+      e.preventDefault();
+      this._deleteNode(this._selectedNodeId);
+    }
+  };
 
   private _genEdgeId(): string {
     let id = '';
@@ -2843,8 +2924,11 @@ export class OrFlowBuilder extends LitElement {
                        : 'default';
         const labelW = labelText ? Math.min(110, Math.max(24, labelText.length * 7 + 12)) : 0;
         const labelH = 16;
+        const selected = !isSim && e.id === this._selectedEdgeId;
         return svg`
-          <path class=${cls} d=${d} marker-end=${marker}></path>
+          ${isSim ? nothing : svg`<path class="edge-hit" d=${d}
+            @click=${(ev: Event) => { ev.stopPropagation(); this._selectEdge(e.id); }}></path>`}
+          <path class=${cls + (selected ? ' edge--selected' : '')} d=${d} marker-end=${marker}></path>
           ${labelText ? svg`
             <rect
               class=${'edge-label-bg edge-label-bg--' + labelKind}
@@ -2861,12 +2945,6 @@ export class OrFlowBuilder extends LitElement {
               text-anchor="middle"
             >${labelText}</text>
           ` : nothing}
-          ${isSim ? nothing : svg`
-            <g class="edge-del" @click=${(ev: Event) => { ev.stopPropagation(); this._deleteEdge(e.id); }}>
-              <circle cx=${labelX} cy=${labelText ? labelY - 13 : labelY} r="7"></circle>
-              <text x=${labelX} y=${(labelText ? labelY - 13 : labelY) + 3.5} text-anchor="middle">×</text>
-            </g>
-          `}
         `;
       })}
     `;
@@ -2906,6 +2984,7 @@ export class OrFlowBuilder extends LitElement {
         stepHit?.status === 'fail' ? 'node-card--fail' : '',
         issueIds.has(node.id) ? 'node-card--invalid' : '',
         isSelected && !isSim ? 'node-card--selected' : '',
+        node.id === this._edgeDraftTarget ? 'node-card--drop-target' : '',
         isDragging ? 'is-dragging' : '',
       ].filter(Boolean).join(' ');
 
@@ -2913,7 +2992,13 @@ export class OrFlowBuilder extends LitElement {
         ? node.outputs
         : [{ id: 'done', label: 'done', kind: 'success' as const }];
 
+      // Input anchor (top-centre): the link target. Hidden for the trigger
+      // (no inbound) and in sim. Highlights while a connection is dragged over.
+      const showInput = !isSim && node.kind !== 'trigger';
+
       return svg`
+        ${showInput ? svg`<circle class=${'node-input-anchor' + (node.id === this._edgeDraftTarget ? ' node-input-anchor--active' : '')}
+          cx=${node.x + NODE_W / 2} cy=${node.y} r="5"></circle>` : nothing}
         <foreignObject x=${node.x} y=${node.y} width=${NODE_W} height=${NODE_H} overflow="visible">
           <div
             xmlns="http://www.w3.org/1999/xhtml"
@@ -3050,8 +3135,82 @@ export class OrFlowBuilder extends LitElement {
     `;
   }
 
+  // Split "lhs OP rhs" into parts, or null if it can't round-trip to basic
+  // (multiple operators, etc.) — caller then forces advanced mode. A bare
+  // variable (no operator) is basic-representable with an empty rhs.
+  private _parseCondition(expr: string): { lhs: string; op: string; rhs: string } | null {
+    const s = expr.trim();
+    if (s === '') return { lhs: '', op: '==', rhs: '' };
+    for (const op of EXPR_OPS) {
+      const i = s.indexOf(op);
+      if (i < 0) continue;
+      const lhs = s.slice(0, i).trim();
+      const rhs = s.slice(i + op.length).trim();
+      // Reject if either side still holds an operator (won't round-trip).
+      if (EXPR_OPS.some(o => rhs.includes(o)) || EXPR_OPS.some(o => lhs.includes(o))) return null;
+      return { lhs, op, rhs };
+    }
+    return EXPR_OPS.some(o => s.includes(o)) ? null : { lhs: s, op: '==', rhs: '' };
+  }
+
+  private _composeCondition(c: { lhs: string; op: string; rhs: string }): string {
+    const lhs = c.lhs.trim();
+    const rhs = c.rhs.trim();
+    if (!lhs) return '';
+    return rhs === '' ? lhs : `${lhs} ${c.op} ${rhs}`;
+  }
+
+  private _setCondition(id: string, key: string, patch: Partial<{ lhs: string; op: string; rhs: string }>): void {
+    const node = this._nodes.find(n => n.id === id);
+    const cur = this._parseCondition(String(node?.params?.[key] ?? '')) ?? { lhs: '', op: '==', rhs: '' };
+    this._updateNodeParam(id, key, this._composeCondition({ ...cur, ...patch }));
+  }
+
+  private _toggleExprMode(id: string): void {
+    const next = new Set(this._exprAdvanced);
+    next.has(id) ? next.delete(id) : next.add(id);
+    this._exprAdvanced = next;
+  }
+
+  private _varSuggestions(): string[] {
+    return MOCK_INIT_VARS.map(v => v.key);
+  }
+
   private _renderField(node: FlowNode, f: FieldDef) {
     const v = node.params?.[f.key];
+    if (f.type === 'condition') {
+      const expr = String(v ?? '');
+      const parsed = this._parseCondition(expr);
+      const advanced = this._exprAdvanced.has(node.id) || (expr !== '' && parsed === null);
+      return html`
+        <div class="form-section">
+          <label>
+            <span>${f.label}</span>
+            <button class="expr-mode" @click=${() => this._toggleExprMode(node.id)}>
+              ${advanced ? 'Basic' : 'Advanced'}
+            </button>
+          </label>
+          ${advanced ? html`
+            <textarea class="form-input" rows="2" placeholder="customer.tier == gold"
+              .value=${expr}
+              @change=${(e: Event) => this._updateNodeParam(node.id, f.key, (e.target as HTMLTextAreaElement).value.trim())}></textarea>
+            <div class="expr-hint">Grammar: <code>variable</code> or <code>variable OP value</code>. OP: == != &lt; &gt; &lt;= &gt;=. Strings are bare or "quoted".</div>
+          ` : html`
+            <div class="cond-builder">
+              <input class="form-input" list="or-var-list" placeholder="variable" .value=${parsed?.lhs ?? ''}
+                @input=${(e: Event) => this._setCondition(node.id, f.key, { lhs: (e.target as HTMLInputElement).value })}>
+              <select class="form-input cond-op"
+                @change=${(e: Event) => this._setCondition(node.id, f.key, { op: (e.target as HTMLSelectElement).value })}>
+                ${EXPR_OPS.map(o => html`<option value=${o} ?selected=${(parsed?.op ?? '==') === o}>${o}</option>`)}
+              </select>
+              <input class="form-input" placeholder="value" .value=${parsed?.rhs ?? ''}
+                @input=${(e: Event) => this._setCondition(node.id, f.key, { rhs: (e.target as HTMLInputElement).value })}>
+            </div>
+            <datalist id="or-var-list">${this._varSuggestions().map(s => html`<option value=${s}></option>`)}</datalist>
+            <div class="expr-hint">Leave the value empty for a truthy test. Switch to Advanced for a raw expression.</div>
+          `}
+        </div>`;
+    }
     if (f.type === 'cases') {
       const arr = Array.isArray(v) ? (v as string[]) : [];
       return html`
