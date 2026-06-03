@@ -1407,7 +1407,11 @@ export class OrFlowBuilder extends LitElement {
       display: flex;
       gap: 2px;             /* tightened from 3px so SWITCH/CASE 5 chips fit the card width */
       flex-wrap: nowrap;
-      overflow: hidden;
+      /* overflow MUST stay visible: the port chip's :hover outline (offset 1px,
+         2px wide) extends ~3px past the chip, and overflow:hidden clipped its
+         bottom edge flat — read as "the Done chip lost its bottom border on
+         hover". Chips shrink (below) instead of spilling horizontally. */
+      overflow: visible;
       align-items: center;
       justify-content: space-around;
       margin-top: auto;
@@ -1424,7 +1428,8 @@ export class OrFlowBuilder extends LitElement {
       padding: 1px 5px;
       border-radius: 3px;
       line-height: 1.4;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      min-width: 0;
       max-width: 60px;
       overflow: hidden;
       text-overflow: ellipsis;
