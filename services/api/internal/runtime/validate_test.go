@@ -226,3 +226,64 @@ func TestValidateAndCompile_InvalidGraphYieldsIssuesNotPlan(t *testing.T) {
 		t.Fatal("expected issues for invalid graph")
 	}
 }
+
+func codesOf(issues []ValidationIssue) map[string]bool {
+	m := map[string]bool{}
+	for _, i := range issues {
+		m[i.Code] = true
+	}
+	return m
+}
+
+func TestValidate_InvalidNodeID(t *testing.T) {
+	g := &Graph{Nodes: []GraphNode{node("", NodeTrigger, nil), node("a#b", NodeEnd, nil)}}
+	issues, _ := ValidateGraph(context.Background(), g, DefaultRegistry(), nil)
+	if !codesOf(issues)[IssueInvalidNodeID] {
+		t.Fatalf("want invalid_node_id, got %+v", issues)
+	}
+}
+
+func TestValidate_SuspendInRegion(t *testing.T) {
+	// A reservation inside a loop body region is rejected (review B3); a wait there
+	// is allowed (sim clock-join feature).
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("lp", NodeLoopFor, loopForConfig{ArrayExpr: "items"}),
+			func() GraphNode { n := node("r", NodeReservation, reservationConfig{TimeoutSec: 5}); n.Region = "lp"; return n }(),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{{From: "t", To: "lp"}, {From: "lp", To: "r", Label: "body"}, {From: "lp", To: "end", Label: "done"}},
+	}
+	if !codesOf(mustIssues(t, g))[IssueSuspendInRegion] {
+		t.Fatalf("want suspend_in_region for reservation in region")
+	}
+}
+
+func TestValidate_PortCardinality(t *testing.T) {
+	// if_else missing the "false" port → invalid_port_cardinality.
+	g := &Graph{
+		Nodes: []GraphNode{node("t", NodeTrigger, nil), node("c", NodeIfElse, ifElseConfig{Expr: "x"}), node("end", NodeEnd, nil)},
+		Edges: []GraphEdge{{From: "t", To: "c"}, {From: "c", To: "end", Label: "true"}},
+	}
+	if !codesOf(mustIssues(t, g))[IssuePortCardinality] {
+		t.Fatalf("want invalid_port_cardinality for if_else missing 'false'")
+	}
+	// duplicate label.
+	g2 := &Graph{
+		Nodes: []GraphNode{node("t", NodeTrigger, nil), node("c", NodeIfElse, ifElseConfig{Expr: "x"}), node("e1", NodeEnd, nil), node("e2", NodeEnd, nil)},
+		Edges: []GraphEdge{{From: "t", To: "c"}, {From: "c", To: "e1", Label: "true"}, {From: "c", To: "e2", Label: "true"}, {From: "c", To: "e1", Label: "false"}},
+	}
+	if !codesOf(mustIssues(t, g2))[IssuePortCardinality] {
+		t.Fatalf("want invalid_port_cardinality for duplicate 'true'")
+	}
+}
+
+func mustIssues(t *testing.T, g *Graph) []ValidationIssue {
+	t.Helper()
+	issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil)
+	if err != nil {
+		t.Fatalf("validate err: %v", err)
+	}
+	return issues
+}

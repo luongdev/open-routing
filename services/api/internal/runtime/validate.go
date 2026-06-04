@@ -24,6 +24,9 @@ const (
 	IssueRegionBranches = "region_branches_invalid"
 	IssueEndInRegion    = "end_in_region"
 	IssueLoopVarShadow  = "loop_var_shadow"
+	IssueInvalidNodeID  = "invalid_node_id"
+	IssueSuspendInRegion = "suspend_in_region"
+	IssuePortCardinality = "invalid_port_cardinality"
 )
 
 // ValidateGraph runs structural checks over the authoring graph, then each
@@ -46,6 +49,12 @@ func ValidateGraph(ctx context.Context, g *Graph, reg *Registry, refs CatalogRef
 	triggers := 0
 	hasEnd := false
 	for _, n := range g.Nodes {
+		// Node id must be non-empty and free of '#' — '#' collides with the region
+		// owner#index naming, and an empty id breaks compile (review H10).
+		if n.ID == "" || strings.Contains(n.ID, "#") {
+			issues = append(issues, ValidationIssue{Code: IssueInvalidNodeID, Message: fmt.Sprintf("node id %q must be non-empty and must not contain '#'", n.ID), NodeID: n.ID})
+			continue
+		}
 		if seen[n.ID] {
 			issues = append(issues, ValidationIssue{Code: IssueDuplicateNodeID, Message: fmt.Sprintf("duplicate node id %q", n.ID), NodeID: n.ID})
 			continue
@@ -85,6 +94,10 @@ func ValidateGraph(ctx context.Context, g *Graph, reg *Registry, refs CatalogRef
 
 	// 3D-2 region structure (body edges, boundaries, branch shape, loop vars).
 	issues = append(issues, validateRegions(g)...)
+
+	// 3D hardening: suspending nodes are top-level only; branch ports must be sane.
+	issues = append(issues, validateSuspendScope(g)...)
+	issues = append(issues, validatePorts(g)...)
 
 	// Edges must reference existing nodes.
 	for _, e := range g.Edges {
@@ -420,4 +433,100 @@ func reachableFrom(entry string, edges []GraphEdge) map[string]bool {
 		}
 	}
 	return reached
+}
+
+// regionForbiddenKinds need an EXTERNAL party (an agent accept, a caller's input)
+// plus a durable resume cursor. v0.2 resumes only TOP-LEVEL cursors, so one inside
+// a loop/parallel/try region would resume with corrupted scope — reject it
+// (review B3). `wait` is intentionally NOT here: it auto-resumes deterministically
+// in simulation (the parallel clock-join feature) and needs no external party.
+var regionForbiddenKinds = map[NodeKind]bool{
+	NodeReservation: true,
+	NodeGetDTMF:     true, NodePromptText: true, NodeWaitSignal: true,
+	NodeManualApproval: true, NodeDetectSpeech: true, NodeCSATSurvey: true, NodeNPSSurvey: true,
+}
+
+func validateSuspendScope(g *Graph) []ValidationIssue {
+	var issues []ValidationIssue
+	for _, n := range g.Nodes {
+		if n.Region != "" && regionForbiddenKinds[n.Kind] {
+			issues = append(issues, ValidationIssue{
+				Code: IssueSuspendInRegion, NodeID: n.ID,
+				Message: fmt.Sprintf("%s %q cannot be inside a loop/parallel/try region (v0.2 resumes top-level only)", n.Kind, n.ID),
+			})
+		}
+	}
+	return issues
+}
+
+// fixedOutPorts are the kinds whose out-edge labels are a known fixed set. Every
+// out-edge of such a node must use a declared port, no port may be wired twice,
+// and (for the binary/branch kinds) all ports must be present — otherwise a graph
+// that should branch silently "completes" at runtime when it takes an unwired
+// port (review B4). switch_case ports are dynamic (case values) and control nodes
+// own their body/done/catch edges (validateRegions), so both are excluded here.
+var fixedOutPorts = map[NodeKind][]string{
+	NodeIfElse:         {"true", "false"},
+	NodeReservation:    {"accepted", "timeout", "no_candidate"},
+	NodeGetDTMF:        {"captured", "timeout"},
+	NodePromptText:     {"captured", "timeout"},
+	NodeWaitSignal:     {"received", "timeout"},
+	NodeManualApproval: {"approved", "rejected", "timeout"},
+	NodeDetectSpeech:   {"recognized", "no_match", "timeout"},
+	NodeCSATSurvey:     {"done", "timeout"},
+	NodeNPSSurvey:      {"done", "timeout"},
+}
+
+func validatePorts(g *Graph) []ValidationIssue {
+	var issues []ValidationIssue
+	kindOf := make(map[string]NodeKind, len(g.Nodes))
+	for _, n := range g.Nodes {
+		kindOf[n.ID] = n.Kind
+	}
+	// out-edge labels per source node.
+	labels := make(map[string][]string)
+	for _, e := range g.Edges {
+		labels[e.From] = append(labels[e.From], e.Label)
+	}
+	for _, n := range g.Nodes {
+		ls := labels[n.ID]
+		// Duplicate labels (incl. duplicate unlabeled) are ambiguous for any node.
+		seen := map[string]int{}
+		for _, l := range ls {
+			seen[l]++
+		}
+		for l, c := range seen {
+			if c > 1 {
+				disp := l
+				if disp == "" {
+					disp = "(unlabeled)"
+				}
+				issues = append(issues, ValidationIssue{Code: IssuePortCardinality, NodeID: n.ID,
+					Message: fmt.Sprintf("node %q has %d out-edges labelled %s; labels must be unique", n.ID, c, disp)})
+			}
+		}
+		ports, fixed := fixedOutPorts[n.Kind]
+		if !fixed {
+			continue
+		}
+		allowed := map[string]bool{}
+		for _, p := range ports {
+			allowed[p] = true
+		}
+		present := map[string]bool{}
+		for _, l := range ls {
+			present[l] = true
+			if !allowed[l] {
+				issues = append(issues, ValidationIssue{Code: IssuePortCardinality, NodeID: n.ID,
+					Message: fmt.Sprintf("node %q (%s) has an out-edge with unknown port %q", n.ID, n.Kind, l)})
+			}
+		}
+		for _, p := range ports {
+			if !present[p] {
+				issues = append(issues, ValidationIssue{Code: IssuePortCardinality, NodeID: n.ID,
+					Message: fmt.Sprintf("node %q (%s) is missing an out-edge for port %q", n.ID, n.Kind, p)})
+			}
+		}
+	}
+	return issues
 }

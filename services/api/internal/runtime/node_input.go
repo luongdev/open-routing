@@ -15,11 +15,17 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/luongdev/open-routing/services/api/internal/runtime/expr"
 )
+
+// maxTimeoutSec caps wait/input/reservation timeouts so
+// time.Duration(sec)*time.Second can't overflow (review M5). 24h is well beyond
+// any real offer/wait window.
+const maxTimeoutSec = 86400
 
 // inputSpec declares an input node's branch ports and how a captured value maps
 // to one. timeoutPort is taken when the wait elapses with no value.
@@ -76,8 +82,8 @@ func (inputNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRef
 		return malformed(n.ID, err), nil
 	}
 	var issues []ValidationIssue
-	if cfg.TimeoutSec < 0 {
-		issues = append(issues, fieldIssue(n.ID, "timeout_sec", IssueInvalidConfig, "timeout_sec cannot be negative"))
+	if cfg.TimeoutSec < 0 || cfg.TimeoutSec > maxTimeoutSec {
+		issues = append(issues, fieldIssue(n.ID, "timeout_sec", IssueInvalidConfig, fmt.Sprintf("timeout_sec must be between 0 and %d", maxTimeoutSec)))
 	}
 	if cfg.SaveAs != "" && !validVarName(cfg.SaveAs) {
 		issues = append(issues, fieldIssue(n.ID, "save_as", IssueInvalidConfig, "save_as must be an identifier (optionally dotted) and not a reserved word"))

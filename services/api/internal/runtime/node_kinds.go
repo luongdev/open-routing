@@ -297,8 +297,8 @@ func (reservationNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ Cata
 		return malformed(n.ID, err), nil
 	}
 	var issues []ValidationIssue
-	if cfg.TimeoutSec <= 0 {
-		issues = append(issues, fieldIssue(n.ID, "timeout_sec", IssueInvalidConfig, "reservation requires a positive timeout_sec"))
+	if cfg.TimeoutSec <= 0 || cfg.TimeoutSec > maxTimeoutSec {
+		issues = append(issues, fieldIssue(n.ID, "timeout_sec", IssueInvalidConfig, fmt.Sprintf("reservation requires a positive timeout_sec (<= %d)", maxTimeoutSec)))
 	}
 	if cfg.MaxAttempts < 0 {
 		issues = append(issues, fieldIssue(n.ID, "max_attempts", IssueInvalidConfig, "max_attempts cannot be negative"))
