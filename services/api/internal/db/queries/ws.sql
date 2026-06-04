@@ -4,9 +4,15 @@
 -- LockAgentOutboxSeq serializes server_seq allocation per (org, agent) WITHIN the
 -- caller's tx so the MAX(server_seq)+1 below is race-free across writers (the
 -- per-agent advisory lock releases at tx end). Must be called before
--- AppendAgentOutbox in the same tx.
+-- AppendAgentOutbox in the same tx. Keyed off the agents row so the query
+-- carries an org_id filter — SQLChecker rejects a bare pg_advisory_xact_lock as
+-- an unscoped statement under OrgDB (review HIGH-2: W4's producer locks+appends
+-- in one OrgDB tx). A producer only ever appends to a live agent, so the row is
+-- always present.
 -- name: LockAgentOutboxSeq :exec
-SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0));
+SELECT pg_advisory_xact_lock(hashtextextended(a.org_id::text || ':' || a.id::text, 0))
+FROM agents a
+WHERE a.org_id = $1 AND a.id = $2;
 
 -- AppendAgentOutbox inserts the next per-agent outbox row. 0 rows ⇒ event_key
 -- already present (idempotent re-derivation on reconnect) — caller treats as

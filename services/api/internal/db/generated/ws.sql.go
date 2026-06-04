@@ -206,12 +206,14 @@ func (q *Queries) IsAgentSessionLive(ctx context.Context, arg IsAgentSessionLive
 
 const lockAgentOutboxSeq = `-- name: LockAgentOutboxSeq :exec
 
-SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0))
+SELECT pg_advisory_xact_lock(hashtextextended(a.org_id::text || ':' || a.id::text, 0))
+FROM agents a
+WHERE a.org_id = $1 AND a.id = $2
 `
 
 type LockAgentOutboxSeqParams struct {
-	Column1 string `json:"column_1"`
-	Column2 string `json:"column_2"`
+	OrgID pgtype.UUID `json:"org_id"`
+	ID    pgtype.UUID `json:"id"`
 }
 
 // v0.3 W2 realtime transport queries: agent outbox (durable outbound), command
@@ -219,9 +221,13 @@ type LockAgentOutboxSeqParams struct {
 // LockAgentOutboxSeq serializes server_seq allocation per (org, agent) WITHIN the
 // caller's tx so the MAX(server_seq)+1 below is race-free across writers (the
 // per-agent advisory lock releases at tx end). Must be called before
-// AppendAgentOutbox in the same tx.
+// AppendAgentOutbox in the same tx. Keyed off the agents row so the query
+// carries an org_id filter — SQLChecker rejects a bare pg_advisory_xact_lock as
+// an unscoped statement under OrgDB (review HIGH-2: W4's producer locks+appends
+// in one OrgDB tx). A producer only ever appends to a live agent, so the row is
+// always present.
 func (q *Queries) LockAgentOutboxSeq(ctx context.Context, arg LockAgentOutboxSeqParams) error {
-	_, err := q.db.Exec(ctx, lockAgentOutboxSeq, arg.Column1, arg.Column2)
+	_, err := q.db.Exec(ctx, lockAgentOutboxSeq, arg.OrgID, arg.ID)
 	return err
 }
 

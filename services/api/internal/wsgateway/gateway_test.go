@@ -87,9 +87,14 @@ func TestGateway_WelcomeRelayAndCommand(t *testing.T) {
 
 	// 2. Enqueue an outbox offer → the relay must push it.
 	ctx := context.Background()
+	if _, err := generated.New(sharedPool).InsertAgent(ctx, generated.InsertAgentParams{
+		ID: pg(agent), OrgID: pg(org), Code: "a-" + agent.String()[:8], Name: "t", Email: "t@t", Enabled: true,
+	}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
 	tx, _ := sharedPool.Begin(ctx)
 	q := generated.New(tx)
-	_ = q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{Column1: org.String(), Column2: agent.String()})
+	_ = q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pg(org), ID: pg(agent)})
 	resID := uuid.Must(uuid.NewV7())
 	if _, err := q.AppendAgentOutbox(ctx, generated.AppendAgentOutboxParams{
 		OrgID: pg(org), AgentID: pg(agent), EventKey: "offer-1", Type: "offer", ReservationID: pg(resID), Payload: []byte(`{"x":1}`),

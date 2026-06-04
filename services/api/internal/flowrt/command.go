@@ -51,16 +51,11 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
 
-	// Session must be live (revocation is cluster-visible — review HIGH).
-	if _, err := qtx.IsAgentSessionLive(ctx, generated.IsAgentSessionLiveParams{OrgID: pgUUID(orgID), SessionID: pgUUID(sessionID)}); errors.Is(err, pgx.ErrNoRows) {
-		return AgentCommandResult{Status: "session_revoked"}, nil
-	} else if err != nil {
-		return AgentCommandResult{}, err
-	}
-
-	// Dedupe claim. ErrNoRows ⇒ this client_msg_id already exists → return its
-	// stored result (waiting under FOR UPDATE if a concurrent duplicate is still
-	// running).
+	// Dedupe claim FIRST so a redelivered command returns its stored result even
+	// after the session was revoked (review MED-5: the session gate is for NEW
+	// commands only — a cached replay must not flip to session_revoked).
+	// ErrNoRows ⇒ this client_msg_id already exists → return its stored result
+	// (waiting under FOR UPDATE if a concurrent duplicate is still running).
 	if _, err := qtx.BeginCommand(ctx, generated.BeginCommandParams{
 		OrgID: pgUUID(orgID), AgentID: pgUUID(agentID), ClientMsgID: pgUUID(clientMsgID),
 		CommandType: string(kind), RequestHash: reqHash,
@@ -77,6 +72,15 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 			_ = json.Unmarshal(existing.Result, &res)
 		}
 		return res, tx.Commit(ctx) // commit to release the FOR UPDATE lock
+	} else if err != nil {
+		return AgentCommandResult{}, err
+	}
+
+	// New command: the session must be live (revocation is cluster-visible —
+	// review HIGH). On revocation we return without FinishCommand; the deferred
+	// rollback drops the just-claimed dedupe row so a later reconnect can retry.
+	if _, err := qtx.IsAgentSessionLive(ctx, generated.IsAgentSessionLiveParams{OrgID: pgUUID(orgID), SessionID: pgUUID(sessionID)}); errors.Is(err, pgx.ErrNoRows) {
+		return AgentCommandResult{Status: "session_revoked"}, nil
 	} else if err != nil {
 		return AgentCommandResult{}, err
 	}
@@ -138,26 +142,61 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 		out.Status = "completed"
 		return out, nil
 	case CmdAccept, CmdReject:
-		route, rErr := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: resv.RouteRequestID, OrgID: pgUUID(orgID)})
-		if errors.Is(rErr, pgx.ErrNoRows) {
-			out.Status = "conflict"
-			return out, nil
+		// AcquireRouteForRun flips the route to status='running' (the run-lock).
+		// resumeRoute releases it — but only on the success path. A domain
+		// conflict AFTER the flip (wrong current reservation, or a lost
+		// Accept/Reject CAS) returns early WITHOUT resumeRoute, which would
+		// strand the route 'running' forever. Wrap acquire+transition in a
+		// savepoint: roll it back on conflict so the run-lock flip is undone,
+		// while the parent tx keeps the committed dedupe row + conflict result
+		// (review BLOCK-1).
+		sp, spErr := tx.BeginSavepoint(ctx)
+		if spErr != nil {
+			return out, spErr
 		}
-		if rErr != nil {
-			return out, rErr
+		qsp := generated.New(sp)
+		res, txErr := e.runRouteTransition(ctx, sp, qsp, orgID, agentID, resID, kind, resv)
+		if txErr != nil {
+			_ = sp.Rollback(ctx)
+			return out, txErr
 		}
-		if !route.CurrentReservationID.Valid || uuid.UUID(route.CurrentReservationID.Bytes) != resID {
-			out.Status = "conflict"
-			return out, nil
+		if res.Status == "conflict" {
+			if err := sp.Rollback(ctx); err != nil {
+				return out, err
+			}
+			return res, nil
 		}
-		if kind == CmdAccept {
-			return e.applyAccept(ctx, tx, qtx, orgID, agentID, resID, route)
+		if err := sp.Commit(ctx); err != nil {
+			return out, err
 		}
-		return e.applyReject(ctx, tx, qtx, orgID, resID, route)
+		return res, nil
 	default:
 		out.Status = "conflict"
 		return out, nil
 	}
+}
+
+// runRouteTransition acquires the route run-lock and applies an accept/reject. It
+// runs inside a savepoint owned by the caller so a domain-conflict early return
+// can be rolled back, undoing the run-lock flip (review BLOCK-1).
+func (e *Endpoints) runRouteTransition(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID, agentID, resID uuid.UUID, kind AgentCommandKind, resv generated.Reservation) (AgentCommandResult, error) {
+	out := AgentCommandResult{ReservationID: resID.String()}
+	route, rErr := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: resv.RouteRequestID, OrgID: pgUUID(orgID)})
+	if errors.Is(rErr, pgx.ErrNoRows) {
+		out.Status = "conflict"
+		return out, nil
+	}
+	if rErr != nil {
+		return out, rErr
+	}
+	if !route.CurrentReservationID.Valid || uuid.UUID(route.CurrentReservationID.Bytes) != resID {
+		out.Status = "conflict"
+		return out, nil
+	}
+	if kind == CmdAccept {
+		return e.applyAccept(ctx, tx, qtx, orgID, agentID, resID, route)
+	}
+	return e.applyReject(ctx, tx, qtx, orgID, resID, route)
 }
 
 func (e *Endpoints) applyAccept(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID, agentID, resID uuid.UUID, route generated.RouteRequest) (AgentCommandResult, error) {

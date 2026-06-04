@@ -46,6 +46,12 @@ const (
 	relayInterval = 150 * time.Millisecond
 	writeTimeout  = 5 * time.Second
 	sendBuffer    = 64
+	// readDeadline bounds an idle read: a client must send at least a heartbeat
+	// within this window or the connection is torn down. Without it a half-open
+	// socket (peer vanished, no FIN) pins the read goroutine and keeps a live
+	// agent_sessions row forever (review MED-3). Clients should heartbeat well
+	// inside this window.
+	readDeadline = 60 * time.Second
 )
 
 // Handler upgrades the connection and runs it. Identity is derived from the
@@ -134,40 +140,51 @@ func (g *Gateway) enqueue(ctx context.Context, cancel context.CancelFunc, send c
 }
 
 // relay reads COMMITTED outbox rows in seq order and pushes them; lastSeq only
-// advances after a successful enqueue (review: no skip on backpressure).
+// advances after a successful enqueue (review: no skip on backpressure). The
+// hello floor is drained inside the loop (not a one-shot select) so a hello that
+// lands AFTER the no-hello fallback still raises the floor instead of being
+// ignored — which would otherwise replay from 0 (review MED-4). max() guards
+// against a late/duplicate hello rewinding past rows already sent.
 func (g *Gateway) relay(ctx context.Context, cancel context.CancelFunc, q *generated.Queries, orgID, agentID uuid.UUID, send chan<- Outbound, relayFrom <-chan int64) {
 	var lastSeq int64
-	select {
-	case <-ctx.Done():
-		return
-	case lastSeq = <-relayFrom: // hello floor (or 0 from a default send)
-	case <-time.After(time.Second): // no hello → replay everything
-	}
+	started := false // gate the first read on a hello handshake (or the fallback)
+	fallback := time.NewTimer(time.Second)
+	defer fallback.Stop()
 	t := time.NewTicker(relayInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case f := <-relayFrom: // hello floor; honored even when late
+			if f > lastSeq {
+				lastSeq = f
+			}
+			started = true
+		case <-fallback.C: // no hello → replay from lastSeq (0)
+			started = true
 		case <-t.C:
-		}
-		rows, err := q.ReadAgentOutboxSince(ctx, generated.ReadAgentOutboxSinceParams{
-			OrgID: pgUUID(orgID), AgentID: pgUUID(agentID), ServerSeq: lastSeq, Limit: 100,
-		})
-		if err != nil {
-			continue // transient; retry next tick
-		}
-		for _, row := range rows {
-			var payload map[string]any
-			_ = json.Unmarshal(row.Payload, &payload)
-			frame := Outbound{Type: row.Type, Seq: row.ServerSeq, Payload: payload}
-			if row.ReservationID.Valid {
-				frame.Reservation = uuid.UUID(row.ReservationID.Bytes).String()
+			if !started {
+				continue
 			}
-			if !g.enqueue(ctx, cancel, send, frame) {
-				return // overflow/closed
+			rows, err := q.ReadAgentOutboxSince(ctx, generated.ReadAgentOutboxSinceParams{
+				OrgID: pgUUID(orgID), AgentID: pgUUID(agentID), ServerSeq: lastSeq, Limit: 100,
+			})
+			if err != nil {
+				continue // transient; retry next tick
 			}
-			lastSeq = row.ServerSeq // advance only after enqueue
+			for _, row := range rows {
+				var payload map[string]any
+				_ = json.Unmarshal(row.Payload, &payload)
+				frame := Outbound{Type: row.Type, Seq: row.ServerSeq, Payload: payload}
+				if row.ReservationID.Valid {
+					frame.Reservation = uuid.UUID(row.ReservationID.Bytes).String()
+				}
+				if !g.enqueue(ctx, cancel, send, frame) {
+					return // overflow/closed
+				}
+				lastSeq = row.ServerSeq // advance only after enqueue
+			}
 		}
 	}
 }
@@ -175,9 +192,11 @@ func (g *Gateway) relay(ctx context.Context, cancel context.CancelFunc, q *gener
 func (g *Gateway) readLoop(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, q *generated.Queries, orgID, agentID, sessionID uuid.UUID, send chan<- Outbound, relayFrom chan<- int64) {
 	helloSent := false
 	for {
-		typ, data, err := conn.Read(ctx)
+		rctx, rcancel := context.WithTimeout(ctx, readDeadline)
+		typ, data, err := conn.Read(rctx)
+		rcancel()
 		if err != nil {
-			cancel()
+			cancel() // read error or idle timeout → tear down (frees the session)
 			return
 		}
 		if typ != websocket.MessageText {

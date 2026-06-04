@@ -51,11 +51,63 @@ func TestExecuteAgentCommand(t *testing.T) {
 		t.Fatalf("reused id = %q (err %v), want reused_id", r3.Status, err)
 	}
 
-	// 5. Session revocation blocks further commands.
+	// 5. A cached result survives session revocation: a redelivered command
+	// must return its stored result, NOT session_revoked (review MED-5 — the
+	// dedupe read precedes the session gate). Replay the accepted command (cmd)
+	// after terminating the session.
 	if _, err := f.q.TerminateAgentSession(f.ctx, generated.TerminateAgentSessionParams{OrgID: pgUUID(orgID), SessionID: pgUUID(sess)}); err != nil {
 		t.Fatalf("terminate session: %v", err)
 	}
+	if rc, err := f.e.ExecuteAgentCommand(f.ctx, orgID, agentID, sess, cmd, resID, CmdAccept, "h2"); err != nil || rc.Status != "accepted" {
+		t.Fatalf("cached replay after revoke = %q (err %v), want accepted", rc.Status, err)
+	}
+
+	// 6. A NEW command on a revoked session is blocked.
 	if r4, err := f.e.ExecuteAgentCommand(f.ctx, orgID, agentID, sess, uuid.Must(uuid.NewV7()), resID, CmdComplete, "h3"); err != nil || r4.Status != "session_revoked" {
 		t.Fatalf("after revoke = %q (err %v), want session_revoked", r4.Status, err)
+	}
+}
+
+// TestExecuteAgentCommand_PostAcquireConflictReleasesRoute pins review BLOCK-1: a
+// domain conflict AFTER AcquireRouteForRun flips the route to 'running' must not
+// strand it there. Here the offer is force-expired so AcceptReservation returns
+// ErrNoRows (conflict) only after the run-lock is taken; the savepoint rollback
+// must restore the route to 'waiting'.
+func TestExecuteAgentCommand_PostAcquireConflictReleasesRoute(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	routeID, resID := f.seedRouteWithOffer(t)
+	gr, _ := f.e.GetReservation(f.ctx, api.GetReservationRequestObject{Id: api.EntityIdPath(resID)})
+	res := gr.(api.GetReservation200JSONResponse)
+	orgID, agentID := uuid.UUID(res.OrgId), uuid.UUID(res.AgentId)
+
+	sess := uuid.Must(uuid.NewV7())
+	if _, err := f.q.CreateAgentSession(f.ctx, generated.CreateAgentSessionParams{
+		OrgID: pgUUID(orgID), SessionID: pgUUID(sess), AgentID: pgUUID(agentID), GatewayID: "gw-test",
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Force the offer past expiry while leaving state='offered' and the route's
+	// current_reservation_id pointing at it — so the conflict lands AFTER
+	// AcquireRouteForRun, on the AcceptReservation expires_at guard.
+	if _, err := sharedPool.Exec(f.ctx,
+		"UPDATE reservations SET expires_at = NOW() - interval '1 hour' WHERE id=$1 AND org_id=$2", resID, orgID); err != nil {
+		t.Fatalf("expire reservation: %v", err)
+	}
+
+	r, err := f.e.ExecuteAgentCommand(f.ctx, orgID, agentID, sess, uuid.Must(uuid.NewV7()), resID, CmdAccept, "hx")
+	if err != nil || r.Status != "conflict" {
+		t.Fatalf("expired accept = %q (err %v), want conflict", r.Status, err)
+	}
+
+	var status string
+	if err := sharedPool.QueryRow(f.ctx, "SELECT status FROM route_requests WHERE id=$1 AND org_id=$2", routeID, orgID).Scan(&status); err != nil {
+		t.Fatalf("route status: %v", err)
+	}
+	if status != "waiting" {
+		t.Fatalf("route status = %q after post-acquire conflict, want 'waiting' (BLOCK-1: the run-lock flip must be rolled back, not stranded)", status)
 	}
 }

@@ -11,6 +11,17 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 )
 
+// seedAgent inserts the agents row the outbox lock is keyed off (LockAgentOutboxSeq
+// derives its advisory key from the agent row — review HIGH-2).
+func seedAgent(ctx context.Context, t *testing.T, org, agent uuid.UUID) {
+	t.Helper()
+	if _, err := generated.New(sharedPool).InsertAgent(ctx, generated.InsertAgentParams{
+		ID: pgUUID(agent), OrgID: pgUUID(org), Code: "a-" + agent.String()[:8], Name: "t", Email: "t@t", Enabled: true,
+	}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+}
+
 // appendOutbox runs the lock+append in one tx (mirrors how the producer must).
 func appendOutbox(ctx context.Context, org, agent uuid.UUID, eventKey, typ string) (generated.AgentOutbox, error) {
 	var zero generated.AgentOutbox
@@ -20,7 +31,7 @@ func appendOutbox(ctx context.Context, org, agent uuid.UUID, eventKey, typ strin
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := generated.New(tx)
-	if err := q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{Column1: org.String(), Column2: agent.String()}); err != nil {
+	if err := q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pgUUID(org), ID: pgUUID(agent)}); err != nil {
 		return zero, err
 	}
 	row, err := q.AppendAgentOutbox(ctx, generated.AppendAgentOutboxParams{
@@ -38,6 +49,7 @@ func TestWSOutbox_PerAgentSeqRaceSafe(t *testing.T) {
 	}
 	ctx := context.Background()
 	org, agent := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	seedAgent(ctx, t, org, agent)
 
 	// 20 concurrent producers — the per-agent advisory lock must serialize seq
 	// allocation so we get 1..20 with no duplicate (a PK violation) and no gap.
@@ -79,6 +91,7 @@ func TestWSOutbox_EventKeyIdempotent(t *testing.T) {
 	}
 	ctx := context.Background()
 	org, agent := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	seedAgent(ctx, t, org, agent)
 	if _, err := appendOutbox(ctx, org, agent, "dup-key", "offer"); err != nil {
 		t.Fatalf("first append: %v", err)
 	}
