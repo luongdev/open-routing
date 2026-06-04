@@ -48,6 +48,9 @@ var tenantTables = map[string]struct{}{
 	"continuations":       {}, // RT (v0.2 — durable delayed work, SKIP LOCKED)
 	"runtime_events":      {}, // RT (v0.2 — canonical event envelope, outbox-first)
 	"traces":              {}, // RT (v0.2 — trace read records)
+	"agent_outbox":        {}, // WS (v0.3 — durable outbound, per-agent server_seq)
+	"ws_command_dedupe":   {}, // WS (v0.3 — at-most-once inbound commands)
+	"agent_sessions":      {}, // WS (v0.3 — session inventory / revocation)
 }
 
 // SQLChecker memoizes the org_id-presence verdict for each unique SQL
