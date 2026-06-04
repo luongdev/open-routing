@@ -219,6 +219,21 @@ func (ex *Executor) RunFrom(ctx context.Context, clock Clock, plan CompiledPlan,
 	return ex.drive(state, clock, plan, cur.NodeID)
 }
 
+// RunResume re-runs a live flow from its ENTRY, but with the parked node
+// (resumeNodeID) primed to consume `signal` (accepted/rejected/timeout) instead
+// of re-suspending. Re-running from the top lets route_queue/match_skill rebuild
+// the ranked candidate pool a reservation re-offer needs (the offerer excludes
+// already-offered agents), and a wait whose timer fired continues past. Pure
+// read nodes re-run harmlessly; v0.2 has no live side-effects before the park.
+func (ex *Executor) RunResume(ctx context.Context, clock Clock, plan CompiledPlan, resumeNodeID, signal string, vars map[string]any) (RunResult, error) {
+	v := make(map[string]any, len(vars))
+	for k, val := range vars {
+		v[k] = val
+	}
+	state := &execState{Context: ctx, clock: clock, vars: v, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, offerer: ex.offerer, resumeAt: resumeNodeID, resumeSignal: signal}
+	return ex.drive(state, clock, plan, plan.Entry)
+}
+
 func (ex *Executor) drive(state *execState, clock Clock, plan CompiledPlan, entry string) (RunResult, error) {
 	res := RunResult{Vars: state.vars}
 	// The region runner walks top-level flow (regionID "") and recurses into

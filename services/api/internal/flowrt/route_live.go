@@ -177,14 +177,15 @@ func (e *Endpoints) ListFlowEntryBindings(ctx context.Context, _ api.ListFlowEnt
 // node skips to the next candidate (ok=false). The runtime works in agent
 // CODES; the offerer resolves code→uuid via GetAgentByCode.
 type liveOfferer struct {
-	ctx     context.Context
-	tx      *db.OrgTx
-	orgID   uuid.UUID
-	routeID uuid.UUID
-	attempt int
-	lastRes uuid.UUID
-	lastExp time.Time
-	offered bool
+	ctx      context.Context
+	tx       *db.OrgTx
+	orgID    uuid.UUID
+	routeID  uuid.UUID
+	excluded map[uuid.UUID]bool // agents already offered on this route (resume re-offer)
+	attempt  int
+	lastRes  uuid.UUID
+	lastExp  time.Time
+	offered  bool
 }
 
 func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bool, error) {
@@ -194,6 +195,9 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	}
 	if err != nil {
 		return "", false, err
+	}
+	if o.excluded[apiUUID(agent.ID)] {
+		return "", false, nil // already offered this agent on this route → skip
 	}
 	resID := uuid.Must(uuid.NewV7())
 	exp := time.Now().Add(timeout)

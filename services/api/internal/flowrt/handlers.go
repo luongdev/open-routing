@@ -376,16 +376,8 @@ func (e *Endpoints) GetFlowVersion(ctx context.Context, req api.GetFlowVersionRe
 
 // SimulateFlow + ListFlowTraces live in trace_sim.go (3b).
 
-// CreateRouteRequest + the reads live in route_live.go (W3-3). The reservation
-// lifecycle (accept/reject/complete) stubs below are the next increment (W3-3b).
-
-func (*Endpoints) AcceptReservation(_ context.Context, _ api.AcceptReservationRequestObject) (api.AcceptReservationResponseObject, error) {
-	return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) RejectReservation(_ context.Context, _ api.RejectReservationRequestObject) (api.RejectReservationResponseObject, error) {
-	return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
+// CreateRouteRequest + reads live in route_live.go; the reservation lifecycle
+// (accept/reject/complete) lives in route_lifecycle.go.
 
 func (e *Endpoints) GetTrace(ctx context.Context, req api.GetTraceRequestObject) (api.GetTraceResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
@@ -405,8 +397,4 @@ func (e *Endpoints) GetTrace(ctx context.Context, req api.GetTraceRequestObject)
 		return api.GetTrace500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "trace_map_failed"}}, nil
 	}
 	return api.GetTrace200JSONResponse(t), nil
-}
-
-func (*Endpoints) CompleteReservation(_ context.Context, _ api.CompleteReservationRequestObject) (api.CompleteReservationResponseObject, error) {
-	return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
