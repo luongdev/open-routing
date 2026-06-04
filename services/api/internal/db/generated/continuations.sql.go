@@ -82,18 +82,24 @@ func (q *Queries) ClaimDueContinuations(ctx context.Context, arg ClaimDueContinu
 
 const failContinuation = `-- name: FailContinuation :execrows
 UPDATE continuations
-SET status = 'cancelled', last_error = $3, updated_at = NOW()
-WHERE id = $1 AND claimed_by = $2
+SET status = 'cancelled', last_error = $4, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND claimed_by = $3
 `
 
 type FailContinuationParams struct {
 	ID        pgtype.UUID `json:"id"`
+	OrgID     pgtype.UUID `json:"org_id"`
 	ClaimedBy *string     `json:"claimed_by"`
 	LastError *string     `json:"last_error"`
 }
 
 func (q *Queries) FailContinuation(ctx context.Context, arg FailContinuationParams) (int64, error) {
-	result, err := q.db.Exec(ctx, failContinuation, arg.ID, arg.ClaimedBy, arg.LastError)
+	result, err := q.db.Exec(ctx, failContinuation,
+		arg.ID,
+		arg.OrgID,
+		arg.ClaimedBy,
+		arg.LastError,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -191,21 +197,27 @@ func (q *Queries) InsertContinuation(ctx context.Context, arg InsertContinuation
 
 const resolveContinuation = `-- name: ResolveContinuation :execrows
 UPDATE continuations
-SET status = $3, updated_at = NOW()
-WHERE id = $1 AND claimed_by = $2
+SET status = $4, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND claimed_by = $3
 `
 
 type ResolveContinuationParams struct {
 	ID        pgtype.UUID `json:"id"`
+	OrgID     pgtype.UUID `json:"org_id"`
 	ClaimedBy *string     `json:"claimed_by"`
 	Status    string      `json:"status"`
 }
 
 // ResolveContinuation marks a claimed row done/cancelled, FENCED by claimed_by:
 // if a lost-lease worker tries to resolve a row another worker re-claimed, 0
-// rows update and it drops the work. $3=new status.
+// rows update and it drops the work. $4=new status.
 func (q *Queries) ResolveContinuation(ctx context.Context, arg ResolveContinuationParams) (int64, error) {
-	result, err := q.db.Exec(ctx, resolveContinuation, arg.ID, arg.ClaimedBy, arg.Status)
+	result, err := q.db.Exec(ctx, resolveContinuation,
+		arg.ID,
+		arg.OrgID,
+		arg.ClaimedBy,
+		arg.Status,
+	)
 	if err != nil {
 		return 0, err
 	}

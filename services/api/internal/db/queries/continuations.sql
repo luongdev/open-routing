@@ -25,16 +25,16 @@ RETURNING *;
 
 -- ResolveContinuation marks a claimed row done/cancelled, FENCED by claimed_by:
 -- if a lost-lease worker tries to resolve a row another worker re-claimed, 0
--- rows update and it drops the work. $3=new status.
+-- rows update and it drops the work. $4=new status.
 -- name: ResolveContinuation :execrows
 UPDATE continuations
-SET status = $3, updated_at = NOW()
-WHERE id = $1 AND claimed_by = $2;
+SET status = $4, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND claimed_by = $3;
 
 -- name: FailContinuation :execrows
 UPDATE continuations
-SET status = 'cancelled', last_error = $3, updated_at = NOW()
-WHERE id = $1 AND claimed_by = $2;
+SET status = 'cancelled', last_error = $4, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND claimed_by = $3;
 
 -- name: GetContinuation :one
 SELECT * FROM continuations WHERE id = $1 AND org_id = $2;

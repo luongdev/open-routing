@@ -46,3 +46,11 @@ SELECT * FROM route_requests
 WHERE org_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2;
+
+-- ReleaseRoute returns a route to 'waiting' WITHOUT touching the cursor — used
+-- when a process acquired the run-lock but then found nothing to do (e.g. a
+-- timeout continuation whose reservation was already resolved).
+-- name: ReleaseRoute :exec
+UPDATE route_requests
+SET status = 'waiting', updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status = 'running';
