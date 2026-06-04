@@ -7,6 +7,7 @@
 -- a WHERE org_id ColumnRef per tenant alias, not a JOIN-ON one); the LEFT-joined
 -- tables use `OR ... IS NULL` so a skill-less agent is not dropped.
 SELECT a.code           AS agent_code,
+       a.id             AS agent_id,
        sk.code          AS skill_code,
        ags.proficiency  AS proficiency,
        ast.updated_at   AS available_since

@@ -73,10 +73,21 @@ WHERE s.org_id = $1 AND s.reservation_id IS NOT NULL
         AND r.state IN ('offered', 'accepted')
   );
 
--- CountFreeCapacitySlots is the candidate-source hint (NOT authoritative): how
--- many free slots (<= current cap) the agent has on the channel.
+-- CountFreeCapacitySlots is how many free slots (<= current cap) the agent has
+-- on the channel (used by tests; the live hint uses CountHeldCapacitySlots so it
+-- doesn't depend on slots being pre-provisioned).
 -- name: CountFreeCapacitySlots :one
 SELECT COUNT(*)::int AS free
 FROM agent_capacity_slots
 WHERE org_id = $1 AND agent_id = $2 AND channel = $3
   AND reservation_id IS NULL AND slot_no <= $4::int;
+
+-- CountHeldCapacitySlots is the candidate-source hint (NOT authoritative): how
+-- many interactions the agent currently holds on the channel. under-capacity =
+-- held < cap — provisioning-independent (an unprovisioned agent reads held=0, so
+-- the hint includes them; the offer tx provisions+acquires authoritatively).
+-- name: CountHeldCapacitySlots :one
+SELECT COUNT(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND agent_id = $2 AND channel = $3
+  AND reservation_id IS NOT NULL;

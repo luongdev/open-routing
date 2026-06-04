@@ -131,6 +131,11 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 	} else if tErr != nil {
 		return tErr
 	}
+	if e.deps.Capacity != nil { // free the slot (gated on the timeout transition above)
+		if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, apiUUID(c.ReservationID)); rErr != nil {
+			return rErr
+		}
+	}
 	e.appendEvent(ctx, qtx, orgID, apiUUID(route.ID), "reservation.timeout", map[string]any{"reservation_id": apiUUID(c.ReservationID).String()})
 	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "timeout"); err != nil {
 		return err

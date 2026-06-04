@@ -29,6 +29,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 	"github.com/luongdev/open-routing/services/api/internal/runtime"
 )
 
@@ -37,9 +38,15 @@ const maxVersionsPerList = 100
 // Deps carries the handler dependencies. reg is the shared node registry,
 // constructed once in New and reused for validate/compile across requests.
 type Deps struct {
-	OrgDB  *db.OrgDB
-	Cache  *cache.Cache
-	Logger *slog.Logger
+	OrgDB *db.OrgDB
+	Cache *cache.Cache
+	// Presence + Capacity make routing LIVE (offerability from a connection lease
+	// + DB-solid capacity). When nil the route path runs in simulation mode
+	// (buildSnapshot, no capacity holds). A real binary (cmd/api) always wires
+	// both — see routingSnapshot (review BLOCK: no silent live→sim fallback).
+	Presence presence.Store
+	Capacity *CapacityService
+	Logger   *slog.Logger
 }
 
 type Endpoints struct {

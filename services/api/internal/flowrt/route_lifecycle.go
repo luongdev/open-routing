@@ -124,7 +124,7 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 	if err != nil {
 		return err
 	}
-	snapshot, err := e.buildSnapshot(ctx, pgUUID(orgID), graph)
+	snapshot, err := e.routingSnapshot(ctx, orgID, route.Channel, graph)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 			maxAttempt = int(r.Attempt)
 		}
 	}
-	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, excluded: excluded, attempt: maxAttempt}
+	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, channel: route.Channel, cap: e.deps.Capacity, excluded: excluded, attempt: maxAttempt}
 	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs))
 	decStart := time.Now()
 	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, input)

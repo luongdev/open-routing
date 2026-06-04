@@ -92,8 +92,9 @@ type CountFreeCapacitySlotsParams struct {
 	Column4 int32       `json:"column_4"`
 }
 
-// CountFreeCapacitySlots is the candidate-source hint (NOT authoritative): how
-// many free slots (<= current cap) the agent has on the channel.
+// CountFreeCapacitySlots is how many free slots (<= current cap) the agent has
+// on the channel (used by tests; the live hint uses CountHeldCapacitySlots so it
+// doesn't depend on slots being pre-provisioned).
 func (q *Queries) CountFreeCapacitySlots(ctx context.Context, arg CountFreeCapacitySlotsParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countFreeCapacitySlots,
 		arg.OrgID,
@@ -104,6 +105,30 @@ func (q *Queries) CountFreeCapacitySlots(ctx context.Context, arg CountFreeCapac
 	var free int32
 	err := row.Scan(&free)
 	return free, err
+}
+
+const countHeldCapacitySlots = `-- name: CountHeldCapacitySlots :one
+SELECT COUNT(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND agent_id = $2 AND channel = $3
+  AND reservation_id IS NOT NULL
+`
+
+type CountHeldCapacitySlotsParams struct {
+	OrgID   pgtype.UUID `json:"org_id"`
+	AgentID pgtype.UUID `json:"agent_id"`
+	Channel string      `json:"channel"`
+}
+
+// CountHeldCapacitySlots is the candidate-source hint (NOT authoritative): how
+// many interactions the agent currently holds on the channel. under-capacity =
+// held < cap — provisioning-independent (an unprovisioned agent reads held=0, so
+// the hint includes them; the offer tx provisions+acquires authoritatively).
+func (q *Queries) CountHeldCapacitySlots(ctx context.Context, arg CountHeldCapacitySlotsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countHeldCapacitySlots, arg.OrgID, arg.AgentID, arg.Channel)
+	var held int32
+	err := row.Scan(&held)
+	return held, err
 }
 
 const provisionCapacitySlots = `-- name: ProvisionCapacitySlots :exec

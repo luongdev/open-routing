@@ -13,6 +13,7 @@ import (
 
 const listRoutableCandidates = `-- name: ListRoutableCandidates :many
 SELECT a.code           AS agent_code,
+       a.id             AS agent_id,
        sk.code          AS skill_code,
        ags.proficiency  AS proficiency,
        ast.updated_at   AS available_since
@@ -31,6 +32,7 @@ ORDER BY a.code, sk.code
 
 type ListRoutableCandidatesRow struct {
 	AgentCode      string             `json:"agent_code"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
 	SkillCode      *string            `json:"skill_code"`
 	Proficiency    *int32             `json:"proficiency"`
 	AvailableSince pgtype.Timestamptz `json:"available_since"`
@@ -56,6 +58,7 @@ func (q *Queries) ListRoutableCandidates(ctx context.Context, orgID pgtype.UUID)
 		var i ListRoutableCandidatesRow
 		if err := rows.Scan(
 			&i.AgentCode,
+			&i.AgentID,
 			&i.SkillCode,
 			&i.Proficiency,
 			&i.AvailableSince,

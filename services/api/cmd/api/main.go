@@ -217,10 +217,17 @@ func run() int {
 	// All embed sets are disjoint — Go's method-set resolution merges them
 	// cleanly. Pitfall 1 is avoided by giving each type a distinct name
 	// (Handlers / Server / Importer / Endpoints; per RESEARCH §F3).
+	// v0.3 W3: one presence store + capacity service shared by the route engine
+	// (offerability + capacity holds) and the WS gateway (lease renew/drop) so a
+	// gateway heartbeat is visible to the matcher's Connected check.
+	presenceStore := presence.NewRedisStore(rdb, 0)
+	capacitySvc := flowrt.NewCapacityService()
 	flowrtEndpoints := flowrt.New(flowrt.Deps{
-		OrgDB:  orgDB,
-		Cache:  catalogCache,
-		Logger: slog.Default(),
+		OrgDB:    orgDB,
+		Cache:    catalogCache,
+		Presence: presenceStore,
+		Capacity: capacitySvc,
+		Logger:   slog.Default(),
 	})
 	type ApiHandlers struct {
 		*catalog.Handlers
@@ -249,7 +256,7 @@ func run() int {
 	wsGateway := wsgateway.New(wsgateway.Deps{
 		OrgDB:    orgDB,
 		Cmd:      flowrtEndpoints,
-		Presence: presence.NewRedisStore(rdb, 0),
+		Presence: presenceStore,
 		Logger:   slog.Default(),
 	})
 

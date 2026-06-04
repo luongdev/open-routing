@@ -129,6 +129,11 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 		if cErr != nil {
 			return out, cErr
 		}
+		if e.deps.Capacity != nil { // free the slot held for the live interaction
+			if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); rErr != nil {
+				return out, rErr
+			}
+		}
 		wrapUp := string(api.AgentStatusWrapUp)
 		until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
 		if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
@@ -207,6 +212,16 @@ func (e *Endpoints) applyAccept(ctx context.Context, tx *db.OrgTx, qtx *generate
 	} else if err != nil {
 		return out, err
 	}
+	// Promote the capacity hold to confirmed (gated on the accept above). A lost
+	// slot ⇒ conflict; the surrounding savepoint rolls the accept back.
+	if e.deps.Capacity != nil {
+		if ok, cErr := e.deps.Capacity.ConfirmInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return out, cErr
+		} else if !ok {
+			out.Status = "conflict"
+			return out, nil
+		}
+	}
 	engaged := string(api.AgentStatusEngaged)
 	ch := route.Channel
 	if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
@@ -232,6 +247,11 @@ func (e *Endpoints) applyReject(ctx context.Context, tx *db.OrgTx, qtx *generate
 		return out, nil
 	} else if err != nil {
 		return out, err
+	}
+	if e.deps.Capacity != nil { // free the slot (gated on the reject above)
+		if cErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return out, cErr
+		}
 	}
 	routeID := apiUUID(route.ID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.rejected", map[string]any{"reservation_id": resID.String()})

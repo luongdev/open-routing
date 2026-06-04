@@ -31,12 +31,25 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // read-only: always rollback to release the snapshot
 
-	rows, err := generated.New(tx).ListRoutableCandidates(ctx, orgID)
+	q := generated.New(tx)
+	rows, err := q.ListRoutableCandidates(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
+	pool, _ := poolFromRows(rows)
+	qc, err := e.mapQueueCandidates(ctx, q, orgID, graph, pool)
+	if err != nil {
+		return nil, err
+	}
+	return &runtime.Snapshot{QueueCandidates: qc}, nil
+}
 
+// poolFromRows folds the per-(agent,skill) rows into a ranked candidate pool and
+// returns the agent code→uuid map (the live snapshot needs the uuid for
+// presence/capacity lookups; the sim path ignores it).
+func poolFromRows(rows []generated.ListRoutableCandidatesRow) ([]runtime.Candidate, map[string]uuid.UUID) {
 	byAgent := map[string]*runtime.Candidate{}
+	idByCode := make(map[string]uuid.UUID, len(rows))
 	order := make([]string, 0, len(rows))
 	for _, r := range rows {
 		c, ok := byAgent[r.AgentCode]
@@ -46,6 +59,7 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 				c.AvailableSince = r.AvailableSince.Time
 			}
 			byAgent[r.AgentCode] = c
+			idByCode[r.AgentCode] = apiUUID(r.AgentID)
 			order = append(order, r.AgentCode)
 		}
 		if r.SkillCode != nil && r.Proficiency != nil {
@@ -58,10 +72,14 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 	}
 	// Rank by longest-available so a direct route_queue → reservation (no
 	// match_skill) still offers the longest-idle agent first (review M10).
-	pool = runtime.RankCandidates(pool, nil)
+	return runtime.RankCandidates(pool, nil), idByCode
+}
 
+// mapQueueCandidates keys the pool by every queue the graph references, omitting
+// queues that no longer exist or are disabled (route_queue then yields
+// missing_catalog_reference — review H7).
+func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries, orgID pgtype.UUID, graph *runtime.Graph, pool []runtime.Candidate) (map[string][]runtime.Candidate, error) {
 	qc := map[string][]runtime.Candidate{}
-	q := generated.New(tx)
 	for _, n := range graph.Nodes {
 		if n.Kind != runtime.NodeRouteQueue {
 			continue
@@ -72,9 +90,6 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 		if json.Unmarshal(n.Config, &cfg) != nil || cfg.Queue == "" {
 			continue
 		}
-		// Only map a pool for a queue that still EXISTS and is ENABLED. A queue
-		// disabled/deleted after publish is omitted so route_queue yields
-		// missing_catalog_reference instead of routing to it (review H7).
 		qrow, qerr := q.GetQueueByCode(ctx, generated.GetQueueByCodeParams{OrgID: orgID, Code: cfg.Queue})
 		if errors.Is(qerr, pgx.ErrNoRows) || (qerr == nil && !qrow.Enabled) {
 			continue // missing or disabled → route_queue yields missing_catalog_reference
@@ -83,6 +98,63 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 			return nil, qerr // real DB error must not masquerade as a missing queue (re-review MED)
 		}
 		qc[cfg.Queue] = pool
+	}
+	return qc, nil
+}
+
+// routingSnapshot picks the candidate source: LIVE (presence+capacity filtered)
+// when the gateway/presence deps are wired, else the simulation snapshot. There
+// is NO silent live→sim fallback (review BLOCK): a real binary always wires
+// presence (cmd/api), so reaching buildSnapshot means a genuine sim/test run.
+func (e *Endpoints) routingSnapshot(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (*runtime.Snapshot, error) {
+	if e.deps.Presence != nil {
+		return e.buildLiveSnapshot(ctx, orgID, channel, graph)
+	}
+	return e.buildSnapshot(ctx, pgUUID(orgID), graph)
+}
+
+// buildLiveSnapshot is the LIVE candidate source: the Ready+eligible pool
+// post-filtered by a connection lease (presence) AND under-capacity
+// (held < channel capacity). A presence-store error is returned as an infra
+// error — the caller parks the route for retry — NEVER read as "disconnected"
+// and NEVER fallen back to a DB snapshot (review HIGH). under-capacity uses the
+// HELD count so it doesn't depend on slots being pre-provisioned; the offer tx
+// provisions+acquires authoritatively.
+func (e *Endpoints) buildLiveSnapshot(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (*runtime.Snapshot, error) {
+	tx, err := e.deps.OrgDB.BeginTxWith(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := generated.New(tx)
+	rows, err := q.ListRoutableCandidates(ctx, pgUUID(orgID))
+	if err != nil {
+		return nil, err
+	}
+	pool, idByCode := poolFromRows(rows)
+	cap := channelCapacity(channel)
+	live := make([]runtime.Candidate, 0, len(pool))
+	for _, c := range pool {
+		id := idByCode[c.AgentID]
+		conn, cErr := e.deps.Presence.Connected(ctx, orgID, id)
+		if cErr != nil {
+			return nil, cErr // infra error → park the route; do NOT treat as disconnected
+		}
+		if !conn {
+			continue
+		}
+		held, hErr := q.CountHeldCapacitySlots(ctx, generated.CountHeldCapacitySlotsParams{OrgID: pgUUID(orgID), AgentID: pgUUID(id), Channel: channel})
+		if hErr != nil {
+			return nil, hErr
+		}
+		if held >= cap {
+			continue
+		}
+		live = append(live, c)
+	}
+	qc, err := e.mapQueueCandidates(ctx, q, pgUUID(orgID), graph, live)
+	if err != nil {
+		return nil, err
 	}
 	return &runtime.Snapshot{QueueCandidates: qc}, nil
 }
