@@ -102,6 +102,15 @@ func TestValidateRegions_CatchesViolations(t *testing.T) {
 			Nodes: []GraphNode{node("t", NodeTrigger, nil), node("lf", NodeLoopFor, loopForConfig{ArrayExpr: "x", MaxIter: 1}), node("end", NodeEnd, nil)},
 			Edges: []GraphEdge{{From: "t", To: "lf"}, {From: "lf", To: "end", Label: "done"}},
 		}, IssueRegionBranches},
+		{"nested loop reuses outer loop var", &Graph{
+			// inner loop_for (in outer's region) reuses item_var "x" → shadows.
+			Nodes: []GraphNode{node("t", NodeTrigger, nil),
+				node("lf1", NodeLoopFor, loopForConfig{ArrayExpr: "a", MaxIter: 5, ItemVar: "x"}),
+				inRegion(node("lf2", NodeLoopFor, loopForConfig{ArrayExpr: "b", MaxIter: 5, ItemVar: "x"}), "lf1"),
+				inRegion(node("body", NodeLog, logConfig{Message: "y"}), "lf2"),
+				node("end", NodeEnd, nil)},
+			Edges: []GraphEdge{{From: "t", To: "lf1"}, {From: "lf1", To: "lf2", Label: "body"}, {From: "lf2", To: "body", Label: "body"}, {From: "lf1", To: "end", Label: "done"}},
+		}, IssueLoopVarShadow},
 		{"region internal cycle (no exit)", &Graph{
 			// two body nodes pointing at each other → no in-region exit.
 			Nodes: []GraphNode{node("t", NodeTrigger, nil), node("lf", NodeLoopFor, loopForConfig{ArrayExpr: "x", MaxIter: 1}),

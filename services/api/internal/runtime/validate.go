@@ -230,29 +230,20 @@ func validateRegionExits(g *Graph, regionOf map[string]string) []ValidationIssue
 			byRegion[r].succ[e.From] = append(byRegion[r].succ[e.From], e.To)
 		}
 	}
-	var issues []ValidationIssue
-	for _, n := range g.Nodes { // graph order → deterministic
-		r := regionOf[n.ID]
-		if r == "" {
-			continue
-		}
-		adj := byRegion[r]
-		// reverse-reach from exits (members with no in-region successor).
+	// Compute exit-reachability ONCE per region (not per node — that was O(N²)).
+	reachByRegion := map[string]map[string]bool{}
+	for r, adj := range byRegion {
 		rev := map[string][]string{}
-		exits := map[string]bool{}
+		var q []string
+		reach := map[string]bool{}
 		for m, ss := range adj.succ {
-			if len(ss) == 0 {
-				exits[m] = true
+			if len(ss) == 0 { // a region exit
+				reach[m] = true
+				q = append(q, m)
 			}
 			for _, s := range ss {
 				rev[s] = append(rev[s], m)
 			}
-		}
-		reach := map[string]bool{}
-		var q []string
-		for ex := range exits {
-			reach[ex] = true
-			q = append(q, ex)
 		}
 		for len(q) > 0 {
 			cur := q[0]
@@ -264,7 +255,15 @@ func validateRegionExits(g *Graph, regionOf map[string]string) []ValidationIssue
 				}
 			}
 		}
-		if !reach[n.ID] {
+		reachByRegion[r] = reach
+	}
+	var issues []ValidationIssue
+	for _, n := range g.Nodes { // graph order → deterministic
+		r := regionOf[n.ID]
+		if r == "" {
+			continue
+		}
+		if !reachByRegion[r][n.ID] {
 			issues = append(issues, ValidationIssue{Code: IssueNoPathToTerminal, Message: fmt.Sprintf("node %q cannot reach a region exit (the region never returns to its owner)", n.ID), NodeID: n.ID})
 		}
 	}
@@ -318,19 +317,38 @@ func validateLoopVarShadow(g *Graph, regionOf map[string]string) []ValidationIss
 	}
 	var issues []ValidationIssue
 	for _, n := range g.Nodes {
-		var name string
+		// Every name a node BINDS — set_var/compute targets AND a nested control
+		// node's own vars (loop item/index, caught error). All can shadow an
+		// enclosing loop's var (agy review HIGH).
+		var names []string
 		switch n.Kind {
 		case NodeSetVar:
-			if cfg, err := decodeConfig[setVarConfig](n.Config); err == nil {
-				name = cfg.Name
+			if cfg, err := decodeConfig[setVarConfig](n.Config); err == nil && cfg.Name != "" {
+				names = append(names, cfg.Name)
 			}
 		case NodeCompute:
-			if cfg, err := decodeConfig[computeConfig](n.Config); err == nil {
-				name = cfg.Var
+			if cfg, err := decodeConfig[computeConfig](n.Config); err == nil && cfg.Var != "" {
+				names = append(names, cfg.Var)
+			}
+		case NodeLoopFor:
+			if v := loopVars[n.ID]; v != [2]string{} {
+				names = append(names, v[0], v[1])
+			}
+		case NodeTryCatch:
+			if cfg, err := decodeConfig[tryCatchConfig](n.Config); err == nil {
+				ev := cfg.ErrorVar
+				if ev == "" {
+					ev = "error"
+				}
+				names = append(names, ev)
 			}
 		}
-		if name != "" && enclosing(n.ID)[name] {
-			issues = append(issues, ValidationIssue{Code: IssueLoopVarShadow, Message: fmt.Sprintf("node %q writes %q, which shadows an enclosing loop's variable", n.ID, name), NodeID: n.ID})
+		encl := enclosing(n.ID)
+		for _, name := range names {
+			if encl[name] {
+				issues = append(issues, ValidationIssue{Code: IssueLoopVarShadow, Message: fmt.Sprintf("node %q binds %q, which shadows an enclosing loop's variable", n.ID, name), NodeID: n.ID})
+				break
+			}
 		}
 	}
 	return issues

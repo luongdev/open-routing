@@ -19,7 +19,8 @@ var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 // names matching these (case-insensitive) are rejected.
 var reservedVarNames = map[string]struct{}{"true": {}, "false": {}, "and": {}, "or": {}, "not": {}}
 
-// validVarName reports whether name is a usable variable identifier.
+// validVarName reports whether name is a usable variable identifier (set_var /
+// compute targets may be dotted paths).
 func validVarName(name string) bool {
 	if !varNameRe.MatchString(name) {
 		return false
@@ -30,6 +31,12 @@ func validVarName(name string) bool {
 		}
 	}
 	return true
+}
+
+// validSimpleVarName is for locally-scoped control-node variables (loop
+// item/index, caught error) — a single identifier, NO dotted path, not reserved.
+func validSimpleVarName(name string) bool {
+	return validVarName(name) && !strings.Contains(name, ".")
 }
 
 // node_kinds.go holds the v0.2 executable subset. Each kind owns its config
@@ -501,9 +508,12 @@ func (loopForNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogR
 		issues = append(issues, checkExpr(n.ID, "array_expr", cfg.ArrayExpr)...)
 	}
 	for _, fv := range []struct{ field, v string }{{"item_var", cfg.ItemVar}, {"index_var", cfg.IndexVar}} {
-		if fv.v != "" && !validVarName(fv.v) {
-			issues = append(issues, fieldIssue(n.ID, fv.field, IssueInvalidConfig, "variable name must be an identifier and not a reserved word"))
+		if fv.v != "" && !validSimpleVarName(fv.v) {
+			issues = append(issues, fieldIssue(n.ID, fv.field, IssueInvalidConfig, "variable name must be a simple identifier (no dots) and not a reserved word"))
 		}
+	}
+	if cfg.ItemVar != "" && cfg.ItemVar == cfg.IndexVar {
+		issues = append(issues, fieldIssue(n.ID, "index_var", IssueInvalidConfig, "item_var and index_var must differ"))
 	}
 	if cfg.MaxIter < 0 || cfg.MaxIter > 10000 {
 		issues = append(issues, fieldIssue(n.ID, "max_iter", IssueInvalidConfig, "max_iter must be between 0 and 10000"))
@@ -580,8 +590,8 @@ func (tryCatchNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ Catalog
 	if err != nil {
 		return malformed(n.ID, err), nil
 	}
-	if cfg.ErrorVar != "" && !validVarName(cfg.ErrorVar) {
-		return []ValidationIssue{fieldIssue(n.ID, "error_var", IssueInvalidConfig, "variable name must be an identifier and not a reserved word")}, nil
+	if cfg.ErrorVar != "" && !validSimpleVarName(cfg.ErrorVar) {
+		return []ValidationIssue{fieldIssue(n.ID, "error_var", IssueInvalidConfig, "variable name must be a simple identifier (no dots) and not a reserved word")}, nil
 	}
 	return nil, nil
 }

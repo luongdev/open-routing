@@ -17,6 +17,7 @@ type execState struct {
 	candidates []Candidate
 	snapshot   *Snapshot
 	driver     RoutingDriver
+	scopes     []map[string]any // 3D-2 loop control-var scopes (innermost last)
 }
 
 type EmittedEvent struct {
@@ -24,9 +25,24 @@ type EmittedEvent struct {
 	Payload any    `json:"payload,omitempty"`
 }
 
-func (s *execState) Now() time.Time           { return s.clock.Now() }
-func (s *execState) Var(k string) (any, bool) { v, ok := s.vars[k]; return v, ok }
-func (s *execState) SetVar(k string, v any)   { s.vars[k] = v }
+func (s *execState) Now() time.Time { return s.clock.Now() }
+func (s *execState) Var(k string) (any, bool) {
+	// Loop control scopes (item/index) shadow the root bag, innermost first.
+	for i := len(s.scopes) - 1; i >= 0; i-- {
+		if v, ok := s.scopes[i][k]; ok {
+			return v, true
+		}
+	}
+	v, ok := s.vars[k]
+	return v, ok
+}
+
+// SetVar writes to the ROOT bag (not a loop scope) so accumulator patterns
+// persist across iterations (3D-2 spec §4).
+func (s *execState) SetVar(k string, v any) { s.vars[k] = v }
+
+func (s *execState) pushScope(m map[string]any) { s.scopes = append(s.scopes, m) }
+func (s *execState) popScope()                  { s.scopes = s.scopes[:len(s.scopes)-1] }
 func (s *execState) Emit(t string, p any) {
 	s.events = append(s.events, EmittedEvent{Type: t, Payload: p})
 }
@@ -50,6 +66,11 @@ type TraceStep struct {
 	DurationMs float64        `json:"duration_ms"`
 	Output     map[string]any `json:"output,omitempty"`
 	Error      string         `json:"error,omitempty"`
+	// 3D-2 region nesting (omitempty so flat traces are unchanged).
+	Region    string `json:"region,omitempty"`    // owning region id
+	Iteration *int   `json:"iteration,omitempty"` // loop iteration index
+	Branch    *int   `json:"branch,omitempty"`    // parallel branch index
+	Caught    bool   `json:"caught,omitempty"`    // a domain failure caught by try_catch
 }
 
 // Trace is the ordered step record plus the terminal outcome.
