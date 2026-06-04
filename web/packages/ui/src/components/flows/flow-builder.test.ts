@@ -188,6 +188,26 @@ describe('OrFlowBuilder', () => {
     expect(pasted2.x).toBe(src.x + 60);
   });
 
+  it('Simulate sends edited init vars (typed) + scripted reservation outcomes', async () => {
+    const trace = { id: '01935c00-0000-7000-8000-0000000000ab', org_id: 'o', kind: 'simulation', steps: [] };
+    const mockPost = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-04T00:00:00Z', trace }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
+    await settle();
+    (el as any)._initVars = [
+      { key: 'customer.tier', value: 'gold', type: 'string', source: 'user' },
+      { key: 'age', value: '30', type: 'number', source: 'user' },
+      { key: 'vip', value: 'true', type: 'boolean', source: 'user' },
+    ];
+    (el as any)._simScripted = ['timeout', 'accepted'];
+    await (el as any)._runSimulation();
+
+    const body = (mockPost.mock.calls[0] as [string, any])[1].body;
+    expect(body.interaction_input).toEqual({ 'customer.tier': 'gold', age: 30, vip: true });
+    expect(body.scripted_reservation_outcomes).toEqual([{ outcome: 'timeout' }, { outcome: 'accepted' }]);
+  });
+
   it('fits the viewport to the graph on load (nodes are framed, not off-screen)', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;

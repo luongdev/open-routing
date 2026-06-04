@@ -1610,6 +1610,9 @@ export class OrFlowBuilder extends LitElement {
       background: color-mix(in oklch, var(--primary) 14%, transparent);
       color: var(--primary);
     }
+    .scripted-row { display: flex; align-items: center; gap: 6px; }
+    .scripted-row .initvar-input { flex: 1; }
+    .scripted-idx { font-size: 10px; font-weight: 600; color: var(--muted-foreground); min-width: 20px; }
     .initvar-add {
       display: inline-flex;
       align-items: center;
@@ -2132,6 +2135,9 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _liveTrace: TraceStep[] | null = null;
   @state() private accessor _simRunning = false;
   @state() private accessor _initVars: InitVar[] = MOCK_INIT_VARS.map(v => ({ ...v }));
+  // Scripted reservation outcomes (drive reservation accepted/timeout branches in
+  // the deterministic sim), consumed in order.
+  @state() private accessor _simScripted: Array<'accepted' | 'rejected' | 'timeout'> = [];
   // Input draft for the wait_input form. Resets each time the sim lands on a
   // wait_input step. Pre-filled with the "expected" value from the trace so
   // the demo can be stepped through without typing each time.
@@ -2682,9 +2688,13 @@ export class OrFlowBuilder extends LitElement {
     }
     this._simRunning = true;
     try {
+      const scripted = this._simScripted.map(o => ({ outcome: o }));
       const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/simulate' as never, {
         params: { path: { org_id: this.orgId, id: this._loaded.id } },
-        body: { interaction_input: {} },
+        body: {
+          interaction_input: this._simInteractionInput(),
+          scripted_reservation_outcomes: scripted.length ? scripted : undefined,
+        },
       } as never)) as {
         data?: components['schemas']['SimulateFlowResponse'];
         error?: unknown;
@@ -2706,6 +2716,32 @@ export class OrFlowBuilder extends LitElement {
     } finally {
       this._simRunning = false;
     }
+  }
+
+  // Build the simulation's interaction_input (the var bag) from the editable
+  // init vars, coercing each by its declared type. Dotted keys (customer.tier)
+  // are passed flat — the backend's expr lookup tries the flat dotted key first.
+  private _simInteractionInput(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const v of this._initVars) {
+      const s = v.value;
+      switch (v.type) {
+        case 'number': {
+          const n = Number(s);
+          out[v.key] = Number.isFinite(n) ? n : s;
+          break;
+        }
+        case 'boolean':
+          out[v.key] = s === 'true';
+          break;
+        case 'json':
+          try { out[v.key] = JSON.parse(s); } catch { out[v.key] = s; }
+          break;
+        default:
+          out[v.key] = s;
+      }
+    }
+    return out;
   }
 
   // Map the API trace steps to the builder's TraceStep playback shape. The API
@@ -4297,7 +4333,7 @@ export class OrFlowBuilder extends LitElement {
       </span>
 
       <div class="sim-playback" role="group" aria-label="Playback controls">
-        <button class="sim-pb-btn" title="Restart" @click=${this._restartSim}>
+        <button class="sim-pb-btn" title="Re-run with current init vars + outcomes" ?disabled=${this._simRunning} @click=${() => void this._runSimulation()}>
           <uk-icon icon="rotate-ccw" height="14" width="14"></uk-icon>
         </button>
         <button class="sim-pb-btn" title="Step back" ?disabled=${atStart} @click=${() => this._stepBy(-1)}>
@@ -4348,7 +4384,7 @@ export class OrFlowBuilder extends LitElement {
             <span class="run-panel-count">${this._initVars.length}</span>
           </div>
           <div class="initvar-list">
-            ${this._initVars.map(v => html`
+            ${this._initVars.map((v, i) => html`
               <div class="initvar-row">
                 <div class="initvar-row-head">
                   <span class="initvar-key">${v.key}</span>
@@ -4357,14 +4393,39 @@ export class OrFlowBuilder extends LitElement {
                 <input
                   class="initvar-input"
                   .value=${v.value}
-                  readonly
-                  title=${v.source === 'trigger' ? 'Derived from trigger node (read-only in v0.2 contract)' : 'User-set — editable in the v0.2 wire-up'}
+                  title="Edit, then Re-run (↺) to simulate with this value"
+                  @input=${(e: Event) => {
+                    const val = (e.target as HTMLInputElement).value;
+                    this._initVars = this._initVars.map((x, j) => (j === i ? { ...x, value: val } : x));
+                  }}
                 />
               </div>
             `)}
-            <button class="initvar-add" title="Add a custom variable">
+          </div>
+          <div class="run-panel-header" style="margin-top:12px">
+            <uk-icon icon="user-check" height="13" width="13"></uk-icon>
+            Reservation outcomes
+          </div>
+          <div class="initvar-list">
+            ${this._simScripted.map((o, i) => html`
+              <div class="scripted-row">
+                <span class="scripted-idx">#${i + 1}</span>
+                <select class="initvar-input" .value=${o}
+                  @change=${(e: Event) => {
+                    const val = (e.target as HTMLSelectElement).value as 'accepted' | 'rejected' | 'timeout';
+                    this._simScripted = this._simScripted.map((x, j) => (j === i ? val : x));
+                  }}>
+                  ${['accepted', 'rejected', 'timeout'].map(k => html`<option value=${k} ?selected=${o === k}>${k}</option>`)}
+                </select>
+                <button class="cond-rm" title="Remove" @click=${() => { this._simScripted = this._simScripted.filter((_, j) => j !== i); }}>
+                  <uk-icon icon="x" height="12" width="12"></uk-icon>
+                </button>
+              </div>
+            `)}
+            <button class="initvar-add" title="Script the next reservation offer's outcome"
+              @click=${() => { this._simScripted = [...this._simScripted, 'accepted']; }}>
               <uk-icon icon="plus" height="12" width="12"></uk-icon>
-              Add variable
+              Add outcome
             </button>
           </div>
         </div>
