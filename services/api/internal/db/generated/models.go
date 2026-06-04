@@ -98,6 +98,7 @@ type Continuation struct {
 	ClaimExpiresAt pgtype.Timestamptz `json:"claim_expires_at"`
 	ClaimedBy      *string            `json:"claimed_by"`
 	AttemptCount   int32              `json:"attempt_count"`
+	RunSeq         int32              `json:"run_seq"`
 	LastError      *string            `json:"last_error"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`

@@ -8,9 +8,11 @@ RETURNING *;
 -- rows ⇒ the offer was already resolved (accept-vs-timeout race loser) — the
 -- caller treats it as a no-op / 409.
 -- name: AcceptReservation :one
+-- expires_at guard (review H2): an offer whose timeout already elapsed cannot be
+-- accepted even if its timeout continuation hasn't fired yet.
 UPDATE reservations
 SET state = 'accepted', resolved_at = NOW(), updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND state = 'offered'
+WHERE id = $1 AND org_id = $2 AND state = 'offered' AND expires_at > NOW()
 RETURNING *;
 
 -- name: RejectReservation :one

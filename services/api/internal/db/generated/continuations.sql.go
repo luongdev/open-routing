@@ -16,14 +16,15 @@ UPDATE continuations
 SET status = 'claimed', claimed_at = $1, claimed_by = $2, claim_expires_at = $3,
     attempt_count = attempt_count + 1, updated_at = $1
 WHERE id IN (
-    SELECT id FROM continuations
-    WHERE due_at <= $1
-      AND (status = 'pending' OR (status = 'claimed' AND claim_expires_at < $1))
-    ORDER BY due_at
+    SELECT c.id FROM continuations c
+    WHERE c.due_at <= $1
+      AND (c.status = 'pending' OR (c.status = 'claimed' AND c.claim_expires_at < $1))
+      AND c.attempt_count < $5
+    ORDER BY c.due_at
     FOR UPDATE SKIP LOCKED
     LIMIT $4
 )
-RETURNING id, org_id, kind, route_request_id, reservation_id, agent_id, flow_version_id, cursor, due_at, status, claimed_at, claim_expires_at, claimed_by, attempt_count, last_error, created_at, updated_at
+RETURNING id, org_id, kind, route_request_id, reservation_id, agent_id, flow_version_id, cursor, due_at, status, claimed_at, claim_expires_at, claimed_by, attempt_count, run_seq, last_error, created_at, updated_at
 `
 
 type ClaimDueContinuationsParams struct {
@@ -31,18 +32,21 @@ type ClaimDueContinuationsParams struct {
 	ClaimedBy      *string            `json:"claimed_by"`
 	ClaimExpiresAt pgtype.Timestamptz `json:"claim_expires_at"`
 	Limit          int32              `json:"limit"`
+	AttemptCount   int32              `json:"attempt_count"`
 }
 
 // ClaimDueContinuations atomically leases due rows for this worker. FOR UPDATE
 // SKIP LOCKED lets multiple replicas claim disjoint rows. It picks pending rows
 // OR claimed rows whose lease expired (crash recovery). $1=now, $2=worker id,
-// $3=lease expiry, $4=limit.
+// $3=lease expiry, $4=limit, $5=max attempts. The attempt_count gate stops a
+// poison row from being reclaimed at the head of the queue forever (review H6).
 func (q *Queries) ClaimDueContinuations(ctx context.Context, arg ClaimDueContinuationsParams) ([]Continuation, error) {
 	rows, err := q.db.Query(ctx, claimDueContinuations,
 		arg.ClaimedAt,
 		arg.ClaimedBy,
 		arg.ClaimExpiresAt,
 		arg.Limit,
+		arg.AttemptCount,
 	)
 	if err != nil {
 		return nil, err
@@ -66,6 +70,7 @@ func (q *Queries) ClaimDueContinuations(ctx context.Context, arg ClaimDueContinu
 			&i.ClaimExpiresAt,
 			&i.ClaimedBy,
 			&i.AttemptCount,
+			&i.RunSeq,
 			&i.LastError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -107,7 +112,7 @@ func (q *Queries) FailContinuation(ctx context.Context, arg FailContinuationPara
 }
 
 const getContinuation = `-- name: GetContinuation :one
-SELECT id, org_id, kind, route_request_id, reservation_id, agent_id, flow_version_id, cursor, due_at, status, claimed_at, claim_expires_at, claimed_by, attempt_count, last_error, created_at, updated_at FROM continuations WHERE id = $1 AND org_id = $2
+SELECT id, org_id, kind, route_request_id, reservation_id, agent_id, flow_version_id, cursor, due_at, status, claimed_at, claim_expires_at, claimed_by, attempt_count, run_seq, last_error, created_at, updated_at FROM continuations WHERE id = $1 AND org_id = $2
 `
 
 type GetContinuationParams struct {
@@ -133,6 +138,7 @@ func (q *Queries) GetContinuation(ctx context.Context, arg GetContinuationParams
 		&i.ClaimExpiresAt,
 		&i.ClaimedBy,
 		&i.AttemptCount,
+		&i.RunSeq,
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -143,9 +149,9 @@ func (q *Queries) GetContinuation(ctx context.Context, arg GetContinuationParams
 const insertContinuation = `-- name: InsertContinuation :one
 INSERT INTO continuations (
     id, org_id, kind, route_request_id, reservation_id, agent_id,
-    flow_version_id, cursor, due_at, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
-RETURNING id, org_id, kind, route_request_id, reservation_id, agent_id, flow_version_id, cursor, due_at, status, claimed_at, claim_expires_at, claimed_by, attempt_count, last_error, created_at, updated_at
+    flow_version_id, cursor, due_at, run_seq, status
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+RETURNING id, org_id, kind, route_request_id, reservation_id, agent_id, flow_version_id, cursor, due_at, status, claimed_at, claim_expires_at, claimed_by, attempt_count, run_seq, last_error, created_at, updated_at
 `
 
 type InsertContinuationParams struct {
@@ -158,6 +164,7 @@ type InsertContinuationParams struct {
 	FlowVersionID  pgtype.UUID        `json:"flow_version_id"`
 	Cursor         []byte             `json:"cursor"`
 	DueAt          pgtype.Timestamptz `json:"due_at"`
+	RunSeq         int32              `json:"run_seq"`
 }
 
 func (q *Queries) InsertContinuation(ctx context.Context, arg InsertContinuationParams) (Continuation, error) {
@@ -171,6 +178,7 @@ func (q *Queries) InsertContinuation(ctx context.Context, arg InsertContinuation
 		arg.FlowVersionID,
 		arg.Cursor,
 		arg.DueAt,
+		arg.RunSeq,
 	)
 	var i Continuation
 	err := row.Scan(
@@ -188,6 +196,7 @@ func (q *Queries) InsertContinuation(ctx context.Context, arg InsertContinuation
 		&i.ClaimExpiresAt,
 		&i.ClaimedBy,
 		&i.AttemptCount,
+		&i.RunSeq,
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,

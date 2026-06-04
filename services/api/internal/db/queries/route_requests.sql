@@ -15,6 +15,16 @@ SET status = 'running', updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
 RETURNING *;
 
+-- AcquireRouteForRunAtSeq is the run_seq-fenced acquire for a wait continuation:
+-- it locks the route ONLY if its run_seq still matches the one captured when the
+-- continuation was created. A stale timer (the route already advanced → run_seq
+-- bumped, or it completed) gets 0 rows and is no-op'd (review B1).
+-- name: AcquireRouteForRunAtSeq :one
+UPDATE route_requests
+SET status = 'running', updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting') AND run_seq = $3
+RETURNING *;
+
 -- SuspendRoute parks the cursor and releases the run-lock (running -> waiting).
 -- name: SuspendRoute :one
 UPDATE route_requests

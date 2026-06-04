@@ -50,6 +50,46 @@ func (q *Queries) AcquireRouteForRun(ctx context.Context, arg AcquireRouteForRun
 	return i, err
 }
 
+const acquireRouteForRunAtSeq = `-- name: AcquireRouteForRunAtSeq :one
+UPDATE route_requests
+SET status = 'running', updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting') AND run_seq = $3
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+`
+
+type AcquireRouteForRunAtSeqParams struct {
+	ID     pgtype.UUID `json:"id"`
+	OrgID  pgtype.UUID `json:"org_id"`
+	RunSeq int32       `json:"run_seq"`
+}
+
+// AcquireRouteForRunAtSeq is the run_seq-fenced acquire for a wait continuation:
+// it locks the route ONLY if its run_seq still matches the one captured when the
+// continuation was created. A stale timer (the route already advanced → run_seq
+// bumped, or it completed) gets 0 rows and is no-op'd (review B1).
+func (q *Queries) AcquireRouteForRunAtSeq(ctx context.Context, arg AcquireRouteForRunAtSeqParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, acquireRouteForRunAtSeq, arg.ID, arg.OrgID, arg.RunSeq)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const cancelRouteRequest = `-- name: CancelRouteRequest :one
 UPDATE route_requests
 SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,

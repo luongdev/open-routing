@@ -337,6 +337,11 @@ CREATE TABLE continuations (
     claim_expires_at  TIMESTAMPTZ,
     claimed_by        TEXT,
     attempt_count     INTEGER NOT NULL DEFAULT 0,
+    -- run_seq fences a stale wait continuation: it pins the route's run_seq at
+    -- suspend time, so a timer that fires after the route already advanced (a
+    -- newer suspend bumped route_requests.run_seq) is detected and no-op'd
+    -- instead of resuming the wrong cursor (v0.2 review B1).
+    run_seq           INTEGER NOT NULL DEFAULT 0,
     last_error        TEXT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),

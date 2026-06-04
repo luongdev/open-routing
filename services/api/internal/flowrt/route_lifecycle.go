@@ -42,15 +42,16 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 		// at the offer expiry); a wait parks a wait continuation (no reservation,
 		// due at the wait's resume time). Mixing them up left a wait route stuck.
 		if offerer.offered {
-			if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+			susp, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
 				ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgUUID(offerer.lastRes),
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
 			if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
 				ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
 				RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(offerer.lastRes),
-				FlowVersionID: fv.ID, Cursor: []byte("{}"),
+				FlowVersionID: fv.ID, Cursor: []byte("{}"), RunSeq: susp.RunSeq,
 				DueAt: pgtype.Timestamptz{Time: offerer.lastExp, Valid: true},
 			}); err != nil {
 				return err
@@ -58,14 +59,17 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 			e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{"reservation_id": offerer.lastRes.String()})
 		} else {
 			// wait suspension: no reservation, resume at the timer's due time.
-			if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+			susp, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
 				ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgtype.UUID{},
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
+			// RunSeq pins the route's seq at suspend so a stale timer that fires
+			// after a later suspend is no-op'd by the fenced acquire (review B1).
 			if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
 				ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "wait",
-				RouteRequestID: pgUUID(routeID), FlowVersionID: fv.ID, Cursor: []byte("{}"),
+				RouteRequestID: pgUUID(routeID), FlowVersionID: fv.ID, Cursor: []byte("{}"), RunSeq: susp.RunSeq,
 				DueAt: pgtype.Timestamptz{Time: res.Suspension.ResumeAt, Valid: true},
 			}); err != nil {
 				return err
@@ -194,19 +198,20 @@ func (e *Endpoints) SubmitRouteInput(ctx context.Context, req api.SubmitRouteInp
 		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "route_waiting_on_reservation"}), nil
 	}
 
-	target := ""
-	if req.Body.NodeId != nil {
-		target = *req.Body.NodeId
+	// The value is always applied to the node the route is parked at (the resume
+	// cursor). A body node_id, if present, MUST match it — a non-cursor node_id
+	// would otherwise be silently dropped on the entry-replay and let the actually
+	// parked input time out (review H4).
+	var cur runtime.ResumeCursor
+	if len(route.ResumeCursor) > 0 {
+		_ = json.Unmarshal(route.ResumeCursor, &cur)
 	}
-	if target == "" {
-		var cur runtime.ResumeCursor
-		if len(route.ResumeCursor) > 0 {
-			_ = json.Unmarshal(route.ResumeCursor, &cur)
-		}
-		target = cur.NodeID
-	}
+	target := cur.NodeID
 	if target == "" {
 		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "no_parked_input_node"}), nil
+	}
+	if req.Body.NodeId != nil && *req.Body.NodeId != target {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "node_id_not_parked"}), nil
 	}
 
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.input_submitted", map[string]any{"node_id": target})
@@ -256,6 +261,11 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	}
 	if err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "route_lock_failed"}}, nil
+	}
+	// The route must still be parked on THIS reservation; a stale (older-attempt)
+	// accept whose route has moved to a newer offer/wait is a 409 (review H3).
+	if !route.CurrentReservationID.Valid || uuid.UUID(route.CurrentReservationID.Bytes) != resID {
+		return e.lifecycleConflict(), nil
 	}
 	acc, err := qtx.AcceptReservation(ctx, generated.AcceptReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID)})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -310,6 +320,10 @@ func (e *Endpoints) RejectReservation(ctx context.Context, req api.RejectReserva
 	}
 	if err != nil {
 		return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "route_lock_failed"}}, nil
+	}
+	// Route must still be parked on THIS reservation (review H3).
+	if !route.CurrentReservationID.Valid || uuid.UUID(route.CurrentReservationID.Bytes) != resID {
+		return api.RejectReservation409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "reservation_transition_conflict"}), nil
 	}
 	reason := "rejected_by_agent"
 	if _, err := qtx.RejectReservation(ctx, generated.RejectReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID), Reason: &reason}); errors.Is(err, pgx.ErrNoRows) {

@@ -14,7 +14,7 @@ import (
 const acceptReservation = `-- name: AcceptReservation :one
 UPDATE reservations
 SET state = 'accepted', resolved_at = NOW(), updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND state = 'offered'
+WHERE id = $1 AND org_id = $2 AND state = 'offered' AND expires_at > NOW()
 RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
 `
 
@@ -26,6 +26,8 @@ type AcceptReservationParams struct {
 // Guarded transitions: the WHERE state clause is the concurrency authority. 0
 // rows ⇒ the offer was already resolved (accept-vs-timeout race loser) — the
 // caller treats it as a no-op / 409.
+// expires_at guard (review H2): an offer whose timeout already elapsed cannot be
+// accepted even if its timeout continuation hasn't fired yet.
 func (q *Queries) AcceptReservation(ctx context.Context, arg AcceptReservationParams) (Reservation, error) {
 	row := q.db.QueryRow(ctx, acceptReservation, arg.ID, arg.OrgID)
 	var i Reservation

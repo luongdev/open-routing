@@ -26,23 +26,40 @@ func ptrStr(s string) *string           { return &s }
 // claim is intentionally NOT org-scoped (worker is cross-org); per-continuation
 // processing is org-scoped via the OrgDB. Returns the count handled. cmd/runtime
 // calls this on a tick.
+// maxContinuationAttempts bounds retries before a poison row is dead-lettered
+// (cancelled) instead of being reclaimed at the head of the queue forever
+// (review H6).
+const maxContinuationAttempts = 5
+
 func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.Pool, workerID string, now time.Time, lease time.Duration, limit int) (int, error) {
 	rawq := generated.New(pool)
 	wid := workerID
 	claimed, err := rawq.ClaimDueContinuations(ctx, generated.ClaimDueContinuationsParams{
 		ClaimedAt: ts(now), ClaimedBy: &wid, ClaimExpiresAt: ts(now.Add(lease)), Limit: int32(limit),
+		AttemptCount: maxContinuationAttempts,
 	})
 	if err != nil {
 		return 0, err
 	}
 	n := 0
 	for _, c := range claimed {
-		if perr := e.processContinuation(ctx, wid, c); perr != nil {
-			e.deps.Logger.ErrorContext(ctx, "continuation process failed", "id", apiUUID(c.ID), "kind", c.Kind, "err", perr)
-			_, _ = rawq.FailContinuation(ctx, generated.FailContinuationParams{ID: c.ID, OrgID: c.OrgID, ClaimedBy: &wid, LastError: ptrStr(perr.Error())})
+		perr := e.processContinuation(ctx, wid, c)
+		if perr == nil {
+			n++
 			continue
 		}
-		n++
+		// errLostLease means another worker reclaimed the row mid-flight — NOT a
+		// failure of this row; leave it for that worker.
+		if errors.Is(perr, errLostLease) {
+			continue
+		}
+		e.deps.Logger.ErrorContext(ctx, "continuation process failed", "id", apiUUID(c.ID), "kind", c.Kind, "attempt", c.AttemptCount, "err", perr)
+		// Dead-letter only once retries are exhausted; otherwise let the claim
+		// lease expire so the row is retried (a transient DB error must not strand
+		// the route forever — review H6).
+		if c.AttemptCount >= maxContinuationAttempts {
+			_, _ = rawq.FailContinuation(ctx, generated.FailContinuationParams{ID: c.ID, OrgID: c.OrgID, ClaimedBy: &wid, LastError: ptrStr(perr.Error())})
+		}
 	}
 	return n, nil
 }
@@ -128,7 +145,9 @@ func (e *Endpoints) fireWait(ctx context.Context, workerID string, c generated.C
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
-	route, err := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: c.RouteRequestID, OrgID: c.OrgID})
+	// run_seq-fenced acquire: a stale wait timer (the route advanced past this
+	// suspend, or completed) gets 0 rows and is resolved as a no-op (review B1).
+	route, err := qtx.AcquireRouteForRunAtSeq(ctx, generated.AcquireRouteForRunAtSeqParams{ID: c.RouteRequestID, OrgID: c.OrgID, RunSeq: c.RunSeq})
 	if errors.Is(err, pgx.ErrNoRows) {
 		if rErr := e.resolveDone(ctx, qtx, c, workerID); rErr != nil {
 			return rErr
