@@ -36,15 +36,36 @@ durable reservation row, not only in the socket.
 - **WHEN** an agent disconnects while an offer is outstanding
 - **THEN** the offer is released (treated as a reject) so the engine can re-offer
 
-### Requirement: Live presence and capacity
+### Requirement: Idempotent agent commands
 
-Open Routing SHALL track, in real time, whether an agent is connected and how much
-channel capacity is free, and SHALL treat a Ready agent with no live connection as
-not offerable.
+Agent commands (accept, reject, complete) SHALL be idempotent under reconnect
+replay: each carries a message id and the reservation version/lease token, is
+acknowledged, and is server-side deduplicated so a replayed command cannot
+double-apply.
+
+#### Scenario: Replayed accept after reconnect
+
+- **WHEN** an agent reconnects and the client replays an accept it already sent
+- **THEN** the server recognizes the duplicate (version/lease token) and applies it
+  at most once
+- **AND** the agent receives an ack either way
+
+### Requirement: Lease-based live presence and capacity
+
+Open Routing SHALL track connectivity as a TTL-renewed lease (heartbeat), treat a
+Ready agent whose lease has expired as not offerable, and gate offers on free
+per-channel capacity. The lease (not a DB flag) is authoritative for liveness so a
+crashed gateway does not leave agents falsely connected.
+
+#### Scenario: Crashed gateway expires offerability
+
+- **WHEN** a gateway crashes without a clean disconnect
+- **THEN** the affected agents' presence leases expire by TTL
+- **AND** the engine stops offering to them until they reconnect and renew
 
 #### Scenario: Presence gates offerability
 
-- **WHEN** an agent is Ready in the state machine but has no live socket
+- **WHEN** an agent is Ready in the state machine but holds no live lease
 - **THEN** the engine does not offer to that agent
 
 #### Scenario: Per-channel capacity

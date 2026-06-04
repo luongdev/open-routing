@@ -2,26 +2,33 @@
 
 ## ADDED Requirements
 
-### Requirement: Channel adapter contract
+### Requirement: Channel-neutral assignment contract
 
-Open Routing SHALL define a channel adapter contract that delivers an accepted
-interaction to an agent, reports adapter lifecycle events (answered, ended,
-failed), and releases the delivery. The contract SHALL be shaped for a media-room
-bridge (LiveKit/SIP) so a real voice adapter implements it without contract
-changes.
+Open Routing SHALL define a CHANNEL-NEUTRAL assignment-event contract (not a
+media contract): deliver an accepted interaction to an agent, report assignment
+lifecycle events, and release the delivery. The delivery `handle` SHALL be opaque
+to the engine so non-media channels (chat, email) fit the same contract.
 
 #### Scenario: Delivering an accepted interaction
 
 - **WHEN** an agent accepts an offered interaction
-- **THEN** the adapter is asked to deliver it (bridge the agent and the
-  interaction)
-- **AND** the adapter returns a handle the engine can later release
+- **THEN** the adapter is asked to deliver it and returns an opaque handle
+- **AND** the engine treats the handle as opaque (no media assumptions)
 
-#### Scenario: Adapter lifecycle drives the reservation
+#### Scenario: Assignment lifecycle drives the reservation
 
-- **WHEN** the adapter reports the interaction answered then ended
-- **THEN** the reservation moves accepted → completed and the agent moves to WrapUp
-- **AND** an adapter failure surfaces as a typed routing/handling failure
+- **WHEN** the adapter reports accepted → connecting → established → completed
+- **THEN** the reservation advances accordingly and the agent moves to WrapUp on
+  completion
+- **AND** a `failed` or `disconnected` event surfaces a typed handling failure
+- **AND** every event is idempotent under a correlation id (safe to redeliver)
+
+#### Scenario: Caller abandonment
+
+- **WHEN** the customer abandons (hangs up) while queued or while the offer rings
+- **THEN** the adapter emits `caller_abandoned`
+- **AND** the engine tears down the in-flight reservation and route immediately
+  with a recorded terminal reason (no ghost ringing)
 
 ### Requirement: Mock voice adapter for v0.3
 

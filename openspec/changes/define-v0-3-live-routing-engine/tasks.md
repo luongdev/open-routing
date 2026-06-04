@@ -1,78 +1,97 @@
 # Tasks: v0.3 Live Routing Engine
 
-Waves are ordered so each lands a runnable slice. The reference agent client and
-the mock voice adapter let the whole engine run end to end before any real media.
+Waves land runnable slices. Cross-AI plan review (`plan-review.md`) reordered the
+channel-neutral assignment contract BEFORE lifecycle wiring and added RONA /
+caller-abandonment / lease-presence / WS-idempotency / fairness / durable-sweep /
+decision-trace requirements.
 
-## Wave 1 — Realtime transport (WS gateway)
+## Wave 0 — v0.2 hardening (prerequisite)
 
-- [ ] Define the WS message envelope (reuse the v0.2 canonical runtime event
-      shape): presence, offer, accept/reject, interaction events, wrap-up.
-- [ ] WS gateway in `cmd/api`: authenticate (trusted-host org model), per-agent
-      socket, heartbeat/ping, graceful close.
-- [ ] Outbound push: deliver an offer to the agent's socket from the durable
-      reservation row; on reconnect, replay any in-flight offer (no lost offers).
-- [ ] Inbound: accept/reject/presence messages map to existing handlers.
+- [ ] Land the FIX-NOW batch from the v0.2 review (`v0.2-review-findings.md`):
+      run_seq fence, Lua sandbox, region-suspension reject, branch-port validation,
+      accept guards, worker poison-pill, snapshot enabled filter, etc. The live
+      lifecycle builds on this base.
+
+## Wave 1 — Channel-neutral assignment contract (review: before lifecycle)
+
+- [ ] Channel-neutral assignment-event contract: Deliver(interaction, agent) ->
+      opaque handle + events accepted -> connecting -> established ->
+      (completed | failed | disconnected | caller_abandoned), idempotent with
+      correlation. Handle opaque to the engine (chat/email fit later).
+- [ ] Mock voice adapter driving that lifecycle without media.
+- [ ] Tests: adapter event mapping incl. caller_abandoned + failed.
+
+## Wave 2 — Realtime transport (WS gateway)
+
+- [ ] WS message envelope (reuse v0.2 canonical event shape) with per-message ids;
+      accept/reject/complete carry reservation version/lease token.
+- [ ] Gateway in cmd/api: scoped agent identity + org binding + session revocation;
+      heartbeat/ping; graceful close. Gateway only transports; commands run through
+      runtime-owned transactional handlers (review HIGH).
+- [ ] Outbound push from the durable reservation row; reconnect replays an
+      in-flight offer; ack + server-side dedupe so replay can't double-apply.
 - [ ] Backpressure + per-org connection caps; structured logs + metrics.
 - [ ] Tests: connect, offer push, accept upstream, reconnect-replays-offer,
-      disconnect-mid-offer = reject.
+      duplicate-command-deduped, queue/skill authz on command.
 
-## Wave 2 — Live presence & capacity
+## Wave 3 — Lease presence & DB-solid capacity
 
-- [ ] Presence dimension on agent state: connected? since when? Redis hot path +
-      DB source of truth; rebuild Redis from DB on gateway start.
-- [ ] Per-channel capacity model (voice=1, chat=N) configurable per agent/queue;
-      active-assignment count tracked.
-- [ ] `LiveCandidateSource`: eligible ∧ available ∧ connected ∧ under-capacity,
-      queried at offer time (behind the existing candidate interface).
-- [ ] Keep `buildSnapshot` for simulation (determinism unchanged).
-- [ ] Tests: presence transitions, capacity gating, live pool excludes
-      disconnected/at-capacity agents.
+- [ ] Lease/TTL presence: gateway heartbeat renews a Redis-primary connection
+      lease; expiry = offline; DB stores last-known/audit, rebuilt on gateway start.
+- [ ] Capacity as per-(agent,channel) slot rows (voice=1, chat=N) held/released
+      transactionally — NOT the capacity=1-only partial-unique index (review BLOCK).
+- [ ] LiveCandidateSource (eligible AND Ready AND leased-connected AND
+      under-capacity) as a hint; keep buildSnapshot for simulation.
+- [ ] Tests: lease expiry removes offerability, capacity gating, chat=N concurrency.
 
-## Wave 3 — The matcher (the engine)
+## Wave 4 — The matcher (the engine)
 
-- [ ] Interaction-driven path on the live pool (extend the v0.2 offerer).
-- [ ] Availability-driven pull: on Ready / capacity-freed, pull the highest-
-      priority waiting route from a served queue and offer it.
-- [ ] Notify path (Postgres LISTEN/NOTIFY or Redis pub/sub) so the matcher reacts
-      without polling; fall back to a periodic sweep.
-- [ ] Concurrency: `FOR UPDATE SKIP LOCKED` over waiting routes + the route
-      run-lock CAS + per-agent partial-unique reservation; guarded capacity insert.
-- [ ] Priority + skills + longest-idle tie-break; fairness check.
-- [ ] Tests: no double-assign under concurrent replicas, capacity never exceeded,
-      queue-pull picks correct priority, two interactions ↛ one one-capacity agent.
+- [ ] Interaction-driven offer on the live pool; final offer tx re-checks
+      connected/Ready/skills/queue/capacity against authoritative leased state.
+- [ ] Availability-driven pull: on Ready / capacity-freed, pull the best-ranked
+      waiting route from a served queue; a failed insert returns it to the head.
+- [ ] Durable reconciliation sweep as the primary trigger (every few seconds);
+      LISTEN/NOTIFY or pub/sub is only a wake-up hint (review MED).
+- [ ] Concurrency: FOR UPDATE SKIP LOCKED + route run-lock CAS + capacity slot
+      lock; no double-assign across replicas.
+- [ ] Fair ranking: priority with aging, queue weight, bounded max-priority bypass,
+      deterministic tie-break.
+- [ ] route_decision trace: eligibility inputs, considered + excluded (with
+      reasons), ranking values, capacity snapshot, decision version.
+- [ ] Tests: no double-assign, capacity never exceeded, aging prevents starvation,
+      queue-pull priority correct.
 
-## Wave 4 — Real reservation lifecycle (live signals)
+## Wave 5 — Real reservation lifecycle (live signals)
 
-- [ ] Map agent WS accept/reject and adapter answered/ended onto the v0.2
-      reservation transitions + route resume (keep HTTP test-double for sim/CI).
-- [ ] Offer timeout via the existing durable continuation worker.
-- [ ] Disconnect handling: mid-offer = reject + re-offer; mid-handling = grace
-      window then reassign.
-- [ ] Runtime-owned Ready→Engaged→WrapUp driven by real accept/complete.
-- [ ] Tests: full live lifecycle, timeout, disconnect/reassign, wrap-up expiry.
+- [ ] Agent WS accept/reject + adapter events -> v0.2 reservation transitions +
+      route resume, each conditional on reservation state + version + lease token
+      (keep HTTP test-double for sim/CI).
+- [ ] Offer timeout via the durable continuation worker; timeout sets the agent
+      non-routable (RONA), never an immediate re-offer to the same agent.
+- [ ] Disconnect: mid-offer grace window (reconnect resumes) before reject;
+      mid-handling reassign policy is adapter-driven with a recorded terminal
+      reason; caller_abandoned tears down the reservation + route immediately.
+- [ ] Runtime-owned Ready -> Engaged -> WrapUp; configurable max ACW timer via the
+      worker frees capacity even without manual completion.
+- [ ] Tests: full live lifecycle, timeout/RONA, blip-reconnect keeps offer,
+      caller abandon, wrap-up cap.
 
-## Wave 5 — Adapter contract + mock voice + ops
+## Wave 6 — Reference client + ops + closure
 
-- [ ] `ChannelAdapter` interface (Deliver / OnAdapterEvent / Release), shaped for
-      LiveKit/SIP (a bridge = a media room).
-- [ ] Mock voice adapter satisfying the contract (answered on accept, ended on
-      complete) so the engine runs without media.
-- [ ] Reference agent client (minimal) to prove transport + lifecycle.
-- [ ] Live ops view: queue depth, agent occupancy, live route-decision p95,
-      offers/sec.
-- [ ] Tests: engine end-to-end through the mock adapter + reference client.
-
-## Wave 6 — Contracts, CI, closure
-
-- [ ] OpenAPI/WS schema + migrations (fold into the single pre-release migration
-      per the project convention until release); sqlc + Go/TS regen drift gates.
-- [ ] Org-scoping/tenant isolation on every new table, query, and WS session.
+- [ ] Minimal reference agent client to prove transport + lifecycle end to end.
+- [ ] Live ops view: queue depth, oldest-waiting / SLA age, occupancy by channel,
+      offers/sec, accept latency, abandon/timeout rate, reject reasons,
+      stuck-reservation alerts, live route-decision p95.
+- [ ] Protocol contract tests: golden WS schema + reconnect / duplicate-command /
+      timeout / stale-offer fixtures.
+- [ ] OpenAPI/WS schema + migrations (fold into the single pre-release migration);
+      sqlc + Go/TS regen drift gates; org-scoping on every new table/query/session.
 - [ ] Backend + frontend test gates; live-engine e2e smoke (extends
-      `scripts/e2e_v02_runtime.sh`).
+      scripts/e2e_v02_runtime.sh).
 - [ ] Cross-AI peer review of the full v0.3 diff; fix findings.
-- [ ] Merge accepted behavior into `openspec/specs/` and archive this change.
+- [ ] Merge accepted behavior into openspec/specs/ and archive this change.
 
 ## Deferred to v0.4
 
-- [ ] Real LiveKit/SIP media behind the `ChannelAdapter` contract.
+- [ ] Real LiveKit/SIP media behind the channel-neutral assignment contract.
 - [ ] Full agent desktop; outbound campaigns; multi-region.

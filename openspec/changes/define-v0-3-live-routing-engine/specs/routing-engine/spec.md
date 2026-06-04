@@ -35,9 +35,17 @@ interaction from a queue it serves.
 #### Scenario: Availability-driven pull
 
 - **WHEN** an agent becomes Ready or frees capacity
-- **THEN** the engine pulls the highest-priority waiting route from a queue the
-  agent serves and offers it
-- **AND** ranking applies priority, required skills, and a longest-idle tie-break
+- **THEN** the engine pulls the best-ranked waiting route from a queue the agent
+  serves and offers it
+- **AND** ranking applies priority WITH AGING (waiting time raises effective
+  priority), queue weight, a bounded max-priority bypass, required skills, and a
+  deterministic tie-break — so no waiting route is starved
+
+#### Scenario: Ring-no-answer (RONA)
+
+- **WHEN** an offer to an agent times out unanswered
+- **THEN** the agent is moved to a non-routable (Missed/RONA) state
+- **AND** the engine does NOT immediately re-offer the same agent
 
 ### Requirement: Assignment safety under concurrency
 
@@ -66,5 +74,7 @@ bit-for-bit replayable.
 #### Scenario: Auditing a live route
 
 - **WHEN** a live route completes or fails
-- **THEN** its trace records the pool queried, candidate chosen, offer, and outcome
+- **THEN** a `route_decision` record captures the eligibility inputs, candidates
+  considered, candidates EXCLUDED with their reasons, the ranking values, the
+  capacity snapshot, and a decision version
 - **AND** the decision timeline can be reconstructed from runtime events
