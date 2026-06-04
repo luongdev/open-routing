@@ -795,6 +795,19 @@ describe('OrFlowBuilder', () => {
     expect(regionOf('b') ?? '').toBe('');
   });
 
+  it('_mapApiTrace carries control-flow nesting (region/iteration/branch/caught)', async () => {
+    await withNodes([N('a', 'set_var')]);
+    const mapped = (el as any)._mapApiTrace([
+      { index: 0, node_id: 'a', node_kind: 'set_var', status: 'ok', region: 'lf', iteration: 2, duration_ms: 0.1 },
+      { index: 1, node_id: 'b', node_kind: 'route_queue', status: 'error', region: 'tc', branch: 1, caught: true, duration_ms: 0.2 },
+      { index: 2, node_id: 'c', node_kind: 'log', status: 'ok', duration_ms: 0.1 },
+    ]);
+    expect(mapped[0]).toMatchObject({ region: 'lf', iteration: 2 });
+    expect(mapped[1]).toMatchObject({ region: 'tc', branch: 1, caught: true });
+    expect(mapped[2].region).toBeUndefined();
+    expect(mapped[2].iteration).toBeUndefined();
+  });
+
   it('Cmd+Z undoes the last edit; Cmd+Shift+Z redoes it', async () => {
     await withNodes([N('a', 'log')]);
     (el as any)._resetHistory(); // baseline = 1 node

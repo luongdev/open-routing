@@ -874,6 +874,29 @@ export class OrFlowBuilder extends LitElement {
     }
     .region-banner span { display: inline-flex; align-items: center; gap: 5px; }
 
+    /* Control-flow nesting chips on a trace step. */
+    .nest-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .nest-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      font-family: var(--uk-font-monospace, monospace);
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+    .nest-chip--region {
+      background: color-mix(in oklch, var(--primary) 12%, transparent);
+      color: color-mix(in oklch, var(--primary) 80%, var(--foreground));
+    }
+    .nest-chip--caught {
+      background: color-mix(in oklch, var(--warning) 18%, transparent);
+      color: color-mix(in oklch, var(--warning) 85%, var(--foreground));
+    }
+
     /* ----- Validation panel (docked in the inspector) ----- */
     .validation-panel {
       margin: 10px 12px;
@@ -2932,6 +2955,10 @@ export class OrFlowBuilder extends LitElement {
         inputs: (s.input ?? {}) as Record<string, unknown>,
         outputs: (s.output ?? {}) as Record<string, unknown>,
         note: s.port ? `→ ${s.port}` : undefined,
+        region: s.region ?? undefined,
+        iteration: s.iteration ?? undefined,
+        branch: s.branch ?? undefined,
+        caught: s.caught ?? undefined,
       };
     });
   }
@@ -4928,6 +4955,26 @@ export class OrFlowBuilder extends LitElement {
     `;
   }
 
+  // Control-flow context chips for a trace step: which body region it ran in,
+  // the loop iteration / parallel branch, and whether a try_catch caught it.
+  private _renderStepNesting(step: TraceStep) {
+    const chips = [];
+    if (step.region) {
+      chips.push(html`<span class="nest-chip nest-chip--region">
+        <uk-icon icon="git-branch" height="9" width="9"></uk-icon>${this._regionMeta(step.region).label}</span>`);
+    }
+    if (step.iteration != null) {
+      chips.push(html`<span class="nest-chip"><uk-icon icon="repeat" height="9" width="9"></uk-icon>iter ${step.iteration}</span>`);
+    }
+    if (step.branch != null) {
+      chips.push(html`<span class="nest-chip"><uk-icon icon="rows-3" height="9" width="9"></uk-icon>branch ${step.branch}</span>`);
+    }
+    if (step.caught) {
+      chips.push(html`<span class="nest-chip nest-chip--caught"><uk-icon icon="shield-check" height="9" width="9"></uk-icon>caught</span>`);
+    }
+    return chips.length ? html`<div class="nest-row">${chips}</div>` : nothing;
+  }
+
   private _renderSimStepCard() {
     const step = this._currentStep;
     if (!step) {
@@ -4947,7 +4994,9 @@ export class OrFlowBuilder extends LitElement {
         <uk-icon icon=${isWaitInput ? 'pause-circle' : 'activity'} height="13" width="13"></uk-icon>
         ${isWaitInput ? 'Paused — input required' : 'Now executing'}
       </div>
-      <div class=${step.status === 'fail' ? 'sim-runcard sim-runcard--fail' : isWaitInput ? 'sim-runcard sim-runcard--paused' : 'sim-runcard'}>
+      <div class=${step.status === 'fail' && step.caught ? 'sim-runcard sim-runcard--paused'
+        : step.status === 'fail' ? 'sim-runcard sim-runcard--fail'
+        : isWaitInput ? 'sim-runcard sim-runcard--paused' : 'sim-runcard'}>
         <div class="sim-runcard-head">
           <span class="icon-tile icon-tile--${tone}">
             <uk-icon icon=${icon} height="12" width="12"></uk-icon>
@@ -4957,6 +5006,7 @@ export class OrFlowBuilder extends LitElement {
             <div style="font-size:11px;color:var(--muted-foreground);font-family:var(--uk-font-monospace, monospace)">
               ${step.node_kind.replace('_', ' ')} · +${step.started_at_ms.toFixed(1)}ms · ${step.duration_ms.toFixed(1)}ms
             </div>
+            ${this._renderStepNesting(step)}
           </div>
           <span class=${'sim-runcard-status sim-runcard-status--' + step.status}>
             <uk-icon icon=${this._statusIcon(step.status)} height="11" width="11"></uk-icon>
@@ -4964,7 +5014,17 @@ export class OrFlowBuilder extends LitElement {
           </span>
         </div>
         ${isWaitInput ? this._renderInputForm(step) : nothing}
-        ${step.status === 'fail' ? html`
+        ${step.status === 'fail' && step.caught ? html`
+          <div class="sim-runcard-error sim-runcard-error--caught">
+            <div style="font-weight:600;font-size:12px;color:color-mix(in oklch, var(--warning) 85%, var(--foreground))">
+              <uk-icon icon="shield-check" height="12" width="12"></uk-icon>
+              Caught by try / catch — flow continued via the catch path.
+            </div>
+            <div style="margin-top:4px;color:var(--muted-foreground)">
+              ${String((step.outputs as Record<string, unknown>)['error'] ?? step.note ?? 'domain failure')}
+            </div>
+          </div>
+        ` : step.status === 'fail' ? html`
           <div class="sim-runcard-error">
             <div style="font-weight:600;color:var(--destructive);font-size:12px">
               <uk-icon icon="alert-triangle" height="12" width="12"></uk-icon>

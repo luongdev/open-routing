@@ -422,6 +422,11 @@ export interface TraceStep {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown>;
   note?: string;
+  // 3D-2 control-flow nesting (omitted for flat steps).
+  region?: string;
+  iteration?: number;
+  branch?: number;
+  caught?: boolean;
 }
 
 export const MOCK_TRACE_STEPS: TraceStep[] = [
