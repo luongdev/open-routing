@@ -85,3 +85,74 @@ func TestRouteReads_GetListMapping(t *testing.T) {
 		t.Fatalf("want 404 for unknown route, got %T", nf)
 	}
 }
+
+// CreateRouteRequest on a published flow with a Ready agent OFFERS the top
+// candidate and parks the route (waiting + offered reservation + timeout
+// continuation + persisted runtime trace).
+func TestCreateRouteRequest_OffersAndSuspends(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	sid := f.seedSkillID(t, "skill_es")
+	f.seedQueue(t, "queue_vip")
+	f.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := f.seedFlow(t, "flow_live", simGraph(t))
+	if _, err := f.e.PublishFlow(f.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	resp, err := f.e.CreateRouteRequest(f.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"},
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	rr, ok := resp.(api.CreateRouteRequest201JSONResponse)
+	if !ok {
+		t.Fatalf("want 201, got %T", resp)
+	}
+	if rr.Status != api.RouteRequestStatus("waiting") {
+		t.Fatalf("status = %q, want waiting", rr.Status)
+	}
+	routeID := uuid.UUID(rr.Id)
+
+	// Exactly one OFFERED reservation for the Ready agent.
+	if n := f.countByOrg(t, "reservations"); n != 1 {
+		t.Fatalf("reservations = %d, want 1", n)
+	}
+	if n := f.countByOrg(t, "continuations"); n != 1 {
+		t.Fatalf("continuations = %d, want 1 (reservation_timeout parked)", n)
+	}
+	if n := f.countByOrg(t, "traces"); n != 1 {
+		t.Fatalf("traces = %d, want 1 (runtime trace)", n)
+	}
+	lrr, _ := f.e.ListRouteRequestReservations(f.ctx, api.ListRouteRequestReservationsRequestObject{Id: api.EntityIdPath(routeID)})
+	lres := lrr.(api.ListRouteRequestReservations200JSONResponse)
+	if len(lres.Items) != 1 || lres.Items[0].State != api.ReservationState("offered") {
+		t.Fatalf("want 1 offered reservation, got %+v", lres.Items)
+	}
+}
+
+// No active binding for the entry → a typed-failure route (not a 500).
+func TestCreateRouteRequest_NoPublishedFlowFails(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	resp, err := f.e.CreateRouteRequest(f.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "sms", EntryCode: "nope"},
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	rr, ok := resp.(api.CreateRouteRequest201JSONResponse)
+	if !ok {
+		t.Fatalf("want 201, got %T", resp)
+	}
+	if rr.Status != api.RouteRequestStatus("failed") || rr.FailureCode == nil || *rr.FailureCode != api.RoutingFailureCode("missing_published_flow") {
+		t.Fatalf("want failed/missing_published_flow, got status=%q code=%v", rr.Status, rr.FailureCode)
+	}
+}

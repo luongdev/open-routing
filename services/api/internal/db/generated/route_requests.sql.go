@@ -165,8 +165,8 @@ func (q *Queries) GetRouteRequest(ctx context.Context, arg GetRouteRequestParams
 const insertRouteRequest = `-- name: InsertRouteRequest :one
 INSERT INTO route_requests (
     id, org_id, channel, entry_code, flow_version_id, flow_code,
-    interaction_input, status, read_set_snapshot
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    interaction_input, status, failure_code, read_set_snapshot
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, created_at, updated_at, resume_cursor, current_reservation_id, run_seq
 `
 
@@ -179,6 +179,7 @@ type InsertRouteRequestParams struct {
 	FlowCode         *string     `json:"flow_code"`
 	InteractionInput []byte      `json:"interaction_input"`
 	Status           string      `json:"status"`
+	FailureCode      *string     `json:"failure_code"`
 	ReadSetSnapshot  []byte      `json:"read_set_snapshot"`
 }
 
@@ -192,6 +193,7 @@ func (q *Queries) InsertRouteRequest(ctx context.Context, arg InsertRouteRequest
 		arg.FlowCode,
 		arg.InteractionInput,
 		arg.Status,
+		arg.FailureCode,
 		arg.ReadSetSnapshot,
 	)
 	var i RouteRequest

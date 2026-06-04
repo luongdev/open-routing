@@ -1,8 +1,8 @@
 -- name: InsertRouteRequest :one
 INSERT INTO route_requests (
     id, org_id, channel, entry_code, flow_version_id, flow_code,
-    interaction_input, status, read_set_snapshot
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    interaction_input, status, failure_code, read_set_snapshot
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- AcquireRouteForRun is the route-level exclusive lock: it flips an idle route

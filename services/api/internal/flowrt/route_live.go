@@ -2,14 +2,19 @@ package flowrt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
+	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
+	"github.com/luongdev/open-routing/services/api/internal/runtime"
 )
 
 // mapRouteRequest converts a DB row to the API DTO. TraceId is left nil — the
@@ -163,4 +168,210 @@ func (e *Endpoints) ListFlowEntryBindings(ctx context.Context, _ api.ListFlowEnt
 		items[i] = mapBinding(r)
 	}
 	return api.ListFlowEntryBindings200JSONResponse{Items: items}, nil
+}
+
+// liveOfferer implements runtime.Offerer for a live route run: it writes an
+// `offered` reservation row inside the route's tx. Each INSERT is wrapped in a
+// SAVEPOINT so a 23505 (agent already active elsewhere, or attempt collision)
+// rolls back just that offer — not the whole route tx — and the reservation
+// node skips to the next candidate (ok=false). The runtime works in agent
+// CODES; the offerer resolves code→uuid via GetAgentByCode.
+type liveOfferer struct {
+	ctx     context.Context
+	tx      *db.OrgTx
+	orgID   uuid.UUID
+	routeID uuid.UUID
+	attempt int
+	lastRes uuid.UUID
+	lastExp time.Time
+	offered bool
+}
+
+func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bool, error) {
+	agent, err := generated.New(o.tx).GetAgentByCode(o.ctx, generated.GetAgentByCodeParams{Code: agentCode, OrgID: pgUUID(o.orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil // agent vanished since the snapshot → skip
+	}
+	if err != nil {
+		return "", false, err
+	}
+	resID := uuid.Must(uuid.NewV7())
+	exp := time.Now().Add(timeout)
+	sp, err := o.tx.BeginSavepoint(o.ctx)
+	if err != nil {
+		return "", false, err
+	}
+	_, err = generated.New(sp).InsertReservationOffer(o.ctx, generated.InsertReservationOfferParams{
+		ID: pgUUID(resID), OrgID: pgUUID(o.orgID), RouteRequestID: pgUUID(o.routeID),
+		AgentID: agent.ID, Attempt: int32(o.attempt + 1),
+		ExpiresAt: pgtype.Timestamptz{Time: exp, Valid: true},
+	})
+	if isUniqueViolation(err) {
+		_ = sp.Rollback(o.ctx) // busy/ineligible → undo this offer, try next candidate
+		return "", false, nil
+	}
+	if err != nil {
+		_ = sp.Rollback(o.ctx)
+		return "", false, err
+	}
+	if err := sp.Commit(o.ctx); err != nil {
+		return "", false, err
+	}
+	o.attempt++
+	o.lastRes, o.lastExp, o.offered = resID, exp, true
+	return resID.String(), true, nil
+}
+
+func (e *Endpoints) appendEvent(ctx context.Context, q *generated.Queries, orgID, routeID uuid.UUID, typ string, payload map[string]any) {
+	p := []byte("{}")
+	if payload != nil {
+		if b, err := json.Marshal(payload); err == nil {
+			p = b
+		}
+	}
+	_, _ = q.AppendRuntimeEvent(ctx, generated.AppendRuntimeEventParams{
+		ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID),
+		RouteRequestID: pgUUID(routeID), Source: "runtime", Type: typ, Payload: p,
+	})
+}
+
+func crErr(reason string) api.CreateRouteRequestResponseObject {
+	return api.CreateRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: reason}}
+}
+
+// CreateRouteRequest runs a live route: resolve the active published flow for
+// (channel, entry_code), then in ONE tx insert the route, run the executor live
+// (offer→suspend at a reservation), persist the trace + events, and either park
+// the route (waiting + cursor + reservation_timeout continuation) or finish it.
+func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteRequestRequestObject) (api.CreateRouteRequestResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return crErr("missing_org_id_in_context"), nil
+	}
+	if req.Body == nil {
+		return crErr("missing_body"), nil
+	}
+	body := *req.Body
+	q := generated.New(e.deps.OrgDB)
+	routeID := uuid.Must(uuid.NewV7())
+	input := map[string]any{}
+	if body.InteractionInput != nil {
+		input = *body.InteractionInput
+	}
+	inputJSON, _ := json.Marshal(input)
+
+	binding, err := q.GetActiveBinding(ctx, generated.GetActiveBindingParams{OrgID: pgUUID(orgID), Channel: body.Channel, EntryCode: body.EntryCode})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Typed failure: no published flow bound to this entry point.
+		fc := string(runtime.FailMissingPublishedFlow)
+		row, iErr := q.InsertRouteRequest(ctx, generated.InsertRouteRequestParams{
+			ID: pgUUID(routeID), OrgID: pgUUID(orgID), Channel: body.Channel, EntryCode: body.EntryCode,
+			InteractionInput: inputJSON, Status: "failed", FailureCode: &fc,
+		})
+		if iErr != nil {
+			return crErr("insert_failed"), nil
+		}
+		return api.CreateRouteRequest201JSONResponse(mapRouteRequest(row)), nil
+	}
+	if err != nil {
+		return crErr("binding_lookup_failed"), nil
+	}
+
+	fv, err := q.GetFlowVersion(ctx, generated.GetFlowVersionParams{ID: binding.FlowVersionID, OrgID: pgUUID(orgID)})
+	if err != nil {
+		return crErr("flow_version_load_failed"), nil
+	}
+	graph, gErr := parseGraph(fv.Graph)
+	if gErr != nil {
+		return crErr("graph_parse_failed"), nil
+	}
+	plan, cErr := runtime.Compile(graph, e.reg)
+	if cErr != nil {
+		return crErr("compile_failed"), nil
+	}
+	snapshot, sErr := e.buildSnapshot(ctx, pgUUID(orgID), graph)
+	if sErr != nil {
+		return crErr("snapshot_failed"), nil
+	}
+	snapJSON, _ := json.Marshal(snapshot)
+
+	tx, err := e.deps.OrgDB.BeginTx(ctx)
+	if err != nil {
+		return crErr("tx_begin_failed"), nil
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := generated.New(tx)
+
+	flowCode := fv.FlowCode
+	if _, err := qtx.InsertRouteRequest(ctx, generated.InsertRouteRequestParams{
+		ID: pgUUID(routeID), OrgID: pgUUID(orgID), Channel: body.Channel, EntryCode: body.EntryCode,
+		FlowVersionID: binding.FlowVersionID, FlowCode: &flowCode,
+		InteractionInput: inputJSON, Status: "running", ReadSetSnapshot: snapJSON,
+	}); err != nil {
+		return crErr("insert_failed"), nil
+	}
+
+	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID}
+	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer))
+	res, rErr := ex.Run(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, input)
+	if rErr != nil {
+		return crErr("execute_failed"), nil
+	}
+
+	steps := mapTraceSteps(res.Trace)
+	stepsJSON, _ := json.Marshal(steps)
+	outcome := res.Trace.Outcome
+	pfv := int32(runtime.PlanFormatVersion)
+	if _, err := qtx.InsertTrace(ctx, generated.InsertTraceParams{
+		ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "runtime",
+		FlowID: fv.FlowID, FlowVersionID: binding.FlowVersionID, RouteRequestID: pgUUID(routeID),
+		Steps: stepsJSON, Outcome: &outcome, PlanFormatVersion: &pfv, ReadSetSnapshot: snapJSON,
+	}); err != nil {
+		return crErr("trace_persist_failed"), nil
+	}
+	e.appendEvent(ctx, qtx, orgID, routeID, "route.created", nil)
+
+	switch {
+	case res.Suspension != nil: // offered an agent → park the route
+		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
+		curJSON, _ := json.Marshal(cur)
+		if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+			ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgUUID(offerer.lastRes),
+		}); err != nil {
+			return crErr("suspend_failed"), nil
+		}
+		if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
+			ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
+			RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(offerer.lastRes),
+			FlowVersionID: binding.FlowVersionID, Cursor: []byte("{}"),
+			DueAt: pgtype.Timestamptz{Time: offerer.lastExp, Valid: true},
+		}); err != nil {
+			return crErr("continuation_failed"), nil
+		}
+		e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{"reservation_id": offerer.lastRes.String()})
+	case outcome == "failed":
+		fc := res.Trace.FailureCode
+		var fcp *string
+		if fc != "" {
+			fcp = &fc
+		}
+		if _, err := qtx.FinishRoute(ctx, generated.FinishRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID), Status: "failed", FailureCode: fcp}); err != nil {
+			return crErr("finish_failed"), nil
+		}
+		e.appendEvent(ctx, qtx, orgID, routeID, "route.failed", nil)
+	default: // completed (ran to a terminal with no offer)
+		if _, err := qtx.FinishRoute(ctx, generated.FinishRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID), Status: "completed"}); err != nil {
+			return crErr("finish_failed"), nil
+		}
+		e.appendEvent(ctx, qtx, orgID, routeID, "route.completed", nil)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return crErr("commit_failed"), nil
+	}
+	row, err := q.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if err != nil {
+		return crErr("reload_failed"), nil
+	}
+	return api.CreateRouteRequest201JSONResponse(mapRouteRequest(row)), nil
 }

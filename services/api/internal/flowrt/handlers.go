@@ -376,13 +376,8 @@ func (e *Endpoints) GetFlowVersion(ctx context.Context, req api.GetFlowVersionRe
 
 // SimulateFlow + ListFlowTraces live in trace_sim.go (3b).
 
-// CreateRouteRequest + the reservation lifecycle land in route_live.go (W3-3);
-// the reads (Get/List route requests + reservations, trace, bindings) are
-// already implemented there. The remaining stubs below are the write path.
-
-func (*Endpoints) CreateRouteRequest(_ context.Context, _ api.CreateRouteRequestRequestObject) (api.CreateRouteRequestResponseObject, error) {
-	return api.CreateRouteRequest500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
+// CreateRouteRequest + the reads live in route_live.go (W3-3). The reservation
+// lifecycle (accept/reject/complete) stubs below are the next increment (W3-3b).
 
 func (*Endpoints) AcceptReservation(_ context.Context, _ api.AcceptReservationRequestObject) (api.AcceptReservationResponseObject, error) {
 	return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
