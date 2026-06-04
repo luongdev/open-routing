@@ -167,8 +167,8 @@ func (e *Endpoints) SubmitRouteInput(ctx context.Context, req api.SubmitRouteInp
 	if !ok {
 		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
 	}
-	if req.Body == nil {
-		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "missing_body"}), nil
+	if req.Body == nil || req.Body.Value == nil {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "missing_value"}), nil
 	}
 	routeID := uuid.UUID(req.Id)
 	tx, err := e.deps.OrgDB.BeginTx(ctx)
@@ -186,6 +186,12 @@ func (e *Endpoints) SubmitRouteInput(ctx context.Context, req api.SubmitRouteInp
 	}
 	if err != nil {
 		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "route_lock_failed"}}, nil
+	}
+	// A route parked on a reservation offer (current_reservation_id set) is
+	// answered via accept/reject, NOT this input endpoint — refuse so an input
+	// submit can't hijack a reservation wait (cross-AI review BLOCK).
+	if route.CurrentReservationID.Valid {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "route_waiting_on_reservation"}), nil
 	}
 
 	target := ""

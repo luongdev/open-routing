@@ -101,3 +101,36 @@ func TestScript_SandboxNoOSIO(t *testing.T) {
 		t.Fatalf("os.time() should fail in the sandbox; outcome = %q", res.Trace.Outcome)
 	}
 }
+
+// Cross-AI review BLOCKs: dofile/loadfile (file read) and string.rep (OOM) are
+// removed from the sandbox; calling them fails rather than escaping/allocating.
+func TestScript_SandboxHolesClosed(t *testing.T) {
+	for _, code := range []string{`return dofile("/etc/passwd")`, `return loadfile("/etc/passwd")`, `return string.rep("a", 100)`} {
+		res := runScript(t, code, nil)
+		if res.Trace.Outcome != "failed" {
+			t.Fatalf("sandbox hole open for %q (outcome %q)", code, res.Trace.Outcome)
+		}
+	}
+}
+
+// A self-referential table can't overflow the Go stack during Lua→Go conversion.
+func TestScript_CyclicTableBounded(t *testing.T) {
+	res := runScript(t, `local t = {}; t.self = t; return t`, nil)
+	// Either completes (depth-capped conversion) or fails — must NOT crash/hang.
+	if res.Trace.Outcome != "completed" && res.Trace.Outcome != "failed" {
+		t.Fatalf("cyclic table: unexpected outcome %q", res.Trace.Outcome)
+	}
+}
+
+// Same input replays identically; different input yields a different RNG stream.
+func TestScript_PerRunSeed(t *testing.T) {
+	a := runScript(t, `return math.random(1,1000000)`, map[string]any{"k": "x"})
+	a2 := runScript(t, `return math.random(1,1000000)`, map[string]any{"k": "x"})
+	b := runScript(t, `return math.random(1,1000000)`, map[string]any{"k": "y"})
+	if a.Vars["out"] != a2.Vars["out"] {
+		t.Fatalf("same input not replay-stable: %v vs %v", a.Vars["out"], a2.Vars["out"])
+	}
+	if a.Vars["out"] == b.Vars["out"] {
+		t.Fatalf("different input produced same RNG value %v — seed not input-derived", a.Vars["out"])
+	}
+}

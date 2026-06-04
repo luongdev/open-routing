@@ -28,6 +28,10 @@ var routeDecisions = &decisionLatency{samples: make([]time.Duration, decisionWin
 
 func (d *decisionLatency) record(v time.Duration) {
 	d.mu.Lock()
+	if len(d.samples) == 0 { // zero-value safety
+		d.mu.Unlock()
+		return
+	}
 	d.samples[d.next] = v
 	d.next = (d.next + 1) % len(d.samples)
 	if d.next == 0 {

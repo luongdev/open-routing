@@ -15,11 +15,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	mrand "math/rand"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
+
+// maxLuaDepth bounds Lua→Go conversion so a self-referential or pathologically
+// nested return value can't blow the Go stack (the deadline only fences VM
+// instructions, not the post-call conversion). Cross-AI review BLOCK.
+const maxLuaDepth = 64
 
 const scriptDeadline = 200 * time.Millisecond
 
@@ -88,11 +94,27 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 		L.Push(lua.LString(lib.name))
 		L.Call(1, 0)
 	}
-	// Deterministic RNG: replace math.random with a constant-seeded source so a
-	// run replays identically (gopher-lua's randomseed doesn't reliably pin the
-	// sequence). randomseed becomes a no-op — determinism is fixed here.
+	// Close sandbox holes OpenBase leaves: dofile/loadfile read host files; print
+	// writes to os.Stdout. Remove string.rep — a single Go-level rep(s, 1e9) call
+	// allocates past the context deadline (it only fences between VM ops) → OOM
+	// (cross-AI review BLOCK/HIGH).
+	for _, g := range []string{"dofile", "loadfile", "print"} {
+		L.SetGlobal(g, lua.LNil)
+	}
+	if strTbl, ok := L.GetGlobal("string").(*lua.LTable); ok {
+		strTbl.RawSetString("rep", lua.LNil)
+	}
+	// Deterministic-but-not-fixed RNG: seed from the input bag so a run replays
+	// identically (same input → same sequence) yet different interactions differ
+	// (a constant seed made every run produce the same "random" — review HIGH).
 	if mathTbl, ok := L.GetGlobal("math").(*lua.LTable); ok {
-		rng := mrand.New(mrand.NewSource(1))
+		seed := int64(1)
+		if b, mErr := json.Marshal(ctx.Vars()); mErr == nil {
+			h := fnv.New64a()
+			_, _ = h.Write(b)
+			seed = int64(h.Sum64())
+		}
+		rng := mrand.New(mrand.NewSource(seed))
 		mathTbl.RawSetString("random", L.NewFunction(func(l *lua.LState) int {
 			switch l.GetTop() {
 			case 0:
@@ -172,7 +194,13 @@ func goToLua(L *lua.LState, v any) lua.LValue {
 
 // luaToGo converts a Lua return value back to the bag's value space. A table with
 // contiguous 1..n integer keys becomes a []any; otherwise a map[string]any.
-func luaToGo(v lua.LValue) any {
+// Bounded by maxLuaDepth so a cyclic/over-nested table can't overflow the stack.
+func luaToGo(v lua.LValue) any { return luaToGoDepth(v, 0) }
+
+func luaToGoDepth(v lua.LValue, depth int) any {
+	if depth > maxLuaDepth {
+		return nil
+	}
 	switch t := v.(type) {
 	case *lua.LNilType:
 		return nil
@@ -195,13 +223,13 @@ func luaToGo(v lua.LValue) any {
 		if isArray && count == n {
 			arr := make([]any, 0, n)
 			for i := 1; i <= n; i++ {
-				arr = append(arr, luaToGo(t.RawGetInt(i)))
+				arr = append(arr, luaToGoDepth(t.RawGetInt(i), depth+1))
 			}
 			return arr
 		}
 		m := make(map[string]any)
 		t.ForEach(func(k, val lua.LValue) {
-			m[k.String()] = luaToGo(val)
+			m[k.String()] = luaToGoDepth(val, depth+1)
 		})
 		return m
 	default:
