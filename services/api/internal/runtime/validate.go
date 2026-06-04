@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Graph-level validation issue codes (node/field-level codes live in
@@ -141,13 +142,15 @@ func validateRegions(g *Graph) []ValidationIssue {
 		}
 	}
 
-	ridsByOwner := make(map[string][]string)
+	// body edges declare child regions; collect branch indices per owner (in
+	// edge order) + entry-membership / control-owner checks.
+	branchesByOwner := make(map[string][]int)
 	for _, e := range g.Edges {
-		rid, _ := regionID(e.From, e.Label)
+		rid, branch := regionID(e.From, e.Label)
 		if rid == "" {
 			continue // a flow edge
 		}
-		ridsByOwner[e.From] = append(ridsByOwner[e.From], rid)
+		branchesByOwner[e.From] = append(branchesByOwner[e.From], branch)
 		if !ControlKinds[kindOf[e.From]] {
 			issues = append(issues, ValidationIssue{Code: IssueRegionEntry, Message: fmt.Sprintf("node %q declares a body region but is not a control node", e.From), NodeID: e.From})
 		}
@@ -156,28 +159,33 @@ func validateRegions(g *Graph) []ValidationIssue {
 		}
 	}
 
-	for owner, rids := range ridsByOwner {
-		switch kindOf[owner] {
-		case NodeParallel:
-			// branch ids must be owner#0..owner#N-1 (contiguous, no dup).
-			want := make(map[string]bool, len(rids))
-			for i := range rids {
-				want[fmt.Sprintf("%s#%d", owner, i)] = true
-			}
-			ok := len(rids) > 0
-			seenR := map[string]bool{}
-			for _, r := range rids {
-				if seenR[r] || !want[r] {
+	// Validate EVERY control node in graph order (deterministic) — incl. owners
+	// with ZERO body edges, which would otherwise compile with no region.
+	for _, n := range g.Nodes {
+		if !ControlKinds[n.Kind] {
+			continue
+		}
+		idxs := branchesByOwner[n.ID]
+		if n.Kind == NodeParallel {
+			seen := map[int]bool{}
+			ok := len(idxs) > 0
+			for _, i := range idxs {
+				if seen[i] {
 					ok = false
 				}
-				seenR[r] = true
+				seen[i] = true
+			}
+			for i := 0; i < len(idxs); i++ {
+				if !seen[i] {
+					ok = false
+				}
 			}
 			if !ok {
-				issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("parallel %q branches must be body:0..body:%d (contiguous, unique)", owner, len(rids)-1), NodeID: owner})
+				issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("parallel %q needs body:0..body:N branches (contiguous, unique, at least one)", n.ID), NodeID: n.ID})
 			}
-		default: // loop_for / loop_while / try_catch: exactly one body region == owner
-			if len(rids) != 1 || rids[0] != owner {
-				issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("%s %q must declare exactly one body region (label \"body\")", kindOf[owner], owner), NodeID: owner})
+		} else { // loop_for / loop_while / try_catch: exactly one "body" (branch 0)
+			if len(idxs) != 1 || idxs[0] != 0 {
+				issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("%s %q must declare exactly one body region (edge label \"body\")", n.Kind, n.ID), NodeID: n.ID})
 			}
 		}
 	}
@@ -191,15 +199,95 @@ func validateRegions(g *Graph) []ValidationIssue {
 		}
 	}
 
+	issues = append(issues, validateRegionExits(g, regionOf)...)
 	issues = append(issues, validateLoopVarShadow(g, regionOf)...)
 	return issues
 }
 
+// validateRegionExits ensures every region member can reach a region EXIT (a
+// member with no in-region flow successor — control returns to the owner there).
+// Without this, a body region with an internal cycle and no fallthrough compiles
+// clean and the region runner spins to the max-step guard.
+func validateRegionExits(g *Graph, regionOf map[string]string) []ValidationIssue {
+	// in-region flow adjacency (forward) per region.
+	type radj struct{ succ map[string][]string }
+	byRegion := map[string]*radj{}
+	memberCount := map[string]int{}
+	for _, n := range g.Nodes {
+		if r := regionOf[n.ID]; r != "" {
+			memberCount[r]++
+			if byRegion[r] == nil {
+				byRegion[r] = &radj{succ: map[string][]string{}}
+			}
+			byRegion[r].succ[n.ID] = byRegion[r].succ[n.ID] // ensure key
+		}
+	}
+	for _, e := range g.Edges {
+		if rid, _ := regionID(e.From, e.Label); rid != "" {
+			continue // body edge
+		}
+		if r := regionOf[e.From]; r != "" && r == regionOf[e.To] {
+			byRegion[r].succ[e.From] = append(byRegion[r].succ[e.From], e.To)
+		}
+	}
+	var issues []ValidationIssue
+	for _, n := range g.Nodes { // graph order → deterministic
+		r := regionOf[n.ID]
+		if r == "" {
+			continue
+		}
+		adj := byRegion[r]
+		// reverse-reach from exits (members with no in-region successor).
+		rev := map[string][]string{}
+		exits := map[string]bool{}
+		for m, ss := range adj.succ {
+			if len(ss) == 0 {
+				exits[m] = true
+			}
+			for _, s := range ss {
+				rev[s] = append(rev[s], m)
+			}
+		}
+		reach := map[string]bool{}
+		var q []string
+		for ex := range exits {
+			reach[ex] = true
+			q = append(q, ex)
+		}
+		for len(q) > 0 {
+			cur := q[0]
+			q = q[1:]
+			for _, p := range rev[cur] {
+				if !reach[p] {
+					reach[p] = true
+					q = append(q, p)
+				}
+			}
+		}
+		if !reach[n.ID] {
+			issues = append(issues, ValidationIssue{Code: IssueNoPathToTerminal, Message: fmt.Sprintf("node %q cannot reach a region exit (the region never returns to its owner)", n.ID), NodeID: n.ID})
+		}
+	}
+	return issues
+}
+
+// ownerOf returns the owner node id of a branch region ("<owner>" or
+// "<owner>#<i>"). Node ids never contain '#'.
+func ownerOf(region string) string {
+	if region == "" {
+		return ""
+	}
+	if i := strings.IndexByte(region, '#'); i >= 0 {
+		return region[:i]
+	}
+	return region
+}
+
 // validateLoopVarShadow rejects a set_var/compute whose target equals the
-// item/index var of the loop that owns its region (direct membership; nested
-// owners are a 3D-2 follow-on).
+// item/index var of ANY enclosing loop (walks the region ancestor chain, so a
+// nested-region write can't silently shadow an outer loop var).
 func validateLoopVarShadow(g *Graph, regionOf map[string]string) []ValidationIssue {
-	loopVars := map[string]map[string]bool{} // regionID -> {item,index}
+	loopVars := map[string][2]string{} // loop node id -> {item, index}
 	for _, n := range g.Nodes {
 		if n.Kind != NodeLoopFor {
 			continue
@@ -215,14 +303,21 @@ func validateLoopVarShadow(g *Graph, regionOf map[string]string) []ValidationIss
 		if index == "" {
 			index = "index"
 		}
-		loopVars[n.ID] = map[string]bool{item: true, index: true}
+		loopVars[n.ID] = [2]string{item, index}
+	}
+	// enclosing(nodeID) → set of loop vars in scope (own region + all ancestors).
+	enclosing := func(nodeID string) map[string]bool {
+		out := map[string]bool{}
+		for r := regionOf[nodeID]; r != ""; r = regionOf[ownerOf(r)] {
+			if v, ok := loopVars[ownerOf(r)]; ok {
+				out[v[0]] = true
+				out[v[1]] = true
+			}
+		}
+		return out
 	}
 	var issues []ValidationIssue
 	for _, n := range g.Nodes {
-		vars := loopVars[regionOf[n.ID]]
-		if vars == nil {
-			continue
-		}
 		var name string
 		switch n.Kind {
 		case NodeSetVar:
@@ -234,8 +329,8 @@ func validateLoopVarShadow(g *Graph, regionOf map[string]string) []ValidationIss
 				name = cfg.Var
 			}
 		}
-		if name != "" && vars[name] {
-			issues = append(issues, ValidationIssue{Code: IssueLoopVarShadow, Message: fmt.Sprintf("node %q writes %q, which shadows the enclosing loop's variable", n.ID, name), NodeID: n.ID})
+		if name != "" && enclosing(n.ID)[name] {
+			issues = append(issues, ValidationIssue{Code: IssueLoopVarShadow, Message: fmt.Sprintf("node %q writes %q, which shadows an enclosing loop's variable", n.ID, name), NodeID: n.ID})
 		}
 	}
 	return issues

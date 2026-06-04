@@ -500,9 +500,9 @@ func (loopForNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogR
 	} else {
 		issues = append(issues, checkExpr(n.ID, "array_expr", cfg.ArrayExpr)...)
 	}
-	for field, v := range map[string]string{"item_var": cfg.ItemVar, "index_var": cfg.IndexVar} {
-		if v != "" && !validVarName(v) {
-			issues = append(issues, fieldIssue(n.ID, field, IssueInvalidConfig, "variable name must be an identifier and not a reserved word"))
+	for _, fv := range []struct{ field, v string }{{"item_var", cfg.ItemVar}, {"index_var", cfg.IndexVar}} {
+		if fv.v != "" && !validVarName(fv.v) {
+			issues = append(issues, fieldIssue(n.ID, fv.field, IssueInvalidConfig, "variable name must be an identifier and not a reserved word"))
 		}
 	}
 	if cfg.MaxIter < 0 || cfg.MaxIter > 10000 {

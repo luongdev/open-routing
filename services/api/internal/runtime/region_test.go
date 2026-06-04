@@ -97,6 +97,17 @@ func TestValidateRegions_CatchesViolations(t *testing.T) {
 				inRegion(node("sv", NodeSetVar, setVarConfig{Name: "item", ValueExpr: "1"}), "lf"), node("end", NodeEnd, nil)},
 			Edges: []GraphEdge{{From: "t", To: "lf"}, {From: "lf", To: "sv", Label: "body"}, {From: "lf", To: "end", Label: "done"}},
 		}, IssueLoopVarShadow},
+		{"zero-body control owner", &Graph{
+			// loop_for with NO body edge — must be flagged, not compile clean.
+			Nodes: []GraphNode{node("t", NodeTrigger, nil), node("lf", NodeLoopFor, loopForConfig{ArrayExpr: "x", MaxIter: 1}), node("end", NodeEnd, nil)},
+			Edges: []GraphEdge{{From: "t", To: "lf"}, {From: "lf", To: "end", Label: "done"}},
+		}, IssueRegionBranches},
+		{"region internal cycle (no exit)", &Graph{
+			// two body nodes pointing at each other → no in-region exit.
+			Nodes: []GraphNode{node("t", NodeTrigger, nil), node("lf", NodeLoopFor, loopForConfig{ArrayExpr: "x", MaxIter: 1}),
+				inRegion(node("a", NodeLog, logConfig{Message: "a"}), "lf"), inRegion(node("b", NodeLog, logConfig{Message: "b"}), "lf"), node("end", NodeEnd, nil)},
+			Edges: []GraphEdge{{From: "t", To: "lf"}, {From: "lf", To: "a", Label: "body"}, {From: "a", To: "b"}, {From: "b", To: "a"}, {From: "lf", To: "end", Label: "done"}},
+		}, IssueNoPathToTerminal},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
