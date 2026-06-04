@@ -1499,6 +1499,13 @@ export class OrFlowBuilder extends LitElement {
     /* The chips outgrow the row's clip box when ringed — let them show. */
     .node-card-ports--pick { padding-bottom: 2px; }
 
+    /* Rendered outside .inspector-body, so it carries its own padding + a
+       divider to the Step I/O block below. */
+    .sim-outcome {
+      margin: 0;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
     .sim-outcome-hint {
       margin: 0;
       font-size: 11px;
@@ -4486,7 +4493,6 @@ export class OrFlowBuilder extends LitElement {
                 />
               </div>
             `)}
-            <div class="initvar-hint">Click a reservation node on the canvas to script its outcome.</div>
           </div>
         </div>
 
