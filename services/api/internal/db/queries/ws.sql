@@ -7,9 +7,13 @@
 -- AppendAgentOutbox in the same tx. Keyed off the agents row so the query
 -- carries an org_id filter — SQLChecker rejects a bare pg_advisory_xact_lock as
 -- an unscoped statement under OrgDB (review HIGH-2: W4's producer locks+appends
--- in one OrgDB tx). A producer only ever appends to a live agent, so the row is
--- always present.
--- name: LockAgentOutboxSeq :exec
+-- in one OrgDB tx).
+--
+-- :execrows (NOT :exec) so an ABSENT agent row is detectable: with no row the
+-- SELECT locks nothing and would otherwise return nil, leaving AppendAgentOutbox
+-- to race the unguarded MAX(server_seq)+1 (review HIGH — silent no-op lock). The
+-- producer MUST treat a 0 row count as agent_not_found and abort before append.
+-- name: LockAgentOutboxSeq :execrows
 SELECT pg_advisory_xact_lock(hashtextextended(a.org_id::text || ':' || a.id::text, 0))
 FROM agents a
 WHERE a.org_id = $1 AND a.id = $2;

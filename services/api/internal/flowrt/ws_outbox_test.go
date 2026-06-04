@@ -2,6 +2,7 @@ package flowrt
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -31,8 +32,12 @@ func appendOutbox(ctx context.Context, org, agent uuid.UUID, eventKey, typ strin
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := generated.New(tx)
-	if err := q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pgUUID(org), ID: pgUUID(agent)}); err != nil {
+	locked, err := q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pgUUID(org), ID: pgUUID(agent)})
+	if err != nil {
 		return zero, err
+	}
+	if locked != 1 {
+		return zero, fmt.Errorf("agent not present: outbox lock acquired 0 rows") // review HIGH: absent agent → no lock
 	}
 	row, err := q.AppendAgentOutbox(ctx, generated.AppendAgentOutboxParams{
 		OrgID: pgUUID(org), AgentID: pgUUID(agent), EventKey: eventKey, Type: typ, Payload: []byte(`{}`),
@@ -103,6 +108,29 @@ func TestWSOutbox_EventKeyIdempotent(t *testing.T) {
 	rows, _ := generated.New(sharedPool).ReadAgentOutboxSince(ctx, generated.ReadAgentOutboxSinceParams{OrgID: pgUUID(org), AgentID: pgUUID(agent), ServerSeq: 0, Limit: 10})
 	if len(rows) != 1 {
 		t.Fatalf("duplicate event_key created %d rows, want 1", len(rows))
+	}
+}
+
+// TestWSOutbox_LockAbsentAgentReturnsZero pins review HIGH: when no agents row
+// exists the lock acquires nothing and reports 0 rows, so the W4 producer can
+// detect agent_not_found instead of appending under a silent no-op lock.
+func TestWSOutbox_LockAbsentAgentReturnsZero(t *testing.T) {
+	if sharedPool == nil {
+		t.Skip("no testcontainer pool")
+	}
+	ctx := context.Background()
+	org, agent := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()) // NOT seeded
+	tx, err := sharedPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	locked, err := generated.New(tx).LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pgUUID(org), ID: pgUUID(agent)})
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	if locked != 0 {
+		t.Fatalf("absent-agent lock acquired %d rows, want 0", locked)
 	}
 }
 

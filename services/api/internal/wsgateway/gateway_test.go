@@ -94,7 +94,9 @@ func TestGateway_WelcomeRelayAndCommand(t *testing.T) {
 	}
 	tx, _ := sharedPool.Begin(ctx)
 	q := generated.New(tx)
-	_ = q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pg(org), ID: pg(agent)})
+	if locked, err := q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pg(org), ID: pg(agent)}); err != nil || locked != 1 {
+		t.Fatalf("lock outbox seq: locked=%d err=%v", locked, err)
+	}
 	resID := uuid.Must(uuid.NewV7())
 	if _, err := q.AppendAgentOutbox(ctx, generated.AppendAgentOutboxParams{
 		OrgID: pg(org), AgentID: pg(agent), EventKey: "offer-1", Type: "offer", ReservationID: pg(resID), Payload: []byte(`{"x":1}`),
