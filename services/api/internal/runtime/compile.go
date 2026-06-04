@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 )
 
 // PlanFormatVersion is the compiled-plan schema version. It is stamped into
@@ -11,23 +13,63 @@ import (
 // Bump it on any breaking change to PlanStep / CompiledPlan / CompiledEdge.
 const PlanFormatVersion = 1
 
+// EdgeKind classifies a compiled edge: a "flow" edge is followed at runtime; a
+// "body" edge merely DECLARES a control node's region entry (3D-2) and is
+// stripped from the flat walk's edgesByFrom.
+type EdgeKind string
+
+const (
+	EdgeFlow EdgeKind = "flow"
+	EdgeBody EdgeKind = "body"
+)
+
 // CompiledEdge is one resolved edge of the executable plan. Port is the source
 // node's output label (e.g. "true"/"false" on if_else); empty for a single
 // linear out.
 type CompiledEdge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Port string `json:"port,omitempty"`
+	From string   `json:"from"`
+	To   string   `json:"to"`
+	Port string   `json:"port,omitempty"`
+	Kind EdgeKind `json:"kind,omitempty"` // "" == flow
+}
+
+// CompiledRegion (3D-2) is a control node's body sub-graph. ID is the branch
+// region id ("<owner>" or "<owner>#<branch>"); Entry is the node the region
+// runner walks from; StepIDs are the region's members.
+type CompiledRegion struct {
+	ID          string   `json:"id"`
+	OwnerID     string   `json:"owner_id"`
+	BranchIndex int      `json:"branch_index"`
+	Entry       string   `json:"entry"`
+	StepIDs     []string `json:"step_ids"`
 }
 
 // CompiledPlan is the deterministic executable form persisted on a published
 // flow_version. Entry is the trigger node id; Steps are the compiled nodes in
 // graph order; Edges is the routing topology the executor follows.
 type CompiledPlan struct {
-	FormatVersion int            `json:"format_version"`
-	Entry         string         `json:"entry"`
-	Steps         []PlanStep     `json:"steps"`
-	Edges         []CompiledEdge `json:"edges"`
+	FormatVersion int              `json:"format_version"`
+	Entry         string           `json:"entry"`
+	Steps         []PlanStep       `json:"steps"`
+	Edges         []CompiledEdge   `json:"edges"`
+	Regions       []CompiledRegion `json:"regions,omitempty"`
+}
+
+// bodyLabelRe matches a body-declaration edge label: "body" or "body:<n>".
+var bodyLabelRe = regexp.MustCompile(`^body(?::(\d+))?$`)
+
+// regionID returns the branch region id for a body edge: "<owner>" for "body",
+// "<owner>#<n>" for "body:<n>", and the parsed branch index.
+func regionID(owner, label string) (string, int) {
+	m := bodyLabelRe.FindStringSubmatch(label)
+	if m == nil {
+		return "", 0
+	}
+	if m[1] == "" {
+		return owner, 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return owner + "#" + m[1], n
 }
 
 // Compile turns a graph into an executable plan. The caller MUST run
@@ -54,12 +96,29 @@ func Compile(g *Graph, reg *Registry) (CompiledPlan, error) {
 		if err != nil {
 			return CompiledPlan{}, fmt.Errorf("runtime: compile node %q (%s): %w", n.ID, n.Kind, err)
 		}
+		step.Region = n.Region
 		steps = append(steps, step)
 	}
 
+	// Region members, in graph (deterministic) order.
+	members := map[string][]string{}
+	for _, n := range g.Nodes {
+		if n.Region != "" {
+			members[n.Region] = append(members[n.Region], n.ID)
+		}
+	}
+
 	edges := make([]CompiledEdge, 0, len(g.Edges))
+	var regions []CompiledRegion
 	for _, e := range g.Edges {
-		edges = append(edges, CompiledEdge{From: e.From, To: e.To, Port: e.Label})
+		if rid, branch := regionID(e.From, e.Label); rid != "" {
+			edges = append(edges, CompiledEdge{From: e.From, To: e.To, Port: e.Label, Kind: EdgeBody})
+			regions = append(regions, CompiledRegion{
+				ID: rid, OwnerID: e.From, BranchIndex: branch, Entry: e.To, StepIDs: members[rid],
+			})
+			continue
+		}
+		edges = append(edges, CompiledEdge{From: e.From, To: e.To, Port: e.Label, Kind: EdgeFlow})
 	}
 
 	return CompiledPlan{
@@ -67,6 +126,7 @@ func Compile(g *Graph, reg *Registry) (CompiledPlan, error) {
 		Entry:         entry,
 		Steps:         steps,
 		Edges:         edges,
+		Regions:       regions,
 	}, nil
 }
 

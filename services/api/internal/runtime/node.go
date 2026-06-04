@@ -36,6 +36,12 @@ const (
 	NodeEnd         NodeKind = "end"
 	NodeSetVar      NodeKind = "set_var"
 	NodeCompute     NodeKind = "compute"
+	// 3D-2 control-flow (region owners). The executor special-cases these via a
+	// recursive region runner; their Execute stays the baseNode stub.
+	NodeLoopFor   NodeKind = "loop_for"
+	NodeLoopWhile NodeKind = "loop_while"
+	NodeParallel  NodeKind = "parallel"
+	NodeTryCatch  NodeKind = "try_catch"
 )
 
 // V02NodeKinds is the locked v0.2 subset, in palette order. Tests assert the
@@ -45,6 +51,14 @@ var V02NodeKinds = []NodeKind{
 	NodeRouteQueue, NodeReservation, NodeFallback, NodeEffect, NodeLog, NodeEnd,
 	// 3D-1: deterministic data nodes (graduated from the "Soon" palette).
 	NodeSetVar, NodeCompute,
+	// 3D-2: control-flow region owners.
+	NodeLoopFor, NodeLoopWhile, NodeParallel, NodeTryCatch,
+}
+
+// ControlKinds are the region-owning control-flow nodes the executor runs via
+// the recursive region runner (NOT via Node.Execute).
+var ControlKinds = map[NodeKind]bool{
+	NodeLoopFor: true, NodeLoopWhile: true, NodeParallel: true, NodeTryCatch: true,
 }
 
 // GraphNode / GraphEdge are the parsed authoring graph. Config is the node's
@@ -53,6 +67,10 @@ type GraphNode struct {
 	ID     string          `json:"id"`
 	Kind   NodeKind        `json:"type"`
 	Config json.RawMessage `json:"config,omitempty"`
+	// Region (3D-2) is the branch region this node belongs to: "" = top level,
+	// "<ownerID>" for a single-body region (loop/try), "<ownerID>#<i>" for
+	// parallel branch i. Assigned by the builder; bounds the executor sub-walk.
+	Region string `json:"region,omitempty"`
 }
 
 type GraphEdge struct {
@@ -94,6 +112,7 @@ type PlanStep struct {
 	NodeID   string          `json:"node_id"`
 	Kind     NodeKind        `json:"kind"`
 	Compiled json.RawMessage `json:"compiled,omitempty"`
+	Region   string          `json:"region,omitempty"` // 3D-2: owning region, "" = top level
 }
 
 // ExecCtx is the per-step execution surface the runtime provides to Execute:

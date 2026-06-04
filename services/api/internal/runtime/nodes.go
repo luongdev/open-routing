@@ -36,6 +36,10 @@ var defaultDescriptors = []Descriptor{
 	{Kind: NodeEnd, Title: "End", Category: "exit", Summary: "Terminate the flow."},
 	{Kind: NodeSetVar, Title: "Set Variable", Category: "data", Summary: "Assign an expression result to a variable."},
 	{Kind: NodeCompute, Title: "Compute", Category: "data", Summary: "Evaluate an expression (optionally into a variable)."},
+	{Kind: NodeLoopFor, Title: "For Each", Category: "control", Summary: "Iterate a body region over an array."},
+	{Kind: NodeLoopWhile, Title: "While", Category: "control", Summary: "Repeat a body region while a condition holds."},
+	{Kind: NodeParallel, Title: "Parallel", Category: "control", Summary: "Run branch regions (deterministic fan-out / join)."},
+	{Kind: NodeTryCatch, Title: "Try / Catch", Category: "control", Summary: "Run a body region under an error boundary."},
 }
 
 var descriptorByKind = func() map[NodeKind]Descriptor {
@@ -66,6 +70,10 @@ func DefaultRegistry() *Registry {
 	r.Register(endNode{base(NodeEnd)})
 	r.Register(setVarNode{base(NodeSetVar)})
 	r.Register(computeNode{base(NodeCompute)})
+	r.Register(loopForNode{base(NodeLoopFor)})
+	r.Register(loopWhileNode{base(NodeLoopWhile)})
+	r.Register(parallelNode{base(NodeParallel)})
+	r.Register(tryCatchNode{base(NodeTryCatch)})
 	return r
 }
 

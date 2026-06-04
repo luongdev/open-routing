@@ -477,3 +477,119 @@ func (computeNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
 	}
 	return compileConfig(n, cfg)
 }
+
+// ---- 3D-2 control-flow region owners (Execute handled by the executor's
+// region runner, not Node.Execute; here: config + Validate + Compile only) ----
+
+type loopForConfig struct {
+	ArrayExpr string `json:"array_expr"`
+	ItemVar   string `json:"item_var,omitempty"`
+	IndexVar  string `json:"index_var,omitempty"`
+	MaxIter   int    `json:"max_iter,omitempty"`
+}
+type loopForNode struct{ baseNode }
+
+func (loopForNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
+	cfg, err := decodeConfig[loopForConfig](n.Config)
+	if err != nil {
+		return malformed(n.ID, err), nil
+	}
+	var issues []ValidationIssue
+	if cfg.ArrayExpr == "" {
+		issues = append(issues, fieldIssue(n.ID, "array_expr", IssueMissingField, "loop_for requires an array expression"))
+	} else {
+		issues = append(issues, checkExpr(n.ID, "array_expr", cfg.ArrayExpr)...)
+	}
+	for field, v := range map[string]string{"item_var": cfg.ItemVar, "index_var": cfg.IndexVar} {
+		if v != "" && !validVarName(v) {
+			issues = append(issues, fieldIssue(n.ID, field, IssueInvalidConfig, "variable name must be an identifier and not a reserved word"))
+		}
+	}
+	if cfg.MaxIter < 0 || cfg.MaxIter > 10000 {
+		issues = append(issues, fieldIssue(n.ID, "max_iter", IssueInvalidConfig, "max_iter must be between 0 and 10000"))
+	}
+	return issues, nil
+}
+
+func (loopForNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
+	cfg, err := decodeConfig[loopForConfig](n.Config)
+	if err != nil {
+		return PlanStep{}, err
+	}
+	return compileConfig(n, cfg)
+}
+
+type loopWhileConfig struct {
+	CondExpr string `json:"cond_expr"`
+	MaxIter  int    `json:"max_iter"`
+}
+type loopWhileNode struct{ baseNode }
+
+func (loopWhileNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
+	cfg, err := decodeConfig[loopWhileConfig](n.Config)
+	if err != nil {
+		return malformed(n.ID, err), nil
+	}
+	var issues []ValidationIssue
+	if cfg.CondExpr == "" {
+		issues = append(issues, fieldIssue(n.ID, "cond_expr", IssueMissingField, "loop_while requires a condition expression"))
+	} else {
+		issues = append(issues, checkExpr(n.ID, "cond_expr", cfg.CondExpr)...)
+	}
+	if cfg.MaxIter < 1 || cfg.MaxIter > 10000 {
+		issues = append(issues, fieldIssue(n.ID, "max_iter", IssueInvalidConfig, "loop_while requires max_iter between 1 and 10000"))
+	}
+	return issues, nil
+}
+
+func (loopWhileNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
+	cfg, err := decodeConfig[loopWhileConfig](n.Config)
+	if err != nil {
+		return PlanStep{}, err
+	}
+	return compileConfig(n, cfg)
+}
+
+type parallelConfig struct{}
+type parallelNode struct{ baseNode }
+
+func (parallelNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
+	// Branch structure (contiguous body:i, etc.) is validated at the region level
+	// (validateRegions); the config itself is empty.
+	if _, err := decodeConfig[parallelConfig](n.Config); err != nil {
+		return malformed(n.ID, err), nil
+	}
+	return nil, nil
+}
+
+func (parallelNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
+	cfg, err := decodeConfig[parallelConfig](n.Config)
+	if err != nil {
+		return PlanStep{}, err
+	}
+	return compileConfig(n, cfg)
+}
+
+type tryCatchConfig struct {
+	ErrorVar string `json:"error_var,omitempty"`
+}
+type tryCatchNode struct{ baseNode }
+
+func (tryCatchNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
+	cfg, err := decodeConfig[tryCatchConfig](n.Config)
+	if err != nil {
+		return malformed(n.ID, err), nil
+	}
+	if cfg.ErrorVar != "" && !validVarName(cfg.ErrorVar) {
+		return []ValidationIssue{fieldIssue(n.ID, "error_var", IssueInvalidConfig, "variable name must be an identifier and not a reserved word")}, nil
+	}
+	return nil, nil
+}
+
+func (tryCatchNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
+	cfg, err := decodeConfig[tryCatchConfig](n.Config)
+	if err != nil {
+		return PlanStep{}, err
+	}
+	return compileConfig(n, cfg)
+}
