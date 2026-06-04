@@ -226,13 +226,15 @@ const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
   end: [],
   set_var: DONE_OUT,
   compute: DONE_OUT,
-  // Control flow: `body`/`catch` ports are region/continuation declarations.
-  loop_for: [{ id: 'body', label: 'body', kind: 'branch' }, { id: 'done', label: 'done', kind: 'success' }],
-  loop_while: [{ id: 'body', label: 'body', kind: 'branch' }, { id: 'done', label: 'done', kind: 'success' }],
+  // Control flow: `body`/`catch` ports are region/continuation declarations. The
+  // display labels disambiguate the continuation from a plain node's "done" — the
+  // backend port id (body/done/catch) is unchanged (FlowNodeOutput.id).
+  loop_for: [{ id: 'body', label: 'loop body', kind: 'branch' }, { id: 'done', label: 'after loop', kind: 'success' }],
+  loop_while: [{ id: 'body', label: 'loop body', kind: 'branch' }, { id: 'done', label: 'after loop', kind: 'success' }],
   try_catch: [
-    { id: 'body', label: 'body', kind: 'branch' },
-    { id: 'catch', label: 'catch', kind: 'error' },
-    { id: 'done', label: 'done', kind: 'success' },
+    { id: 'body', label: 'try', kind: 'branch' },
+    { id: 'catch', label: 'on error', kind: 'error' },
+    { id: 'done', label: 'after', kind: 'success' },
   ],
   // parallel is dynamic (body:0..body:N) — see outputsForNode.
 };
@@ -740,6 +742,9 @@ export class OrFlowBuilder extends LitElement {
     }
     .edge--success { stroke: color-mix(in oklch, var(--success) 80%, transparent); }
     .edge--timeout { stroke: color-mix(in oklch, var(--destructive) 70%, transparent); stroke-dasharray: 6 4; }
+    /* An edge flagged by validation (e.g. region_boundary_crossing) — paint it
+       red so the user can find what the issue panel names. */
+    .edge--invalid { stroke: var(--destructive); stroke-width: 2.5; stroke-dasharray: 5 3; }
     /* Edge labels: visible colored pills at the midpoint of each bezier
        carrying the case name (yes / no / ok / error / timeout / case_X)
        so the reader can tell at a glance which branch an edge represents
@@ -873,6 +878,28 @@ export class OrFlowBuilder extends LitElement {
       color: var(--foreground);
     }
     .region-banner span { display: inline-flex; align-items: center; gap: 5px; }
+    .control-help {
+      margin-bottom: 14px;
+      padding: 9px 11px;
+      border-radius: 8px;
+      background: color-mix(in oklch, var(--primary) 4%, var(--card));
+      border: 1px solid var(--border);
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+    .control-help-head {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+      color: var(--muted-foreground); margin-bottom: 6px;
+    }
+    .control-help-row { display: flex; gap: 7px; margin-bottom: 3px; }
+    .control-help-row code {
+      flex-shrink: 0; min-width: 62px;
+      font-family: var(--uk-font-monospace, monospace); font-size: 10.5px; font-weight: 700;
+      color: color-mix(in oklch, var(--primary) 80%, var(--foreground));
+    }
+    .control-help-row span { color: var(--muted-foreground); }
+    .control-help-note { margin-top: 6px; color: var(--muted-foreground); }
 
     /* Control-flow nesting chips on a trace step. */
     .nest-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
@@ -2677,6 +2704,17 @@ export class OrFlowBuilder extends LitElement {
     return s;
   }
 
+  // Edge ids carrying a validation issue (e.g. region_boundary_crossing) so the
+  // canvas can paint the offending edge red — the panel lists ids the user can't
+  // otherwise find.
+  private get _issueEdgeIds(): Set<string> {
+    const s = new Set<string>();
+    for (const i of this._validation?.issues ?? []) {
+      if (i.edge_id) s.add(i.edge_id);
+    }
+    return s;
+  }
+
   private get _activeTrace(): TraceStep[] {
     if (this._liveTrace) return this._liveTrace;
     return this._simScenario === 'fail' ? MOCK_TRACE_STEPS_FAIL : MOCK_TRACE_STEPS;
@@ -3758,6 +3796,7 @@ export class OrFlowBuilder extends LitElement {
     const NODE_W = NODE_W_PX;
     const NODE_H = NODE_H_PX;
     const isSim = this._simMode === 'sim';
+    const issueEdges = isSim ? new Set<string>() : this._issueEdgeIds;
 
     // Vertical layout — ports distribute horizontally along the bottom
     // edge of the card (matching the .node-card-ports chip row that lives
@@ -3830,7 +3869,11 @@ export class OrFlowBuilder extends LitElement {
         // our gentle control-point offsets.
         const labelX = x1 + (x2 - x1) * t;
         const labelY = y1 + (y2 - y1) * t;
-        const rawLabel = e.label ?? '';
+        // Show the source port's friendly DISPLAY label (e.g. "after loop"), not
+        // the raw port id ("done"), so a control node's continuation reads
+        // distinctly from a plain node's "done".
+        const portId = e.from_port ?? e.label ?? '';
+        const rawLabel = outputsForNode(from).find(o => o.id === portId)?.label ?? e.label ?? '';
         // Clamp label length so cross-corridor pills can't overflow into the
         // fallback column at x=320 (clearance ~72px from main column right
         // edge). 10 chars → ~82px pill at the current 7px/char heuristic.
@@ -3845,7 +3888,7 @@ export class OrFlowBuilder extends LitElement {
         return svg`
           ${isSim ? nothing : svg`<path class="edge-hit" d=${d}
             @click=${(ev: Event) => { ev.stopPropagation(); this._selectEdge(e.id); }}></path>`}
-          <path class=${cls + (selected ? ' edge--selected' : '')} d=${d} marker-end=${marker}></path>
+          <path class=${cls + (selected ? ' edge--selected' : '') + (issueEdges.has(e.id) ? ' edge--invalid' : '')} d=${d} marker-end=${marker}></path>
           ${labelText ? svg`
             <rect
               class=${'edge-label-bg edge-label-bg--' + labelKind}
@@ -3989,6 +4032,38 @@ export class OrFlowBuilder extends LitElement {
     });
   }
 
+  // In-context explainer for a control node's ports + the body-region rule (the
+  // #1 source of confusion: "which done is done?" and boundary-crossing errors).
+  private _renderControlHelp(node: FlowNode) {
+    if (!CONTROL_KINDS.has(node.kind)) return nothing;
+    const rows: { port: string; text: string }[] =
+      node.kind === 'try_catch'
+        ? [
+            { port: 'try', text: 'Drag to the first node of the protected block.' },
+            { port: 'on error', text: 'Runs if the try block hits a domain failure.' },
+            { port: 'after', text: 'Continues after the block (success OR caught).' },
+          ]
+        : node.kind === 'parallel'
+        ? [
+            { port: 'body:0…N', text: 'Each port is one branch — drag it to that branch’s first node.' },
+            { port: 'after', text: 'Continues once ALL branches finish.' },
+          ]
+        : [
+            { port: 'loop body', text: 'Drag to the first node that repeats each iteration.' },
+            { port: 'after loop', text: 'Continues once the loop ends — this is the exit.' },
+          ];
+    return html`
+      <div class="control-help">
+        <div class="control-help-head"><uk-icon icon="info" height="12" width="12"></uk-icon> How this node flows</div>
+        ${rows.map(r => html`<div class="control-help-row"><code>${r.port}</code><span>${r.text}</span></div>`)}
+        <div class="control-help-note">
+          Nodes inside the body connect <strong>only to each other</strong>; the body just ends on its
+          last node. To leave, route through <strong>${node.kind === 'try_catch' ? 'after' : 'after loop'}</strong> —
+          a body node wired straight to an outside node is a region-boundary error.
+        </div>
+      </div>`;
+  }
+
   private _renderInspector(node: FlowNode | null) {
     if (!node) {
       return html`
@@ -4075,6 +4150,8 @@ export class OrFlowBuilder extends LitElement {
             </div>`
           : nothing}
 
+        ${this._renderControlHelp(node)}
+
         ${RUNTIME_KINDS.has(node.kind)
           ? ((KIND_FIELDS[node.kind] ?? []).length
               ? (KIND_FIELDS[node.kind] ?? []).map(f => this._renderField(node, f))
@@ -4130,8 +4207,27 @@ export class OrFlowBuilder extends LitElement {
     this._condGroups = groups;
   }
 
+  // Variable names offered in condition/expr autocomplete: the init vars PLUS
+  // every variable a node in the graph defines (set_var, compute, loop item/index,
+  // try_catch error). Graph-wide (not scope-aware) — a suggestion list, not a
+  // guarantee the var is in scope at that node.
   private _varSuggestions(): string[] {
-    return MOCK_INIT_VARS.map(v => v.key);
+    const out = new Set<string>(MOCK_INIT_VARS.map(v => v.key));
+    const add = (v: unknown, fallback?: string) => {
+      if (typeof v === 'string' && v) out.add(v);
+      else if (fallback) out.add(fallback);
+    };
+    for (const n of this._nodes) {
+      const p = n.params ?? {};
+      switch (n.kind) {
+        case 'set_var': add(p['name']); break;
+        case 'compute': add(p['var']); break;
+        case 'loop_for': add(p['item_var'], 'item'); add(p['index_var'], 'index'); break;
+        case 'try_catch': add(p['error_var'], 'error'); break;
+        default: break;
+      }
+    }
+    return [...out];
   }
 
   // ----- Condition field: Visual AND/OR builder ⇄ Advanced DSL -----

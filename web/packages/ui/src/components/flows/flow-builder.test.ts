@@ -795,6 +795,21 @@ describe('OrFlowBuilder', () => {
     expect(regionOf('b') ?? '').toBe('');
   });
 
+  it('variable suggestions include vars defined by set_var/compute/loop/try nodes', async () => {
+    await withNodes([
+      N('sv', 'set_var', { params: { name: 'var_a', value_expr: '1' } }),
+      N('cp', 'compute', { params: { expr: 'num.abs(-1)', var: 'score' } }),
+      N('lf', 'loop_for', { params: { array_expr: 'items', item_var: 'cand' } }),
+      N('tc', 'try_catch', { params: { error_var: 'err' } }),
+    ]);
+    const sugg = (el as any)._varSuggestions();
+    expect(sugg).toContain('var_a');
+    expect(sugg).toContain('score');
+    expect(sugg).toContain('cand');
+    expect(sugg).toContain('index'); // loop_for default index var
+    expect(sugg).toContain('err');
+  });
+
   it('_mapApiTrace carries control-flow nesting (region/iteration/branch/caught)', async () => {
     await withNodes([N('a', 'set_var')]);
     const mapped = (el as any)._mapApiTrace([
