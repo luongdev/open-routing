@@ -160,9 +160,9 @@ describe('OrFlowBuilder', () => {
     // stored "aaaa" is not in the catalog → flagged.
     (el as any)._selectedNodeId = 'm';
     await (el as any).updateComplete;
-    const trigger = el.shadowRoot!.querySelector('.catalog-trigger');
-    expect(trigger).toBeTruthy();
-    expect(trigger!.classList.contains('catalog-trigger--unknown')).toBe(true);
+    const input = el.shadowRoot!.querySelector('.catalog-input');
+    expect(input).toBeTruthy();
+    expect(input!.classList.contains('catalog-input--unknown')).toBe(true);
   });
 
   it('Validate reports a clean graph', async () => {

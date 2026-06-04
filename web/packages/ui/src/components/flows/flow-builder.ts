@@ -1100,35 +1100,24 @@ export class OrFlowBuilder extends LitElement {
     }
     .expr-copy:hover:not([disabled]) { color: var(--foreground); }
     .expr-copy[disabled] { opacity: 0.4; cursor: default; }
-    .catalog-field { display: flex; gap: 5px; align-items: stretch; }
-    .catalog-trigger {
-      flex: 1; min-width: 0;
-      display: flex; align-items: center; justify-content: space-between; gap: 6px;
-      border: 1px solid var(--border);
-      background: var(--background);
-      color: var(--foreground);
-      border-radius: 7px;
-      padding: 6px 9px;
-      font: inherit; font-size: 13px;
-      cursor: pointer; text-align: left;
-    }
-    .catalog-trigger:hover { border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
-    .catalog-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .catalog-trigger--unknown { border-color: var(--destructive, #e5484d); }
-    .catalog-placeholder { color: var(--muted-foreground); }
+    /* Single combobox: the field is the search input; the filtered list is an
+       overlay below it (absolute so it doesn't shove the rest of the form). */
+    .catalog-combo { position: relative; }
+    .catalog-input { padding-right: 26px; }
+    .catalog-input--unknown { border-color: var(--destructive, #e5484d); }
     .catalog-clear {
-      flex-shrink: 0; border: 1px solid var(--border); background: var(--card);
-      color: var(--muted-foreground); cursor: pointer; padding: 0 7px; border-radius: 6px;
+      position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+      border: 0; background: transparent; color: var(--muted-foreground);
+      cursor: pointer; padding: 2px; border-radius: 5px;
       display: inline-flex; align-items: center;
     }
     .catalog-clear:hover { color: var(--foreground); }
-    .catalog-pop {
-      margin-top: 5px; border: 1px solid var(--border); border-radius: 8px;
-      background: var(--card); overflow: hidden;
+    .catalog-list {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+      max-height: 220px; overflow-y: auto;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--card); box-shadow: var(--shadow-md); padding: 4px;
     }
-    .catalog-search { border: 0; border-bottom: 1px dashed var(--border); border-radius: 0; }
-    .catalog-search:focus { border-bottom-color: color-mix(in oklch, var(--primary) 45%, var(--border)); }
-    .catalog-list { max-height: 200px; overflow-y: auto; padding: 4px; }
     .catalog-empty { font-size: 11px; color: var(--muted-foreground); padding: 8px; }
     .catalog-item {
       display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
@@ -3823,47 +3812,46 @@ export class OrFlowBuilder extends LitElement {
       </div>`;
   }
 
-  // Searchable catalog-reference picker: PICK an existing skill/queue/adapter
-  // code instead of typing one that won't match the catalog.
+  // Single search-as-you-type combobox for a catalog reference: the field IS the
+  // search input (type to filter the list below), so picking an existing
+  // skill/queue/adapter code is one control — no separate trigger + search box.
   private _renderCatalogField(node: FlowNode, f: FieldDef) {
     const source = f.source!;
     const list = this._catalogRefs[source];
     const current = node.params?.[f.key] === undefined ? '' : String(node.params?.[f.key]);
-    const pickerKey = `${node.id}:${f.key}`;
-    const open = this._catalogPicker === pickerKey;
-    const q = open ? this._catalogQuery.trim().toLowerCase() : '';
-    const filtered = q
+    const key = `${node.id}:${f.key}`;
+    const open = this._catalogPicker === key;
+    const selected = list.find(r => r.code === current);
+    const known = current === '' || !!selected;
+    const display = current ? (selected ? `${selected.code} — ${selected.name}` : current) : '';
+    const q = this._catalogQuery.trim().toLowerCase();
+    const filtered = open && q
       ? list.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
       : list;
-    const known = current === '' || list.some(r => r.code === current);
-    const selected = list.find(r => r.code === current);
+    const pick = (code: string | undefined) => {
+      this._updateNodeParam(node.id, f.key, code);
+      this._catalogPicker = null;
+      this._catalogQuery = '';
+    };
     return html`
       <div class="form-section">
         <label>${f.label}</label>
-        <div class="catalog-field">
-          <button class=${'catalog-trigger' + (known ? '' : ' catalog-trigger--unknown')}
+        <div class="catalog-combo">
+          <input
+            class=${'form-input catalog-input' + (known ? '' : ' catalog-input--unknown')}
+            type="text"
+            placeholder=${open || !current ? `Search ${source}s…` : ''}
             title=${known ? '' : 'Not in the catalog — pick a valid one'}
-            @click=${(e: Event) => {
-              e.stopPropagation();
-              this._catalogPicker = open ? null : pickerKey;
-              this._catalogQuery = '';
-            }}>
-            <span class=${current ? '' : 'catalog-placeholder'}>
-              ${current ? (selected ? `${selected.code} — ${selected.name}` : current) : `Select a ${source}…`}
-            </span>
-            <uk-icon icon="chevron-down" height="14" width="14"></uk-icon>
-          </button>
-          ${current
-            ? html`<button class="catalog-clear" title="Clear" @click=${(e: Event) => { e.stopPropagation(); this._updateNodeParam(node.id, f.key, undefined); }}>
+            .value=${open ? this._catalogQuery : display}
+            @focus=${() => { this._catalogPicker = key; this._catalogQuery = ''; }}
+            @input=${(e: Event) => { this._catalogPicker = key; this._catalogQuery = (e.target as HTMLInputElement).value; }}
+            @blur=${() => { setTimeout(() => { if (this._catalogPicker === key) this._catalogPicker = null; }, 120); }}>
+          ${current && !open
+            ? html`<button class="catalog-clear" title="Clear"
+                @mousedown=${(e: Event) => { e.preventDefault(); pick(undefined); }}>
                 <uk-icon icon="x" height="12" width="12"></uk-icon></button>`
             : nothing}
-        </div>
-        ${open ? html`
-          <div class="catalog-pop">
-            <input class="form-input catalog-search" type="text" placeholder=${`Search ${source}s…`}
-              .value=${this._catalogQuery}
-              @click=${(e: Event) => e.stopPropagation()}
-              @input=${(e: Event) => { this._catalogQuery = (e.target as HTMLInputElement).value; }}>
+          ${open ? html`
             <div class="catalog-list">
               ${list.length === 0
                 ? html`<div class="catalog-empty">No ${source}s in the catalog.</div>`
@@ -3871,12 +3859,12 @@ export class OrFlowBuilder extends LitElement {
                   ? html`<div class="catalog-empty">No match.</div>`
                   : filtered.map(r => html`
                       <button class=${'catalog-item' + (r.code === current ? ' on' : '')}
-                        @click=${() => { this._updateNodeParam(node.id, f.key, r.code); this._catalogPicker = null; }}>
+                        @mousedown=${(e: Event) => { e.preventDefault(); pick(r.code); }}>
                         <span class="catalog-item-code">${r.code}</span>
                         <span class="catalog-item-name">${r.name}</span>
                       </button>`)}
-            </div>
-          </div>` : nothing}
+            </div>` : nothing}
+        </div>
       </div>`;
   }
 
