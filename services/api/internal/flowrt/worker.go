@@ -10,7 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
+	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 )
+
+// errLostLease aborts continuation processing when the fenced resolve finds the
+// row was re-claimed by another worker (lease expired mid-flight) — the tx rolls
+// back so the reclaiming worker owns the side effects.
+var errLostLease = errors.New("flowrt: continuation lease lost (reclaimed)")
 
 func ts(t time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: t, Valid: true} }
 func ptrStr(s string) *string           { return &s }
@@ -42,6 +48,9 @@ func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.P
 }
 
 func (e *Endpoints) processContinuation(ctx context.Context, workerID string, c generated.Continuation) error {
+	// OrgDB preflight reads the org from ctx; the worker's ctx is cross-org, so
+	// scope it to THIS continuation's org before any org-scoped query.
+	ctx = orgkey.SetOrgID(ctx, apiUUID(c.OrgID))
 	switch c.Kind {
 	case "reservation_timeout":
 		return e.fireReservationTimeout(ctx, workerID, c)
@@ -56,8 +65,14 @@ func (e *Endpoints) processContinuation(ctx context.Context, workerID string, c 
 
 func (e *Endpoints) resolveDone(ctx context.Context, qtx *generated.Queries, c generated.Continuation, workerID string) error {
 	wid := workerID
-	_, err := qtx.ResolveContinuation(ctx, generated.ResolveContinuationParams{ID: c.ID, OrgID: c.OrgID, ClaimedBy: &wid, Status: "done"})
-	return err
+	rows, err := qtx.ResolveContinuation(ctx, generated.ResolveContinuationParams{ID: c.ID, OrgID: c.OrgID, ClaimedBy: &wid, Status: "done"})
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return errLostLease // another worker reclaimed this row mid-flight → roll back our side effects
+	}
+	return nil
 }
 
 // fireReservationTimeout: acquire the route lock FIRST (serializes against the

@@ -1,6 +1,7 @@
 package flowrt
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestWorker_ReservationTimeoutFiresAndResumes(t *testing.T) {
 	// Process with a clock well past due_at so it claims the timer. The worker is
 	// CROSS-ORG (shared test DB), so it may also resolve other tests' leftover
 	// continuations — assert on THIS route's outcome, not the global count.
-	if _, err := f.e.ProcessDueContinuations(f.ctx, sharedPool, "worker-test", time.Now().Add(time.Hour), 30*time.Second, 100); err != nil {
+	if _, err := f.e.ProcessDueContinuations(context.Background(), sharedPool, "worker-test", time.Now().Add(time.Hour), 30*time.Second, 100); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 	gres, _ := f.e.GetReservation(f.ctx, api.GetReservationRequestObject{Id: api.EntityIdPath(resID)})
@@ -50,7 +51,7 @@ func TestWorker_TimeoutAfterAcceptIsNoop(t *testing.T) {
 	if _, err := f.e.AcceptReservation(f.ctx, api.AcceptReservationRequestObject{Id: api.EntityIdPath(resID)}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if _, err := f.e.ProcessDueContinuations(f.ctx, sharedPool, "worker-test", time.Now().Add(time.Hour), 30*time.Second, 10); err != nil {
+	if _, err := f.e.ProcessDueContinuations(context.Background(), sharedPool, "worker-test", time.Now().Add(time.Hour), 30*time.Second, 10); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 	// Reservation stays accepted; route stays completed.

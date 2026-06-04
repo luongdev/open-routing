@@ -321,53 +321,9 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 	if rErr != nil {
 		return crErr("execute_failed"), nil
 	}
-
-	steps := mapTraceSteps(res.Trace)
-	stepsJSON, _ := json.Marshal(steps)
-	outcome := res.Trace.Outcome
-	pfv := int32(runtime.PlanFormatVersion)
-	if _, err := qtx.InsertTrace(ctx, generated.InsertTraceParams{
-		ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "runtime",
-		FlowID: fv.FlowID, FlowVersionID: binding.FlowVersionID, RouteRequestID: pgUUID(routeID),
-		Steps: stepsJSON, Outcome: &outcome, PlanFormatVersion: &pfv, ReadSetSnapshot: snapJSON,
-	}); err != nil {
-		return crErr("trace_persist_failed"), nil
-	}
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.created", nil)
-
-	switch {
-	case res.Suspension != nil: // offered an agent → park the route
-		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
-		curJSON, _ := json.Marshal(cur)
-		if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
-			ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgUUID(offerer.lastRes),
-		}); err != nil {
-			return crErr("suspend_failed"), nil
-		}
-		if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
-			ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
-			RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(offerer.lastRes),
-			FlowVersionID: binding.FlowVersionID, Cursor: []byte("{}"),
-			DueAt: pgtype.Timestamptz{Time: offerer.lastExp, Valid: true},
-		}); err != nil {
-			return crErr("continuation_failed"), nil
-		}
-		e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{"reservation_id": offerer.lastRes.String()})
-	case outcome == "failed":
-		fc := res.Trace.FailureCode
-		var fcp *string
-		if fc != "" {
-			fcp = &fc
-		}
-		if _, err := qtx.FinishRoute(ctx, generated.FinishRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID), Status: "failed", FailureCode: fcp}); err != nil {
-			return crErr("finish_failed"), nil
-		}
-		e.appendEvent(ctx, qtx, orgID, routeID, "route.failed", nil)
-	default: // completed (ran to a terminal with no offer)
-		if _, err := qtx.FinishRoute(ctx, generated.FinishRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID), Status: "completed"}); err != nil {
-			return crErr("finish_failed"), nil
-		}
-		e.appendEvent(ctx, qtx, orgID, routeID, "route.completed", nil)
+	if err := e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, offerer, res); err != nil {
+		return crErr("persist_failed"), nil
 	}
 
 	if err := tx.Commit(ctx); err != nil {

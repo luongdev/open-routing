@@ -38,20 +38,40 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 	case res.Suspension != nil:
 		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
 		curJSON, _ := json.Marshal(cur)
-		if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
-			ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgUUID(offerer.lastRes),
-		}); err != nil {
-			return err
+		// A reservation offer parks a reservation_timeout (named reservation, due
+		// at the offer expiry); a wait parks a wait continuation (no reservation,
+		// due at the wait's resume time). Mixing them up left a wait route stuck.
+		if offerer.offered {
+			if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+				ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgUUID(offerer.lastRes),
+			}); err != nil {
+				return err
+			}
+			if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
+				ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
+				RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(offerer.lastRes),
+				FlowVersionID: fv.ID, Cursor: []byte("{}"),
+				DueAt: pgtype.Timestamptz{Time: offerer.lastExp, Valid: true},
+			}); err != nil {
+				return err
+			}
+			e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{"reservation_id": offerer.lastRes.String()})
+		} else {
+			// wait suspension: no reservation, resume at the timer's due time.
+			if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+				ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgtype.UUID{},
+			}); err != nil {
+				return err
+			}
+			if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
+				ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "wait",
+				RouteRequestID: pgUUID(routeID), FlowVersionID: fv.ID, Cursor: []byte("{}"),
+				DueAt: pgtype.Timestamptz{Time: res.Suspension.ResumeAt, Valid: true},
+			}); err != nil {
+				return err
+			}
+			e.appendEvent(ctx, qtx, orgID, routeID, "flow.waiting", nil)
 		}
-		if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
-			ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
-			RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(offerer.lastRes),
-			FlowVersionID: fv.ID, Cursor: []byte("{}"),
-			DueAt: pgtype.Timestamptz{Time: offerer.lastExp, Valid: true},
-		}); err != nil {
-			return err
-		}
-		e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{"reservation_id": offerer.lastRes.String()})
 	case outcome == "failed":
 		fc := res.Trace.FailureCode
 		var fcp *string
@@ -97,6 +117,14 @@ func (e *Endpoints) resumeRoute(ctx context.Context, tx *db.OrgTx, qtx *generate
 	if len(route.ResumeCursor) > 0 {
 		_ = json.Unmarshal(route.ResumeCursor, &cur)
 	}
+	// Replay from the route's ORIGINAL interaction_input (not the post-suspension
+	// vars) so re-running from entry is deterministic — set_var/compute before the
+	// reservation recompute cleanly instead of double-applying already-mutated
+	// state (cross-AI review HIGH).
+	input := map[string]any{}
+	if len(route.InteractionInput) > 0 {
+		_ = json.Unmarshal(route.InteractionInput, &input)
+	}
 	routeID := apiUUID(route.ID)
 
 	resvs, err := qtx.ListReservationsByRoute(ctx, generated.ListReservationsByRouteParams{OrgID: pgUUID(orgID), RouteRequestID: route.ID})
@@ -113,7 +141,7 @@ func (e *Endpoints) resumeRoute(ctx context.Context, tx *db.OrgTx, qtx *generate
 	}
 	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, excluded: excluded, attempt: maxAttempt}
 	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer))
-	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, cur.Vars)
+	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, input)
 	if err != nil {
 		return err
 	}
