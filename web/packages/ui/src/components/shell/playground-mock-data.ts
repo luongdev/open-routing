@@ -262,6 +262,10 @@ export interface FlowNode {
   // Optional explicit outputs. If omitted, node has a single 'done'
   // success output (canvas omits the chip row to keep simple nodes clean).
   outputs?: FlowNodeOutput[];
+  // 3D-2 control flow: the body region this node belongs to. "" / undefined =
+  // top level; "<ownerId>" for a loop/try body; "<ownerId>#<i>" for parallel
+  // branch i. Mirrors backend GraphNode.region (json "region").
+  region?: string;
 }
 
 export interface FlowEdge {

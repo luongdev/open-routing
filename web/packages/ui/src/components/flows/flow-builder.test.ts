@@ -678,4 +678,88 @@ describe('OrFlowBuilder', () => {
     expect(status?.textContent).toContain('Failed to load flow');
     expect(status?.textContent).toContain('boom');
   });
+
+  // ----- 3D-2 control-flow regions -----
+  async function withNodes(nodes: any[], edges: any[] = []) {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    (el as any)._nodes = nodes;
+    (el as any)._edges = edges;
+  }
+
+  it('a loop_for body port assigns the target node to the loop region', async () => {
+    await withNodes([
+      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
+      { id: 'sv', kind: 'set_var', label: 'Set', description: '', x: 0, y: 200, params: {} },
+    ]);
+    (el as any)._connectEdge('lf', 'body', 'branch', 'sv');
+    const sv = (el as any)._nodes.find((n: any) => n.id === 'sv');
+    expect(sv.region).toBe('lf');
+  });
+
+  it('a parallel body:1 port assigns region "<id>#1"', async () => {
+    await withNodes([
+      { id: 'par', kind: 'parallel', label: 'Parallel', description: '', x: 0, y: 0, params: { branches: 2 } },
+      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 200, params: {} },
+    ]);
+    (el as any)._connectEdge('par', 'body:1', 'branch', 'a');
+    expect((el as any)._nodes.find((n: any) => n.id === 'a').region).toBe('par#1');
+  });
+
+  it('extends the body region along the chain (in-region node → next node)', async () => {
+    await withNodes([
+      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
+      { id: 'sv', kind: 'set_var', label: 'Set', description: '', x: 0, y: 200, region: 'lf', params: {} },
+      { id: 'lg', kind: 'log', label: 'Log', description: '', x: 0, y: 400, params: {} },
+    ]);
+    (el as any)._connectEdge('sv', 'done', 'success', 'lg');
+    expect((el as any)._nodes.find((n: any) => n.id === 'lg').region).toBe('lf');
+  });
+
+  it('a control node done port does NOT pull the successor into the body', async () => {
+    await withNodes([
+      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
+      { id: 'end', kind: 'end', label: 'End', description: '', x: 0, y: 200, params: {} },
+    ]);
+    (el as any)._connectEdge('lf', 'done', 'success', 'end');
+    expect((el as any)._nodes.find((n: any) => n.id === 'end').region ?? '').toBe('');
+  });
+
+  it('eject removes a node and its in-region descendants from the body', async () => {
+    await withNodes(
+      [
+        { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
+        { id: 'a', kind: 'set_var', label: 'A', description: '', x: 0, y: 200, region: 'lf', params: {} },
+        { id: 'b', kind: 'log', label: 'B', description: '', x: 0, y: 400, region: 'lf', params: {} },
+      ],
+      [{ id: 'e', from: 'a', to: 'b', from_port: 'done', label: 'done' }],
+    );
+    (el as any)._ejectFromRegion('a');
+    expect((el as any)._nodes.find((n: any) => n.id === 'a').region).toBeUndefined();
+    expect((el as any)._nodes.find((n: any) => n.id === 'b').region).toBeUndefined();
+  });
+
+  it('deleting a control node clears its members’ region membership', async () => {
+    await withNodes([
+      { id: 'par', kind: 'parallel', label: 'P', description: '', x: 0, y: 0, params: {} },
+      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 200, region: 'par#0', params: {} },
+      { id: 'b', kind: 'log', label: 'B', description: '', x: 0, y: 400, region: 'par#1', params: {} },
+    ]);
+    (el as any)._deleteNode('par');
+    expect((el as any)._nodes.find((n: any) => n.id === 'a').region).toBeUndefined();
+    expect((el as any)._nodes.find((n: any) => n.id === 'b').region).toBeUndefined();
+  });
+
+  it('_serializeGraph carries node.region through to the backend shape', async () => {
+    await withNodes([
+      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
+      { id: 'sv', kind: 'set_var', label: 'Set', description: '', x: 0, y: 200, region: 'lf', params: { name: 'x', value_expr: '1' } },
+    ]);
+    const g = (el as any)._serializeGraph();
+    const sv = g.nodes.find((n: any) => n.id === 'sv');
+    expect(sv.region).toBe('lf');
+    expect(sv.type).toBe('set_var');
+  });
 });

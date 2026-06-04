@@ -2,9 +2,53 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
+
+// The builder serializes nodes as {id,type,config,region} and edges as
+// {id,from,to,label}. This proves that exact wire shape — including node.region
+// membership and a "body" edge — parses, validates clean, and simulates: the
+// loop_for body runs once per array element (3D-2 Phase 4 contract).
+func TestWireFormat_LoopForFromBuilderJSON(t *testing.T) {
+	const graphJSON = `{
+		"nodes": [
+			{"id":"t","type":"trigger"},
+			{"id":"lf","type":"loop_for","config":{"array_expr":"items","max_iter":10}},
+			{"id":"sv","type":"set_var","region":"lf","config":{"name":"seen","value_expr":"item"}},
+			{"id":"end","type":"end"}
+		],
+		"edges": [
+			{"id":"e1","from":"t","to":"lf","label":""},
+			{"id":"e2","from":"lf","to":"sv","label":"body"},
+			{"id":"e3","from":"lf","to":"end","label":"done"}
+		]
+	}`
+	g := &Graph{}
+	if err := json.Unmarshal([]byte(graphJSON), g); err != nil {
+		t.Fatalf("unmarshal builder graph: %v", err)
+	}
+	if issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil); err != nil || len(issues) != 0 {
+		t.Fatalf("builder graph invalid: err=%v issues=%+v", err, issues)
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	tr, err := Simulate(context.Background(), DefaultRegistry(), plan, SimInput{
+		Input: map[string]any{"items": []any{"a", "b", "c"}}, ClockStart: time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("simulate: %v", err)
+	}
+	if tr.Outcome != "completed" {
+		t.Fatalf("outcome=%q, want completed", tr.Outcome)
+	}
+	if got := countKind(tr, NodeSetVar); got != 3 {
+		t.Fatalf("loop body ran %d times, want 3", got)
+	}
+}
 
 func simRun(t *testing.T, g *Graph, input map[string]any) (Trace, error) {
 	t.Helper()

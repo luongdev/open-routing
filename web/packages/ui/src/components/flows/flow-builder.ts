@@ -186,13 +186,20 @@ const KIND_PROPS: Record<FlowNodeKind, { tone: PaletteEntry['tone']; icon: strin
 })();
 
 // ── Runtime contract registries (Phase 0) ──────────────────────────────────
-// The 12 node kinds the v0.2 backend runtime supports. Only these are
-// draggable; authoring any other kind would validate as `unknown_node_kind`.
+// The node kinds the v0.2 backend runtime supports. Only these are draggable;
+// authoring any other kind would validate as `unknown_node_kind`.
 const RUNTIME_KINDS = new Set<FlowNodeKind>([
   'trigger', 'if_else', 'switch_case', 'wait', 'match_skill', 'filter',
   'route_queue', 'reservation', 'fallback', 'effect', 'log', 'end',
   'set_var', 'compute',
+  // 3D-2 control flow (region-owning): a `body`/`body:N` port declares the
+  // body region entry; `done`/`catch` continue the top-level flow.
+  'loop_for', 'loop_while', 'parallel', 'try_catch',
 ]);
+
+// Control-flow kinds own a body region (their `body`/`body:N` port enters a
+// sub-graph whose member nodes carry node.region).
+const CONTROL_KINDS = new Set<FlowNodeKind>(['loop_for', 'loop_while', 'parallel', 'try_catch']);
 
 const DONE_OUT: FlowNodeOutput[] = [{ id: 'done', label: 'done', kind: 'success' }];
 
@@ -219,11 +226,36 @@ const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
   end: [],
   set_var: DONE_OUT,
   compute: DONE_OUT,
+  // Control flow: `body`/`catch` ports are region/continuation declarations.
+  loop_for: [{ id: 'body', label: 'body', kind: 'branch' }, { id: 'done', label: 'done', kind: 'success' }],
+  loop_while: [{ id: 'body', label: 'body', kind: 'branch' }, { id: 'done', label: 'done', kind: 'success' }],
+  try_catch: [
+    { id: 'body', label: 'body', kind: 'branch' },
+    { id: 'catch', label: 'catch', kind: 'error' },
+    { id: 'done', label: 'done', kind: 'success' },
+  ],
+  // parallel is dynamic (body:0..body:N) — see outputsForNode.
 };
+
+// parallel branch count (body:0..body:N-1). Bounded so the port row stays legible.
+const PARALLEL_MIN_BRANCHES = 2;
+const PARALLEL_MAX_BRANCHES = 6;
+function parallelBranchCount(params?: FlowNode['params']): number {
+  const n = Number(params?.['branches'] ?? PARALLEL_MIN_BRANCHES);
+  if (!Number.isFinite(n)) return PARALLEL_MIN_BRANCHES;
+  return Math.min(PARALLEL_MAX_BRANCHES, Math.max(PARALLEL_MIN_BRANCHES, Math.floor(n)));
+}
 
 // switch_case ports are dynamic (one per case + default); everything else is
 // static from KIND_OUTPUTS. Used to (re)seed node.outputs.
 function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput[] {
+  if (node.kind === 'parallel') {
+    const n = parallelBranchCount(node.params);
+    return [
+      ...Array.from({ length: n }, (_, i) => ({ id: `body:${i}`, label: `body:${i}`, kind: 'branch' as const })),
+      { id: 'done', label: 'done', kind: 'success' as const },
+    ];
+  }
   if (node.kind === 'switch_case') {
     const raw = Array.isArray(node.params?.cases) ? (node.params!.cases as unknown[]) : [];
     // Drop a user case literally named "default" — it would collide with the
@@ -272,6 +304,18 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   end: [{ key: 'outcome', label: 'Outcome', type: 'text' }],
   set_var: [{ key: 'name', label: 'Variable name', type: 'text' }, { key: 'value_expr', label: 'Value (expression)', type: 'expr' }],
   compute: [{ key: 'expr', label: 'Expression', type: 'expr' }, { key: 'var', label: 'Store in variable (optional)', type: 'text' }],
+  loop_for: [
+    { key: 'array_expr', label: 'Array (expression)', type: 'expr' },
+    { key: 'item_var', label: 'Item variable', type: 'text' },
+    { key: 'index_var', label: 'Index variable', type: 'text' },
+    { key: 'max_iter', label: 'Max iterations', type: 'number' },
+  ],
+  loop_while: [
+    { key: 'cond_expr', label: 'While condition', type: 'condition' },
+    { key: 'max_iter', label: 'Max iterations', type: 'number' },
+  ],
+  parallel: [{ key: 'branches', label: 'Branches', type: 'number' }],
+  try_catch: [{ key: 'error_var', label: 'Error variable', type: 'text' }],
 };
 
 // Fraction (0..1) of card WIDTH where output port `idx` sits along the
@@ -788,6 +832,46 @@ export class OrFlowBuilder extends LitElement {
       stroke-width: 1.5;
     }
     .node-input-anchor--active { fill: var(--success); stroke: var(--success); }
+
+    /* ----- Control-flow body region frames ----- */
+    .region-frame {
+      fill: color-mix(in oklch, var(--primary) 5%, transparent);
+      stroke: color-mix(in oklch, var(--primary) 40%, var(--border));
+      stroke-width: 1.5;
+      stroke-dasharray: 6 4;
+    }
+    .region--warn .region-frame {
+      fill: color-mix(in oklch, var(--warning) 6%, transparent);
+      stroke: color-mix(in oklch, var(--warning) 45%, var(--border));
+    }
+    .region-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: color-mix(in oklch, var(--primary) 75%, var(--foreground));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .region--warn .region-label { color: color-mix(in oklch, var(--warning) 80%, var(--foreground)); }
+    .region-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      background: color-mix(in oklch, var(--primary) 7%, var(--card));
+      border: 1px solid color-mix(in oklch, var(--primary) 22%, var(--border));
+      color: var(--foreground);
+    }
+    .region-banner span { display: inline-flex; align-items: center; gap: 5px; }
 
     /* ----- Validation panel (docked in the inspector) ----- */
     .validation-panel {
@@ -3124,6 +3208,58 @@ export class OrFlowBuilder extends LitElement {
       return isLinear ? false : (ed.from_port ?? ed.label ?? 'done') !== fromPort;
     });
     this._edges = [...kept, { id: this._genEdgeId(), from: fromId, to: toId, from_port: fromPort, label: fromPort, branch }];
+    this._assignRegionOnConnect(fromNode, fromPort, toId);
+    this._markDirty();
+  }
+
+  // Region id a control node's body port enters: loops/try use the owner id;
+  // parallel's body:N uses "<owner>#<N>" (matches backend compile.go).
+  private _regionIdForPort(ownerId: string, port: string): string | null {
+    if (port === 'body') return ownerId;
+    const m = /^body:(\d+)$/.exec(port);
+    return m ? `${ownerId}#${m[1]}` : null;
+  }
+
+  // Membership is explicit, set as the body is wired: a body/body:N edge puts the
+  // target IN that region; a normal flow edge FROM an in-region node extends the
+  // body chain (the target joins the same region). Both stamp node.region, which
+  // the backend requires on every body node.
+  private _assignRegionOnConnect(fromNode: FlowNode | undefined, fromPort: string, toId: string): void {
+    if (!fromNode) return;
+    let region: string | null = null;
+    if (CONTROL_KINDS.has(fromNode.kind)) {
+      // A body/body:N port ENTERS the control's body; done/catch CONTINUE within
+      // whatever region the control node itself lives in (top level or an
+      // enclosing body — nested control).
+      region = this._regionIdForPort(fromNode.id, fromPort) ?? fromNode.region ?? null;
+    } else if (fromNode.region) {
+      // A normal in-region node's outgoing flow stays in the same body.
+      region = fromNode.region;
+    }
+    if (!region) return;
+    this._nodes = this._nodes.map(n =>
+      n.id === toId && (n.region ?? '') === '' ? { ...n, region: region! } : n
+    );
+  }
+
+  // Clear a node (and its in-region flow descendants) out of its body region.
+  private _ejectFromRegion(id: string): void {
+    const node = this._nodes.find(n => n.id === id);
+    if (!node || !node.region) return;
+    const region = node.region;
+    const succ = new Map<string, string[]>();
+    for (const e of this._edges) (succ.get(e.from) ?? succ.set(e.from, []).get(e.from)!).push(e.to);
+    const drop = new Set<string>();
+    const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (drop.has(cur)) continue;
+      const n = this._nodes.find(x => x.id === cur);
+      if (!n || n.region !== region) continue;
+      drop.add(cur);
+      for (const nxt of succ.get(cur) ?? []) stack.push(nxt);
+    }
+    this._nodes = this._nodes.map(n => (drop.has(n.id) ? { ...n, region: undefined } : n));
     this._markDirty();
   }
 
@@ -3147,8 +3283,17 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private _deleteNode(id: string): void {
+    const deleted = this._nodes.find(n => n.id === id);
     this._nodes = this._nodes.filter(n => n.id !== id);
     this._edges = this._edges.filter(e => e.from !== id && e.to !== id);
+    // Deleting a control node orphans its body region — clear membership on every
+    // node that belonged to it (id or id#N), else they'd validate as boundary
+    // crossings into a non-existent region.
+    if (deleted && CONTROL_KINDS.has(deleted.kind)) {
+      this._nodes = this._nodes.map(n =>
+        n.region && (n.region === id || n.region.startsWith(id + '#')) ? { ...n, region: undefined } : n
+      );
+    }
     if (this._selectedNodeId === id) this._selectedNodeId = null;
     this._markDirty();
   }
@@ -3434,6 +3579,51 @@ export class OrFlowBuilder extends LitElement {
       case 'end':          return '';
       default:             return '';
     }
+  }
+
+  // Human label + tone for a region id ("<owner>" or "<owner>#<i>"): the owning
+  // control node's label, plus the branch index for parallel.
+  private _regionMeta(regionId: string): { label: string; tone: string } {
+    const hash = regionId.indexOf('#');
+    const ownerId = hash >= 0 ? regionId.slice(0, hash) : regionId;
+    const branch = hash >= 0 ? regionId.slice(hash + 1) : '';
+    const owner = this._nodes.find(n => n.id === ownerId);
+    const name = owner?.label ?? owner?.kind ?? 'region';
+    const tone = owner?.kind === 'try_catch' ? 'warn' : 'control';
+    return { label: branch === '' ? name : `${name} · branch ${branch}`, tone };
+  }
+
+  // A tinted frame auto-drawn behind each body region's member nodes (bounding
+  // box). Membership is explicit (node.region); the frame is purely visual so it
+  // reads as a container without container hit-testing. Sim mode hides them.
+  private _renderRegions(nodes: FlowNode[]) {
+    if (this._simMode === 'sim') return nothing;
+    const groups = new Map<string, FlowNode[]>();
+    for (const n of nodes) {
+      if (!n.region) continue;
+      (groups.get(n.region) ?? groups.set(n.region, []).get(n.region)!).push(n);
+    }
+    if (groups.size === 0) return nothing;
+    const PAD = 22;
+    const HEAD = 26;
+    const frames = [...groups.entries()].map(([regionId, members]) => {
+      const x0 = Math.min(...members.map(m => m.x)) - PAD;
+      const y0 = Math.min(...members.map(m => m.y)) - PAD - HEAD;
+      const x1 = Math.max(...members.map(m => m.x + NODE_W_PX)) + PAD;
+      const y1 = Math.max(...members.map(m => m.y + NODE_H_PX)) + PAD;
+      const { label, tone } = this._regionMeta(regionId);
+      return svg`
+        <g class=${'region region--' + tone}>
+          <rect class="region-frame" x=${x0} y=${y0} width=${x1 - x0} height=${y1 - y0} rx="14"></rect>
+          <foreignObject x=${x0 + 10} y=${y0 + 5} width=${Math.max(80, x1 - x0 - 20)} height="20">
+            <div xmlns="http://www.w3.org/1999/xhtml" class="region-label">
+              <uk-icon icon=${tone === 'warn' ? 'shield' : 'repeat'} height="11" width="11"></uk-icon>
+              <span>${label}</span>
+            </div>
+          </foreignObject>
+        </g>`;
+    });
+    return svg`${frames}`;
   }
 
   private _renderEdges(nodes: FlowNode[], edges: FlowEdge[]) {
@@ -3750,6 +3940,13 @@ export class OrFlowBuilder extends LitElement {
             ${node.description}
           </div>
         </div>
+
+        ${node.region
+          ? html`<div class="region-banner">
+              <span><uk-icon icon="git-branch" height="12" width="12"></uk-icon> In body of <strong>${this._regionMeta(node.region).label}</strong></span>
+              <button class="linkish" @click=${() => this._ejectFromRegion(node.id)}>Remove from body</button>
+            </div>`
+          : nothing}
 
         ${RUNTIME_KINDS.has(node.kind)
           ? ((KIND_FIELDS[node.kind] ?? []).length
@@ -4079,10 +4276,30 @@ export class OrFlowBuilder extends LitElement {
       else params[key] = value;
       const next = { ...n, params: params as FlowNode['params'] };
       if (n.kind === 'switch_case' && key === 'cases') next.outputs = outputsForNode(next);
+      if (n.kind === 'parallel' && key === 'branches') next.outputs = outputsForNode(next);
       return next;
     });
-    if (key === 'cases') this._edges = this._pruneEdges(this._nodes, this._edges);
+    if (key === 'cases' || key === 'branches') {
+      // Reducing branches drops the now-missing body:N ports; clear membership
+      // of nodes orphaned into a region that no longer exists.
+      this._edges = this._pruneEdges(this._nodes, this._edges);
+      this._dropOrphanedRegions();
+    }
     this._markDirty();
+  }
+
+  // Clear node.region for any region whose owning port no longer exists (e.g.
+  // a parallel branch count was reduced below that branch index).
+  private _dropOrphanedRegions(): void {
+    const valid = new Set<string>();
+    for (const n of this._nodes) {
+      if (!CONTROL_KINDS.has(n.kind)) continue;
+      for (const o of outputsForNode(n)) {
+        const r = this._regionIdForPort(n.id, o.id);
+        if (r) valid.add(r);
+      }
+    }
+    this._nodes = this._nodes.map(n => (n.region && !valid.has(n.region) ? { ...n, region: undefined } : n));
   }
 
   override render() {
@@ -4194,6 +4411,7 @@ export class OrFlowBuilder extends LitElement {
           >
             <rect class="canvas-bg" x="0" y="0" width="100%" height="100%" fill="transparent"></rect>
             <g class="viewport" transform=${`translate(${this._panX} ${this._panY}) scale(${this._zoom})`}>
+              ${this._renderRegions(nodes)}
               ${this._renderEdges(nodes, edges)}
               ${this._renderNodes(nodes)}
               ${this._edgeDraft ? this._renderEdgeDraft() : nothing}
