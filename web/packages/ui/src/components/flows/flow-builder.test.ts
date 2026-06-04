@@ -188,6 +188,17 @@ describe('OrFlowBuilder', () => {
     expect(pasted2.x).toBe(src.x + 60);
   });
 
+  it('fits the viewport to the graph on load (nodes are framed, not off-screen)', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    const panX0 = (el as any)._panX;
+    await settle();
+    expect((el as any)._fittedOnLoad).toBe(true); // fit-on-load fired
+    // pan was recomputed from the default to frame the nodes
+    expect((el as any)._panX).not.toBe(panX0);
+  });
+
   it('Validate reports a clean graph', async () => {
     const mockPost = vi.fn().mockResolvedValue({ data: { valid: true, issues: [] }, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';

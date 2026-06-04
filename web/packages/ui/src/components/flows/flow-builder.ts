@@ -2276,6 +2276,7 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private _wheelBound = false;
+  private _fittedOnLoad = false;
   override updated(): void {
     // The canvas SVG only exists once the flow has loaded (the first render is
     // the pending/error state), so bind wheel here, not in firstUpdated — and
@@ -2288,11 +2289,16 @@ export class OrFlowBuilder extends LitElement {
       this._catalogRefsFetched = true;
       void this._fetchCatalogRefs();
     }
-    if (this._wheelBound) return;
     const svg = this._svgEl();
-    if (svg) {
+    if (svg && !this._wheelBound) {
       svg.addEventListener('wheel', this._onWheel, { passive: false });
       this._wheelBound = true;
+    }
+    // Frame the graph once the flow has loaded — otherwise a reload leaves the
+    // viewport at its default pan and the saved nodes can sit off-screen.
+    if (svg && !this._fittedOnLoad && this._loaded && this._nodes.length > 0) {
+      this._fittedOnLoad = true;
+      this._fitView();
     }
   }
 
