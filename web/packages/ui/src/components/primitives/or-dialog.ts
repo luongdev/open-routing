@@ -23,6 +23,9 @@ export class OrDialog extends LitElement {
       align-items: flex-start;
       justify-content: center;
     }
+    /* Vertically centered (small confirm dialogs); tall content still scrolls. */
+    :host([centered]) .or-dialog-overlay { align-items: center; }
+    :host([centered]) .uk-modal-dialog { margin: auto; }
     .uk-modal-dialog {
       box-sizing: border-box;
       margin: 2rem auto;
@@ -57,6 +60,7 @@ export class OrDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ type: String, reflect: true }) size: 'sm' | 'md' | 'lg' | 'xl' = 'md';
   @property({ type: Boolean, attribute: 'prevent-close' }) preventClose = false;
+  @property({ type: Boolean, reflect: true }) centered = false;
 
   private _previouslyFocused: Element | null = null;
 

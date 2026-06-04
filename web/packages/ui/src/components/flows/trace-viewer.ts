@@ -222,6 +222,16 @@ export class OrTraceViewer extends LitElement {
     }
     .step-row-status--ok      { background: color-mix(in oklch, var(--success) 18%, transparent); color: var(--success); }
     .step-row-status--skipped { background: var(--muted); color: var(--muted-foreground); }
+    .step-row-caught {
+      margin-left: 6px;
+      padding: 0 5px;
+      border-radius: 8px;
+      font-size: 9px;
+      font-weight: 700;
+      vertical-align: middle;
+      background: color-mix(in oklch, var(--warning) 18%, transparent);
+      color: color-mix(in oklch, var(--warning) 85%, var(--foreground));
+    }
     .step-row-status--fail    { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
     .step-row-status--timeout { background: color-mix(in oklch, var(--warning) 22%, transparent); color: var(--warning); }
 
@@ -514,8 +524,9 @@ export class OrTraceViewer extends LitElement {
                   <uk-icon icon=${iconFor(s.node_kind)} height="11" width="11"></uk-icon>
                 </span>
                 <div class="step-row-text">
-                  <span class="step-row-name">${s.label}</span>
-                  <span class="step-row-meta">+${s.started_at_ms.toFixed(1)}ms · ${s.duration_ms.toFixed(1)}ms</span>
+                  <span class="step-row-name">${s.label}${s.caught ? html`<span class="step-row-caught" title="Caught by try/catch">caught</span>` : ''}</span>
+                  <span class="step-row-meta">+${s.started_at_ms.toFixed(1)}ms · ${s.duration_ms.toFixed(1)}ms${
+                    s.iteration != null ? ` · iter ${s.iteration}` : ''}${s.branch != null ? ` · branch ${s.branch}` : ''}</span>
                 </div>
                 <span class="step-row-status step-row-status--${s.status}">
                   <uk-icon icon=${this._statusIcon(s.status)} height="10" width="10"></uk-icon>

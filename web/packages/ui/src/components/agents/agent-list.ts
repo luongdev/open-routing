@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { confirmDelete } from '../primitives/confirm.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
@@ -308,7 +309,7 @@ export class OrAgentList extends LitElement {
       return;
     }
     if (action === 'delete') {
-      const ok = window.confirm(`Delete agent "${row.name}"? This cannot be undone.`);
+      const ok = await confirmDelete(row.name, 'agent');
       if (!ok) return;
       await this.client.DELETE('/v1/orgs/{org_id}/agents/{id}' as never, {
         params: { path: { org_id: this.orgId, id: row.id } },

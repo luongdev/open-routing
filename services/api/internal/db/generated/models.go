@@ -184,18 +184,21 @@ type Reservation struct {
 }
 
 type RouteRequest struct {
-	ID               pgtype.UUID        `json:"id"`
-	OrgID            pgtype.UUID        `json:"org_id"`
-	Channel          string             `json:"channel"`
-	EntryCode        string             `json:"entry_code"`
-	FlowVersionID    pgtype.UUID        `json:"flow_version_id"`
-	FlowCode         *string            `json:"flow_code"`
-	InteractionInput []byte             `json:"interaction_input"`
-	Status           string             `json:"status"`
-	FailureCode      *string            `json:"failure_code"`
-	ReadSetSnapshot  []byte             `json:"read_set_snapshot"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	OrgID                pgtype.UUID        `json:"org_id"`
+	Channel              string             `json:"channel"`
+	EntryCode            string             `json:"entry_code"`
+	FlowVersionID        pgtype.UUID        `json:"flow_version_id"`
+	FlowCode             *string            `json:"flow_code"`
+	InteractionInput     []byte             `json:"interaction_input"`
+	Status               string             `json:"status"`
+	FailureCode          *string            `json:"failure_code"`
+	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
+	ResumeCursor         []byte             `json:"resume_cursor"`
+	CurrentReservationID pgtype.UUID        `json:"current_reservation_id"`
+	RunSeq               int32              `json:"run_seq"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
 type RuntimeEvent struct {
@@ -224,12 +227,18 @@ type Skill struct {
 }
 
 type Trace struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrgID          pgtype.UUID        `json:"org_id"`
-	RouteRequestID pgtype.UUID        `json:"route_request_id"`
-	Kind           string             `json:"kind"`
-	FlowVersionID  pgtype.UUID        `json:"flow_version_id"`
-	Steps          []byte             `json:"steps"`
-	Outcome        *string            `json:"outcome"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	OrgID                pgtype.UUID        `json:"org_id"`
+	RouteRequestID       pgtype.UUID        `json:"route_request_id"`
+	Kind                 string             `json:"kind"`
+	FlowVersionID        pgtype.UUID        `json:"flow_version_id"`
+	Steps                []byte             `json:"steps"`
+	Outcome              *string            `json:"outcome"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	FlowID               pgtype.UUID        `json:"flow_id"`
+	CompiledPlanSnapshot []byte             `json:"compiled_plan_snapshot"`
+	PlanFormatVersion    *int32             `json:"plan_format_version"`
+	SimulationInput      []byte             `json:"simulation_input"`
+	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
+	GraphHash            *string            `json:"graph_hash"`
 }

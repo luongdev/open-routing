@@ -336,6 +336,8 @@ func (e RouteRequestStatus) Valid() bool {
 // Defines values for RoutingFailureCode.
 const (
 	InvalidGraph                  RoutingFailureCode = "invalid_graph"
+	InvalidLoopInput              RoutingFailureCode = "invalid_loop_input"
+	LoopLimit                     RoutingFailureCode = "loop_limit"
 	MissingCatalogReference       RoutingFailureCode = "missing_catalog_reference"
 	MissingPublishedFlow          RoutingFailureCode = "missing_published_flow"
 	MultipleActiveBindings        RoutingFailureCode = "multiple_active_bindings"
@@ -347,6 +349,10 @@ const (
 func (e RoutingFailureCode) Valid() bool {
 	switch e {
 	case InvalidGraph:
+		return true
+	case InvalidLoopInput:
+		return true
+	case LoopLimit:
 		return true
 	case MissingCatalogReference:
 		return true
@@ -365,15 +371,18 @@ func (e RoutingFailureCode) Valid() bool {
 
 // Defines values for SimulateScriptedReservationOutcomeOutcome.
 const (
-	Accepted SimulateScriptedReservationOutcomeOutcome = "accepted"
-	Rejected SimulateScriptedReservationOutcomeOutcome = "rejected"
-	Timeout  SimulateScriptedReservationOutcomeOutcome = "timeout"
+	Accepted    SimulateScriptedReservationOutcomeOutcome = "accepted"
+	NoCandidate SimulateScriptedReservationOutcomeOutcome = "no_candidate"
+	Rejected    SimulateScriptedReservationOutcomeOutcome = "rejected"
+	Timeout     SimulateScriptedReservationOutcomeOutcome = "timeout"
 )
 
 // Valid indicates whether the value is a known member of the SimulateScriptedReservationOutcomeOutcome enum.
 func (e SimulateScriptedReservationOutcomeOutcome) Valid() bool {
 	switch e {
 	case Accepted:
+		return true
+	case NoCandidate:
 		return true
 	case Rejected:
 		return true
@@ -1039,6 +1048,21 @@ type ErrorResponse struct {
 	RequestId *UUIDv7 `json:"request_id,omitempty"`
 }
 
+// ExprFunction One condition-DSL function (str.*, num.*, arr.*, logic.*, date.*).
+type ExprFunction struct {
+	// Arity Fixed argument count, or -1 for variadic.
+	Arity     int    `json:"arity"`
+	Name      string `json:"name"`
+	Ns        string `json:"ns"`
+	Signature string `json:"signature"`
+	Summary   string `json:"summary"`
+}
+
+// ExprFunctionCatalog defines model for ExprFunctionCatalog.
+type ExprFunctionCatalog struct {
+	Functions []ExprFunction `json:"functions"`
+}
+
 // Flow A routing flow draft. The graph is the canonical authoring artifact (UI graph is the source of truth). `version` is the optimistic-lock revision of the draft, distinct from the immutable published versions.
 type Flow struct {
 	// Code User-facing canonical identifier. Required, immutable after create. Composite UNIQUE (org_id, code).
@@ -1530,9 +1554,21 @@ type SimulateFlowRequest struct {
 	VirtualClockStart *time.Time `json:"virtual_clock_start,omitempty"`
 }
 
-// SimulateScriptedReservationOutcome A scripted reservation outcome for deterministic simulation (applied in order).
+// SimulateFlowResponse A simulation trace plus the resolved virtual clock start (so replay is exact even when the request omitted it).
+type SimulateFlowResponse struct {
+	// Trace An ordered runtime or simulation trace explaining a routing outcome.
+	Trace Trace `json:"trace"`
+
+	// VirtualClockStart The virtual clock origin actually used (echoed from the request, or server-chosen when omitted).
+	VirtualClockStart time.Time `json:"virtual_clock_start"`
+}
+
+// SimulateScriptedReservationOutcome A scripted reservation outcome for deterministic simulation. With `node_id` set it pins THAT reservation node's result port directly (per-node, order-independent). Without `node_id`, entries form an ordered per-offer queue (legacy).
 type SimulateScriptedReservationOutcome struct {
-	AgentId *UUIDv7                                   `json:"agent_id,omitempty"`
+	AgentId *UUIDv7 `json:"agent_id,omitempty"`
+
+	// NodeId When set, this outcome is the result port of that reservation node.
+	NodeId  *string                                   `json:"node_id,omitempty"`
 	Outcome SimulateScriptedReservationOutcomeOutcome `json:"outcome"`
 }
 
@@ -1577,10 +1613,22 @@ type Skill struct {
 	Version   int        `json:"version"`
 }
 
+// SubmitRouteInput A captured value submitted to a route waiting at an interactive-input node.
+type SubmitRouteInput struct {
+	// NodeId The input node to answer. Optional — defaults to the node the route is currently parked at (its resume cursor).
+	NodeId *string `json:"node_id,omitempty"`
+
+	// Value The captured value (digits, text, "approved"/"rejected", a survey score, …).
+	Value interface{} `json:"value"`
+}
+
 // Trace An ordered runtime or simulation trace explaining a routing outcome.
 type Trace struct {
-	CreatedAt     *time.Time `json:"created_at,omitempty"`
-	FlowVersionId *UUIDv7    `json:"flow_version_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// FlowId Set for simulation traces (which pin a draft, not a published version).
+	FlowId        *UUIDv7 `json:"flow_id,omitempty"`
+	FlowVersionId *UUIDv7 `json:"flow_version_id,omitempty"`
 
 	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
 	// Version must be 7 or higher; UUIDv4 and lower are rejected.
@@ -1602,16 +1650,32 @@ type TraceKind string
 
 // TraceStep defines model for TraceStep.
 type TraceStep struct {
-	CatalogRefs  *[]string               `json:"catalog_refs,omitempty"`
-	DurationMs   *int                    `json:"duration_ms,omitempty"`
+	// Branch Zero-based branch index for steps inside a parallel branch.
+	Branch      *int      `json:"branch,omitempty"`
+	CatalogRefs *[]string `json:"catalog_refs,omitempty"`
+
+	// Caught True when this step's domain failure was caught by an enclosing try_catch.
+	Caught *bool `json:"caught,omitempty"`
+
+	// DurationMs Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation.
+	DurationMs   *float32                `json:"duration_ms,omitempty"`
 	EffectStatus *string                 `json:"effect_status,omitempty"`
 	Error        *string                 `json:"error,omitempty"`
 	Index        int                     `json:"index"`
 	Input        *map[string]interface{} `json:"input,omitempty"`
-	NodeId       string                  `json:"node_id"`
-	NodeKind     string                  `json:"node_kind"`
-	Output       *map[string]interface{} `json:"output,omitempty"`
-	Status       TraceStepStatus         `json:"status"`
+
+	// Iteration Zero-based loop iteration index for steps inside a loop_for/loop_while body.
+	Iteration *int                    `json:"iteration,omitempty"`
+	NodeId    string                  `json:"node_id"`
+	NodeKind  string                  `json:"node_kind"`
+	Output    *map[string]interface{} `json:"output,omitempty"`
+
+	// Port The output port the node took (e.g. true/false, accepted/timeout).
+	Port *string `json:"port,omitempty"`
+
+	// Region The id of the control-flow body region this step ran inside (loop/parallel/try_catch), if any.
+	Region *string         `json:"region,omitempty"`
+	Status TraceStepStatus `json:"status"`
 }
 
 // TraceStepStatus defines model for TraceStep.Status.
@@ -2087,6 +2151,11 @@ type ListFlowsParams struct {
 // UpdateFlow409JSONResponseBodyError defines parameters for UpdateFlow.
 type UpdateFlow409JSONResponseBodyError string
 
+// ListFlowTracesParams defines parameters for ListFlowTraces.
+type ListFlowTracesParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListQueuesParams defines parameters for ListQueues.
 type ListQueuesParams struct {
 	// Cursor Opaque pagination cursor returned as `next_cursor` from the previous list response. Omit to fetch the first page.
@@ -2226,6 +2295,9 @@ type UpdateQueueJSONRequestBody = UpdateQueueRequest
 
 // CreateRouteRequestJSONRequestBody defines body for CreateRouteRequest for application/json ContentType.
 type CreateRouteRequestJSONRequestBody = CreateRouteRequest
+
+// SubmitRouteInputJSONRequestBody defines body for SubmitRouteInput for application/json ContentType.
+type SubmitRouteInputJSONRequestBody = SubmitRouteInput
 
 // CreateSkillJSONRequestBody defines body for CreateSkill for application/json ContentType.
 type CreateSkillJSONRequestBody = CreateSkillRequest

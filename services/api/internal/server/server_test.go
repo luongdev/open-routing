@@ -35,6 +35,9 @@ var flowrtStub = flowrt.New(flowrt.Deps{})
 func (noopStrictStub) GetHealthz(context.Context, api.GetHealthzRequestObject) (api.GetHealthzResponseObject, error) {
 	return api.GetHealthz200JSONResponse(api.HealthResponse{Status: api.Alive}), nil
 }
+func (noopStrictStub) GetExprFunctions(context.Context, api.GetExprFunctionsRequestObject) (api.GetExprFunctionsResponseObject, error) {
+	return api.GetExprFunctions200JSONResponse(api.ExprFunctionCatalog{}), nil
+}
 
 func notImpl() api.InternalServerErrorJSONResponse {
 	return api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "not_implemented_in_test_stub"}

@@ -260,6 +260,36 @@ func (q *Queries) ListFlowsIncludingDisabled(ctx context.Context, arg ListFlowsI
 	return items, nil
 }
 
+const lockFlowForPublish = `-- name: LockFlowForPublish :one
+SELECT version, enabled
+FROM flows
+WHERE id = $1 AND org_id = $2
+FOR UPDATE
+`
+
+type LockFlowForPublishParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+type LockFlowForPublishRow struct {
+	Version int32 `json:"version"`
+	Enabled bool  `json:"enabled"`
+}
+
+// SELECT ... FOR UPDATE inside the publish tx: the draft `version` is read +
+// the row locked so a concurrent UpdateFlow cannot bump the version (and change
+// the graph) between the handler's validate/compile and the version insert.
+// version mismatch under the lock => 409 (cross-AI HIGH-2). version bumps on
+// every graph PATCH, so a matching version guarantees the compiled graph is
+// still current.
+func (q *Queries) LockFlowForPublish(ctx context.Context, arg LockFlowForPublishParams) (LockFlowForPublishRow, error) {
+	row := q.db.QueryRow(ctx, lockFlowForPublish, arg.ID, arg.OrgID)
+	var i LockFlowForPublishRow
+	err := row.Scan(&i.Version, &i.Enabled)
+	return i, err
+}
+
 const softDeleteFlow = `-- name: SoftDeleteFlow :execrows
 UPDATE flows
 SET enabled = FALSE, updated_at = NOW()

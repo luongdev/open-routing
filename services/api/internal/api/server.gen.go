@@ -31,6 +31,9 @@ type ServerInterface interface {
 	// Readiness probe
 	// (GET /readyz)
 	GetReadyz(w http.ResponseWriter, r *http.Request)
+	// Condition-expression function catalog
+	// (GET /v1/meta/expr-functions)
+	GetExprFunctions(w http.ResponseWriter, r *http.Request)
 	// List adapters
 	// (GET /v1/orgs/{org_id}/adapters)
 	ListAdapters(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListAdaptersParams)
@@ -130,6 +133,9 @@ type ServerInterface interface {
 	// Deterministically simulate a flow draft
 	// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
 	SimulateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List simulation/runtime traces for a flow, newest first
+	// (GET /v1/orgs/{org_id}/flows/{id}/traces)
+	ListFlowTraces(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath, params ListFlowTracesParams)
 	// Validate a flow draft graph
 	// (POST /v1/orgs/{org_id}/flows/{id}/validate)
 	ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
@@ -175,6 +181,9 @@ type ServerInterface interface {
 	// Get a route request by ID
 	// (GET /v1/orgs/{org_id}/route-requests/{id})
 	GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Submit a captured value to a route waiting at an interactive-input node
+	// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
+	SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// List the reservations a route request generated (sequential offers)
 	// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
 	ListRouteRequestReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
@@ -226,6 +235,12 @@ func (_ Unimplemented) GetOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 // Readiness probe
 // (GET /readyz)
 func (_ Unimplemented) GetReadyz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Condition-expression function catalog
+// (GET /v1/meta/expr-functions)
+func (_ Unimplemented) GetExprFunctions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -427,6 +442,12 @@ func (_ Unimplemented) SimulateFlow(w http.ResponseWriter, r *http.Request, orgI
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List simulation/runtime traces for a flow, newest first
+// (GET /v1/orgs/{org_id}/flows/{id}/traces)
+func (_ Unimplemented) ListFlowTraces(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath, params ListFlowTracesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Validate a flow draft graph
 // (POST /v1/orgs/{org_id}/flows/{id}/validate)
 func (_ Unimplemented) ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
@@ -514,6 +535,12 @@ func (_ Unimplemented) CreateRouteRequest(w http.ResponseWriter, r *http.Request
 // Get a route request by ID
 // (GET /v1/orgs/{org_id}/route-requests/{id})
 func (_ Unimplemented) GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a captured value to a route waiting at an interactive-input node
+// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
+func (_ Unimplemented) SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -621,6 +648,20 @@ func (siw *ServerInterfaceWrapper) GetReadyz(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadyz(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetExprFunctions operation middleware
+func (siw *ServerInterfaceWrapper) GetExprFunctions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetExprFunctions(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2200,6 +2241,63 @@ func (siw *ServerInterfaceWrapper) SimulateFlow(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListFlowTraces operation middleware
+func (siw *ServerInterfaceWrapper) ListFlowTraces(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFlowTracesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlowTraces(w, r, orgId, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ValidateFlow operation middleware
 func (siw *ServerInterfaceWrapper) ValidateFlow(w http.ResponseWriter, r *http.Request) {
 
@@ -2889,6 +2987,47 @@ func (siw *ServerInterfaceWrapper) GetRouteRequest(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// SubmitRouteInput operation middleware
+func (siw *ServerInterfaceWrapper) SubmitRouteInput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitRouteInput(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRouteRequestReservations operation middleware
 func (siw *ServerInterfaceWrapper) ListRouteRequestReservations(w http.ResponseWriter, r *http.Request) {
 
@@ -3380,6 +3519,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/readyz", wrapper.GetReadyz)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/meta/expr-functions", wrapper.GetExprFunctions)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/adapters", wrapper.ListAdapters)
 	})
 	r.Group(func(r chi.Router) {
@@ -3479,6 +3621,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/simulate", wrapper.SimulateFlow)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/traces", wrapper.ListFlowTraces)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/orgs/{org_id}/flows/{id}/validate", wrapper.ValidateFlow)
 	})
 	r.Group(func(r chi.Router) {
@@ -3522,6 +3667,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}", wrapper.GetRouteRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/input", wrapper.SubmitRouteInput)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/reservations", wrapper.ListRouteRequestReservations)
@@ -3667,6 +3815,27 @@ func (response GetReadyz503JSONResponse) VisitGetReadyzResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetExprFunctionsRequestObject struct {
+}
+
+type GetExprFunctionsResponseObject interface {
+	VisitGetExprFunctionsResponse(w http.ResponseWriter) error
+}
+
+type GetExprFunctions200JSONResponse ExprFunctionCatalog
+
+func (response GetExprFunctions200JSONResponse) VisitGetExprFunctionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5979,7 +6148,7 @@ type SimulateFlowResponseObject interface {
 	VisitSimulateFlowResponse(w http.ResponseWriter) error
 }
 
-type SimulateFlow200JSONResponse Trace
+type SimulateFlow200JSONResponse SimulateFlowResponse
 
 func (response SimulateFlow200JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
 
@@ -6040,6 +6209,62 @@ type SimulateFlow500JSONResponse struct {
 }
 
 func (response SimulateFlow500JSONResponse) VisitSimulateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowTracesRequestObject struct {
+	OrgId  OrgIdPath    `json:"org_id"`
+	Id     EntityIdPath `json:"id"`
+	Params ListFlowTracesParams
+}
+
+type ListFlowTracesResponseObject interface {
+	VisitListFlowTracesResponse(w http.ResponseWriter) error
+}
+
+type ListFlowTraces200JSONResponse struct {
+	Traces []Trace `json:"traces"`
+}
+
+func (response ListFlowTraces200JSONResponse) VisitListFlowTracesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowTraces404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListFlowTraces404JSONResponse) VisitListFlowTracesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowTraces500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListFlowTraces500JSONResponse) VisitListFlowTracesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6997,6 +7222,74 @@ func (response GetRouteRequest500JSONResponse) VisitGetRouteRequestResponse(w ht
 	return err
 }
 
+type SubmitRouteInputRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+	Body  *SubmitRouteInputJSONRequestBody
+}
+
+type SubmitRouteInputResponseObject interface {
+	VisitSubmitRouteInputResponse(w http.ResponseWriter) error
+}
+
+type SubmitRouteInput200JSONResponse RouteRequest
+
+func (response SubmitRouteInput200JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitRouteInput404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SubmitRouteInput404JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitRouteInput409JSONResponse ErrorResponse
+
+func (response SubmitRouteInput409JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitRouteInput500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response SubmitRouteInput500JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRouteRequestReservationsRequestObject struct {
 	OrgId OrgIdPath    `json:"org_id"`
 	Id    EntityIdPath `json:"id"`
@@ -7523,6 +7816,9 @@ type StrictServerInterface interface {
 	// Readiness probe
 	// (GET /readyz)
 	GetReadyz(ctx context.Context, request GetReadyzRequestObject) (GetReadyzResponseObject, error)
+	// Condition-expression function catalog
+	// (GET /v1/meta/expr-functions)
+	GetExprFunctions(ctx context.Context, request GetExprFunctionsRequestObject) (GetExprFunctionsResponseObject, error)
 	// List adapters
 	// (GET /v1/orgs/{org_id}/adapters)
 	ListAdapters(ctx context.Context, request ListAdaptersRequestObject) (ListAdaptersResponseObject, error)
@@ -7622,6 +7918,9 @@ type StrictServerInterface interface {
 	// Deterministically simulate a flow draft
 	// (POST /v1/orgs/{org_id}/flows/{id}/simulate)
 	SimulateFlow(ctx context.Context, request SimulateFlowRequestObject) (SimulateFlowResponseObject, error)
+	// List simulation/runtime traces for a flow, newest first
+	// (GET /v1/orgs/{org_id}/flows/{id}/traces)
+	ListFlowTraces(ctx context.Context, request ListFlowTracesRequestObject) (ListFlowTracesResponseObject, error)
 	// Validate a flow draft graph
 	// (POST /v1/orgs/{org_id}/flows/{id}/validate)
 	ValidateFlow(ctx context.Context, request ValidateFlowRequestObject) (ValidateFlowResponseObject, error)
@@ -7667,6 +7966,9 @@ type StrictServerInterface interface {
 	// Get a route request by ID
 	// (GET /v1/orgs/{org_id}/route-requests/{id})
 	GetRouteRequest(ctx context.Context, request GetRouteRequestRequestObject) (GetRouteRequestResponseObject, error)
+	// Submit a captured value to a route waiting at an interactive-input node
+	// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
+	SubmitRouteInput(ctx context.Context, request SubmitRouteInputRequestObject) (SubmitRouteInputResponseObject, error)
 	// List the reservations a route request generated (sequential offers)
 	// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
 	ListRouteRequestReservations(ctx context.Context, request ListRouteRequestReservationsRequestObject) (ListRouteRequestReservationsResponseObject, error)
@@ -7811,6 +8113,30 @@ func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetReadyzResponseObject); ok {
 		if err := validResponse.VisitGetReadyzResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetExprFunctions operation middleware
+func (sh *strictHandler) GetExprFunctions(w http.ResponseWriter, r *http.Request) {
+	var request GetExprFunctionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetExprFunctions(ctx, request.(GetExprFunctionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetExprFunctions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetExprFunctionsResponseObject); ok {
+		if err := validResponse.VisitGetExprFunctionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8814,6 +9140,34 @@ func (sh *strictHandler) SimulateFlow(w http.ResponseWriter, r *http.Request, or
 	}
 }
 
+// ListFlowTraces operation middleware
+func (sh *strictHandler) ListFlowTraces(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath, params ListFlowTracesParams) {
+	var request ListFlowTracesRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlowTraces(ctx, request.(ListFlowTracesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlowTraces")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowTracesResponseObject); ok {
+		if err := validResponse.VisitListFlowTracesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ValidateFlow operation middleware
 func (sh *strictHandler) ValidateFlow(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	var request ValidateFlowRequestObject
@@ -9231,6 +9585,40 @@ func (sh *strictHandler) GetRouteRequest(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetRouteRequestResponseObject); ok {
 		if err := validResponse.VisitGetRouteRequestResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitRouteInput operation middleware
+func (sh *strictHandler) SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request SubmitRouteInputRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	var body SubmitRouteInputJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitRouteInput(ctx, request.(SubmitRouteInputRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitRouteInput")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitRouteInputResponseObject); ok {
+		if err := validResponse.VisitSubmitRouteInputResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -262,6 +262,10 @@ export interface FlowNode {
   // Optional explicit outputs. If omitted, node has a single 'done'
   // success output (canvas omits the chip row to keep simple nodes clean).
   outputs?: FlowNodeOutput[];
+  // 3D-2 control flow: the body region this node belongs to. "" / undefined =
+  // top level; "<ownerId>" for a loop/try body; "<ownerId>#<i>" for parallel
+  // branch i. Mirrors backend GraphNode.region (json "region").
+  region?: string;
 }
 
 export interface FlowEdge {
@@ -418,6 +422,11 @@ export interface TraceStep {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown>;
   note?: string;
+  // 3D-2 control-flow nesting (omitted for flat steps).
+  region?: string;
+  iteration?: number;
+  branch?: number;
+  caught?: boolean;
 }
 
 export const MOCK_TRACE_STEPS: TraceStep[] = [
@@ -523,10 +532,29 @@ export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_S
   for (const v of MOCK_INIT_VARS) {
     bag.set(v.key, { key: v.key, value: v.value, set_at_step: 'init', set_at_node_label: 'Init vars' });
   }
+  // Only set_var/compute actually write to the variable bag; every other node's
+  // `outputs` are step I/O metadata (candidates, skill, attempts…) shown in the
+  // Step I/O panel — NOT variables. set_var reports {name,value} and compute
+  // {result,var}, so map those to a single `<name> = <value>` entry instead of
+  // surfacing the metadata keys as bogus variables.
   for (let i = 0; i <= stepIdx && i < trace.length; i++) {
     const step = trace[i]!;
-    for (const [k, val] of Object.entries(step.outputs)) {
-      bag.set(k, { key: k, value: val, set_at_step: step.id, set_at_node_label: step.label });
+    const o = step.outputs;
+    if (step.node_kind === 'set_var') {
+      const name = o['name'];
+      if (typeof name === 'string') {
+        bag.set(name, { key: name, value: o['value'], set_at_step: step.id, set_at_node_label: step.label });
+      }
+    } else if (step.node_kind === 'compute') {
+      const name = o['var'];
+      if (typeof name === 'string') {
+        bag.set(name, { key: name, value: o['result'], set_at_step: step.id, set_at_node_label: step.label });
+      }
+    } else if (typeof o['save_as'] === 'string' && o['save_as'] !== '') {
+      // Response-capture nodes (http_request) write their (mock) response into
+      // the named variable — surface it like set_var/compute, not as I/O metadata.
+      const name = o['save_as'];
+      bag.set(name, { key: name, value: o['response'], set_at_step: step.id, set_at_node_label: step.label });
     }
   }
   return Array.from(bag.values());

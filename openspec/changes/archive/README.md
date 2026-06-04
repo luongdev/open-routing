@@ -3,6 +3,8 @@
 This directory indexes completed `.planning` phases that were migrated into current OpenSpec capability specs. The original detailed phase plans, summaries, reviews, and validation notes remain in `.planning/phases/`.
 
 Milestone 1 / v0.1 Catalog Foundation is archived as of 2026-06-02.
+Milestone 2 / v0.2 Core Routing Runtime Foundation is archived as of 2026-06-04
+(`2026-06-04-define-v0-2-core-routing-runtime-foundation`).
 
 ## Completed Phases
 
@@ -16,3 +18,9 @@ Milestone 1 / v0.1 Catalog Foundation is archived as of 2026-06-02.
 | 2026-05-17 | `05-bulk-import-go` | `openspec/specs/bulk-import/spec.md` |
 | 2026-05-18 | `06-shared-ui-library-standalone-admin` | `openspec/specs/admin-ui/spec.md` |
 | 2026-06-02 | `07-web-component-embed-bundle` | `openspec/specs/embed-catalog/spec.md` |
+
+## Milestone 2 — v0.2 Core Routing Runtime Foundation (archived 2026-06-04)
+
+| Change | OpenSpec destinations |
+| --- | --- |
+| `2026-06-04-define-v0-2-core-routing-runtime-foundation` | `openspec/specs/routing-runtime/spec.md` (new), `openspec/specs/flow-authoring/spec.md` (new), `openspec/specs/admin-ui/spec.md`, `openspec/specs/delivery-foundation/spec.md`, `openspec/specs/agent-state/spec.md`, `openspec/specs/project-boundary/spec.md` |

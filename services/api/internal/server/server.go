@@ -154,7 +154,9 @@ func NewMux(deps *Deps) http.Handler {
 // does NOT start with /v1/ is a bypass route by construction.
 func orgContextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/v1/") {
+		// /v1/meta/* is org-independent metadata (the expr-function catalog);
+		// gate every other /v1/* path with OrgContext.
+		if strings.HasPrefix(r.URL.Path, "/v1/") && !strings.HasPrefix(r.URL.Path, "/v1/meta/") {
 			appmw.OrgContext(next).ServeHTTP(w, r)
 			return
 		}

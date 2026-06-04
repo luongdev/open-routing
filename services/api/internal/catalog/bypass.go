@@ -22,7 +22,19 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/luongdev/open-routing/services/api/internal/api"
+	"github.com/luongdev/open-routing/services/api/internal/runtime/expr"
 )
+
+// GetExprFunctions — org-independent catalog of the condition-DSL functions,
+// served from expr.Catalog() so the UI autocomplete has a single source.
+func (*Handlers) GetExprFunctions(_ context.Context, _ api.GetExprFunctionsRequestObject) (api.GetExprFunctionsResponseObject, error) {
+	cat := expr.Catalog()
+	fns := make([]api.ExprFunction, len(cat))
+	for i, f := range cat {
+		fns[i] = api.ExprFunction{Ns: f.Ns, Name: f.Name, Arity: f.Arity, Signature: f.Signature, Summary: f.Summary}
+	}
+	return api.GetExprFunctions200JSONResponse(api.ExprFunctionCatalog{Functions: fns}), nil
+}
 
 // readyzTimeout is the per-probe budget for pgxpool.Ping + Cache.Ping +
 // schema_migrations read. 2s mirrors the Wave 0 stub and matches the

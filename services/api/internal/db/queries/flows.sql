@@ -68,6 +68,18 @@ WHERE id = sqlc.arg('id')
   AND version = sqlc.arg('expected_version')
 RETURNING id, org_id, code, name, graph, enabled, version, created_at, updated_at;
 
+-- name: LockFlowForPublish :one
+-- SELECT ... FOR UPDATE inside the publish tx: the draft `version` is read +
+-- the row locked so a concurrent UpdateFlow cannot bump the version (and change
+-- the graph) between the handler's validate/compile and the version insert.
+-- version mismatch under the lock => 409 (cross-AI HIGH-2). version bumps on
+-- every graph PATCH, so a matching version guarantees the compiled graph is
+-- still current.
+SELECT version, enabled
+FROM flows
+WHERE id = $1 AND org_id = $2
+FOR UPDATE;
+
 -- name: SoftDeleteFlow :execrows
 UPDATE flows
 SET enabled = FALSE, updated_at = NOW()

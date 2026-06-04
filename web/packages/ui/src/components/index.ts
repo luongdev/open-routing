@@ -16,3 +16,5 @@ export * from './status/index.js';
 export * from './imports/index.js';
 // v0.2 Layer 2: Flows (list + builder + trace viewer), graduated onto the contract.
 export * from './flows/index.js';
+// v0.2 Wave 3: Runtime (route tester — drive live routes + resolve reservations).
+export * from './runtime/index.js';

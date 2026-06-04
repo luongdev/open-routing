@@ -221,7 +221,16 @@ func (t *OrgTx) Rollback(ctx context.Context) error {
 // needing read-only or stricter isolation should add an Options-accepting
 // overload in v0.2.
 func (o *OrgDB) BeginTx(ctx context.Context) (*OrgTx, error) {
-	tx, err := o.pool.BeginTx(ctx, pgx.TxOptions{})
+	return o.BeginTxWith(ctx, pgx.TxOptions{})
+}
+
+// BeginTxWith is the Options-accepting overload anticipated above: callers that
+// need read-only or a stricter isolation level (e.g. the simulation snapshot,
+// which captures a point-in-time catalog+state read set under
+// pgx.RepeatableRead) supply their own pgx.TxOptions. Checker/mode are preserved
+// identically to BeginTx.
+func (o *OrgDB) BeginTxWith(ctx context.Context, opts pgx.TxOptions) (*OrgTx, error) {
+	tx, err := o.pool.BeginTx(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("orgdb: begin tx: %w", err)
 	}

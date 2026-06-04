@@ -84,6 +84,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meta/expr-functions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Condition-expression function catalog
+         * @description Static, org-independent catalog of the functions available in the flow condition DSL (str.*, num.*, arr.*, logic.*, date.*). The flow builder's Advanced editor fetches this for autocomplete. Cacheable.
+         */
+        get: operations["GetExprFunctions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/agents": {
         parameters: {
             query?: never;
@@ -397,6 +417,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org_id}/flows/{id}/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List simulation/runtime traces for a flow, newest first */
+        get: operations["ListFlowTraces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/flows/{id}/publish": {
         parameters: {
             query?: never;
@@ -680,6 +729,38 @@ export interface paths {
         put?: never;
         /** Reject an offered reservation (test-double / simulator signal) */
         post: operations["RejectReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org_id}/route-requests/{id}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a captured value to a route waiting at an interactive-input node
+         * @description Resumes a route parked at an interactive-input node (get_dtmf, prompt_text, manual_approval, …) by supplying the captured value. The node stores it into its variable and takes the captured branch instead of timing out. The route must be in the `waiting` state.
+         */
+        post: operations["SubmitRouteInput"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1167,6 +1248,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One condition-DSL function (str.*, num.*, arr.*, logic.*, date.*). */
+        ExprFunction: {
+            /** @example str */
+            ns: string;
+            /** @example upper */
+            name: string;
+            /**
+             * @description Fixed argument count, or -1 for variadic.
+             * @example 1
+             */
+            arity: number;
+            /** @example str.upper(s) -> string */
+            signature: string;
+            /** @example Uppercase */
+            summary: string;
+        };
+        ExprFunctionCatalog: {
+            functions: components["schemas"]["ExprFunction"][];
+        };
         /**
          * Format: uuid
          * @description A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
@@ -1606,7 +1706,7 @@ export interface components {
          * @description Typed taxonomy of routing failures recorded on a route request and its trace.
          * @enum {string}
          */
-        RoutingFailureCode: "missing_published_flow" | "missing_catalog_reference" | "no_eligible_candidate" | "multiple_active_bindings" | "invalid_graph" | "reservation_transition_conflict";
+        RoutingFailureCode: "missing_published_flow" | "missing_catalog_reference" | "no_eligible_candidate" | "multiple_active_bindings" | "invalid_graph" | "reservation_transition_conflict" | "loop_limit" | "invalid_loop_input";
         /** @description Maps a route entry point (channel + entry code) to its active published flow version. */
         FlowEntryBinding: {
             id: components["schemas"]["UUIDv7"];
@@ -1626,10 +1726,12 @@ export interface components {
             version: components["schemas"]["FlowVersion"];
             binding: components["schemas"]["FlowEntryBinding"];
         };
-        /** @description A scripted reservation outcome for deterministic simulation (applied in order). */
+        /** @description A scripted reservation outcome for deterministic simulation. With `node_id` set it pins THAT reservation node's result port directly (per-node, order-independent). Without `node_id`, entries form an ordered per-offer queue (legacy). */
         SimulateScriptedReservationOutcome: {
             /** @enum {string} */
-            outcome: "accepted" | "rejected" | "timeout";
+            outcome: "accepted" | "rejected" | "timeout" | "no_candidate";
+            /** @description When set, this outcome is the result port of that reservation node. */
+            node_id?: string;
             agent_id?: components["schemas"]["UUIDv7"];
         };
         /** @description An immutable published version of a flow, created by publish. Route requests pin a flow_version_id at start; traces reference it. */
@@ -1712,6 +1814,8 @@ export interface components {
             node_kind: string;
             /** @enum {string} */
             status: "ok" | "error" | "skipped" | "suspended";
+            /** @description The output port the node took (e.g. true/false, accepted/timeout). */
+            port?: string | null;
             input?: {
                 [key: string]: unknown;
             } | null;
@@ -1720,8 +1824,17 @@ export interface components {
             } | null;
             catalog_refs?: string[];
             effect_status?: string | null;
+            /** @description Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation. */
             duration_ms?: number | null;
             error?: string | null;
+            /** @description The id of the control-flow body region this step ran inside (loop/parallel/try_catch), if any. */
+            region?: string | null;
+            /** @description Zero-based loop iteration index for steps inside a loop_for/loop_while body. */
+            iteration?: number | null;
+            /** @description Zero-based branch index for steps inside a parallel branch. */
+            branch?: number | null;
+            /** @description True when this step's domain failure was caught by an enclosing try_catch. */
+            caught?: boolean | null;
         };
         /** @description An ordered runtime or simulation trace explaining a routing outcome. */
         Trace: {
@@ -1731,10 +1844,21 @@ export interface components {
             kind: "runtime" | "simulation";
             route_request_id?: components["schemas"]["UUIDv7"];
             flow_version_id?: components["schemas"]["UUIDv7"];
+            /** @description Set for simulation traces (which pin a draft, not a published version). */
+            flow_id?: components["schemas"]["UUIDv7"];
             outcome?: string | null;
             steps: components["schemas"]["TraceStep"][];
             /** Format: date-time */
             readonly created_at: string;
+        };
+        /** @description A simulation trace plus the resolved virtual clock start (so replay is exact even when the request omitted it). */
+        SimulateFlowResponse: {
+            /**
+             * Format: date-time
+             * @description The virtual clock origin actually used (echoed from the request, or server-chosen when omitted).
+             */
+            virtual_clock_start: string;
+            trace: components["schemas"]["Trace"];
         };
         /** @description Admin/test entry point to drive a route through the published flow for a channel + entry code. */
         CreateRouteRequest: {
@@ -1745,6 +1869,13 @@ export interface components {
             interaction_input?: {
                 [key: string]: unknown;
             };
+        };
+        /** @description A captured value submitted to a route waiting at an interactive-input node. */
+        SubmitRouteInput: {
+            /** @description The input node to answer. Optional — defaults to the node the route is currently parked at (its resume cursor). */
+            node_id?: string;
+            /** @description The captured value (digits, text, "approved"/"rejected", a survey score, …). */
+            value: unknown;
         };
         /** @description The interaction spine — reservations, events, and traces reference it. */
         RouteRequest: {
@@ -2718,6 +2849,26 @@ export interface operations {
             };
         };
     };
+    GetExprFunctions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The expression function catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExprFunctionCatalog"];
+                };
+            };
+        };
+    };
     ListAgents: {
         parameters: {
             query?: {
@@ -3578,7 +3729,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Trace"];
+                    "application/json": components["schemas"]["SimulateFlowResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3592,6 +3743,44 @@ export interface operations {
                     "application/json": components["schemas"]["FlowValidationResult"];
                 };
             };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListFlowTraces: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Traces for the flow, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        traces: components["schemas"]["Trace"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -4015,6 +4204,53 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             /** @description Reservation is no longer offered. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    SubmitRouteInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitRouteInput"];
+            };
+        };
+        responses: {
+            /** @description Input accepted; the route resumed (run to completion or re-parked). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRequest"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Route is not waiting for input (already resumed, completed, or raced). */
             409: {
                 headers: {
                     [name: string]: unknown;

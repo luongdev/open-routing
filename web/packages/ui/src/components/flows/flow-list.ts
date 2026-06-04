@@ -6,12 +6,13 @@
 // The vNext playground `or-flow-list` stays a mock fixture; this is the real
 // product element bound to GET /v1/orgs/{org_id}/flows.
 //
-// Status columns (review choice "b" — show the full table so layout/wiring bugs
-// surface): "Status" reflects the draft lifecycle (Draft / Archived from
-// `enabled`); "Published" derives from active bindings, which are a 501 stub
-// until Layer 3, so it renders "—" with a pending hint rather than a fake state.
+// Status columns: "Status" reflects the draft lifecycle (Draft / Archived from
+// `enabled`); "Published" derives from the active route bindings (GET /bindings)
+// — a "Published" pill (with the channel/entry it's live on) when bound, else "—".
+// A flow can be both Draft (editable draft) AND Published (an older version live).
 
 import { LitElement, html, css, nothing } from 'lit';
+import { confirmDelete } from '../primitives/confirm.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
@@ -122,6 +123,12 @@ export class OrFlowList extends LitElement {
       color: var(--muted-foreground);
     }
 
+    .status-pill--published {
+      background: color-mix(in oklch, var(--success) 16%, transparent);
+      color: var(--success);
+      cursor: help;
+    }
+
     .pending-dash {
       color: var(--muted-foreground);
       cursor: help;
@@ -201,6 +208,8 @@ export class OrFlowList extends LitElement {
   @state() private accessor _nextCursor: string | null = null;
   @state() private accessor _hasMore = false;
   @state() private accessor _actionError: string | null = null;
+  // flow_code → active route bindings (the routing table), for the Published col.
+  @state() private accessor _bindingsByFlow = new Map<string, { channel: string; entry_code: string }[]>();
 
   private _searchDebounce?: ReturnType<typeof setTimeout>;
 
@@ -245,10 +254,15 @@ export class OrFlowList extends LitElement {
     {
       key: 'published',
       label: 'Published',
-      width: '110px',
-      render: () =>
-        // Derived from active bindings (GET /bindings) — wired in Layer 3.
-        html`<span class="pending-dash" title="Published state derives from route bindings — available in Layer 3.">—</span>`,
+      width: '120px',
+      render: (row) => {
+        const binds = this._bindingsByFlow.get(String(row['code'] ?? ''));
+        if (!binds || binds.length === 0) {
+          return html`<span class="pending-dash" title="Not published — no active route binding.">—</span>`;
+        }
+        const where = binds.map((b) => `${b.channel}/${b.entry_code}`).join(', ');
+        return html`<span class="status-pill status-pill--published" title="Live on ${where}">Published</span>`;
+      },
     },
     {
       key: 'version',
@@ -287,6 +301,18 @@ export class OrFlowList extends LitElement {
       const d = data as { has_more?: boolean; next_cursor?: string | null };
       this._hasMore = d?.has_more ?? false;
       this._nextCursor = d?.next_cursor ?? null;
+      // Published state derives from active route bindings (the routing table).
+      // Fetch them once per list load and index by flow_code so the Published
+      // column reflects "this flow is live on channel/entry".
+      const br = (await (client as ApiClient).GET('/v1/orgs/{org_id}/bindings' as never, {
+        params: { path: { org_id: orgId as string } },
+        signal,
+      } as never)) as { data?: { items?: { flow_code: string; channel: string; entry_code: string }[] }; error?: unknown };
+      const byFlow = new Map<string, { channel: string; entry_code: string }[]>();
+      for (const b of br.data?.items ?? []) {
+        (byFlow.get(b.flow_code) ?? byFlow.set(b.flow_code, []).get(b.flow_code)!).push({ channel: b.channel, entry_code: b.entry_code });
+      }
+      this._bindingsByFlow = byFlow;
       return data;
     },
     // client is in the deps so a late-set client (separate update than orgId) reruns.
@@ -318,7 +344,7 @@ export class OrFlowList extends LitElement {
       return;
     }
     if (action === 'delete') {
-      const ok = window.confirm(`Delete flow "${row.name}"? This cannot be undone.`);
+      const ok = await confirmDelete(row.name, 'flow');
       if (!ok) return;
       const { error } = await this.client.DELETE('/v1/orgs/{org_id}/flows/{id}' as never, {
         params: { path: { org_id: this.orgId, id: row.id } },

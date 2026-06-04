@@ -34,6 +34,46 @@ const (
 	NodeEffect      NodeKind = "effect"
 	NodeLog         NodeKind = "log"
 	NodeEnd         NodeKind = "end"
+	NodeSetVar      NodeKind = "set_var"
+	NodeCompute     NodeKind = "compute"
+	// 3D-2 control-flow (region owners). The executor special-cases these via a
+	// recursive region runner; their Execute stays the baseNode stub.
+	NodeLoopFor   NodeKind = "loop_for"
+	NodeLoopWhile NodeKind = "loop_while"
+	NodeParallel  NodeKind = "parallel"
+	NodeTryCatch  NodeKind = "try_catch"
+	// 3D-3 record/mock side effects (node_side_effects.go): channel output,
+	// outbound integration, and agent-state intents. No live external call in
+	// v0.2 — each records its intent and continues. One implementation, one spec
+	// table; see sideEffectSpecs.
+	NodeTTSSpeak      NodeKind = "tts_speak"
+	NodePlayPrompt    NodeKind = "play_prompt"
+	NodeTransferCall  NodeKind = "transfer_call"
+	NodeHangup        NodeKind = "hangup"
+	NodeSendMessage   NodeKind = "send_message"
+	NodeQuickReplies  NodeKind = "quick_replies"
+	NodeTypingIndic   NodeKind = "typing_indicator"
+	NodeAttachFile    NodeKind = "attach_file"
+	NodeBotHandoff    NodeKind = "bot_handoff"
+	NodeSendTemplate  NodeKind = "send_template"
+	NodeHTTPRequest   NodeKind = "http_request"
+	NodeWebhook       NodeKind = "webhook"
+	NodeSetAgentState NodeKind = "set_agent_state"
+	NodeWrapupTimer   NodeKind = "wrapup_timer"
+	// 3D-4 interactive input (node_input.go): pause for an inbound value, store it
+	// into a variable, and branch on it. Sim resolves from a scripted captured
+	// value (scripted_effect_outputs); live suspends until the timeout (a
+	// submit-value API is v0.3), then takes the timeout branch.
+	NodeGetDTMF        NodeKind = "get_dtmf"
+	NodePromptText     NodeKind = "prompt_text"
+	NodeWaitSignal     NodeKind = "wait_signal"
+	NodeManualApproval NodeKind = "manual_approval"
+	NodeDetectSpeech   NodeKind = "detect_speech"
+	NodeCSATSurvey     NodeKind = "csat_survey"
+	NodeNPSSurvey      NodeKind = "nps_survey"
+	// 3D-5 script (node_script.go): a sandboxed Lua escape hatch over the var bag
+	// (no IO, deterministic-seeded RNG, context-bounded).
+	NodeScript NodeKind = "script"
 )
 
 // V02NodeKinds is the locked v0.2 subset, in palette order. Tests assert the
@@ -41,6 +81,27 @@ const (
 var V02NodeKinds = []NodeKind{
 	NodeTrigger, NodeIfElse, NodeSwitchCase, NodeWait, NodeMatchSkill, NodeFilter,
 	NodeRouteQueue, NodeReservation, NodeFallback, NodeEffect, NodeLog, NodeEnd,
+	// 3D-1: deterministic data nodes (graduated from the "Soon" palette).
+	NodeSetVar, NodeCompute,
+	// 3D-2: control-flow region owners.
+	NodeLoopFor, NodeLoopWhile, NodeParallel, NodeTryCatch,
+	// 3D-3: record/mock side effects (channel / integration / agent-state).
+	NodeTTSSpeak, NodePlayPrompt, NodeTransferCall, NodeHangup,
+	NodeSendMessage, NodeQuickReplies, NodeTypingIndic, NodeAttachFile, NodeBotHandoff,
+	NodeSendTemplate,
+	NodeHTTPRequest, NodeWebhook,
+	NodeSetAgentState, NodeWrapupTimer,
+	// 3D-4: interactive input (suspend-for-value).
+	NodeGetDTMF, NodePromptText, NodeWaitSignal, NodeManualApproval, NodeDetectSpeech,
+	NodeCSATSurvey, NodeNPSSurvey,
+	// 3D-5: sandboxed script escape hatch.
+	NodeScript,
+}
+
+// ControlKinds are the region-owning control-flow nodes the executor runs via
+// the recursive region runner (NOT via Node.Execute).
+var ControlKinds = map[NodeKind]bool{
+	NodeLoopFor: true, NodeLoopWhile: true, NodeParallel: true, NodeTryCatch: true,
 }
 
 // GraphNode / GraphEdge are the parsed authoring graph. Config is the node's
@@ -49,6 +110,10 @@ type GraphNode struct {
 	ID     string          `json:"id"`
 	Kind   NodeKind        `json:"type"`
 	Config json.RawMessage `json:"config,omitempty"`
+	// Region (3D-2) is the branch region this node belongs to: "" = top level,
+	// "<ownerID>" for a single-body region (loop/try), "<ownerID>#<i>" for
+	// parallel branch i. Assigned by the builder; bounds the executor sub-walk.
+	Region string `json:"region,omitempty"`
 }
 
 type GraphEdge struct {
@@ -90,6 +155,7 @@ type PlanStep struct {
 	NodeID   string          `json:"node_id"`
 	Kind     NodeKind        `json:"kind"`
 	Compiled json.RawMessage `json:"compiled,omitempty"`
+	Region   string          `json:"region,omitempty"` // 3D-2: owning region, "" = top level
 }
 
 // ExecCtx is the per-step execution surface the runtime provides to Execute:
@@ -106,7 +172,42 @@ type ExecCtx interface {
 	Now() time.Time
 	Var(key string) (any, bool)
 	SetVar(key string, val any)
+	// Vars returns a snapshot of the full variable bag (root + any active loop
+	// scopes merged, innermost winning) — for nodes that need the whole bag at
+	// once (e.g. the script node exposes it as a table). Mutating the result does
+	// not affect the run; use SetVar to write.
+	Vars() map[string]any
 	Emit(eventType string, payload any)
+
+	// Routing surface (Wave 3 part 2). Candidates is the working candidate pool
+	// threaded route_queue -> match_skill/filter -> reservation. Snapshot is the
+	// pinned catalog+state read-set. Reserve resolves one offer (the driver owns
+	// the clock advance on timeout). Empty/no-op for runs without a routing
+	// driver (pure control-flow tests).
+	Candidates() []Candidate
+	SetCandidates(c []Candidate)
+	Snapshot() *Snapshot
+	Reserve(agentID string, timeout time.Duration) ReservationOutcome
+	// ScriptedOutcome returns a per-node scripted result PORT (accepted/timeout/
+	// no_candidate) for a reservation node id, when the simulation pinned one —
+	// so a node takes that branch directly instead of running the offer loop.
+	ScriptedOutcome(nodeID string) (string, bool)
+	// ScriptedInput returns a per-node captured input VALUE the simulator pinned
+	// (scripted_effect_outputs[nodeID]); an interactive-input node resolves its
+	// branch + captured variable from it instead of suspending. ok=false → none
+	// pinned (live, or sim left it unanswered → the node times out).
+	ScriptedInput(nodeID string) (any, bool)
+
+	// LIVE routing (Wave 3 part 2). A live run carries an Offerer; reservation
+	// then OFFERS the top candidate and SUSPENDS (vs the sim's synchronous loop).
+	LiveRouting() bool
+	// Offer makes one live reservation offer; ok=false means the agent couldn't
+	// be offered (busy/ineligible) so the node tries the next candidate.
+	Offer(agentID string, timeout time.Duration) (reservationID string, ok bool, err error)
+	// ResumeSignal returns the inbound signal (accepted/rejected/timeout) when
+	// THIS node is the resume target of a RunFrom, consuming it (one-shot). A live
+	// wait/reservation node uses it to continue instead of re-suspending.
+	ResumeSignal(nodeID string) (signal string, ok bool)
 }
 
 // RoutingFailureCode is the typed taxonomy of routing failures. Mirrors the
@@ -120,6 +221,9 @@ const (
 	FailMultipleActiveBindings        RoutingFailureCode = "multiple_active_bindings"
 	FailInvalidGraph                  RoutingFailureCode = "invalid_graph"
 	FailReservationTransitionConflict RoutingFailureCode = "reservation_transition_conflict"
+	// 3D-2 control-flow failures (catchable by try_catch).
+	FailLoopLimit        RoutingFailureCode = "loop_limit"
+	FailInvalidLoopInput RoutingFailureCode = "invalid_loop_input"
 )
 
 // RoutingFailure is a typed terminal failure a node yields (recorded on the
@@ -139,10 +243,21 @@ type Suspension struct {
 }
 
 // StepResult is what Execute returns. Exactly one outcome is expected: follow
-// Next, suspend (park a continuation due at ResumeAt), fail (typed), or
-// terminate.
+// an edge (by explicit Next node id, or by Port for a branch node), suspend
+// (park a continuation due at ResumeAt), fail (typed), or terminate.
+//
+// Port selects which labelled out-edge to follow when a node has several
+// (if_else -> "true"/"false", switch_case -> the case value). The executor
+// resolves (node, Port) against the compiled edges. Next is the escape hatch
+// for a node that names its successor directly; an empty Port + single out-edge
+// means "follow the only edge".
+//
+// Output is recorded on the trace step (node-reported outputs for debugging);
+// it does not affect routing.
 type StepResult struct {
 	Next       string          `json:"next,omitempty"`
+	Port       string          `json:"port,omitempty"`
+	Output     map[string]any  `json:"output,omitempty"`
 	Terminal   bool            `json:"terminal,omitempty"`
 	Suspension *Suspension     `json:"-"`
 	Failure    *RoutingFailure `json:"-"`

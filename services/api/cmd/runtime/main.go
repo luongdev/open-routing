@@ -19,10 +19,19 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/runtime"
 	"github.com/luongdev/open-routing/services/api/internal/telemetry"
+)
+
+const (
+	workerTick  = 1 * time.Second
+	workerLease = 30 * time.Second
+	workerBatch = 50
 )
 
 func main() {
@@ -65,12 +74,37 @@ func run() int {
 	defer pool.Close()
 
 	reg := runtime.DefaultRegistry()
-	slog.InfoContext(ctx, "open-routing runtime starting (worker stub — Layer 3/5 fill the SKIP LOCKED claim loop)",
-		"node_kinds", len(reg.Kinds()))
 
-	// TODO(Layer 3/5): build OrgDB over pool, the continuation worker
-	// (due_at + FOR UPDATE SKIP LOCKED), and the executor over reg.
-	<-ctx.Done()
-	slog.InfoContext(ctx, "open-routing runtime shutting down")
-	return 0
+	validationMode := db.ValidationPanic
+	if cfg.ValidationMode == "error" {
+		validationMode = db.ValidationError
+	}
+	orgDB := db.NewOrgDB(pool, db.NewSQLChecker(), validationMode)
+	endpoints := flowrt.New(flowrt.Deps{
+		OrgDB:  orgDB,
+		Logger: slog.Default(),
+	})
+	workerID := "runtime-" + uuid.Must(uuid.NewV7()).String()
+	slog.InfoContext(ctx, "open-routing runtime starting (continuation worker)",
+		"node_kinds", len(reg.Kinds()), "worker_id", workerID, "tick", workerTick)
+
+	// Continuation worker: on each tick claim due reservation-timeout / wait /
+	// wrapup-expiry rows (FOR UPDATE SKIP LOCKED) and resolve them. Multiple
+	// replicas run safely (disjoint claims + claimed_by fencing).
+	tick := time.NewTicker(workerTick)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.InfoContext(ctx, "open-routing runtime shutting down")
+			return 0
+		case <-tick.C:
+			n, err := endpoints.ProcessDueContinuations(ctx, pool, workerID, time.Now(), workerLease, workerBatch)
+			if err != nil {
+				slog.ErrorContext(ctx, "continuation tick failed", "err", err)
+			} else if n > 0 {
+				slog.InfoContext(ctx, "processed continuations", "count", n)
+			}
+		}
+	}
 }

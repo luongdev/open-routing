@@ -60,12 +60,13 @@ const NAV_ENTRIES: readonly NavEntry[] = [
   { key: 'break-reasons', label: 'Break Reasons',  icon: 'pause-circle', path: '/orgs/{orgId}/break-reasons' },
   { key: 'flows',         label: 'Flows',          icon: 'git-branch',   path: '/orgs/{orgId}/flows' },
   { key: '__divider__',   label: '',               icon: '',             path: '' },
+  { key: 'route-tester',  label: 'Route Tester',   icon: 'play-circle',  path: '/orgs/{orgId}/route-tester' },
   { key: 'imports',       label: 'Bulk Import',    icon: 'upload',       path: '/orgs/{orgId}/imports/new' },
   { key: 'status',        label: 'Agent Status',   icon: 'activity',     path: '/orgs/{orgId}/agents/status' },
 ] as const;
 
-/** Entries that always show regardless of modules filter (divider, imports, status). */
-const ALWAYS_VISIBLE_KEYS = new Set(['__divider__', 'imports', 'status']);
+/** Entries that always show regardless of modules filter (divider, route-tester, imports, status). */
+const ALWAYS_VISIBLE_KEYS = new Set(['__divider__', 'route-tester', 'imports', 'status']);
 
 /** Theme token lookup table. */
 const _THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
@@ -600,6 +601,14 @@ export class OrCatalogShell extends LitElement {
           .importId=${id ?? ''}
           .client=${this._client!}
         ></or-import-result>`,
+    },
+    {
+      // v0.2 Wave 3: Route Tester — drive a live route through a published flow
+      // and resolve its offered reservations (accept/reject/complete).
+      path: '/orgs/:org_id/route-tester',
+      enter: (params) => this._composedEnter(params, () => import('../runtime/route-tester.js')),
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-route-tester .orgId=${org_id ?? ''} .client=${this._client!}></or-route-tester>`,
     },
     {
       // W0.0-03: Dev-only UI playground — no org scope, no UUIDv7 guard.

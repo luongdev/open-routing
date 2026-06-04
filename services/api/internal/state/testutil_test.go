@@ -93,6 +93,9 @@ func (stateOnlyHandlers) GetDocs(_ context.Context, _ api.GetDocsRequestObject) 
 func (stateOnlyHandlers) GetHealthz(_ context.Context, _ api.GetHealthzRequestObject) (api.GetHealthzResponseObject, error) {
 	panic("state test: GetHealthz not implemented")
 }
+func (stateOnlyHandlers) GetExprFunctions(_ context.Context, _ api.GetExprFunctionsRequestObject) (api.GetExprFunctionsResponseObject, error) {
+	panic("state test: GetExprFunctions not implemented")
+}
 func (stateOnlyHandlers) GetOpenAPISpec(_ context.Context, _ api.GetOpenAPISpecRequestObject) (api.GetOpenAPISpecResponseObject, error) {
 	panic("state test: GetOpenAPISpec not implemented")
 }

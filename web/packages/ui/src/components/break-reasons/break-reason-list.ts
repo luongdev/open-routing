@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { confirmDelete } from '../primitives/confirm.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Task } from '@lit/task';
 import { when } from 'lit/directives/when.js';
@@ -377,7 +378,7 @@ export class OrBreakReasonList extends LitElement {
       return;
     }
     if (action === 'delete') {
-      const ok = window.confirm(`Delete break reason "${row.name}"? This cannot be undone.`);
+      const ok = await confirmDelete(row.name, 'break reason');
       if (!ok) return;
       await this.client.DELETE('/v1/orgs/{org_id}/break-reasons/{id}' as never, {
         params: { path: { org_id: this.orgId, id: row.id } },

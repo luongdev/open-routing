@@ -95,6 +95,45 @@ components:
 
   schemas:
 
+    # ── Expression DSL catalog ───────────────────────────────────────────────────
+
+    ExprFunction:
+      type: object
+      description: One condition-DSL function (str.*, num.*, arr.*, logic.*, date.*).
+      required:
+        - ns
+        - name
+        - arity
+        - signature
+        - summary
+      properties:
+        ns:
+          type: string
+          example: str
+        name:
+          type: string
+          example: upper
+        arity:
+          type: integer
+          description: Fixed argument count, or -1 for variadic.
+          example: 1
+        signature:
+          type: string
+          example: "str.upper(s) -> string"
+        summary:
+          type: string
+          example: Uppercase
+
+    ExprFunctionCatalog:
+      type: object
+      required:
+        - functions
+      properties:
+        functions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExprFunction"
+
     # ── Identifiers ────────────────────────────────────────────────────────────
 
     UUIDv7:
@@ -782,6 +821,8 @@ components:
         - multiple_active_bindings
         - invalid_graph
         - reservation_transition_conflict
+        - loop_limit
+        - invalid_loop_input
 
     FlowEntryBinding:
       type: object
@@ -833,13 +874,20 @@ components:
 
     SimulateScriptedReservationOutcome:
       type: object
-      description: A scripted reservation outcome for deterministic simulation (applied in order).
+      description: >
+        A scripted reservation outcome for deterministic simulation. With
+        `node_id` set it pins THAT reservation node's result port directly
+        (per-node, order-independent). Without `node_id`, entries form an ordered
+        per-offer queue (legacy).
       required:
         - outcome
       properties:
         outcome:
           type: string
-          enum: [accepted, rejected, timeout]
+          enum: [accepted, rejected, timeout, no_candidate]
+        node_id:
+          type: string
+          description: When set, this outcome is the result port of that reservation node.
         agent_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
@@ -1010,6 +1058,10 @@ components:
         status:
           type: string
           enum: [ok, error, skipped, suspended]
+        port:
+          type: string
+          nullable: true
+          description: The output port the node took (e.g. true/false, accepted/timeout).
         input:
           type: object
           additionalProperties: true
@@ -1026,11 +1078,28 @@ components:
           type: string
           nullable: true
         duration_ms:
-          type: integer
+          type: number
           nullable: true
+          description: Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation.
         error:
           type: string
           nullable: true
+        region:
+          type: string
+          nullable: true
+          description: The id of the control-flow body region this step ran inside (loop/parallel/try_catch), if any.
+        iteration:
+          type: integer
+          nullable: true
+          description: Zero-based loop iteration index for steps inside a loop_for/loop_while body.
+        branch:
+          type: integer
+          nullable: true
+          description: Zero-based branch index for steps inside a parallel branch.
+        caught:
+          type: boolean
+          nullable: true
+          description: True when this step's domain failure was caught by an enclosing try_catch.
 
     Trace:
       type: object
@@ -1055,6 +1124,10 @@ components:
         flow_version_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
+        flow_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          description: Set for simulation traces (which pin a draft, not a published version).
         outcome:
           type: string
           nullable: true
@@ -1066,6 +1139,20 @@ components:
           type: string
           format: date-time
           readOnly: true
+
+    SimulateFlowResponse:
+      type: object
+      description: A simulation trace plus the resolved virtual clock start (so replay is exact even when the request omitted it).
+      required:
+        - virtual_clock_start
+        - trace
+      properties:
+        virtual_clock_start:
+          type: string
+          format: date-time
+          description: The virtual clock origin actually used (echoed from the request, or server-chosen when omitted).
+        trace:
+          $ref: "#/components/schemas/Trace"
 
     CreateRouteRequest:
       type: object
@@ -1083,6 +1170,20 @@ components:
         interaction_input:
           type: object
           additionalProperties: true
+
+    SubmitRouteInput:
+      type: object
+      description: A captured value submitted to a route waiting at an interactive-input node.
+      required:
+        - value
+      properties:
+        node_id:
+          type: string
+          description: >
+            The input node to answer. Optional — defaults to the node the route is
+            currently parked at (its resume cursor).
+        value:
+          description: The captured value (digits, text, "approved"/"rejected", a survey score, …).
 
     RouteRequest:
       type: object
@@ -2584,6 +2685,25 @@ paths:
               schema:
                 type: string
 
+  /v1/meta/expr-functions:
+    get:
+      tags:
+        - Infrastructure
+      operationId: GetExprFunctions
+      summary: Condition-expression function catalog
+      description: >
+        Static, org-independent catalog of the functions available in the flow
+        condition DSL (str.*, num.*, arr.*, logic.*, date.*). The flow builder's
+        Advanced editor fetches this for autocomplete. Cacheable.
+      security: []
+      responses:
+        "200":
+          description: The expression function catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExprFunctionCatalog"
+
   # ── Agents (CAT-01, CAT-03) ──────────────────────────────────────────────────
 
   /v1/orgs/{org_id}/agents:
@@ -3280,7 +3400,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Trace"
+                $ref: "#/components/schemas/SimulateFlowResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
@@ -3291,6 +3411,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FlowValidationResult"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/flows/{id}/traces:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Flows]
+      operationId: ListFlowTraces
+      summary: List simulation/runtime traces for a flow, newest first
+      security:
+        - OrgHeader: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Traces for the flow, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [traces]
+                properties:
+                  traces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Trace"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -3597,6 +3754,45 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: Reservation is no longer offered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}/input:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: SubmitRouteInput
+      summary: Submit a captured value to a route waiting at an interactive-input node
+      description: >
+        Resumes a route parked at an interactive-input node (get_dtmf,
+        prompt_text, manual_approval, …) by supplying the captured value. The
+        node stores it into its variable and takes the captured branch instead of
+        timing out. The route must be in the `waiting` state.
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRouteInput"
+      responses:
+        "200":
+          description: Input accepted; the route resumed (run to completion or re-parked).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Route is not waiting for input (already resumed, completed, or raced).
           content:
             application/json:
               schema:
