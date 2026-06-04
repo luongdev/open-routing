@@ -137,3 +137,39 @@ func (q *Queries) InsertActiveBinding(ctx context.Context, arg InsertActiveBindi
 	)
 	return i, err
 }
+
+const listActiveBindings = `-- name: ListActiveBindings :many
+SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, active, created_at, updated_at FROM flow_entry_bindings
+WHERE org_id = $1 AND active = TRUE
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListActiveBindings(ctx context.Context, orgID pgtype.UUID) ([]FlowEntryBinding, error) {
+	rows, err := q.db.Query(ctx, listActiveBindings, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FlowEntryBinding{}
+	for rows.Next() {
+		var i FlowEntryBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Channel,
+			&i.EntryCode,
+			&i.FlowVersionID,
+			&i.FlowCode,
+			&i.Active,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

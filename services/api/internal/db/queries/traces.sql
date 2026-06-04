@@ -14,3 +14,9 @@ SELECT * FROM traces
 WHERE org_id = $1 AND flow_id = $2
 ORDER BY created_at DESC
 LIMIT $3;
+
+-- name: GetTraceByRoute :one
+SELECT * FROM traces
+WHERE org_id = $1 AND route_request_id = $2
+ORDER BY created_at DESC
+LIMIT 1;

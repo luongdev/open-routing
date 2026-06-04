@@ -30,3 +30,8 @@ WHERE org_id = $1 AND channel = $2 AND entry_code = $3 AND active = TRUE
 INSERT INTO flow_entry_bindings (id, org_id, channel, entry_code, flow_version_id, flow_code, active)
 VALUES ($1, $2, $3, $4, $5, $6, TRUE)
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, active, created_at, updated_at;
+
+-- name: ListActiveBindings :many
+SELECT * FROM flow_entry_bindings
+WHERE org_id = $1 AND active = TRUE
+ORDER BY created_at DESC;

@@ -376,20 +376,12 @@ func (e *Endpoints) GetFlowVersion(ctx context.Context, req api.GetFlowVersionRe
 
 // SimulateFlow + ListFlowTraces live in trace_sim.go (3b).
 
+// CreateRouteRequest + the reservation lifecycle land in route_live.go (W3-3);
+// the reads (Get/List route requests + reservations, trace, bindings) are
+// already implemented there. The remaining stubs below are the write path.
+
 func (*Endpoints) CreateRouteRequest(_ context.Context, _ api.CreateRouteRequestRequestObject) (api.CreateRouteRequestResponseObject, error) {
 	return api.CreateRouteRequest500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) GetRouteRequest(_ context.Context, _ api.GetRouteRequestRequestObject) (api.GetRouteRequestResponseObject, error) {
-	return api.GetRouteRequest500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) GetRouteRequestTrace(_ context.Context, _ api.GetRouteRequestTraceRequestObject) (api.GetRouteRequestTraceResponseObject, error) {
-	return api.GetRouteRequestTrace500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) GetReservation(_ context.Context, _ api.GetReservationRequestObject) (api.GetReservationResponseObject, error) {
-	return api.GetReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }
 
 func (*Endpoints) AcceptReservation(_ context.Context, _ api.AcceptReservationRequestObject) (api.AcceptReservationResponseObject, error) {
@@ -420,18 +412,6 @@ func (e *Endpoints) GetTrace(ctx context.Context, req api.GetTraceRequestObject)
 	return api.GetTrace200JSONResponse(t), nil
 }
 
-func (*Endpoints) ListRouteRequests(_ context.Context, _ api.ListRouteRequestsRequestObject) (api.ListRouteRequestsResponseObject, error) {
-	return api.ListRouteRequests500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) ListRouteRequestReservations(_ context.Context, _ api.ListRouteRequestReservationsRequestObject) (api.ListRouteRequestReservationsResponseObject, error) {
-	return api.ListRouteRequestReservations500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
 func (*Endpoints) CompleteReservation(_ context.Context, _ api.CompleteReservationRequestObject) (api.CompleteReservationResponseObject, error) {
 	return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
-}
-
-func (*Endpoints) ListFlowEntryBindings(_ context.Context, _ api.ListFlowEntryBindingsRequestObject) (api.ListFlowEntryBindingsResponseObject, error) {
-	return api.ListFlowEntryBindings500JSONResponse{InternalServerErrorJSONResponse: notImpl()}, nil
 }

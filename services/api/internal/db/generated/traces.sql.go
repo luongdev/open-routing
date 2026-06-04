@@ -42,6 +42,40 @@ func (q *Queries) GetTrace(ctx context.Context, arg GetTraceParams) (Trace, erro
 	return i, err
 }
 
+const getTraceByRoute = `-- name: GetTraceByRoute :one
+SELECT id, org_id, route_request_id, kind, flow_version_id, steps, outcome, created_at, flow_id, compiled_plan_snapshot, plan_format_version, simulation_input, read_set_snapshot, graph_hash FROM traces
+WHERE org_id = $1 AND route_request_id = $2
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetTraceByRouteParams struct {
+	OrgID          pgtype.UUID `json:"org_id"`
+	RouteRequestID pgtype.UUID `json:"route_request_id"`
+}
+
+func (q *Queries) GetTraceByRoute(ctx context.Context, arg GetTraceByRouteParams) (Trace, error) {
+	row := q.db.QueryRow(ctx, getTraceByRoute, arg.OrgID, arg.RouteRequestID)
+	var i Trace
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.RouteRequestID,
+		&i.Kind,
+		&i.FlowVersionID,
+		&i.Steps,
+		&i.Outcome,
+		&i.CreatedAt,
+		&i.FlowID,
+		&i.CompiledPlanSnapshot,
+		&i.PlanFormatVersion,
+		&i.SimulationInput,
+		&i.ReadSetSnapshot,
+		&i.GraphHash,
+	)
+	return i, err
+}
+
 const insertTrace = `-- name: InsertTrace :one
 INSERT INTO traces (
     id, org_id, kind, flow_id, flow_version_id, route_request_id,
