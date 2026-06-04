@@ -49,10 +49,6 @@ type Endpoints struct {
 
 func New(deps Deps) *Endpoints { return &Endpoints{deps: deps, reg: runtime.DefaultRegistry()} }
 
-func notImpl() api.InternalServerErrorJSONResponse {
-	return api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "not_implemented"}
-}
-
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

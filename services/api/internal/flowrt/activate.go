@@ -117,7 +117,7 @@ func (e *Endpoints) rollback(ctx context.Context, orgID uuid.UUID, t rollbackTar
 	qtx := generated.New(tx)
 
 	target, err := qtx.GetFlowVersionByNumber(ctx, generated.GetFlowVersionByNumberParams{
-		OrgID: pgUUID(orgID), FlowCode: t.flowCode, VersionNumber: int32(t.versionNumber),
+		OrgID: pgUUID(orgID), FlowCode: t.flowCode, VersionNumber: int32(t.versionNumber), //nolint:gosec // version numbers are small + bounded
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return generated.FlowVersion{}, generated.FlowEntryBinding{}, errVersionNotFound

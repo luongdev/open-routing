@@ -39,7 +39,7 @@ func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.P
 	// forever once its lease expires (re-review H5).
 	_, _ = rawq.CancelExhaustedContinuations(ctx, generated.CancelExhaustedContinuationsParams{UpdatedAt: ts(now), AttemptCount: maxContinuationAttempts})
 	claimed, err := rawq.ClaimDueContinuations(ctx, generated.ClaimDueContinuationsParams{
-		ClaimedAt: ts(now), ClaimedBy: &wid, ClaimExpiresAt: ts(now.Add(lease)), Limit: int32(limit),
+		ClaimedAt: ts(now), ClaimedBy: &wid, ClaimExpiresAt: ts(now.Add(lease)), Limit: int32(limit), //nolint:gosec // worker batch limit is small + bounded
 		AttemptCount: maxContinuationAttempts,
 	})
 	if err != nil {

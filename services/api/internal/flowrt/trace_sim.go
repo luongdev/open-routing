@@ -288,7 +288,7 @@ func (e *Endpoints) ListFlowTraces(ctx context.Context, req api.ListFlowTracesRe
 	// can't bypass the cap or hit a DB error.
 	limit := int32(20)
 	if req.Params.Limit != nil {
-		limit = int32(*req.Params.Limit)
+		limit = int32(*req.Params.Limit) //nolint:gosec // Limit query param is bounded (<=100)
 	}
 	if limit < 1 {
 		limit = 1
