@@ -184,18 +184,21 @@ type Reservation struct {
 }
 
 type RouteRequest struct {
-	ID               pgtype.UUID        `json:"id"`
-	OrgID            pgtype.UUID        `json:"org_id"`
-	Channel          string             `json:"channel"`
-	EntryCode        string             `json:"entry_code"`
-	FlowVersionID    pgtype.UUID        `json:"flow_version_id"`
-	FlowCode         *string            `json:"flow_code"`
-	InteractionInput []byte             `json:"interaction_input"`
-	Status           string             `json:"status"`
-	FailureCode      *string            `json:"failure_code"`
-	ReadSetSnapshot  []byte             `json:"read_set_snapshot"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	OrgID                pgtype.UUID        `json:"org_id"`
+	Channel              string             `json:"channel"`
+	EntryCode            string             `json:"entry_code"`
+	FlowVersionID        pgtype.UUID        `json:"flow_version_id"`
+	FlowCode             *string            `json:"flow_code"`
+	InteractionInput     []byte             `json:"interaction_input"`
+	Status               string             `json:"status"`
+	FailureCode          *string            `json:"failure_code"`
+	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ResumeCursor         []byte             `json:"resume_cursor"`
+	CurrentReservationID pgtype.UUID        `json:"current_reservation_id"`
+	RunSeq               int32              `json:"run_seq"`
 }
 
 type RuntimeEvent struct {
