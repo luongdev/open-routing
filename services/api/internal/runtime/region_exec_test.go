@@ -309,6 +309,114 @@ func TestRun_VarsReflectParallelMerge(t *testing.T) {
 	}
 }
 
+// A failure that bubbles through a control node (loop body leaf → loop → outer
+// try_catch) must mark the LEAF as caught, not the relaying control node
+// (review: failIndex overwrite).
+func TestRunTryCatch_MarksLeafBubbledThroughLoop(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("tc", NodeTryCatch, tryCatchConfig{}),
+			inRegion(node("lf", NodeLoopFor, loopForConfig{ArrayExpr: "items", MaxIter: 10}), "tc"),
+			inRegion(node("boom", NodeRouteQueue, routeQueueConfig{Queue: "ghost"}), "lf"),
+			node("recover", NodeLog, logConfig{Message: "recovered"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "tc"},
+			{From: "tc", To: "lf", Label: "body"},
+			{From: "lf", To: "boom", Label: "body"},
+			{From: "tc", To: "recover", Label: "catch"},
+			{From: "tc", To: "end", Label: "done"},
+			{From: "recover", To: "end"},
+		},
+	}
+	tr, err := simRun(t, g, map[string]any{"items": []any{"a"}})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if tr.Outcome != "completed" {
+		t.Fatalf("outcome=%q, want completed (caught)", tr.Outcome)
+	}
+	for _, s := range tr.Steps {
+		if s.NodeID == "boom" && !s.Caught {
+			t.Fatalf("the failing leaf was not marked caught")
+		}
+		if s.NodeID == "lf" && s.Caught {
+			t.Fatalf("the relaying loop_for node was wrongly marked caught")
+		}
+	}
+}
+
+// A terminal end inside a region is rejected at validation — which is why the
+// walkResult.terminated propagation through control nodes is defense-in-depth,
+// not a reachable path. Lock that validation guard so the invariant holds.
+func TestValidate_RejectsEndInsideRegion(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("lf", NodeLoopFor, loopForConfig{ArrayExpr: "items", MaxIter: 10}),
+			inRegion(node("bodyend", NodeEnd, nil), "lf"),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "lf"},
+			{From: "lf", To: "bodyend", Label: "body"},
+			{From: "lf", To: "end", Label: "done"},
+		},
+	}
+	issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	found := false
+	for _, is := range issues {
+		if is.Code == "end_in_region" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected end_in_region issue, got %+v", issues)
+	}
+}
+
+// parallel branches are CONCURRENT: a wait in each branch starts from the same
+// virtual time, so the join advances the clock to the LONGEST branch, not the
+// sum (reviewers HIGH: shared clock).
+func TestRunParallel_ClockJoinsAtMaxNotSum(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("par", NodeParallel, parallelConfig{}),
+			inRegion(node("w0", NodeWait, waitConfig{DurationMs: 10000}), "par#0"),
+			inRegion(node("w1", NodeWait, waitConfig{DurationMs: 4000}), "par#1"),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "par"},
+			{From: "par", To: "w0", Label: "body:0"},
+			{From: "par", To: "w1", Label: "body:1"},
+			{From: "par", To: "end", Label: "done"},
+		},
+	}
+	if issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil); err != nil || len(issues) != 0 {
+		t.Fatalf("invalid: %v %+v", err, issues)
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	t0 := time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC)
+	clk := NewVirtualClock(t0)
+	ex := NewExecutor(DefaultRegistry(), WithAutoResume())
+	if _, err := ex.Run(context.Background(), clk, plan, nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := clk.Now().Sub(t0); got != 10*time.Second {
+		t.Fatalf("virtual time after parallel = %s, want 10s (max branch, not the 14s sum)", got)
+	}
+}
+
 // try_catch catches a body domain failure (route_queue with no snapshot →
 // missing_catalog_reference) and takes the catch port.
 func TestRunTryCatch_CatchesDomainFailure(t *testing.T) {

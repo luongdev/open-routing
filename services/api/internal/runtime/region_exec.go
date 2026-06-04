@@ -96,27 +96,33 @@ func (r *runner) walk(regionID, entry string) (walkResult, error) {
 		}
 
 		var sr StepResult
-		var fail *RoutingFailure
 		if ControlKinds[step.Kind] {
 			// Record the control node first (placeholder), then run its body so
 			// body steps appear AFTER it; backfill its port/status/duration.
 			idx := r.record(step, "ok", "", "", nil, 0)
 			t0 := time.Now()
-			p, f, susp, err := r.runControl(step)
+			port, cwr, err := r.runControl(step, idx)
 			r.res.Trace.Steps[idx].DurationMs = float64(time.Since(t0).Microseconds()) / 1000
 			if err != nil {
 				return walkResult{}, err
 			}
-			if susp != nil {
-				return walkResult{suspended: susp}, nil
+			// terminated / suspended / fail all bubble out of the region; only
+			// failIndex is owned by the failing node (leaf or, for a control-origin
+			// failure, the control node itself — set inside runControl).
+			if cwr.terminated {
+				return walkResult{terminated: true}, nil
 			}
-			r.res.Trace.Steps[idx].Port = p
-			if f != nil {
+			if cwr.suspended != nil {
+				r.res.Trace.Steps[idx].Status = "suspended"
+				return walkResult{suspended: cwr.suspended}, nil
+			}
+			if cwr.fail != nil {
 				r.res.Trace.Steps[idx].Status = "failed"
-				r.res.Trace.Steps[idx].Error = f.Message
-				r.failIndex = idx // a control-origin failure (loop_limit etc.) is the control node itself
+				r.res.Trace.Steps[idx].Error = cwr.fail.Message
+				return walkResult{fail: cwr.fail}, nil
 			}
-			sr, fail = StepResult{Port: p}, f
+			r.res.Trace.Steps[idx].Port = port
+			sr = StepResult{Port: port}
 		} else {
 			out, susp, err := r.execNode(step)
 			if err != nil {
@@ -128,12 +134,12 @@ func (r *runner) walk(regionID, entry string) (walkResult, error) {
 			if out.Terminal {
 				return walkResult{terminated: true}, nil
 			}
-			sr, fail = out, out.Failure
+			if out.Failure != nil {
+				return walkResult{fail: out.Failure}, nil // failIndex set in execNode
+			}
+			sr = out
 		}
 
-		if fail != nil {
-			return walkResult{fail: fail}, nil
-		}
 		next, ok := resolveNext(cur, sr, r.flowByFrom)
 		if !ok {
 			return walkResult{}, nil // region/level done
@@ -190,6 +196,10 @@ func cloneVars(m map[string]any) map[string]any {
 	return c
 }
 
+// deepClone handles exactly the JSON-shaped values the var bag holds:
+// interaction_input is JSON-unmarshaled (map[string]any / []any / scalars) and
+// expr results are the same shape. Typed containers (map[string]int, []string)
+// never enter the bag, so the two container cases cover every mutable value.
 func deepClone(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
