@@ -10,14 +10,15 @@ import (
 // on auto-resume); nodes see only the ExecCtx surface.
 type execState struct {
 	context.Context
-	clock        Clock
-	vars         map[string]any
-	events       []EmittedEvent
-	candidates   []Candidate
-	snapshot     *Snapshot
-	driver       RoutingDriver
-	scopes       []map[string]any  // 3D-2 loop control-var scopes (innermost last)
-	nodeOutcomes map[string]string // per-node scripted reservation result port
+	clock          Clock
+	vars           map[string]any
+	events         []EmittedEvent
+	candidates     []Candidate
+	snapshot       *Snapshot
+	driver         RoutingDriver
+	scopes         []map[string]any  // 3D-2 loop control-var scopes (innermost last)
+	nodeOutcomes   map[string]string // per-node scripted reservation result port
+	scriptedInputs map[string]any    // per-node captured input value (interactive-input nodes)
 	// writes, when non-nil, records the keys SetVar touches. parallel turns this
 	// on per branch so the merge keys actual WRITES (last-writer-wins) — a value
 	// diff drops a branch that rewrites a key back to its snapshot value.
@@ -72,6 +73,10 @@ func (s *execState) Reserve(agentID string, timeout time.Duration) ReservationOu
 func (s *execState) ScriptedOutcome(nodeID string) (string, bool) {
 	p, ok := s.nodeOutcomes[nodeID]
 	return p, ok
+}
+func (s *execState) ScriptedInput(nodeID string) (any, bool) {
+	v, ok := s.scriptedInputs[nodeID]
+	return v, ok
 }
 func (s *execState) LiveRouting() bool { return s.offerer != nil }
 func (s *execState) Offer(agentID string, timeout time.Duration) (string, bool, error) {
@@ -139,13 +144,14 @@ type ResumeCursor struct {
 // in simulation it advances the (virtual) clock past the delay and continues;
 // live it parks and returns the Suspension for the continuation worker.
 type Executor struct {
-	reg          *Registry
-	autoResume   bool
-	maxSteps     int
-	snapshot     *Snapshot
-	driver       RoutingDriver
-	nodeOutcomes map[string]string
-	offerer      Offerer
+	reg            *Registry
+	autoResume     bool
+	maxSteps       int
+	snapshot       *Snapshot
+	driver         RoutingDriver
+	nodeOutcomes   map[string]string
+	scriptedInputs map[string]any
+	offerer        Offerer
 }
 
 type ExecutorOption func(*Executor)
@@ -167,6 +173,12 @@ func WithRouting(snapshot *Snapshot, driver RoutingDriver) ExecutorOption {
 // WithNodeOutcomes pins per-reservation-node result ports (node id → port).
 func WithNodeOutcomes(m map[string]string) ExecutorOption {
 	return func(e *Executor) { e.nodeOutcomes = m }
+}
+
+// WithScriptedInputs pins per-node captured input values (node id → value) so
+// interactive-input nodes resolve their branch deterministically in simulation.
+func WithScriptedInputs(m map[string]any) ExecutorOption {
+	return func(e *Executor) { e.scriptedInputs = m }
 }
 
 // WithOfferer makes the run LIVE: reservation nodes offer the top candidate via
@@ -198,7 +210,7 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 	for k, v := range input {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, offerer: ex.offerer}
+	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer}
 	return ex.drive(state, clock, plan, plan.Entry)
 }
 
@@ -215,7 +227,7 @@ func (ex *Executor) RunFrom(ctx context.Context, clock Clock, plan CompiledPlan,
 	for k, v := range cur.Vars {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars, candidates: candidates, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, offerer: ex.offerer, resumeAt: cur.NodeID, resumeSignal: signal}
+	state := &execState{Context: ctx, clock: clock, vars: vars, candidates: candidates, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, resumeAt: cur.NodeID, resumeSignal: signal}
 	return ex.drive(state, clock, plan, cur.NodeID)
 }
 
@@ -230,7 +242,7 @@ func (ex *Executor) RunResume(ctx context.Context, clock Clock, plan CompiledPla
 	for k, val := range vars {
 		v[k] = val
 	}
-	state := &execState{Context: ctx, clock: clock, vars: v, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, offerer: ex.offerer, resumeAt: resumeNodeID, resumeSignal: signal}
+	state := &execState{Context: ctx, clock: clock, vars: v, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, resumeAt: resumeNodeID, resumeSignal: signal}
 	return ex.drive(state, clock, plan, plan.Entry)
 }
 

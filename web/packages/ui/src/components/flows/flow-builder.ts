@@ -202,6 +202,10 @@ const RUNTIME_KINDS = new Set<FlowNodeKind>([
   'send_template',
   'http_request', 'webhook',
   'set_agent_state', 'wrapup_timer',
+  // 3D-4 interactive input (suspend-for-value). Branch on the captured value;
+  // sim resolves from a scripted value, live times out.
+  'get_dtmf', 'prompt_text', 'wait_signal', 'manual_approval', 'detect_speech',
+  'csat_survey', 'nps_survey',
 ]);
 
 // Control-flow kinds own a body region (their `body`/`body:N` port enters a
@@ -244,6 +248,23 @@ const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
     { id: 'done', label: 'after', kind: 'success' },
   ],
   // parallel is dynamic (body:0..body:N) — see outputsForNode.
+  // 3D-4 interactive input: branch on the captured value (or timeout). Port ids
+  // match node_input.go inputSpecs.
+  get_dtmf: [{ id: 'captured', label: 'captured', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }],
+  prompt_text: [{ id: 'captured', label: 'captured', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }],
+  wait_signal: [{ id: 'received', label: 'received', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }],
+  manual_approval: [
+    { id: 'approved', label: 'approved', kind: 'success' },
+    { id: 'rejected', label: 'rejected', kind: 'error' },
+    { id: 'timeout', label: 'timeout', kind: 'timeout' },
+  ],
+  detect_speech: [
+    { id: 'recognized', label: 'recognized', kind: 'success' },
+    { id: 'no_match', label: 'no match', kind: 'default' },
+    { id: 'timeout', label: 'timeout', kind: 'timeout' },
+  ],
+  csat_survey: [{ id: 'done', label: 'done', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }],
+  nps_survey: [{ id: 'done', label: 'done', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }],
 };
 
 // parallel branch count (body:0..body:N-1). Bounded so the port row stays legible.
@@ -367,6 +388,43 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   ],
   set_agent_state: [{ key: 'state', label: 'State', type: 'select', options: ['Ready', 'NotReady', 'Break', 'WrapUp', 'Offline'] }],
   wrapup_timer: [{ key: 'duration_sec', label: 'Duration (sec)', type: 'number' }],
+  // 3D-4 interactive input. The captured value is stored in save_as (defaults
+  // shown); in the simulator set a value per node to take the captured branch,
+  // else it times out. prompt supports ${var}.
+  get_dtmf: [
+    { key: 'prompt', label: 'Prompt', type: 'textarea', hint: 'Supports ${var}', placeholder: 'Press 1 for sales, 2 for support' },
+    { key: 'save_as', label: 'Save digits to variable', type: 'text', placeholder: 'digits' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  prompt_text: [
+    { key: 'prompt', label: 'Prompt', type: 'textarea', hint: 'Supports ${var}' },
+    { key: 'save_as', label: 'Save text to variable', type: 'text', placeholder: 'text' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  wait_signal: [
+    { key: 'save_as', label: 'Save signal payload to variable', type: 'text', placeholder: 'signal' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  manual_approval: [
+    { key: 'prompt', label: 'Approval question', type: 'textarea', hint: 'Supports ${var}', placeholder: 'Approve refund for ${customer.name}?' },
+    { key: 'save_as', label: 'Save decision to variable', type: 'text', placeholder: 'decision' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  detect_speech: [
+    { key: 'prompt', label: 'Prompt', type: 'textarea', hint: 'Supports ${var}' },
+    { key: 'save_as', label: 'Save transcript to variable', type: 'text', placeholder: 'speech' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  csat_survey: [
+    { key: 'prompt', label: 'Question', type: 'textarea', hint: 'Supports ${var}', placeholder: 'How satisfied were you? (1-5)' },
+    { key: 'save_as', label: 'Save rating to variable', type: 'text', placeholder: 'csat' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  nps_survey: [
+    { key: 'prompt', label: 'Question', type: 'textarea', hint: 'Supports ${var}', placeholder: 'How likely are you to recommend us? (0-10)' },
+    { key: 'save_as', label: 'Save score to variable', type: 'text', placeholder: 'nps' },
+    { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
 };
 
 // Fraction (0..1) of card WIDTH where output port `idx` sits along the
@@ -2388,6 +2446,9 @@ export class OrFlowBuilder extends LitElement {
   // Per-node scripted reservation result (sim branch control): node id → port.
   // Set by selecting a reservation node in sim and picking its outcome.
   @state() private accessor _simNodeOutcomes: Record<string, 'accepted' | 'timeout' | 'no_candidate'> = {};
+  // 3D-4: per-input-node captured value pinned for the simulator (node id →
+  // value). Sent as scripted_effect_outputs; empty → that node times out.
+  @state() private accessor _simNodeInputs: Record<string, string> = {};
   // Input draft for the wait_input form. Resets each time the sim lands on a
   // wait_input step. Pre-filled with the "expected" value from the trace so
   // the demo can be stepped through without typing each time.
@@ -2960,11 +3021,13 @@ export class OrFlowBuilder extends LitElement {
     this._simRunning = true;
     try {
       const scripted = Object.entries(this._simNodeOutcomes).map(([node_id, outcome]) => ({ node_id, outcome }));
+      const inputs = Object.fromEntries(Object.entries(this._simNodeInputs).filter(([, v]) => v !== ''));
       const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/simulate' as never, {
         params: { path: { org_id: this.orgId, id: this._loaded.id } },
         body: {
           interaction_input: this._simInteractionInput(),
           scripted_reservation_outcomes: scripted.length ? scripted : undefined,
+          scripted_effect_outputs: Object.keys(inputs).length ? inputs : undefined,
         },
       } as never)) as {
         data?: components['schemas']['SimulateFlowResponse'];
@@ -3027,6 +3090,44 @@ export class OrFlowBuilder extends LitElement {
 
   private _outcomeKind(o: string): string {
     return o === 'accepted' ? 'success' : o === 'timeout' ? 'timeout' : 'error';
+  }
+
+  // The interactive-input kinds — the simulator lets you pin a captured value
+  // for these so the run takes the "got a value" branch instead of timing out.
+  private static readonly _INPUT_KINDS = new Set<FlowNodeKind>([
+    'get_dtmf', 'prompt_text', 'wait_signal', 'manual_approval', 'detect_speech', 'csat_survey', 'nps_survey',
+  ]);
+
+  private _renderSimInputPicker() {
+    const id = this._selectedNodeId;
+    const node = id ? this._nodes.find(n => n.id === id) : undefined;
+    if (!node || !OrFlowBuilder._INPUT_KINDS.has(node.kind)) return nothing;
+    const cur = this._simNodeInputs[node.id] ?? '';
+    const hint = node.kind === 'manual_approval' ? 'approved / rejected'
+      : node.kind === 'csat_survey' ? '1–5'
+      : node.kind === 'nps_survey' ? '0–10'
+      : node.kind === 'get_dtmf' ? 'e.g. 1234'
+      : 'captured value';
+    return html`
+      <div class="form-section sim-outcome">
+        <label><span>Simulated captured value</span></label>
+        <input class="form-input" type="text" placeholder=${hint} .value=${cur}
+          @change=${(e: Event) => void this._setNodeInput(node.id, (e.target as HTMLInputElement).value)}>
+        <p class="sim-outcome-hint">
+          ${cur !== ''
+            ? html`Pinning <strong>${cur}</strong> — the run takes the captured branch.`
+            : html`Empty → this node <strong>times out</strong> in the sim. Type a value and it re-runs.`}
+        </p>
+      </div>`;
+  }
+
+  private async _setNodeInput(nodeId: string, value: string): Promise<void> {
+    const next = { ...this._simNodeInputs };
+    if (value === '') delete next[nodeId];
+    else next[nodeId] = value;
+    this._simNodeInputs = next;
+    await this._runSimulation();
+    this._selectedNodeId = nodeId;
   }
 
   // Build the simulation's interaction_input (the var bag) from the editable
@@ -4884,6 +4985,7 @@ export class OrFlowBuilder extends LitElement {
               </div>
               ${!isSim && this._validation ? this._renderValidationPanel() : nothing}
               ${isSim ? this._renderSimOutcomePicker() : nothing}
+              ${isSim ? this._renderSimInputPicker() : nothing}
               ${isSim && this._currentStep
                 ? this._renderSimInspector(this._currentStep)
                 : this._renderInspector(selected)}

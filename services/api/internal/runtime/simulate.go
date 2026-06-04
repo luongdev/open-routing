@@ -14,6 +14,7 @@ type SimInput struct {
 	Snapshot         *Snapshot
 	ScriptedOutcomes []ReservationOutcome // legacy ordered per-offer queue
 	NodeOutcomes     map[string]string    // per-node result port (node id → accepted/timeout/no_candidate)
+	ScriptedInputs   map[string]any       // per-node captured input value (interactive-input nodes)
 	ClockStart       time.Time
 }
 
@@ -24,7 +25,7 @@ type SimInput struct {
 func Simulate(ctx context.Context, reg *Registry, plan CompiledPlan, in SimInput) (Trace, error) {
 	clock := NewVirtualClock(in.ClockStart)
 	driver := NewScriptedDriver(in.ScriptedOutcomes)
-	ex := NewExecutor(reg, WithAutoResume(), WithRouting(in.Snapshot, driver), WithNodeOutcomes(in.NodeOutcomes))
+	ex := NewExecutor(reg, WithAutoResume(), WithRouting(in.Snapshot, driver), WithNodeOutcomes(in.NodeOutcomes), WithScriptedInputs(in.ScriptedInputs))
 	res, err := ex.Run(ctx, clock, plan, in.Input)
 	return res.Trace, err
 }

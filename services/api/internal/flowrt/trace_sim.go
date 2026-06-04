@@ -206,13 +206,17 @@ func (e *Endpoints) SimulateFlow(ctx context.Context, req api.SimulateFlowReques
 	var input map[string]any
 	var scripted []runtime.ReservationOutcome
 	var nodeOutcomes map[string]string
+	var scriptedInputs map[string]any
 	if req.Body != nil {
 		input = req.Body.InteractionInput
 		scripted, nodeOutcomes = scriptedOutcomes(req.Body.ScriptedReservationOutcomes)
+		if req.Body.ScriptedEffectOutputs != nil {
+			scriptedInputs = *req.Body.ScriptedEffectOutputs
+		}
 	}
 
 	trace, rErr := runtime.Simulate(ctx, e.reg, plan, runtime.SimInput{
-		Input: input, Snapshot: snapshot, ScriptedOutcomes: scripted, NodeOutcomes: nodeOutcomes, ClockStart: clockStart,
+		Input: input, Snapshot: snapshot, ScriptedOutcomes: scripted, NodeOutcomes: nodeOutcomes, ScriptedInputs: scriptedInputs, ClockStart: clockStart,
 	})
 	if rErr != nil {
 		e.deps.Logger.ErrorContext(ctx, "simulate: run", "err", rErr)

@@ -60,6 +60,17 @@ const (
 	NodeWebhook       NodeKind = "webhook"
 	NodeSetAgentState NodeKind = "set_agent_state"
 	NodeWrapupTimer   NodeKind = "wrapup_timer"
+	// 3D-4 interactive input (node_input.go): pause for an inbound value, store it
+	// into a variable, and branch on it. Sim resolves from a scripted captured
+	// value (scripted_effect_outputs); live suspends until the timeout (a
+	// submit-value API is v0.3), then takes the timeout branch.
+	NodeGetDTMF        NodeKind = "get_dtmf"
+	NodePromptText     NodeKind = "prompt_text"
+	NodeWaitSignal     NodeKind = "wait_signal"
+	NodeManualApproval NodeKind = "manual_approval"
+	NodeDetectSpeech   NodeKind = "detect_speech"
+	NodeCSATSurvey     NodeKind = "csat_survey"
+	NodeNPSSurvey      NodeKind = "nps_survey"
 )
 
 // V02NodeKinds is the locked v0.2 subset, in palette order. Tests assert the
@@ -77,6 +88,9 @@ var V02NodeKinds = []NodeKind{
 	NodeSendTemplate,
 	NodeHTTPRequest, NodeWebhook,
 	NodeSetAgentState, NodeWrapupTimer,
+	// 3D-4: interactive input (suspend-for-value).
+	NodeGetDTMF, NodePromptText, NodeWaitSignal, NodeManualApproval, NodeDetectSpeech,
+	NodeCSATSurvey, NodeNPSSurvey,
 }
 
 // ControlKinds are the region-owning control-flow nodes the executor runs via
@@ -168,6 +182,11 @@ type ExecCtx interface {
 	// no_candidate) for a reservation node id, when the simulation pinned one —
 	// so a node takes that branch directly instead of running the offer loop.
 	ScriptedOutcome(nodeID string) (string, bool)
+	// ScriptedInput returns a per-node captured input VALUE the simulator pinned
+	// (scripted_effect_outputs[nodeID]); an interactive-input node resolves its
+	// branch + captured variable from it instead of suspending. ok=false → none
+	// pinned (live, or sim left it unanswered → the node times out).
+	ScriptedInput(nodeID string) (any, bool)
 
 	// LIVE routing (Wave 3 part 2). A live run carries an Offerer; reservation
 	// then OFFERS the top candidate and SUSPENDS (vs the sim's synchronous loop).

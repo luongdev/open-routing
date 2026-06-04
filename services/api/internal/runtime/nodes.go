@@ -56,6 +56,15 @@ var defaultDescriptors = []Descriptor{
 	{Kind: NodeWebhook, Title: "Webhook", Category: "integration", Summary: "Fire-and-forget outbound webhook (record/mock)."},
 	{Kind: NodeSetAgentState, Title: "Set Agent State", Category: "routing", Summary: "Record an agent presence-change intent."},
 	{Kind: NodeWrapupTimer, Title: "Wrap-up Timer", Category: "routing", Summary: "Record a server-owned ACW countdown intent."},
+	// 3D-4: interactive input. Pause for a value, store it, branch on it
+	// (see node_input.go). Sim resolves from a scripted value; live times out.
+	{Kind: NodeGetDTMF, Title: "Get DTMF", Category: "input", Summary: "Capture IVR digits (captured / timeout)."},
+	{Kind: NodePromptText, Title: "Prompt Text", Category: "input", Summary: "Capture free text (captured / timeout)."},
+	{Kind: NodeWaitSignal, Title: "Wait for Signal", Category: "input", Summary: "Pause until an external signal (received / timeout)."},
+	{Kind: NodeManualApproval, Title: "Manual Approval", Category: "input", Summary: "Human gate (approved / rejected / timeout)."},
+	{Kind: NodeDetectSpeech, Title: "Detect Speech", Category: "input", Summary: "Recognize spoken intent (recognized / no_match / timeout)."},
+	{Kind: NodeCSATSurvey, Title: "CSAT Survey", Category: "input", Summary: "1-5 satisfaction rating (done / timeout)."},
+	{Kind: NodeNPSSurvey, Title: "NPS Survey", Category: "input", Summary: "0-10 Net Promoter Score (done / timeout)."},
 }
 
 var descriptorByKind = func() map[NodeKind]Descriptor {
@@ -94,6 +103,10 @@ func DefaultRegistry() *Registry {
 	// (must match the V02NodeKinds tail so the registry-order test holds).
 	for _, k := range sideEffectKinds {
 		r.Register(sideEffectNode{base(k)})
+	}
+	// 3D-4 interactive input: one type per kind, in inputKinds order.
+	for _, k := range inputKinds {
+		r.Register(inputNode{base(k)})
 	}
 	return r
 }
