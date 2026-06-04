@@ -1543,6 +1543,9 @@ export class OrFlowBuilder extends LitElement {
       min-width: 0;
     }
     .run-panel-col:last-child { border-right: none; }
+    /* Narrow 220px column: trim side padding so inputs get the width, and let
+       the row's own 6px padding carry the inset. */
+    .run-panel-col--vars { padding: 12px 8px 12px 12px; }
     .run-panel-col--center {
       background: color-mix(in oklch, var(--primary) 5%, var(--card));
     }
@@ -1580,7 +1583,11 @@ export class OrFlowBuilder extends LitElement {
       gap: 6px;
       overflow-y: auto;
       min-height: 0;
+      /* Hide the overlay scrollbar — it floated over the input values in this
+         narrow column. Still scrolls (wheel/trackpad/keyboard). */
+      scrollbar-width: none;
     }
+    .initvar-list::-webkit-scrollbar { width: 0; height: 0; }
     .initvar-row {
       display: flex;
       flex-direction: column;
@@ -4469,7 +4476,7 @@ export class OrFlowBuilder extends LitElement {
     const currentStepId = this._currentStep?.id ?? 'init';
     return html`
       <section class="run-panel" aria-label="Simulator run panel">
-        <div class="run-panel-col">
+        <div class="run-panel-col run-panel-col--vars">
           <div class="run-panel-header">
             <uk-icon icon="zap" height="13" width="13"></uk-icon>
             Init vars
