@@ -2312,9 +2312,13 @@ export class OrFlowBuilder extends LitElement {
   private async _fetchCatalogRefs(): Promise<void> {
     const load = async (path: string): Promise<CatalogRef[]> => {
       try {
-        const { data } = (await this.client.GET(path as never, {
-          params: { path: { org_id: this.orgId }, query: { limit: 200 } },
-        } as never)) as { data?: { items?: Array<{ code: string; name?: string }> } };
+        // limit is capped at 100 by the contract — 200 is rejected (400), which
+        // would silently empty the picker. Fetch the max page; client-side search
+        // filters within it.
+        const { data, error } = (await this.client.GET(path as never, {
+          params: { path: { org_id: this.orgId }, query: { limit: 100, include_disabled: false } },
+        } as never)) as { data?: { items?: Array<{ code: string; name?: string }> }; error?: unknown };
+        if (error) return [];
         return (data?.items ?? []).map(i => ({ code: i.code, name: i.name ?? i.code }));
       } catch {
         return [];
