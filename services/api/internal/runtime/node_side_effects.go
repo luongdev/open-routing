@@ -17,7 +17,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/luongdev/open-routing/services/api/internal/runtime/expr"
 )
 
 // sideEffectSpec declares a record/mock node's config contract. Title/Category/
@@ -94,6 +99,23 @@ func (s sideEffectNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ Cat
 			issues = append(issues, fieldIssue(n.ID, field, IssueInvalidConfig, fmt.Sprintf("%s must be a positive number", field)))
 		}
 	}
+	// Any ${...} expression embedded in a string field is parsed at publish time
+	// so a bad interpolation (e.g. ${customer.) is caught before it runs.
+	for field, v := range cfg {
+		if str, ok := v.(string); ok {
+			for _, m := range interpExprRe.FindAllStringSubmatch(str, -1) {
+				inner := strings.TrimSpace(m[1])
+				if inner == "" {
+					continue
+				}
+				if node, perr := expr.Parse(inner); perr != nil {
+					issues = append(issues, fieldIssue(n.ID, field, IssueInvalidExpr, perr.Msg))
+				} else if err := expr.Check(node); err != nil {
+					issues = append(issues, fieldIssue(n.ID, field, IssueInvalidExpr, err.Error()))
+				}
+			}
+		}
+	}
 	return issues, nil
 }
 
@@ -112,12 +134,65 @@ func (s sideEffectNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) 
 	if err != nil {
 		return StepResult{}, err
 	}
+	// Record the RESOLVED config: ${expr} placeholders in string fields are
+	// interpolated against the var bag so the trace shows exactly what would be
+	// sent (e.g. the request body with customer values substituted).
 	out := map[string]any{"node": string(step.Kind), "mode": "recorded"}
 	for k, v := range cfg {
-		out[k] = v
+		if str, ok := v.(string); ok {
+			out[k] = interpolateStr(str, ctx)
+		} else {
+			out[k] = v
+		}
 	}
 	ctx.Emit(string(step.Kind), out)
 	return StepResult{Output: out}, nil
+}
+
+// interpExprRe matches a ${expr} interpolation placeholder. Non-greedy body so
+// adjacent placeholders in one string don't merge.
+var interpExprRe = regexp.MustCompile(`\$\{([^}]*)\}`)
+
+// interpolateStr replaces each ${expr} in s with the evaluated expression,
+// stringified. An unparseable/erroring expr is left as the literal placeholder
+// (Validate already rejects bad exprs at publish, so this is a runtime safety
+// net, not the primary check).
+func interpolateStr(s string, ctx ExecCtx) string {
+	if !strings.Contains(s, "${") {
+		return s
+	}
+	return interpExprRe.ReplaceAllStringFunc(s, func(m string) string {
+		inner := strings.TrimSpace(m[2 : len(m)-1])
+		if inner == "" {
+			return m
+		}
+		v, err := evalValue(inner, ctx)
+		if err != nil {
+			return m
+		}
+		return stringifyVal(v)
+	})
+}
+
+// stringifyVal renders an interpolated value: strings verbatim, whole floats
+// without a trailing .0, bools as true/false, everything else as compact JSON.
+func stringifyVal(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case float64:
+		if t == math.Trunc(t) && !math.IsInf(t, 0) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'g', -1, 64)
+	default:
+		b, _ := json.Marshal(t)
+		return string(b)
+	}
 }
 
 func decodeSideEffectConfig(raw json.RawMessage) (map[string]any, error) {

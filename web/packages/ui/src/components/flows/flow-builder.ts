@@ -281,10 +281,13 @@ function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput
 interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'cases' | 'condition' | 'catalog' | 'expr';
+  type: 'text' | 'number' | 'select' | 'cases' | 'condition' | 'catalog' | 'expr' | 'textarea';
   options?: string[];
   // For type 'catalog': which catalog list feeds the searchable picker.
   source?: 'skill' | 'queue' | 'adapter';
+  // Optional helper line under the field (e.g. ${var} interpolation note).
+  hint?: string;
+  placeholder?: string;
 }
 
 interface CatalogRef {
@@ -327,21 +330,39 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   try_catch: [{ key: 'error_var', label: 'Error variable', type: 'text' }],
   // 3D-3 record/mock side effects. Field keys match the backend spec
   // (node_side_effects.go sideEffectSpecs) — required fields are enforced there.
-  tts_speak: [{ key: 'text', label: 'Text to speak', type: 'text' }, { key: 'voice', label: 'Voice (optional)', type: 'text' }],
-  play_prompt: [{ key: 'prompt', label: 'Prompt id / file', type: 'text' }],
-  transfer_call: [{ key: 'destination', label: 'Destination (number / SIP)', type: 'text' }],
+  // String fields interpolate ${expr} against the flow vars at run time.
+  tts_speak: [
+    { key: 'text', label: 'Text to speak', type: 'textarea', hint: 'Supports ${var} — e.g. Hello ${customer.name}', placeholder: 'Hello ${customer.name}, welcome back.' },
+    { key: 'voice', label: 'Voice (optional)', type: 'text' },
+  ],
+  play_prompt: [{ key: 'prompt', label: 'Prompt id / file', type: 'text', hint: 'Supports ${var}' }],
+  transfer_call: [{ key: 'destination', label: 'Destination (number / SIP)', type: 'text', hint: 'Supports ${var}' }],
   hangup: [{ key: 'reason', label: 'Reason (optional)', type: 'text' }],
-  send_message: [{ key: 'text', label: 'Message', type: 'text' }],
-  quick_replies: [{ key: 'text', label: 'Prompt', type: 'text' }, { key: 'options', label: 'Options (comma-separated)', type: 'text' }],
+  send_message: [{ key: 'text', label: 'Message', type: 'textarea', hint: 'Supports ${var} — e.g. Order ${order.id} is ready', placeholder: 'Hi ${customer.name} 👋' }],
+  quick_replies: [
+    { key: 'text', label: 'Prompt', type: 'textarea', hint: 'Supports ${var}' },
+    { key: 'options', label: 'Options (comma-separated)', type: 'text', placeholder: 'Yes, No, Maybe' },
+  ],
   typing_indicator: [{ key: 'seconds', label: 'Duration (sec, optional)', type: 'number' }],
-  attach_file: [{ key: 'url', label: 'File URL', type: 'text' }, { key: 'filename', label: 'Filename (optional)', type: 'text' }],
+  attach_file: [
+    { key: 'url', label: 'File URL', type: 'text', hint: 'Supports ${var}' },
+    { key: 'filename', label: 'Filename (optional)', type: 'text' },
+  ],
   bot_handoff: [{ key: 'reason', label: 'Handoff reason (optional)', type: 'text' }],
-  send_template: [{ key: 'template', label: 'Template id', type: 'text' }, { key: 'to', label: 'To (optional)', type: 'text' }],
+  send_template: [
+    { key: 'template', label: 'Template id', type: 'text' },
+    { key: 'to', label: 'To (optional)', type: 'text', hint: 'Supports ${var} — e.g. ${customer.email}' },
+  ],
   http_request: [
     { key: 'method', label: 'Method', type: 'select', options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-    { key: 'url', label: 'URL', type: 'text' },
+    { key: 'url', label: 'URL', type: 'text', hint: 'Supports ${var} — e.g. https://api/users/${customer.id}', placeholder: 'https://api.example.com/orders/${order.id}' },
+    { key: 'headers', label: 'Headers (one per line: Key: Value)', type: 'textarea', placeholder: 'Authorization: Bearer ${token}\nContent-Type: application/json' },
+    { key: 'body', label: 'Body', type: 'textarea', hint: 'Supports ${var} — interpolated into the (recorded) request body', placeholder: '{\n  "customer_id": "${customer.id}",\n  "tier": "${customer.tier}"\n}' },
   ],
-  webhook: [{ key: 'url', label: 'URL', type: 'text' }],
+  webhook: [
+    { key: 'url', label: 'URL', type: 'text', hint: 'Supports ${var}' },
+    { key: 'body', label: 'Body', type: 'textarea', hint: 'Supports ${var}', placeholder: '{\n  "event": "routed",\n  "id": "${interaction.id}"\n}' },
+  ],
   set_agent_state: [{ key: 'state', label: 'State', type: 'select', options: ['Ready', 'NotReady', 'Break', 'WrapUp', 'Offline'] }],
   wrapup_timer: [{ key: 'duration_sec', label: 'Duration (sec)', type: 'number' }],
 };
@@ -1174,6 +1195,21 @@ export class OrFlowBuilder extends LitElement {
     .form-section .form-input:focus {
       outline: none;
       border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+    }
+    .form-section textarea.form-input {
+      font-family: var(--uk-font-monospace, monospace);
+      line-height: 1.45;
+    }
+    .form-section .field-hint {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted-foreground);
+    }
+    .form-section .field-hint code {
+      font-family: var(--uk-font-monospace, monospace);
+      background: var(--muted);
+      padding: 0 3px;
+      border-radius: 3px;
     }
     /* One consistent chevron for every <select> — the raw native arrow differs
        per OS/browser, which read as "each dropdown a different style". */
@@ -4578,17 +4614,34 @@ export class OrFlowBuilder extends LitElement {
         <div class="form-section">
           <label>${f.label}</label>
           ${this._renderAdvancedExpr(node, f, String(v ?? ''))}
+          ${f.hint ? html`<div class="field-hint">${f.hint}</div>` : nothing}
+        </div>`;
+    }
+    if (f.type === 'textarea') {
+      return html`
+        <div class="form-section">
+          <label>${f.label}</label>
+          <textarea class="form-input" rows="4" spellcheck="false"
+            placeholder=${f.placeholder ?? ''}
+            .value=${v === undefined || v === null ? '' : String(v)}
+            @input=${(e: Event) => {
+              const raw = (e.target as HTMLTextAreaElement).value;
+              this._updateNodeParam(node.id, f.key, raw === '' ? undefined : raw);
+            }}></textarea>
+          ${f.hint ? html`<div class="field-hint">${f.hint}</div>` : nothing}
         </div>`;
     }
     return html`
       <div class="form-section">
         <label>${f.label}</label>
         <input class="form-input" type=${f.type === 'number' ? 'number' : 'text'}
+          placeholder=${f.placeholder ?? ''}
           .value=${v === undefined || v === null ? '' : String(v)}
           @input=${(e: Event) => {
             const raw = (e.target as HTMLInputElement).value;
             this._updateNodeParam(node.id, f.key, f.type === 'number' ? (raw === '' ? undefined : Number(raw)) : raw);
           }}>
+        ${f.hint ? html`<div class="field-hint">${f.hint}</div>` : nothing}
       </div>`;
   }
 

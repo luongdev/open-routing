@@ -64,6 +64,65 @@ func TestSideEffect_EnumAndPositiveNum(t *testing.T) {
 	}
 }
 
+func TestSideEffect_BadInterpolationExpr(t *testing.T) {
+	// A closed-but-malformed ${...} expression is caught at validate time.
+	if codes := validateSE(t, NodeSendMessage, map[string]any{"text": "Hi ${1 +}"}); !hasCode(codes, IssueInvalidExpr) {
+		t.Fatalf("send_message bad interp: codes=%v, want invalid_expression", codes)
+	}
+	// An unclosed ${ is harmless literal text, not an error.
+	if codes := validateSE(t, NodeSendMessage, map[string]any{"text": "cost is ${100"}); len(codes) != 0 {
+		t.Fatalf("send_message unclosed brace: codes=%v, want none (literal)", codes)
+	}
+	// A well-formed one validates clean.
+	if codes := validateSE(t, NodeSendMessage, map[string]any{"text": "Hi ${customer.name}"}); len(codes) != 0 {
+		t.Fatalf("send_message good interp: codes=%v, want none", codes)
+	}
+}
+
+// ${expr} placeholders in string fields are resolved against the var bag and the
+// resolved value is what the node records on the trace.
+func TestSideEffect_InterpolatesAtExecute(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("h", NodeHTTPRequest, map[string]any{
+				"method": "POST",
+				"url":    "https://api/users/${customer.id}",
+				"body":   `{"tier":"${customer.tier}","n":${count}}`,
+			}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{{From: "t", To: "h"}, {From: "h", To: "end"}},
+	}
+	if issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil); err != nil || len(issues) != 0 {
+		t.Fatalf("graph invalid: err=%v issues=%+v", err, issues)
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	res, err := NewExecutor(DefaultRegistry()).Run(context.Background(), RealClock{}, plan,
+		map[string]any{"customer": map[string]any{"id": "c7", "tier": "gold"}, "count": 3})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var httpStep *TraceStep
+	for i := range res.Trace.Steps {
+		if res.Trace.Steps[i].NodeID == "h" {
+			httpStep = &res.Trace.Steps[i]
+		}
+	}
+	if httpStep == nil {
+		t.Fatal("no http step in trace")
+	}
+	if got := httpStep.Output["url"]; got != "https://api/users/c7" {
+		t.Fatalf("url = %v, want https://api/users/c7", got)
+	}
+	if got := httpStep.Output["body"]; got != `{"tier":"gold","n":3}` {
+		t.Fatalf("body = %v, want interpolated JSON with gold/3", got)
+	}
+}
+
 // A flow using side-effect nodes runs to completion, recording each as a trace
 // step (record/mock — no suspension, single done edge).
 func TestSideEffect_RecordsAndContinues(t *testing.T) {
