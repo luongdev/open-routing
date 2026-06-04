@@ -31,6 +31,16 @@ type RoutingDriver interface {
 	Reserve(clock Clock, agentID string, timeout time.Duration) ReservationOutcome
 }
 
+// Offerer makes a single LIVE reservation offer for a route run, writing the
+// reservation row (flowrt) and returning its id. ok=false means the agent could
+// not be offered (busy / ineligible — e.g. a 23505 on the agent-active partial
+// unique index) so the reservation node skips to the next candidate. Unlike the
+// sim RoutingDriver, the offer does NOT resolve synchronously: the reservation
+// node suspends after a successful offer and resumes on the agent's action.
+type Offerer interface {
+	Offer(agentID string, timeout time.Duration) (reservationID string, ok bool, err error)
+}
+
 // scriptedDriver drives reservations from a pre-authored list, consumed IN
 // ORDER (agent_id on a scripted entry is informational in v0.2). An exhausted
 // script yields `rejected` so the reservation node keeps offering until the pool

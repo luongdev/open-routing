@@ -131,12 +131,18 @@ func (reservationNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	if err != nil {
 		return StepResult{}, err
 	}
+	timeout := time.Duration(cfg.TimeoutSec) * time.Second
+
+	// LIVE: offer the top candidate and SUSPEND; resume on the agent's action.
+	if ctx.LiveRouting() {
+		return liveReservation(ctx, step, timeout)
+	}
+
 	// A per-node scripted outcome pins this reservation's result port directly
 	// (the simulator's per-node branch control) — skip the offer loop.
 	if port, ok := ctx.ScriptedOutcome(step.NodeID); ok {
 		return StepResult{Port: port, Output: map[string]any{"scripted": port}}, nil
 	}
-	timeout := time.Duration(cfg.TimeoutSec) * time.Second
 	maxAttempts := reservationMaxAttempts(cfg.MaxAttempts)
 	// Working copy of the ranked pool; a rejected/timed-out candidate is removed
 	// before the next offer (driver advances the clock on timeout).
@@ -166,10 +172,47 @@ func (reservationNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	return StepResult{Port: port, Output: map[string]any{"attempts": attempts}}, nil
 }
 
+// liveReservation runs the reservation node in LIVE mode: an accept signal ends
+// the offer (accepted port); otherwise it offers the top OFFERABLE candidate and
+// SUSPENDS, or — when none can be offered — yields timeout/no_candidate. The
+// candidate pool already excludes agents already offered on this route (flowrt
+// rebuilds the segment snapshot each resume), so there is no per-attempt cursor.
+func liveReservation(ctx ExecCtx, step PlanStep, timeout time.Duration) (StepResult, error) {
+	sig, resuming := ctx.ResumeSignal(step.NodeID)
+	if resuming && sig == "accepted" {
+		return StepResult{Port: "accepted", Output: map[string]any{"outcome": "accepted"}}, nil
+	}
+	for _, c := range ctx.Candidates() {
+		resID, ok, err := ctx.Offer(c.AgentID, timeout)
+		if err != nil {
+			return StepResult{}, err
+		}
+		if ok {
+			return StepResult{
+				Suspension: &Suspension{ResumeAt: ctx.Now().Add(timeout)},
+				Output:     map[string]any{"offered_agent": c.AgentID, "reservation_id": resID},
+			}, nil
+		}
+	}
+	// No candidate could be offered. A `timeout` resume means the prior offer
+	// elapsed unanswered → distinguish "nobody answered" from "nobody eligible".
+	port := "no_candidate"
+	if resuming && sig == "timeout" {
+		port = "timeout"
+	}
+	return StepResult{Port: port, Output: map[string]any{"attempts": 0}}, nil
+}
+
 func (waitNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	cfg, err := decodeConfig[waitConfig](step.Compiled)
 	if err != nil {
 		return StepResult{}, err
+	}
+	// LIVE resume: the worker fired this wait's continuation (time elapsed) →
+	// continue past it instead of re-suspending. (Sim auto-resumes the clock and
+	// never sets a resume signal, so it still suspends-then-advances as before.)
+	if _, resuming := ctx.ResumeSignal(step.NodeID); resuming {
+		return StepResult{Output: map[string]any{"resumed": true}}, nil
 	}
 	resumeAt := ctx.Now().Add(time.Duration(cfg.DurationMs) * time.Millisecond)
 	return StepResult{

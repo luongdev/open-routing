@@ -22,6 +22,11 @@ type execState struct {
 	// on per branch so the merge keys actual WRITES (last-writer-wins) — a value
 	// diff drops a branch that rewrites a key back to its snapshot value.
 	writes map[string]bool
+	// Live routing (Wave 3): offerer makes durable offers; resumeAt/resumeSignal
+	// carry the inbound signal to the node a RunFrom re-enters at (one-shot).
+	offerer      Offerer
+	resumeAt     string
+	resumeSignal string
 }
 
 type EmittedEvent struct {
@@ -68,6 +73,21 @@ func (s *execState) ScriptedOutcome(nodeID string) (string, bool) {
 	p, ok := s.nodeOutcomes[nodeID]
 	return p, ok
 }
+func (s *execState) LiveRouting() bool { return s.offerer != nil }
+func (s *execState) Offer(agentID string, timeout time.Duration) (string, bool, error) {
+	if s.offerer == nil {
+		return "", false, nil
+	}
+	return s.offerer.Offer(agentID, timeout)
+}
+func (s *execState) ResumeSignal(nodeID string) (string, bool) {
+	if s.resumeAt != "" && s.resumeAt == nodeID {
+		sig := s.resumeSignal
+		s.resumeAt, s.resumeSignal = "", "" // one-shot
+		return sig, true
+	}
+	return "", false
+}
 
 // TraceStep is one executed node's record: routing decision (Port), the node's
 // reported Output, timing, and status (ok / failed / suspended).
@@ -101,6 +121,18 @@ type RunResult struct {
 	Vars       map[string]any
 	Events     []EmittedEvent
 	Suspension *Suspension
+	// SuspendedNodeID is the node the run parked at (live routing); flowrt builds
+	// the durable ResumeCursor from it + Vars.
+	SuspendedNodeID string
+}
+
+// ResumeCursor is the durable execution position for a live route (persisted on
+// route_requests.resume_cursor). v0.2 resumes only TOP-LEVEL wait/reservation
+// nodes; region re-entry is out of scope.
+type ResumeCursor struct {
+	Version int            `json:"v"`
+	NodeID  string         `json:"node_id"`
+	Vars    map[string]any `json:"vars"`
 }
 
 // Executor walks a compiled plan. autoResume controls wait/suspension handling:
@@ -113,6 +145,7 @@ type Executor struct {
 	snapshot     *Snapshot
 	driver       RoutingDriver
 	nodeOutcomes map[string]string
+	offerer      Offerer
 }
 
 type ExecutorOption func(*Executor)
@@ -135,6 +168,10 @@ func WithRouting(snapshot *Snapshot, driver RoutingDriver) ExecutorOption {
 func WithNodeOutcomes(m map[string]string) ExecutorOption {
 	return func(e *Executor) { e.nodeOutcomes = m }
 }
+
+// WithOfferer makes the run LIVE: reservation nodes offer the top candidate via
+// the Offerer and SUSPEND, instead of the sim's synchronous offer loop.
+func WithOfferer(o Offerer) ExecutorOption { return func(e *Executor) { e.offerer = o } }
 
 // WithMaxSteps bounds the walk; the default guards against a cycle the
 // validator did not (defensively) reject.
@@ -161,18 +198,39 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 	for k, v := range input {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes}
-	res := RunResult{Vars: vars}
+	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, offerer: ex.offerer}
+	return ex.drive(state, clock, plan, plan.Entry)
+}
 
+// RunFrom resumes a parked live route at cursor.NodeID with the agent action /
+// timer signal (accepted/rejected/timeout; "" for a plain wait resume). The node
+// it re-enters reads the signal via ResumeSignal and continues instead of
+// re-suspending. v0.2 supports TOP-LEVEL wait/reservation cursors only.
+// candidates seeds the working pool for a reservation resume: the walk re-enters
+// AT the reservation node, so route_queue/match_skill do not re-run — flowrt
+// supplies the freshly re-read eligible agents (excluding those already offered
+// on this route). nil for a plain wait resume.
+func (ex *Executor) RunFrom(ctx context.Context, clock Clock, plan CompiledPlan, cur ResumeCursor, signal string, candidates []Candidate) (RunResult, error) {
+	vars := make(map[string]any, len(cur.Vars))
+	for k, v := range cur.Vars {
+		vars[k] = v
+	}
+	state := &execState{Context: ctx, clock: clock, vars: vars, candidates: candidates, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, offerer: ex.offerer, resumeAt: cur.NodeID, resumeSignal: signal}
+	return ex.drive(state, clock, plan, cur.NodeID)
+}
+
+func (ex *Executor) drive(state *execState, clock Clock, plan CompiledPlan, entry string) (RunResult, error) {
+	res := RunResult{Vars: state.vars}
 	// The region runner walks top-level flow (regionID "") and recurses into
 	// control-node body regions. A flat (region-free) plan walks the same way.
 	rt := newRunner(ex, state, clock, plan, &res)
-	wr, err := rt.walk("", plan.Entry)
+	wr, err := rt.walk("", entry)
 	switch {
 	case err != nil:
 		return ex.finish(&res, state, "failed", "", err)
 	case wr.suspended != nil:
 		res.Suspension = wr.suspended
+		res.SuspendedNodeID = rt.suspendedNodeID
 		return ex.finish(&res, state, "suspended", "", nil)
 	case wr.fail != nil: // an uncaught domain failure at top level
 		return ex.finish(&res, state, "failed", string(wr.fail.Code), nil)

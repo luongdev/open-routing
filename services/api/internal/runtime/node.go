@@ -144,6 +144,17 @@ type ExecCtx interface {
 	// no_candidate) for a reservation node id, when the simulation pinned one —
 	// so a node takes that branch directly instead of running the offer loop.
 	ScriptedOutcome(nodeID string) (string, bool)
+
+	// LIVE routing (Wave 3 part 2). A live run carries an Offerer; reservation
+	// then OFFERS the top candidate and SUSPENDS (vs the sim's synchronous loop).
+	LiveRouting() bool
+	// Offer makes one live reservation offer; ok=false means the agent couldn't
+	// be offered (busy/ineligible) so the node tries the next candidate.
+	Offer(agentID string, timeout time.Duration) (reservationID string, ok bool, err error)
+	// ResumeSignal returns the inbound signal (accepted/rejected/timeout) when
+	// THIS node is the resume target of a RunFrom, consuming it (one-shot). A live
+	// wait/reservation node uses it to continue instead of re-suspending.
+	ResumeSignal(nodeID string) (signal string, ok bool)
 }
 
 // RoutingFailureCode is the typed taxonomy of routing failures. Mirrors the

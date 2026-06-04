@@ -21,9 +21,10 @@ type runner struct {
 	branchesByOwner map[string][]CompiledRegion // parallel owner -> branches (by index)
 	res             *RunResult
 	steps           int
-	iter            *int // current loop iteration, for the trace
-	branch          *int // current parallel branch, for the trace
-	failIndex       int  // trace index of the most-recent failing step (try_catch)
+	iter            *int   // current loop iteration, for the trace
+	branch          *int   // current parallel branch, for the trace
+	failIndex       int    // trace index of the most-recent failing step (try_catch)
+	suspendedNodeID string // node the walk parked at (live routing cursor)
 }
 
 type walkResult struct {
@@ -129,6 +130,7 @@ func (r *runner) walk(regionID, entry string) (walkResult, error) {
 				return walkResult{}, err
 			}
 			if susp != nil {
+				r.suspendedNodeID = cur // live cursor: the node we parked at
 				return walkResult{suspended: susp}, nil
 			}
 			if out.Terminal {
