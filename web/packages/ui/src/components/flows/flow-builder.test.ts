@@ -795,6 +795,44 @@ describe('OrFlowBuilder', () => {
     expect(regionOf('b') ?? '').toBe('');
   });
 
+  it('Cmd+Z undoes the last edit; Cmd+Shift+Z redoes it', async () => {
+    await withNodes([N('a', 'log')]);
+    (el as any)._resetHistory(); // baseline = 1 node
+    (el as any)._clipboardNode = { kind: 'log', label: 'B', description: '', x: 0, y: 0, params: {} };
+    (el as any)._pasteNode();
+    expect((el as any)._nodes).toHaveLength(2);
+
+    (el as any)._undo();
+    expect((el as any)._nodes).toHaveLength(1); // paste undone
+    (el as any)._redo();
+    expect((el as any)._nodes).toHaveLength(2); // paste redone
+  });
+
+  it('a new edit after undo discards the redo branch', async () => {
+    await withNodes([N('a', 'log')]);
+    (el as any)._resetHistory();
+    (el as any)._clipboardNode = { kind: 'log', label: 'B', description: '', x: 0, y: 0, params: {} };
+    (el as any)._pasteNode(); // 2 nodes
+    (el as any)._undo();      // back to 1
+    expect((el as any)._canRedo).toBe(true);
+    (el as any)._pasteNode(); // new edit → 2 nodes, redo branch dropped
+    expect((el as any)._canRedo).toBe(false);
+  });
+
+  it('undo restores deleted nodes and their edges', async () => {
+    await withNodes(
+      [N('a', 'log'), N('b', 'log')],
+      [{ id: 'e', from: 'a', to: 'b', from_port: 'done', label: 'done' }],
+    );
+    (el as any)._resetHistory();
+    (el as any)._deleteNode('b');
+    expect((el as any)._nodes).toHaveLength(1);
+    expect((el as any)._edges).toHaveLength(0);
+    (el as any)._undo();
+    expect((el as any)._nodes).toHaveLength(2);
+    expect((el as any)._edges).toHaveLength(1);
+  });
+
   it('_serializeGraph carries node.region through to the backend shape', async () => {
     await withNodes(
       [N('lf', 'loop_for'), N('sv', 'set_var', { params: { name: 'x', value_expr: '1' } })],

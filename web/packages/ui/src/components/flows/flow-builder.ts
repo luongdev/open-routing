@@ -421,6 +421,7 @@ export class OrFlowBuilder extends LitElement {
       background: var(--muted);
       border-color: color-mix(in oklch, var(--primary) 50%, var(--border));
     }
+    .toolbar-btn--icon { padding: 7px 9px; gap: 0; }
     .toolbar-btn--primary {
       background: var(--primary);
       color: var(--primary-foreground);
@@ -2347,6 +2348,7 @@ export class OrFlowBuilder extends LitElement {
         this._nodes = [];
         this._edges = [];
         this._loaded = null;
+        this._resetHistory();
         return null;
       }
       const { data, error } = await (client as ApiClient).GET('/v1/orgs/{org_id}/flows/{id}' as never, {
@@ -2386,6 +2388,7 @@ export class OrFlowBuilder extends LitElement {
       this._nodes = nodes;
       this._edges = this._pruneEdges(nodes, rawEdges);
       this._recomputeRegions(); // derive membership from the loaded graph (self-consistent)
+      this._resetHistory();
       this._loaded = flow;
       this._dirty = false;
       this._selectedNodeId = this._nodes[0]?.id ?? null;
@@ -3296,6 +3299,63 @@ export class OrFlowBuilder extends LitElement {
   private _markDirty(): void {
     this._validation = null;
     this._dirty = true;
+    this._commitHistory();
+  }
+
+  // ----- Undo / redo -----
+  // Each entry is a committed {nodes, edges} state; _historyAt points at the
+  // current one. Structural edits commit via _markDirty; a node drag commits
+  // once on pointer-up (not per frame). Restoring sets state directly and must
+  // NOT re-commit, so it's guarded by _restoringHistory.
+  private _history: { nodes: FlowNode[]; edges: FlowEdge[] }[] = [];
+  private _historyAt = -1;
+  private _restoringHistory = false;
+  private static readonly _HISTORY_CAP = 100;
+
+  private _snapshot(): { nodes: FlowNode[]; edges: FlowEdge[] } {
+    return { nodes: structuredClone(this._nodes), edges: structuredClone(this._edges) };
+  }
+
+  // Seed the baseline (pre-edit) state so the first edit is undoable.
+  private _resetHistory(): void {
+    this._history = [this._snapshot()];
+    this._historyAt = 0;
+  }
+
+  private _commitHistory(): void {
+    if (this._restoringHistory) return;
+    // Drop any redo branch, then append the new current state.
+    this._history = this._history.slice(0, this._historyAt + 1);
+    this._history.push(this._snapshot());
+    if (this._history.length > OrFlowBuilder._HISTORY_CAP) this._history.shift();
+    this._historyAt = this._history.length - 1;
+  }
+
+  private get _canUndo(): boolean { return this._historyAt > 0; }
+  private get _canRedo(): boolean { return this._historyAt < this._history.length - 1; }
+
+  private _restoreHistory(at: number): void {
+    const snap = this._history[at];
+    if (!snap) return;
+    this._restoringHistory = true;
+    this._nodes = structuredClone(snap.nodes);
+    this._edges = structuredClone(snap.edges);
+    this._historyAt = at;
+    this._validation = null;
+    this._dirty = true; // the restored state differs from the saved draft
+    this._restoringHistory = false;
+  }
+
+  private _undo(): void {
+    if (!this._canUndo) return;
+    this._restoreHistory(this._historyAt - 1);
+    this._flashAction('Undo', 'ok');
+  }
+
+  private _redo(): void {
+    if (!this._canRedo) return;
+    this._restoreHistory(this._historyAt + 1);
+    this._flashAction('Redo', 'ok');
   }
 
   private _selectEdge(id: string): void {
@@ -3332,6 +3392,21 @@ export class OrFlowBuilder extends LitElement {
     };
     const typing = editable(e.composedPath()[0]) || editable(document.activeElement);
     const mod = e.metaKey || e.ctrlKey;
+
+    // Undo/redo. Skip while typing so native input undo/redo stays intact.
+    if (mod && (e.key === 'z' || e.key === 'Z')) {
+      if (typing) return;
+      e.preventDefault();
+      if (e.shiftKey) this._redo();
+      else this._undo();
+      return;
+    }
+    if (mod && (e.key === 'y' || e.key === 'Y')) {
+      if (typing) return;
+      e.preventDefault();
+      this._redo();
+      return;
+    }
 
     if (mod && (e.key === 'c' || e.key === 'C')) {
       if (typing || !this._selectedNodeId) return;
@@ -3480,6 +3555,9 @@ export class OrFlowBuilder extends LitElement {
     if (this._pendingClick && this._pendingClick.id === this._drag?.id) {
       this._selectedNodeId = this._pendingClick.id;
     }
+    // A completed drag (moved past threshold) is one undoable step — commit the
+    // post-drag positions once here (the move itself only set _dirty per frame).
+    if (this._draggedId != null) this._commitHistory();
     this._drag = null;
     this._draggedId = null;
     this._pendingClick = null;
@@ -4362,6 +4440,14 @@ export class OrFlowBuilder extends LitElement {
         ${isSim
           ? this._renderSimControls()
           : html`
+              <button class="toolbar-btn toolbar-btn--icon" title="Undo (⌘Z)" ?disabled=${!this._canUndo}
+                @click=${() => this._undo()}>
+                <uk-icon icon="undo-2" height="14" width="14"></uk-icon>
+              </button>
+              <button class="toolbar-btn toolbar-btn--icon" title="Redo (⌘⇧Z)" ?disabled=${!this._canRedo}
+                @click=${() => this._redo()}>
+                <uk-icon icon="redo-2" height="14" width="14"></uk-icon>
+              </button>
               <button class="toolbar-btn" @click=${this._validateFlow}>
                 <uk-icon icon="check-circle" height="14" width="14"></uk-icon>
                 Validate
