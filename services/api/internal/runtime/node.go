@@ -42,6 +42,24 @@ const (
 	NodeLoopWhile NodeKind = "loop_while"
 	NodeParallel  NodeKind = "parallel"
 	NodeTryCatch  NodeKind = "try_catch"
+	// 3D-3 record/mock side effects (node_side_effects.go): channel output,
+	// outbound integration, and agent-state intents. No live external call in
+	// v0.2 — each records its intent and continues. One implementation, one spec
+	// table; see sideEffectSpecs.
+	NodeTTSSpeak      NodeKind = "tts_speak"
+	NodePlayPrompt    NodeKind = "play_prompt"
+	NodeTransferCall  NodeKind = "transfer_call"
+	NodeHangup        NodeKind = "hangup"
+	NodeSendMessage   NodeKind = "send_message"
+	NodeQuickReplies  NodeKind = "quick_replies"
+	NodeTypingIndic   NodeKind = "typing_indicator"
+	NodeAttachFile    NodeKind = "attach_file"
+	NodeBotHandoff    NodeKind = "bot_handoff"
+	NodeSendTemplate  NodeKind = "send_template"
+	NodeHTTPRequest   NodeKind = "http_request"
+	NodeWebhook       NodeKind = "webhook"
+	NodeSetAgentState NodeKind = "set_agent_state"
+	NodeWrapupTimer   NodeKind = "wrapup_timer"
 )
 
 // V02NodeKinds is the locked v0.2 subset, in palette order. Tests assert the
@@ -53,6 +71,12 @@ var V02NodeKinds = []NodeKind{
 	NodeSetVar, NodeCompute,
 	// 3D-2: control-flow region owners.
 	NodeLoopFor, NodeLoopWhile, NodeParallel, NodeTryCatch,
+	// 3D-3: record/mock side effects (channel / integration / agent-state).
+	NodeTTSSpeak, NodePlayPrompt, NodeTransferCall, NodeHangup,
+	NodeSendMessage, NodeQuickReplies, NodeTypingIndic, NodeAttachFile, NodeBotHandoff,
+	NodeSendTemplate,
+	NodeHTTPRequest, NodeWebhook,
+	NodeSetAgentState, NodeWrapupTimer,
 }
 
 // ControlKinds are the region-owning control-flow nodes the executor runs via

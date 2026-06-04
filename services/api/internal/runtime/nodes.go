@@ -40,6 +40,22 @@ var defaultDescriptors = []Descriptor{
 	{Kind: NodeLoopWhile, Title: "While", Category: "control", Summary: "Repeat a body region while a condition holds."},
 	{Kind: NodeParallel, Title: "Parallel", Category: "control", Summary: "Run branch regions (deterministic fan-out / join)."},
 	{Kind: NodeTryCatch, Title: "Try / Catch", Category: "control", Summary: "Run a body region under an error boundary."},
+	// 3D-3: record/mock side effects. v0.2 records the intent on the trace and
+	// continues — no live external call (see node_side_effects.go).
+	{Kind: NodeTTSSpeak, Title: "TTS Speak", Category: "voice", Summary: "Synthesize speech to the caller (record/mock in v0.2)."},
+	{Kind: NodePlayPrompt, Title: "Play Prompt", Category: "voice", Summary: "Play a pre-recorded audio prompt (record/mock in v0.2)."},
+	{Kind: NodeTransferCall, Title: "Transfer Call", Category: "voice", Summary: "Bridge the call to an external destination (record/mock)."},
+	{Kind: NodeHangup, Title: "Hangup", Category: "voice", Summary: "Record a hangup intent (wire to an end node)."},
+	{Kind: NodeSendMessage, Title: "Send Message", Category: "chat", Summary: "Send an outbound chat message (record/mock)."},
+	{Kind: NodeQuickReplies, Title: "Quick Replies", Category: "chat", Summary: "Offer quick-reply chips (record/mock)."},
+	{Kind: NodeTypingIndic, Title: "Typing Indicator", Category: "chat", Summary: "Show a typing indicator (record/mock)."},
+	{Kind: NodeAttachFile, Title: "Attach File", Category: "chat", Summary: "Send a file to the customer (record/mock)."},
+	{Kind: NodeBotHandoff, Title: "Bot Handoff", Category: "chat", Summary: "Escalate from bot to a human agent (record/mock)."},
+	{Kind: NodeSendTemplate, Title: "Send Template", Category: "email", Summary: "Render + send a templated email (record/mock)."},
+	{Kind: NodeHTTPRequest, Title: "HTTP Request", Category: "integration", Summary: "Outbound HTTP request (record/mock in v0.2)."},
+	{Kind: NodeWebhook, Title: "Webhook", Category: "integration", Summary: "Fire-and-forget outbound webhook (record/mock)."},
+	{Kind: NodeSetAgentState, Title: "Set Agent State", Category: "routing", Summary: "Record an agent presence-change intent."},
+	{Kind: NodeWrapupTimer, Title: "Wrap-up Timer", Category: "routing", Summary: "Record a server-owned ACW countdown intent."},
 }
 
 var descriptorByKind = func() map[NodeKind]Descriptor {
@@ -74,6 +90,11 @@ func DefaultRegistry() *Registry {
 	r.Register(loopWhileNode{base(NodeLoopWhile)})
 	r.Register(parallelNode{base(NodeParallel)})
 	r.Register(tryCatchNode{base(NodeTryCatch)})
+	// 3D-3 side effects: one type, registered per kind in sideEffectKinds order
+	// (must match the V02NodeKinds tail so the registry-order test holds).
+	for _, k := range sideEffectKinds {
+		r.Register(sideEffectNode{base(k)})
+	}
 	return r
 }
 

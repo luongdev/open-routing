@@ -1,0 +1,100 @@
+package runtime
+
+import (
+	"context"
+	"testing"
+)
+
+// validateSE runs a single side-effect node's Validate with nil refs (record/mock
+// nodes have no catalog references) and returns the issue codes.
+func validateSE(t *testing.T, kind NodeKind, cfg any) []string {
+	t.Helper()
+	n, ok := DefaultRegistry().Lookup(kind)
+	if !ok {
+		t.Fatalf("kind %q not registered", kind)
+	}
+	issues, err := n.Validate(context.Background(), node("x", kind, cfg), nil, nil)
+	if err != nil {
+		t.Fatalf("validate %q: %v", kind, err)
+	}
+	codes := make([]string, len(issues))
+	for i, is := range issues {
+		codes[i] = is.Code
+	}
+	return codes
+}
+
+func hasCode(codes []string, want string) bool {
+	for _, c := range codes {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSideEffect_RequiredField(t *testing.T) {
+	if codes := validateSE(t, NodeSendMessage, map[string]any{}); !hasCode(codes, IssueMissingField) {
+		t.Fatalf("send_message without text: codes=%v, want missing_required_field", codes)
+	}
+	if codes := validateSE(t, NodeSendMessage, map[string]any{"text": "hi"}); len(codes) != 0 {
+		t.Fatalf("send_message with text: codes=%v, want none", codes)
+	}
+	// Blank/whitespace counts as absent.
+	if codes := validateSE(t, NodeTTSSpeak, map[string]any{"text": "   "}); !hasCode(codes, IssueMissingField) {
+		t.Fatalf("tts_speak blank text: codes=%v, want missing_required_field", codes)
+	}
+}
+
+func TestSideEffect_EnumAndPositiveNum(t *testing.T) {
+	if codes := validateSE(t, NodeHTTPRequest, map[string]any{"url": "https://x", "method": "FETCH"}); !hasCode(codes, IssueInvalidConfig) {
+		t.Fatalf("http_request bad method: codes=%v, want invalid_config", codes)
+	}
+	if codes := validateSE(t, NodeHTTPRequest, map[string]any{"url": "https://x", "method": "POST"}); len(codes) != 0 {
+		t.Fatalf("http_request good method: codes=%v, want none", codes)
+	}
+	if codes := validateSE(t, NodeSetAgentState, map[string]any{"state": "Banana"}); !hasCode(codes, IssueInvalidConfig) {
+		t.Fatalf("set_agent_state bad state: codes=%v, want invalid_config", codes)
+	}
+	if codes := validateSE(t, NodeWrapupTimer, map[string]any{"duration_sec": 0}); !hasCode(codes, IssueInvalidConfig) {
+		t.Fatalf("wrapup_timer zero duration: codes=%v, want invalid_config", codes)
+	}
+	if codes := validateSE(t, NodeWrapupTimer, map[string]any{"duration_sec": 30}); len(codes) != 0 {
+		t.Fatalf("wrapup_timer positive duration: codes=%v, want none", codes)
+	}
+}
+
+// A flow using side-effect nodes runs to completion, recording each as a trace
+// step (record/mock — no suspension, single done edge).
+func TestSideEffect_RecordsAndContinues(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("msg", NodeSendMessage, map[string]any{"text": "hello"}),
+			node("tts", NodeTTSSpeak, map[string]any{"text": "welcome"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "msg"},
+			{From: "msg", To: "tts"},
+			{From: "tts", To: "end"},
+		},
+	}
+	if issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil); err != nil || len(issues) != 0 {
+		t.Fatalf("graph invalid: err=%v issues=%+v", err, issues)
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	res, err := NewExecutor(DefaultRegistry()).Run(context.Background(), RealClock{}, plan, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Trace.Outcome != "completed" {
+		t.Fatalf("outcome = %q, want completed", res.Trace.Outcome)
+	}
+	if got := stepIDs(res.Trace); !eqStrings(got, []string{"t", "msg", "tts", "end"}) {
+		t.Fatalf("path = %v, want [t msg tts end]", got)
+	}
+}

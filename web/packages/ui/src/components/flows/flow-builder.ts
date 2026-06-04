@@ -195,6 +195,13 @@ const RUNTIME_KINDS = new Set<FlowNodeKind>([
   // 3D-2 control flow (region-owning): a `body`/`body:N` port declares the
   // body region entry; `done`/`catch` continue the top-level flow.
   'loop_for', 'loop_while', 'parallel', 'try_catch',
+  // 3D-3 record/mock side effects (channel / integration / agent-state). v0.2
+  // records the intent and continues down `done` — no live external call.
+  'tts_speak', 'play_prompt', 'transfer_call', 'hangup',
+  'send_message', 'quick_replies', 'typing_indicator', 'attach_file', 'bot_handoff',
+  'send_template',
+  'http_request', 'webhook',
+  'set_agent_state', 'wrapup_timer',
 ]);
 
 // Control-flow kinds own a body region (their `body`/`body:N` port enters a
@@ -318,6 +325,25 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   ],
   parallel: [{ key: 'branches', label: 'Branches', type: 'number' }],
   try_catch: [{ key: 'error_var', label: 'Error variable', type: 'text' }],
+  // 3D-3 record/mock side effects. Field keys match the backend spec
+  // (node_side_effects.go sideEffectSpecs) — required fields are enforced there.
+  tts_speak: [{ key: 'text', label: 'Text to speak', type: 'text' }, { key: 'voice', label: 'Voice (optional)', type: 'text' }],
+  play_prompt: [{ key: 'prompt', label: 'Prompt id / file', type: 'text' }],
+  transfer_call: [{ key: 'destination', label: 'Destination (number / SIP)', type: 'text' }],
+  hangup: [{ key: 'reason', label: 'Reason (optional)', type: 'text' }],
+  send_message: [{ key: 'text', label: 'Message', type: 'text' }],
+  quick_replies: [{ key: 'text', label: 'Prompt', type: 'text' }, { key: 'options', label: 'Options (comma-separated)', type: 'text' }],
+  typing_indicator: [{ key: 'seconds', label: 'Duration (sec, optional)', type: 'number' }],
+  attach_file: [{ key: 'url', label: 'File URL', type: 'text' }, { key: 'filename', label: 'Filename (optional)', type: 'text' }],
+  bot_handoff: [{ key: 'reason', label: 'Handoff reason (optional)', type: 'text' }],
+  send_template: [{ key: 'template', label: 'Template id', type: 'text' }, { key: 'to', label: 'To (optional)', type: 'text' }],
+  http_request: [
+    { key: 'method', label: 'Method', type: 'select', options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+    { key: 'url', label: 'URL', type: 'text' },
+  ],
+  webhook: [{ key: 'url', label: 'URL', type: 'text' }],
+  set_agent_state: [{ key: 'state', label: 'State', type: 'select', options: ['Ready', 'NotReady', 'Break', 'WrapUp', 'Offline'] }],
+  wrapup_timer: [{ key: 'duration_sec', label: 'Duration (sec)', type: 'number' }],
 };
 
 // Fraction (0..1) of card WIDTH where output port `idx` sits along the
