@@ -32,6 +32,10 @@ type Store interface {
 	// means the store is unreachable — callers MUST treat that as an infra error,
 	// never as "disconnected".
 	Connected(ctx context.Context, org, agent uuid.UUID) (bool, error)
+	// ConnectedMany is the batch form (one round-trip) for the live candidate
+	// source. Returns a map keyed by agent; an absent/false entry = not connected.
+	// Same error contract as Connected (infra error, never "disconnected").
+	ConnectedMany(ctx context.Context, org uuid.UUID, agents []uuid.UUID) (map[uuid.UUID]bool, error)
 	// Drop releases the lease ONLY if it still belongs to sessionID (compare-and-
 	// delete) so a late teardown can't evict a fresh reconnect.
 	Drop(ctx context.Context, org, agent uuid.UUID, sessionID string) error
@@ -63,6 +67,17 @@ func (m *MemStore) Connected(_ context.Context, org, agent uuid.UUID) (bool, err
 	defer m.mu.Unlock()
 	_, ok := m.entries[key(org, agent)]
 	return ok, nil
+}
+
+func (m *MemStore) ConnectedMany(_ context.Context, org uuid.UUID, agents []uuid.UUID) (map[uuid.UUID]bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[uuid.UUID]bool, len(agents))
+	for _, a := range agents {
+		_, ok := m.entries[key(org, a)]
+		out[a] = ok
+	}
+	return out, nil
 }
 
 func (m *MemStore) Drop(_ context.Context, org, agent uuid.UUID, sessionID string) error {

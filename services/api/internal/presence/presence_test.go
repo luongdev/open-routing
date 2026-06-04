@@ -83,6 +83,30 @@ func TestRedisStore_TTLAndDropCAS(t *testing.T) {
 	}
 }
 
+func TestRedisStore_ConnectedManyBatch(t *testing.T) {
+	s := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})
+	ctx := context.Background()
+	store := NewRedisStore(rdb, time.Minute)
+	org := uuid.Must(uuid.NewV7())
+	a, b, c := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	_ = store.Renew(ctx, org, a, "s")
+	_ = store.Renew(ctx, org, c, "s")
+
+	got, err := store.ConnectedMany(ctx, org, []uuid.UUID{a, b, c})
+	if err != nil {
+		t.Fatalf("connected many: %v", err)
+	}
+	if !got[a] || got[b] || !got[c] {
+		t.Fatalf("ConnectedMany = %v, want a=true b=false c=true", got)
+	}
+	// Error propagates (infra), not "all disconnected".
+	s.Close()
+	if _, err := store.ConnectedMany(ctx, org, []uuid.UUID{a}); err == nil {
+		t.Fatal("ConnectedMany must propagate an unreachable-store error")
+	}
+}
+
 func TestRedisStore_ConnectedErrorPropagates(t *testing.T) {
 	s := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})

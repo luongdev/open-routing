@@ -75,11 +75,12 @@ func poolFromRows(rows []generated.ListRoutableCandidatesRow) ([]runtime.Candida
 	return runtime.RankCandidates(pool, nil), idByCode
 }
 
-// mapQueueCandidates keys the pool by every queue the graph references, omitting
-// queues that no longer exist or are disabled (route_queue then yields
-// missing_catalog_reference — review H7).
-func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries, orgID pgtype.UUID, graph *runtime.Graph, pool []runtime.Candidate) (map[string][]runtime.Candidate, error) {
-	qc := map[string][]runtime.Candidate{}
+// validQueueCodes returns the codes of every route_queue the graph references
+// that still EXISTS and is ENABLED. A missing/disabled queue is omitted so
+// route_queue yields missing_catalog_reference instead of routing to it (H7).
+func (e *Endpoints) validQueueCodes(ctx context.Context, q *generated.Queries, orgID pgtype.UUID, graph *runtime.Graph) ([]string, error) {
+	var codes []string
+	seen := map[string]bool{}
 	for _, n := range graph.Nodes {
 		if n.Kind != runtime.NodeRouteQueue {
 			continue
@@ -87,17 +88,31 @@ func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries
 		var cfg struct {
 			Queue string `json:"queue"`
 		}
-		if json.Unmarshal(n.Config, &cfg) != nil || cfg.Queue == "" {
+		if json.Unmarshal(n.Config, &cfg) != nil || cfg.Queue == "" || seen[cfg.Queue] {
 			continue
 		}
 		qrow, qerr := q.GetQueueByCode(ctx, generated.GetQueueByCodeParams{OrgID: orgID, Code: cfg.Queue})
 		if errors.Is(qerr, pgx.ErrNoRows) || (qerr == nil && !qrow.Enabled) {
-			continue // missing or disabled → route_queue yields missing_catalog_reference
+			continue
 		}
 		if qerr != nil {
 			return nil, qerr // real DB error must not masquerade as a missing queue (re-review MED)
 		}
-		qc[cfg.Queue] = pool
+		seen[cfg.Queue] = true
+		codes = append(codes, cfg.Queue)
+	}
+	return codes, nil
+}
+
+// mapQueueCandidates keys the pool by every valid queue the graph references.
+func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries, orgID pgtype.UUID, graph *runtime.Graph, pool []runtime.Candidate) (map[string][]runtime.Candidate, error) {
+	codes, err := e.validQueueCodes(ctx, q, orgID, graph)
+	if err != nil {
+		return nil, err
+	}
+	qc := make(map[string][]runtime.Candidate, len(codes))
+	for _, c := range codes {
+		qc[c] = pool
 	}
 	return qc, nil
 }
@@ -121,42 +136,76 @@ func (e *Endpoints) routingSnapshot(ctx context.Context, orgID uuid.UUID, channe
 // HELD count so it doesn't depend on slots being pre-provisioned; the offer tx
 // provisions+acquires authoritatively.
 func (e *Endpoints) buildLiveSnapshot(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (*runtime.Snapshot, error) {
-	tx, err := e.deps.OrgDB.BeginTxWith(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	// Phase 1 — all DB reads in ONE short read-only snapshot, then CLOSE it before
+	// any Redis I/O so a slow presence store can't pin a pg connection / hold the
+	// snapshot open (review HIGH). Bulk the held counts (one query, not N).
+	pool, idByCode, heldByAgent, queueCodes, err := e.liveSnapshotReads(ctx, orgID, channel, graph)
 	if err != nil {
 		return nil, err
+	}
+
+	// Phase 2 — batch the lease check OUTSIDE the tx. An error parks the route
+	// (infra), never read as "everyone disconnected" (review HIGH).
+	agentIDs := make([]uuid.UUID, 0, len(idByCode))
+	for _, id := range idByCode {
+		agentIDs = append(agentIDs, id)
+	}
+	connected, err := e.deps.Presence.ConnectedMany(ctx, orgID, agentIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Phase 3 — filter by lease + under-capacity (held < cap) and key by queue.
+	cap := channelCapacity(channel)
+	live := make([]runtime.Candidate, 0, len(pool))
+	for _, c := range pool {
+		id := idByCode[c.AgentID]
+		if !connected[id] || heldByAgent[id] >= cap {
+			continue
+		}
+		live = append(live, c)
+	}
+	qc := make(map[string][]runtime.Candidate, len(queueCodes))
+	for _, code := range queueCodes {
+		qc[code] = live
+	}
+	return &runtime.Snapshot{QueueCandidates: qc}, nil
+}
+
+// liveSnapshotReads does every DB read for the live snapshot in one short
+// read-only tx (candidate pool + bulk held counts + valid queue codes) and
+// returns them so the caller can close the tx before touching Redis.
+func (e *Endpoints) liveSnapshotReads(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (pool []runtime.Candidate, idByCode map[string]uuid.UUID, heldByAgent map[uuid.UUID]int32, queueCodes []string, err error) {
+	tx, err := e.deps.OrgDB.BeginTxWith(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := generated.New(tx)
 	rows, err := q.ListRoutableCandidates(ctx, pgUUID(orgID))
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, nil, err
 	}
-	pool, idByCode := poolFromRows(rows)
-	cap := channelCapacity(channel)
-	live := make([]runtime.Candidate, 0, len(pool))
-	for _, c := range pool {
-		id := idByCode[c.AgentID]
-		conn, cErr := e.deps.Presence.Connected(ctx, orgID, id)
-		if cErr != nil {
-			return nil, cErr // infra error → park the route; do NOT treat as disconnected
-		}
-		if !conn {
-			continue
-		}
-		held, hErr := q.CountHeldCapacitySlots(ctx, generated.CountHeldCapacitySlotsParams{OrgID: pgUUID(orgID), AgentID: pgUUID(id), Channel: channel})
+	pool, idByCode = poolFromRows(rows)
+	agentIDs := make([]pgtype.UUID, 0, len(idByCode))
+	for _, id := range idByCode {
+		agentIDs = append(agentIDs, pgUUID(id))
+	}
+	heldByAgent = make(map[uuid.UUID]int32, len(agentIDs))
+	if len(agentIDs) > 0 {
+		heldRows, hErr := q.CountHeldCapacityByAgents(ctx, generated.CountHeldCapacityByAgentsParams{OrgID: pgUUID(orgID), Channel: channel, Column3: agentIDs})
 		if hErr != nil {
-			return nil, hErr
+			return nil, nil, nil, nil, hErr
 		}
-		if held >= cap {
-			continue
+		for _, hr := range heldRows {
+			heldByAgent[apiUUID(hr.AgentID)] = hr.Held
 		}
-		live = append(live, c)
 	}
-	qc, err := e.mapQueueCandidates(ctx, q, pgUUID(orgID), graph, live)
+	queueCodes, err = e.validQueueCodes(ctx, q, pgUUID(orgID), graph)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, nil, err
 	}
-	return &runtime.Snapshot{QueueCandidates: qc}, nil
+	return pool, idByCode, heldByAgent, queueCodes, nil
 }
 
 // mapTraceSteps converts the runtime trace's steps to the API shape, assigning

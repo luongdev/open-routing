@@ -98,6 +98,17 @@ FROM agent_capacity_slots
 WHERE org_id = $1 AND agent_id = $2 AND channel = $3
   AND reservation_id IS NULL AND slot_no <= $4::int;
 
+-- CountHeldCapacityByAgents is the BULK hint read for the live candidate source:
+-- held interactions per agent on a channel, for a set of agents — one query
+-- instead of N (review HIGH: no per-candidate round-trip). Agents with 0 held
+-- simply don't appear in the result.
+-- name: CountHeldCapacityByAgents :many
+SELECT agent_id, COUNT(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND channel = $2 AND reservation_id IS NOT NULL
+  AND agent_id = ANY($3::uuid[])
+GROUP BY agent_id;
+
 -- CountHeldCapacitySlots is the candidate-source hint (NOT authoritative): how
 -- many interactions the agent currently holds on the channel. under-capacity =
 -- held < cap — provisioning-independent (an unprovisioned agent reads held=0, so

@@ -287,6 +287,16 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	if err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "accept_failed"}}, nil
 	}
+	// Confirm the capacity hold (this HTTP path must mirror the WS command path —
+	// review HIGH: an unconfirmed hold would be swept and the slot double-booked).
+	// A lost slot ⇒ 409; the deferred rollback undoes the accept.
+	if e.deps.Capacity != nil {
+		if okc, cErr := e.deps.Capacity.ConfirmInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_confirm_failed"}}, nil
+		} else if !okc {
+			return e.lifecycleConflict(), nil
+		}
+	}
 	// Agent Ready→Engaged (best-effort: a stale agent state must not roll back the
 	// accept — the reservation is the assignment's source of truth).
 	engaged := string(api.AgentStatusEngaged)
@@ -349,6 +359,11 @@ func (e *Endpoints) RejectReservation(ctx context.Context, req api.RejectReserva
 	} else if err != nil {
 		return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "reject_failed"}}, nil
 	}
+	if e.deps.Capacity != nil { // free the slot (mirror the WS path — review HIGH)
+		if cErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_release_failed"}}, nil
+		}
+	}
 	routeID := apiUUID(route.ID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.rejected", map[string]any{"reservation_id": resID.String()})
 	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "rejected"); err != nil {
@@ -395,6 +410,11 @@ func (e *Endpoints) CompleteReservation(ctx context.Context, req api.CompleteRes
 		AgentID: comp.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
 	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_state_failed"}}, nil
+	}
+	if e.deps.Capacity != nil { // free the slot held for the live interaction (review HIGH)
+		if cErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_release_failed"}}, nil
+		}
 	}
 	routeID := apiUUID(comp.RouteRequestID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.completed", map[string]any{"reservation_id": resID.String()})

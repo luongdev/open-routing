@@ -35,6 +35,28 @@ func (s *RedisStore) Connected(ctx context.Context, org, agent uuid.UUID) (bool,
 	return n > 0, nil
 }
 
+// ConnectedMany batches the lease check with one MGET. A nil value = the key is
+// absent (not connected). An MGET error propagates (infra error — callers must
+// not read it as "everyone disconnected").
+func (s *RedisStore) ConnectedMany(ctx context.Context, org uuid.UUID, agents []uuid.UUID) (map[uuid.UUID]bool, error) {
+	out := make(map[uuid.UUID]bool, len(agents))
+	if len(agents) == 0 {
+		return out, nil
+	}
+	keys := make([]string, len(agents))
+	for i, a := range agents {
+		keys[i] = key(org, a)
+	}
+	vals, err := s.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	for i, a := range agents {
+		out[a] = i < len(vals) && vals[i] != nil
+	}
+	return out, nil
+}
+
 // dropCAS deletes the lease only when its stored value still equals the caller's
 // session id — so a late Drop from an old connection can't evict a fresh one.
 var dropCAS = redis.NewScript(`

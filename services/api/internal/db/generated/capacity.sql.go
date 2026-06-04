@@ -107,6 +107,49 @@ func (q *Queries) CountFreeCapacitySlots(ctx context.Context, arg CountFreeCapac
 	return free, err
 }
 
+const countHeldCapacityByAgents = `-- name: CountHeldCapacityByAgents :many
+SELECT agent_id, COUNT(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND channel = $2 AND reservation_id IS NOT NULL
+  AND agent_id = ANY($3::uuid[])
+GROUP BY agent_id
+`
+
+type CountHeldCapacityByAgentsParams struct {
+	OrgID   pgtype.UUID   `json:"org_id"`
+	Channel string        `json:"channel"`
+	Column3 []pgtype.UUID `json:"column_3"`
+}
+
+type CountHeldCapacityByAgentsRow struct {
+	AgentID pgtype.UUID `json:"agent_id"`
+	Held    int32       `json:"held"`
+}
+
+// CountHeldCapacityByAgents is the BULK hint read for the live candidate source:
+// held interactions per agent on a channel, for a set of agents — one query
+// instead of N (review HIGH: no per-candidate round-trip). Agents with 0 held
+// simply don't appear in the result.
+func (q *Queries) CountHeldCapacityByAgents(ctx context.Context, arg CountHeldCapacityByAgentsParams) ([]CountHeldCapacityByAgentsRow, error) {
+	rows, err := q.db.Query(ctx, countHeldCapacityByAgents, arg.OrgID, arg.Channel, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountHeldCapacityByAgentsRow{}
+	for rows.Next() {
+		var i CountHeldCapacityByAgentsRow
+		if err := rows.Scan(&i.AgentID, &i.Held); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countHeldCapacitySlots = `-- name: CountHeldCapacitySlots :one
 SELECT COUNT(*)::int AS held
 FROM agent_capacity_slots

@@ -198,14 +198,55 @@ func TestLive_AcceptConfirmsAndCompleteReleases(t *testing.T) {
 }
 
 func (lf *liveFixture) heldVoice(t *testing.T, agentID uuid.UUID) int32 {
+	return lf.held(t, agentID, "voice")
+}
+
+func (lf *liveFixture) held(t *testing.T, agentID uuid.UUID, channel string) int32 {
 	t.Helper()
 	held, err := generated.New(sharedPool).CountHeldCapacitySlots(lf.ctx, generated.CountHeldCapacitySlotsParams{
-		OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID), Channel: "voice",
+		OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID), Channel: channel,
 	})
 	if err != nil {
 		t.Fatalf("count held: %v", err)
 	}
 	return held
+}
+
+// TestLive_ChatAllowsConcurrentReservationsPerAgent proves dropping the legacy
+// per-agent capacity=1 reservation index lets chat=N hold multiple concurrent
+// reservations for one agent (slots are the authoritative gate — review HIGH).
+func TestLive_ChatAllowsConcurrentReservationsPerAgent(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_chat", simGraph(t))
+	if _, err := lf.e.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "chat", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+
+	for i := 0; i < 2; i++ {
+		resp, err := lf.e.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{
+			Body: &api.CreateRouteRequest{Channel: "chat", EntryCode: "main"},
+		})
+		if err != nil {
+			t.Fatalf("create chat route %d: %v", i, err)
+		}
+		routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+		if rs := lf.reservations(t, routeID); len(rs) != 1 {
+			t.Fatalf("chat route %d got %d reservations, want 1 (same agent, chat=N)", i, len(rs))
+		}
+	}
+	if held := lf.held(t, agentID, "chat"); held != 2 {
+		t.Fatalf("chat held=%d, want 2 (concurrent reservations for one agent)", held)
+	}
 }
 
 func (lf *liveFixture) inTxLive(t *testing.T, fn func(q *generated.Queries) error) {
@@ -229,5 +270,8 @@ type errStore struct{}
 func (errStore) Renew(context.Context, uuid.UUID, uuid.UUID, string) error { return nil }
 func (errStore) Connected(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
 	return false, context.DeadlineExceeded
+}
+func (errStore) ConnectedMany(context.Context, uuid.UUID, []uuid.UUID) (map[uuid.UUID]bool, error) {
+	return nil, context.DeadlineExceeded
 }
 func (errStore) Drop(context.Context, uuid.UUID, uuid.UUID, string) error { return nil }

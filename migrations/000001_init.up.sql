@@ -305,7 +305,11 @@ CREATE TABLE reservations (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX ux_reservations_agent_active ON reservations (org_id, agent_id) WHERE state IN ('offered','accepted');
+-- NOTE: a per-(org,agent) "one active reservation" unique index used to live here
+-- (v0.2 capacity=1). v0.3 W3 makes capacity DB-solid via agent_capacity_slots
+-- (per-(agent,channel) slot rows, FOR UPDATE SKIP LOCKED at offer time) — the
+-- authoritative gate. A global per-agent unique index would cap chat=N at 1 and
+-- block cross-channel routing, so it was removed (cross-AI review HIGH).
 -- One active-or-won reservation per route: enforces the sequential-offer policy
 -- (no two simultaneous offers) AND blocks a second accept after accepted->completed.
 -- (An agent is free again after completing, so 'completed' is NOT in the agent guard above.)
