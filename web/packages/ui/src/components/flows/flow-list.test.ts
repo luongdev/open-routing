@@ -40,6 +40,28 @@ describe('OrFlowList', () => {
     await (el as any).updateComplete;
   }
 
+  it('shows a Published pill for a flow with an active binding', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).client = {
+      GET: vi.fn().mockImplementation((path: string) =>
+        path.includes('/bindings')
+          ? Promise.resolve({ data: { items: [{ flow_code: MOCK_FLOW.code, channel: 'voice', entry_code: 'main' }] }, error: null })
+          : Promise.resolve({ data: { items: [MOCK_FLOW], has_more: false, next_cursor: null }, error: null }),
+      ),
+    };
+    await settle();
+    // Active bindings are fetched + indexed by flow_code; the Published column
+    // renders a pill from this map (the pill itself lives in or-data-table's
+    // shadow, so assert the wiring + the render output).
+    const binds = (el as any)._bindingsByFlow.get(MOCK_FLOW.code);
+    expect(binds).toBeTruthy();
+    expect(binds[0]).toMatchObject({ channel: 'voice', entry_code: 'main' });
+    const col = (el as any)._columns.find((c: any) => c.key === 'published');
+    const rendered = JSON.stringify(col.render({ code: MOCK_FLOW.code }));
+    expect(rendered).toContain('Published');
+    expect(rendered).toContain('voice/main');
+  });
+
   it('renders empty state "No flows yet" when items=[]', async () => {
     (el as any).orgId = 'test-org';
     (el as any).client = {
@@ -164,9 +186,9 @@ describe('OrFlowList', () => {
     expect(alert).toBeTruthy();
     expect(alert?.textContent).toContain('version_conflict');
     expect((el as any)._actionError).toBe('version_conflict');
-    // A 409 re-pulls the current version (one extra GET) but never silently
-    // succeeds — the conflict banner above proves it was not swallowed.
-    expect(mockGet.mock.calls.length).toBe(getCallsBefore + 1);
+    // A 409 re-pulls the list (which fetches flows + active bindings) but never
+    // silently succeeds — the conflict banner above proves it was not swallowed.
+    expect(mockGet.mock.calls.length).toBe(getCallsBefore + 2);
   });
 
   it('renders the error alert with Retry when the list GET returns an error', async () => {
