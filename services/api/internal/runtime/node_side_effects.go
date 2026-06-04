@@ -99,6 +99,18 @@ func (s sideEffectNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ Cat
 			issues = append(issues, fieldIssue(n.ID, field, IssueInvalidConfig, fmt.Sprintf("%s must be a positive number", field)))
 		}
 	}
+	// Response capture: save_as must be a usable variable name; a mock_response
+	// with no ${...} must be valid JSON (with ${...} it can only be checked once
+	// the vars are known, so we defer to the interpolation parse below).
+	if saveAs, ok := cfg[seFieldSaveAs].(string); ok && strings.TrimSpace(saveAs) != "" && !validVarName(saveAs) {
+		issues = append(issues, fieldIssue(n.ID, seFieldSaveAs, IssueInvalidConfig, "save_as must be an identifier (optionally dotted) and not a reserved word"))
+	}
+	if mr, ok := cfg[seFieldMockResponse].(string); ok && strings.TrimSpace(mr) != "" && !strings.Contains(mr, "${") {
+		var v any
+		if err := json.Unmarshal([]byte(mr), &v); err != nil {
+			issues = append(issues, fieldIssue(n.ID, seFieldMockResponse, IssueInvalidConfig, "mock_response must be valid JSON"))
+		}
+	}
 	// Any ${...} expression embedded in a string field is parsed at publish time
 	// so a bad interpolation (e.g. ${customer.) is caught before it runs.
 	for field, v := range cfg {
@@ -139,14 +151,51 @@ func (s sideEffectNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) 
 	// sent (e.g. the request body with customer values substituted).
 	out := map[string]any{"node": string(step.Kind), "mode": "recorded"}
 	for k, v := range cfg {
+		if k == seFieldSaveAs || k == seFieldMockResponse {
+			continue // response-capture fields handled below, not echoed raw
+		}
 		if str, ok := v.(string); ok {
 			out[k] = interpolateStr(str, ctx)
 		} else {
 			out[k] = v
 		}
 	}
+	// Response capture: store the (mock, v0.2) response into save_as so downstream
+	// nodes navigate it through the expr engine — nested objects via
+	// resp.user.name, arrays via resp.items.0.id, length via arr.len(resp.items).
+	if saveAs, _ := cfg[seFieldSaveAs].(string); strings.TrimSpace(saveAs) != "" {
+		resp := parseMockResponse(cfg[seFieldMockResponse], ctx)
+		ctx.SetVar(saveAs, resp)
+		out["save_as"] = saveAs
+		out["response"] = resp
+	}
 	ctx.Emit(string(step.Kind), out)
 	return StepResult{Output: out}, nil
+}
+
+const (
+	seFieldSaveAs       = "save_as"
+	seFieldMockResponse = "mock_response"
+)
+
+// parseMockResponse turns the node's mock_response config into a navigable value:
+// the string is interpolated (${var}) then JSON-decoded, so an object/array
+// becomes map[string]any/[]any the expr engine can index. Non-JSON stays a plain
+// string; absent/blank yields nil.
+func parseMockResponse(raw any, ctx ExecCtx) any {
+	str, ok := raw.(string)
+	if !ok {
+		return raw
+	}
+	s := strings.TrimSpace(interpolateStr(str, ctx))
+	if s == "" {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err == nil {
+		return v
+	}
+	return s
 }
 
 // interpExprRe matches a ${expr} interpolation placeholder. Non-greedy body so

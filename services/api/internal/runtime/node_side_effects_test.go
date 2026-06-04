@@ -123,6 +123,57 @@ func TestSideEffect_InterpolatesAtExecute(t *testing.T) {
 	}
 }
 
+// http_request stores its mock response into save_as; a downstream compute then
+// navigates the captured value — array index, nested object, and arr.len.
+func TestSideEffect_CaptureResponseAndNavigate(t *testing.T) {
+	mock := `{"items":[{"id":"a1","name":"Alice"},{"id":"b2","name":"Bob"}],"page":{"total":2}}`
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("h", NodeHTTPRequest, map[string]any{"method": "GET", "url": "https://api/x", "save_as": "resp", "mock_response": mock}),
+			node("c1", NodeCompute, map[string]any{"expr": "resp.items.0.name", "var": "firstName"}),
+			node("c2", NodeCompute, map[string]any{"expr": "arr.len(resp.items)", "var": "n"}),
+			node("c3", NodeCompute, map[string]any{"expr": "resp.page.total", "var": "total"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "h"}, {From: "h", To: "c1"}, {From: "c1", To: "c2"}, {From: "c2", To: "c3"}, {From: "c3", To: "end"},
+		},
+	}
+	if issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil); err != nil || len(issues) != 0 {
+		t.Fatalf("graph invalid: err=%v issues=%+v", err, issues)
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	res, err := NewExecutor(DefaultRegistry()).Run(context.Background(), RealClock{}, plan, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Trace.Outcome != "completed" {
+		t.Fatalf("outcome = %q", res.Trace.Outcome)
+	}
+	if got := res.Vars["firstName"]; got != "Alice" {
+		t.Fatalf("resp.items.0.name = %v, want Alice", got)
+	}
+	if got, _ := toFloatField(res.Vars["n"]); got != 2 {
+		t.Fatalf("arr.len(resp.items) = %v, want 2", res.Vars["n"])
+	}
+	if got, _ := toFloatField(res.Vars["total"]); got != 2 {
+		t.Fatalf("resp.page.total = %v, want 2", res.Vars["total"])
+	}
+}
+
+func TestSideEffect_CaptureValidation(t *testing.T) {
+	if codes := validateSE(t, NodeHTTPRequest, map[string]any{"url": "https://x", "save_as": "1bad"}); !hasCode(codes, IssueInvalidConfig) {
+		t.Fatalf("bad save_as: codes=%v, want invalid_config", codes)
+	}
+	if codes := validateSE(t, NodeHTTPRequest, map[string]any{"url": "https://x", "save_as": "resp", "mock_response": "{not json"}); !hasCode(codes, IssueInvalidConfig) {
+		t.Fatalf("bad mock_response JSON: codes=%v, want invalid_config", codes)
+	}
+}
+
 // A flow using side-effect nodes runs to completion, recording each as a trace
 // step (record/mock — no suspension, single done edge).
 func TestSideEffect_RecordsAndContinues(t *testing.T) {

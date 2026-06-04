@@ -358,6 +358,8 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
     { key: 'url', label: 'URL', type: 'text', hint: 'Supports ${var} — e.g. https://api/users/${customer.id}', placeholder: 'https://api.example.com/orders/${order.id}' },
     { key: 'headers', label: 'Headers (one per line: Key: Value)', type: 'textarea', placeholder: 'Authorization: Bearer ${token}\nContent-Type: application/json' },
     { key: 'body', label: 'Body', type: 'textarea', hint: 'Supports ${var} — interpolated into the (recorded) request body', placeholder: '{\n  "customer_id": "${customer.id}",\n  "tier": "${customer.tier}"\n}' },
+    { key: 'save_as', label: 'Save response to variable', type: 'text', hint: 'Then read it downstream: ${resp.user.name} (nested), ${resp.items.0.id} (array), arr.len(resp.items) (length)', placeholder: 'resp' },
+    { key: 'mock_response', label: 'Mock response (JSON, v0.2)', type: 'textarea', hint: 'v0.2 makes no live call — this JSON is recorded as the response and stored in the variable above.', placeholder: '{\n  "items": [\n    { "id": "a1", "name": "Alice" },\n    { "id": "b2", "name": "Bob" }\n  ]\n}' },
   ],
   webhook: [
     { key: 'url', label: 'URL', type: 'text', hint: 'Supports ${var}' },
