@@ -832,6 +832,11 @@ export class OrFlowBuilder extends LitElement {
       border-color: var(--success);
       box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 30%, transparent), var(--shadow-md);
     }
+    .node-card--drop-invalid {
+      border-color: var(--destructive);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 28%, transparent), var(--shadow-md);
+      cursor: not-allowed;
+    }
     .node-input-anchor {
       fill: var(--card);
       stroke: var(--muted-foreground);
@@ -2361,6 +2366,9 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _edgeDraft: { fromId: string; fromPort: string; portKind: string; cx: number; cy: number } | null = null;
   // Node id currently under the connect cursor (drop-target highlight).
   @state() private accessor _edgeDraftTarget: string | null = null;
+  // True when the hovered drop target would be a region-boundary error — paints
+  // the target red and the drop is rejected.
+  @state() private accessor _edgeDraftInvalid = false;
   // Selected edge (click to select, Delete to remove).
   @state() private accessor _selectedEdgeId: string | null = null;
   // Node ids whose condition field is in raw "advanced" mode.
@@ -3075,7 +3083,7 @@ export class OrFlowBuilder extends LitElement {
       const p = this._clientToSvg(e.clientX, e.clientY);
       this._edgeDraft = { ...this._edgeDraft, cx: p.x, cy: p.y };
       const t = this._nodeAt(p.x, p.y);
-      this._edgeDraftTarget = t && t.id !== this._edgeDraft.fromId ? t.id : null;
+      this._setDraftTarget(t);
       return;
     }
     if (!this._panState) return;
@@ -3237,7 +3245,7 @@ export class OrFlowBuilder extends LitElement {
     const p = this._clientToSvg(e.clientX, e.clientY);
     this._edgeDraft = { ...this._edgeDraft, cx: p.x, cy: p.y };
     const t = this._nodeAt(p.x, p.y);
-    this._edgeDraftTarget = t && t.id !== this._edgeDraft.fromId ? t.id : null;
+    this._setDraftTarget(t);
   };
 
   private _onPortPointerUp = (e: PointerEvent): void => {
@@ -3249,11 +3257,28 @@ export class OrFlowBuilder extends LitElement {
   // Single exit for an edge drag: always clears the draft (so a drop on empty
   // canvas can't leave a stuck red line), then connects only if it landed on a
   // different node. Called from both the port and the canvas pointerup.
+  // Update the hovered drop target + whether dropping there would cross a region
+  // boundary (so the canvas can warn before the drop).
+  private _setDraftTarget(t: FlowNode | undefined): void {
+    const id = t && t.id !== this._edgeDraft?.fromId ? t.id : null;
+    this._edgeDraftTarget = id;
+    this._edgeDraftInvalid = id != null && this._draftTargetInvalid(id);
+  }
+
+  private _draftTargetInvalid(targetId: string): boolean {
+    const d = this._edgeDraft;
+    if (!d) return false;
+    const fromNode = this._nodes.find(n => n.id === d.fromId);
+    const toNode = this._nodes.find(n => n.id === targetId);
+    return !!(fromNode && toNode && this._connectionError(fromNode, d.fromPort, toNode));
+  }
+
   private _finishEdgeDraft(clientX: number, clientY: number): void {
     const draft = this._edgeDraft;
     if (!draft) return;
     this._edgeDraft = null;
     this._edgeDraftTarget = null;
+    this._edgeDraftInvalid = false;
     const p = this._clientToSvg(clientX, clientY);
     const target = this._nodeAt(p.x, p.y);
     if (!target || target.id === draft.fromId) return;
@@ -3266,9 +3291,35 @@ export class OrFlowBuilder extends LitElement {
       x >= n.x && x <= n.x + NODE_W_PX && y >= n.y && y <= n.y + NODE_H_PX);
   }
 
+  // Why a flow connection from->to would be a region-boundary error, or null if
+  // it's allowed. Used to BLOCK the connection at drag time (and to paint the
+  // hovered target red) rather than letting the user create an invalid edge that
+  // only Validate would catch.
+  private _connectionError(fromNode: FlowNode, fromPort: string, toNode: FlowNode): string | null {
+    // A body/body:N port defines/moves the body entry — allowed to any non-end.
+    if (CONTROL_KINDS.has(fromNode.kind) && OrFlowBuilder._isBodyPort(fromPort)) {
+      return toNode.kind === 'end' ? 'An End node can’t go inside a loop / try body.' : null;
+    }
+    const src = fromNode.region ?? '';
+    const tgt = toNode.region ?? '';
+    if (src === tgt) return null; // same region (incl. both top level)
+    if (src !== '' && toNode.kind === 'end') {
+      return 'Can’t exit a loop / try body straight to an End — route out through the control node’s “after” port.';
+    }
+    if (tgt === '') return null; // a top-level target joins the source's body
+    return src === ''
+      ? 'Can’t wire into a loop / try body from outside — only the control node’s body port enters it.'
+      : 'That node is inside a different body.';
+  }
+
   private _connectEdge(fromId: string, fromPort: string, portKind: string, toId: string): void {
     const branch: FlowEdge['branch'] = portKind === 'timeout' ? 'timeout' : portKind === 'error' ? 'fallback' : 'success';
     const fromNode = this._nodes.find(n => n.id === fromId);
+    const toNode = this._nodes.find(n => n.id === toId);
+    if (fromNode && toNode) {
+      const err = this._connectionError(fromNode, fromPort, toNode);
+      if (err) { this._flashAction(err, 'warn'); return; }
+    }
     const isLinear = (fromNode ? outputsForNode(fromNode) : []).length <= 1;
     // One edge per (from, port) — compare the NORMALIZED port so a stale
     // label-only edge is still replaced (codex HIGH). Linear nodes: one outgoing.
@@ -3953,7 +4004,7 @@ export class OrFlowBuilder extends LitElement {
         stepHit?.status === 'fail' ? 'node-card--fail' : '',
         issueIds.has(node.id) ? 'node-card--invalid' : '',
         isSelected && !isSim ? 'node-card--selected' : '',
-        node.id === this._edgeDraftTarget ? 'node-card--drop-target' : '',
+        node.id === this._edgeDraftTarget ? (this._edgeDraftInvalid ? 'node-card--drop-invalid' : 'node-card--drop-target') : '',
         isDragging ? 'is-dragging' : '',
       ].filter(Boolean).join(' ');
 

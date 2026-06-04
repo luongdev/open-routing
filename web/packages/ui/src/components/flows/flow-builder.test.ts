@@ -795,6 +795,38 @@ describe('OrFlowBuilder', () => {
     expect(regionOf('b') ?? '').toBe('');
   });
 
+  it('blocks wiring an in-body node straight to an End (boundary crossing)', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('sv', 'set_var', { region: 'lf' }), N('end', 'end')],
+      [{ id: 'eb', from: 'lf', to: 'sv', from_port: 'body', label: 'body' }],
+    );
+    (el as any)._recomputeRegions();
+    (el as any)._connectEdge('sv', 'done', 'success', 'end'); // in-body → End
+    expect((el as any)._edges.some((e: any) => e.from === 'sv' && e.to === 'end')).toBe(false);
+    expect((el as any)._actionToast).toMatch(/can.?t exit|after/i);
+  });
+
+  it('blocks wiring a top-level node into a loop body from outside', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('sv', 'set_var', { region: 'lf' }), N('t', 'trigger')],
+      [{ id: 'eb', from: 'lf', to: 'sv', from_port: 'body', label: 'body' }],
+    );
+    (el as any)._recomputeRegions();
+    (el as any)._connectEdge('t', 'done', 'success', 'sv'); // outside → in-body
+    expect((el as any)._edges.some((e: any) => e.from === 't' && e.to === 'sv')).toBe(false);
+  });
+
+  it('allows an in-body node to chain to a fresh node (it joins the body)', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('sv', 'set_var', { region: 'lf' }), N('lg', 'log')],
+      [{ id: 'eb', from: 'lf', to: 'sv', from_port: 'body', label: 'body' }],
+    );
+    (el as any)._recomputeRegions();
+    (el as any)._connectEdge('sv', 'done', 'success', 'lg');
+    expect((el as any)._edges.some((e: any) => e.from === 'sv' && e.to === 'lg')).toBe(true);
+    expect(regionOf('lg')).toBe('lf');
+  });
+
   it('variable suggestions include vars defined by set_var/compute/loop/try nodes', async () => {
     await withNodes([
       N('sv', 'set_var', { params: { name: 'var_a', value_expr: '1' } }),
