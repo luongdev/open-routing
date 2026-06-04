@@ -4053,10 +4053,10 @@ export class OrFlowBuilder extends LitElement {
           <svg
             class=${'canvas-svg' + (this._panState ? ' is-panning' : '')}
             xmlns="http://www.w3.org/2000/svg"
-            @pointerdown=${isSim ? nothing : this._onCanvasPointerDown}
-            @pointermove=${isSim ? nothing : this._onCanvasPointerMove}
-            @pointerup=${isSim ? nothing : this._onCanvasPointerUp}
-            @pointercancel=${isSim ? nothing : this._onCanvasPointerUp}
+            @pointerdown=${this._onCanvasPointerDown}
+            @pointermove=${this._onCanvasPointerMove}
+            @pointerup=${this._onCanvasPointerUp}
+            @pointercancel=${this._onCanvasPointerUp}
           >
             <rect class="canvas-bg" x="0" y="0" width="100%" height="100%" fill="transparent"></rect>
             <g class="viewport" transform=${`translate(${this._panX} ${this._panY}) scale(${this._zoom})`}>
