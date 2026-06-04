@@ -795,6 +795,33 @@ describe('OrFlowBuilder', () => {
     expect(regionOf('b') ?? '').toBe('');
   });
 
+  it('dropping a node onto a control node seeds its body (entry + body edge)', async () => {
+    await withNodes([N('lf', 'loop_for', { x: 100, y: 100 })]);
+    (el as any)._recomputeRegions();
+    const ctx = (el as any)._bodyDropContext(160, 160); // inside the loop_for card
+    expect(ctx).toMatchObject({ ownerId: 'lf', bodyPort: 'body', region: 'lf' });
+    // simulate a drop that wires a new node into that body
+    (el as any)._nodes = [...(el as any)._nodes, N('sv', 'set_var', { x: 160, y: 160 })];
+    (el as any)._wireIntoBody(ctx, 'sv');
+    (el as any)._recomputeRegions();
+    expect((el as any)._edges.some((e: any) => e.from === 'lf' && e.to === 'sv' && (e.from_port === 'body'))).toBe(true);
+    expect(regionOf('sv')).toBe('lf');
+  });
+
+  it('dropping a second node into a non-empty body chains it off the tail', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('a', 'set_var', { region: 'lf' })],
+      [{ id: 'eb', from: 'lf', to: 'a', from_port: 'body', label: 'body' }],
+    );
+    (el as any)._recomputeRegions();
+    (el as any)._nodes = [...(el as any)._nodes, N('b', 'log')];
+    (el as any)._wireIntoBody({ region: 'lf', ownerId: 'lf', bodyPort: 'body' }, 'b');
+    (el as any)._recomputeRegions();
+    // chained off the tail 'a', not a second body edge from the loop
+    expect((el as any)._edges.some((e: any) => e.from === 'a' && e.to === 'b')).toBe(true);
+    expect(regionOf('b')).toBe('lf');
+  });
+
   it('blocks wiring an in-body node straight to an End (boundary crossing)', async () => {
     await withNodes(
       [N('lf', 'loop_for'), N('sv', 'set_var', { region: 'lf' }), N('end', 'end')],

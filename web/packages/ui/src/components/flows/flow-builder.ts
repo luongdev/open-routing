@@ -869,6 +869,13 @@ export class OrFlowBuilder extends LitElement {
       text-overflow: ellipsis;
     }
     .region--warn .region-label { color: color-mix(in oklch, var(--warning) 80%, var(--foreground)); }
+    /* Drop-zone highlight while dragging a palette node over a body frame. */
+    .region--drop .region-frame {
+      fill: color-mix(in oklch, var(--primary) 12%, transparent);
+      stroke: var(--primary);
+      stroke-dasharray: none;
+      stroke-width: 2;
+    }
     .region-banner {
       display: flex;
       align-items: center;
@@ -2369,6 +2376,10 @@ export class OrFlowBuilder extends LitElement {
   // True when the hovered drop target would be a region-boundary error — paints
   // the target red and the drop is rejected.
   @state() private accessor _edgeDraftInvalid = false;
+  // While dragging a palette node over a control node / body frame: which owner
+  // + region would receive it, so the canvas highlights the drop zone.
+  @state() private accessor _dropHoverOwner: string | null = null;
+  @state() private accessor _dropHoverRegion: string | null = null;
   // Selected edge (click to select, Delete to remove).
   @state() private accessor _selectedEdgeId: string | null = null;
   // Node ids whose condition field is in raw "advanced" mode.
@@ -3189,8 +3200,17 @@ export class OrFlowBuilder extends LitElement {
     if (e.dataTransfer?.types.includes('application/x-or-node')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
+      const p = this._clientToSvg(e.clientX, e.clientY);
+      const ctx = this._bodyDropContext(p.x, p.y);
+      const next = ctx?.ownerId ?? null;
+      if (next !== this._dropHoverOwner) {
+        this._dropHoverOwner = next;
+        this._dropHoverRegion = ctx?.region ?? null;
+      }
     }
   };
+
+  private _onCanvasDragLeave = (): void => { this._dropHoverOwner = null; this._dropHoverRegion = null; };
 
   private _onCanvasDrop = (e: DragEvent): void => {
     const kind = e.dataTransfer?.getData('application/x-or-node') as FlowNodeKind;
@@ -3211,10 +3231,69 @@ export class OrFlowBuilder extends LitElement {
       ...this._nodes,
       { id, kind, label: entry?.label ?? kind, description: entry?.desc ?? '', x, y, params: {}, outputs: outputsForNode({ kind, params: {} }) },
     ];
+    // Dropped onto a control node or inside its body frame → add it to that body
+    // and auto-wire it (the discoverable way to populate a loop/try/parallel
+    // body, vs. hunting for the body port). `end` can't go in a body.
+    const ctx = kind === 'end' ? null : this._bodyDropContext(p.x, p.y, id);
+    if (ctx) {
+      this._wireIntoBody(ctx, id);
+      this._flashAction(`Added "${entry?.label ?? kind}" into ${this._regionMeta(ctx.region).label}.`, 'ok');
+    } else {
+      this._flashAction(`Added "${entry?.label ?? kind}" — Save draft to persist.`, 'ok');
+    }
     this._selectedNodeId = id;
+    this._dropHoverOwner = null;
+    this._dropHoverRegion = null;
+    this._recomputeRegions();
     this._markDirty();
-    this._flashAction(`Added "${entry?.label ?? kind}" — Save draft to persist.`, 'ok');
   };
+
+  // Which body region a drop point falls in: an existing region frame (bbox), or
+  // directly on a control node (seeds its first body). Excludes the just-added
+  // node id from the frame bbox. Returns the owner + body port to wire from.
+  private _bodyDropContext(x: number, y: number, excludeId = ''): { region: string; ownerId: string; bodyPort: string } | null {
+    const PAD = 22, HEAD = 26;
+    const groups = new Map<string, FlowNode[]>();
+    for (const n of this._nodes) {
+      if (n.id === excludeId || !n.region) continue;
+      (groups.get(n.region) ?? groups.set(n.region, []).get(n.region)!).push(n);
+    }
+    for (const [region, members] of groups) {
+      const x0 = Math.min(...members.map(m => m.x)) - PAD;
+      const y0 = Math.min(...members.map(m => m.y)) - PAD - HEAD;
+      const x1 = Math.max(...members.map(m => m.x + NODE_W_PX)) + PAD;
+      const y1 = Math.max(...members.map(m => m.y + NODE_H_PX)) + PAD;
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) {
+        const hash = region.indexOf('#');
+        const ownerId = hash >= 0 ? region.slice(0, hash) : region;
+        const bodyPort = hash >= 0 ? `body:${region.slice(hash + 1)}` : 'body';
+        return { region, ownerId, bodyPort };
+      }
+    }
+    const onNode = this._nodeAt(x, y);
+    if (onNode && onNode.id !== excludeId && CONTROL_KINDS.has(onNode.kind)) {
+      const bodyPort = onNode.kind === 'parallel' ? 'body:0' : 'body';
+      return { region: this._regionIdForPort(onNode.id, bodyPort)!, ownerId: onNode.id, bodyPort };
+    }
+    return null;
+  }
+
+  // Wire a freshly-added node into a body: as the entry if the body is empty,
+  // else chained off the body's tail (a member with a free, in-region output).
+  private _wireIntoBody(ctx: { region: string; ownerId: string; bodyPort: string }, newId: string): void {
+    const hasEntry = this._edges.some(e => e.from === ctx.ownerId && (e.from_port ?? e.label) === ctx.bodyPort);
+    if (!hasEntry) {
+      this._edges = [...this._edges, { id: this._genEdgeId(), from: ctx.ownerId, to: newId, from_port: ctx.bodyPort, label: ctx.bodyPort, branch: 'success' }];
+      return;
+    }
+    const members = this._nodes.filter(n => n.id !== newId && n.region === ctx.region);
+    const inRegionSucc = new Set(this._edges.filter(e => members.some(m => m.id === e.from) && members.some(m => m.id === e.to)).map(e => e.from));
+    const tails = members.filter(m => !inRegionSucc.has(m.id));
+    const tail = tails[tails.length - 1] ?? members[members.length - 1];
+    if (!tail) return;
+    const port = (outputsForNode(tail)[0]?.id) ?? 'done';
+    this._edges = [...this._edges, { id: this._genEdgeId(), from: tail.id, to: newId, from_port: port, label: port, branch: 'success' }];
+  }
 
   // Drop edges that no longer make sense: missing endpoints, a terminal source,
   // or a from_port that isn't one of the source's current outputs (e.g. after a
@@ -3829,7 +3908,7 @@ export class OrFlowBuilder extends LitElement {
       const y1 = Math.max(...members.map(m => m.y + NODE_H_PX)) + PAD;
       const { label, tone } = this._regionMeta(regionId);
       return svg`
-        <g class=${'region region--' + tone}>
+        <g class=${'region region--' + tone + (this._dropHoverRegion === regionId ? ' region--drop' : '')}>
           <rect class="region-frame" x=${x0} y=${y0} width=${x1 - x0} height=${y1 - y0} rx="14"></rect>
           <foreignObject x=${x0 + 10} y=${y0 + 5} width=${Math.max(80, x1 - x0 - 20)} height="20">
             <div xmlns="http://www.w3.org/1999/xhtml" class="region-label">
@@ -4005,6 +4084,7 @@ export class OrFlowBuilder extends LitElement {
         issueIds.has(node.id) ? 'node-card--invalid' : '',
         isSelected && !isSim ? 'node-card--selected' : '',
         node.id === this._edgeDraftTarget ? (this._edgeDraftInvalid ? 'node-card--drop-invalid' : 'node-card--drop-target') : '',
+        node.id === this._dropHoverOwner ? 'node-card--drop-target' : '',
         isDragging ? 'is-dragging' : '',
       ].filter(Boolean).join(' ');
 
@@ -4668,6 +4748,7 @@ export class OrFlowBuilder extends LitElement {
         <main class=${isSim ? 'pane canvas-wrap canvas-wrap--sim' : 'pane canvas-wrap'}
           style=${`background-position:${this._panX}px ${this._panY}px;background-size:${24 * this._zoom}px ${24 * this._zoom}px`}
           @dragover=${isSim ? nothing : this._onCanvasDragOver}
+          @dragleave=${isSim ? nothing : this._onCanvasDragLeave}
           @drop=${isSim ? nothing : this._onCanvasDrop}>
           <svg
             class=${'canvas-svg' + (this._panState ? ' is-panning' : '')}
