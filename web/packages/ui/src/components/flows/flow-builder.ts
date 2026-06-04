@@ -1488,6 +1488,31 @@ export class OrFlowBuilder extends LitElement {
     .node-card-port--branch  { background: var(--muted); color: var(--foreground); }
     .node-card-port--default { background: var(--muted); color: var(--muted-foreground); }
 
+    /* Sim: reservation port chips are clickable to force that branch. */
+    .node-card-port--pick { cursor: pointer; transition: outline-color 80ms, box-shadow 80ms; }
+    .node-card-port--pick:hover { outline: 1.5px solid currentColor; outline-offset: 1px; }
+    .node-card-port--pinned {
+      outline: 1.5px solid currentColor;
+      outline-offset: 1px;
+      box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 22%, transparent);
+    }
+    /* The chips outgrow the row's clip box when ringed — let them show. */
+    .node-card-ports--pick { padding-bottom: 2px; }
+
+    .sim-outcome-hint {
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted-foreground);
+    }
+    .sim-outcome-hint strong { font-weight: 700; }
+    .sim-outcome-hint .node-card-port { display: inline; padding: 0 4px; }
+    .linkish {
+      background: none; border: none; padding: 0;
+      color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline;
+    }
+    .linkish:hover { color: var(--foreground); }
+
     /* ----- Run panel (bottom) ----- */
     /* Align columns to the body grid (220 / 1fr / 320) so dividers don't jog
        across the seam. Design review caught this. */
@@ -2718,33 +2743,44 @@ export class OrFlowBuilder extends LitElement {
     }
   }
 
-  // When a reservation node is selected in sim, let the user pin its branch
-  // outcome (accepted/timeout/no_candidate) — per-node sim control. Applied on
-  // the next Re-run (↺).
+  // Pin (or clear) a reservation node's simulated branch and re-run. Driven by
+  // the clickable port chips on the node itself — the per-node sim control.
+  private async _toggleNodeOutcome(nodeId: string, outcome: string): Promise<void> {
+    const next = { ...this._simNodeOutcomes };
+    if (next[nodeId] === outcome) delete next[nodeId];
+    else next[nodeId] = outcome as 'accepted' | 'timeout' | 'no_candidate';
+    this._simNodeOutcomes = next;
+    await this._runSimulation();
+    // _restartSim (inside _runSimulation) nulls the selection; restore it so the
+    // sidebar keeps showing this reservation node's outcome status.
+    this._selectedNodeId = nodeId;
+  }
+
+  // Sidebar companion to the on-node port chips: a slim status line (NOT a
+  // sidebar-width select — that overflowed). The chips on the node are the
+  // control; this just reflects/clears the current pin.
   private _renderSimOutcomePicker() {
     const id = this._selectedNodeId;
     const node = id ? this._nodes.find(n => n.id === id) : undefined;
     if (!node || node.kind !== 'reservation') return nothing;
-    const cur = this._simNodeOutcomes[node.id] ?? '';
+    const cur = this._simNodeOutcomes[node.id];
     return html`
       <div class="form-section sim-outcome">
-        <label>
-          <span>Reservation outcome — ${node.label ?? node.kind}</span>
-          <button class="expr-mode" title="Re-run (↺) to apply"
-            @click=${() => void this._runSimulation()}>Re-run</button>
-        </label>
-        <select class="form-input"
-          @change=${(e: Event) => {
-            const v = (e.target as HTMLSelectElement).value;
-            const next = { ...this._simNodeOutcomes };
-            if (v === '') delete next[node.id];
-            else next[node.id] = v as 'accepted' | 'timeout' | 'no_candidate';
-            this._simNodeOutcomes = next;
-          }}>
-          <option value="" ?selected=${cur === ''}>— (use candidates)</option>
-          ${['accepted', 'timeout', 'no_candidate'].map(o => html`<option value=${o} ?selected=${cur === o}>${o}</option>`)}
-        </select>
+        <label><span>Reservation outcome</span></label>
+        ${cur
+          ? html`<p class="sim-outcome-hint">
+              Forcing <strong class=${'node-card-port node-card-port--' + this._outcomeKind(cur)}>${cur}</strong>.
+              <button class="linkish" @click=${() => this._toggleNodeOutcome(node.id, cur)}>Use candidates instead</button>
+            </p>`
+          : html`<p class="sim-outcome-hint">
+              Routing by candidate pool. Click a port chip on the node
+              (<strong>accepted</strong> / <strong>timeout</strong> / <strong>no_candidate</strong>) to force a branch.
+            </p>`}
       </div>`;
+  }
+
+  private _outcomeKind(o: string): string {
+    return o === 'accepted' ? 'success' : o === 'timeout' ? 'timeout' : 'error';
   }
 
   // Build the simulation's interaction_input (the var bag) from the editable
@@ -3551,6 +3587,10 @@ export class OrFlowBuilder extends LitElement {
       // an `end` must NOT show a fake `done` port (agy HIGH-2).
       const outs = node.outputs ?? [{ id: 'done', label: 'done', kind: 'success' as const }];
 
+      // In sim, a reservation node's port chips become clickable to force that
+      // branch (the per-node outcome control — replaces the sidebar select).
+      const pinnable = isSim && node.kind === 'reservation';
+
       // Input anchor (top-centre): the link target. Hidden for the trigger
       // (no inbound) and in sim. Highlights while a connection is dragged over.
       const showInput = !isSim && node.kind !== 'trigger';
@@ -3587,15 +3627,29 @@ export class OrFlowBuilder extends LitElement {
             ${stepHit
               ? html`<div class="node-card-timing">+${stepHit.started_at_ms.toFixed(1)}ms · ${stepHit.duration_ms.toFixed(1)}ms</div>`
               : preview ? html`<div class="node-card-param" title=${preview}>${preview}</div>` : ''}
-            <div class="node-card-ports" title="Output cases this node can produce">
-              ${outs.map(o => html`
-                <span class=${'node-card-port node-card-port--' + o.kind + (isSim ? '' : ' node-card-port--handle')}
-                  title=${isSim ? o.label : 'Drag to another node to connect'}
-                  @pointerdown=${isSim ? nothing : (e: PointerEvent) => this._onPortPointerDown(e, node, o)}
-                  @pointermove=${isSim ? nothing : this._onPortPointerMove}
-                  @pointerup=${isSim ? nothing : this._onPortPointerUp}
-                  @pointercancel=${isSim ? nothing : this._onPortPointerUp}>${o.label}</span>
-              `)}
+            <div class=${'node-card-ports' + (pinnable ? ' node-card-ports--pick' : '')}
+              title=${pinnable ? 'Click a port to force that branch in the simulation' : 'Output cases this node can produce'}>
+              ${outs.map(o => {
+                const pinned = pinnable && this._simNodeOutcomes[node.id] === o.id;
+                const cls = 'node-card-port node-card-port--' + o.kind
+                  + (isSim ? '' : ' node-card-port--handle')
+                  + (pinnable ? ' node-card-port--pick' : '')
+                  + (pinned ? ' node-card-port--pinned' : '');
+                if (pinnable) {
+                  return html`
+                    <span class=${cls}
+                      title=${pinned ? `Forcing ${o.label} — click to clear` : `Click to force the ${o.label} branch`}
+                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                      @click=${(e: MouseEvent) => { e.stopPropagation(); void this._toggleNodeOutcome(node.id, o.id); }}>${o.label}</span>`;
+                }
+                return html`
+                  <span class=${cls}
+                    title=${isSim ? o.label : 'Drag to another node to connect'}
+                    @pointerdown=${isSim ? nothing : (e: PointerEvent) => this._onPortPointerDown(e, node, o)}
+                    @pointermove=${isSim ? nothing : this._onPortPointerMove}
+                    @pointerup=${isSim ? nothing : this._onPortPointerUp}
+                    @pointercancel=${isSim ? nothing : this._onPortPointerUp}>${o.label}</span>`;
+              })}
             </div>
           </div>
           </div>

@@ -211,6 +211,26 @@ describe('OrFlowBuilder', () => {
     ]);
   });
 
+  it('clicking a reservation port chip pins that outcome, re-runs, and toggles off', async () => {
+    const trace = { id: '01935c00-0000-7000-8000-0000000000ab', org_id: 'o', kind: 'simulation', steps: [] };
+    const mockPost = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-04T00:00:00Z', trace }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: mockPost };
+    await settle();
+
+    await (el as any)._toggleNodeOutcome('r', 'timeout');
+    expect((el as any)._simNodeOutcomes).toEqual({ r: 'timeout' });
+    expect((el as any)._selectedNodeId).toBe('r'); // selection restored after re-run
+    expect((mockPost.mock.calls.at(-1) as [string, any])[1].body.scripted_reservation_outcomes)
+      .toEqual([{ node_id: 'r', outcome: 'timeout' }]);
+
+    // Clicking the same chip again clears the pin (back to candidate routing).
+    await (el as any)._toggleNodeOutcome('r', 'timeout');
+    expect((el as any)._simNodeOutcomes).toEqual({});
+    expect((mockPost.mock.calls.at(-1) as [string, any])[1].body.scripted_reservation_outcomes).toBeUndefined();
+  });
+
   it('fits the viewport to the graph on load (nodes are framed, not off-screen)', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;

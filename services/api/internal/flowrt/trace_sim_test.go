@@ -1,6 +1,7 @@
 package flowrt
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -128,6 +129,58 @@ func TestSimulateFlow_RoutesAcceptedPersistsAndDoesNotMutateLiveState(t *testing
 	for _, tbl := range []string{"reservations", "route_requests", "runtime_events", "continuations"} {
 		if n := f.countByOrg(t, tbl); n != 0 {
 			t.Fatalf("%s rows = %d, want 0 (sim must not mutate live state)", tbl, n)
+		}
+	}
+}
+
+func TestScriptedOutcomes_PerNodeJSONBinding(t *testing.T) {
+	// The exact JSON the builder sends: one per-node entry (node_id + outcome).
+	// Guards the wire contract the DB-backed handler test bypasses by building the
+	// Go struct directly.
+	var req api.SimulateFlowRequest
+	if err := json.Unmarshal([]byte(`{
+		"interaction_input": {},
+		"scripted_reservation_outcomes": [{"node_id": "n_abc123", "outcome": "timeout"}]
+	}`), &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	queue, byNode := scriptedOutcomes(req.ScriptedReservationOutcomes)
+	if len(queue) != 0 {
+		t.Fatalf("per-node entry must not feed the ordered queue: %v", queue)
+	}
+	if byNode["n_abc123"] != "timeout" {
+		t.Fatalf("byNode[n_abc123] = %q, want timeout (byNode=%v)", byNode["n_abc123"], byNode)
+	}
+}
+
+func TestSimulateFlow_PerNodeOutcomePinsPort(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	sid := f.seedSkillID(t, "skill_es")
+	f.seedQueue(t, "queue_vip")
+	f.seedReadyAgent(t, "agent_a", sid, 3) // a candidate exists; per-node pin must still win
+	id := f.seedFlow(t, "flow_sim", simGraph(t))
+
+	for _, oc := range []api.SimulateScriptedReservationOutcomeOutcome{api.Accepted, api.Timeout, api.NoCandidate} {
+		resID := "r"
+		resp, err := f.e.SimulateFlow(f.ctx, api.SimulateFlowRequestObject{
+			Id: api.EntityIdPath(id),
+			Body: &api.SimulateFlowRequest{
+				InteractionInput:            map[string]any{},
+				ScriptedReservationOutcomes: &[]api.SimulateScriptedReservationOutcome{{NodeId: &resID, Outcome: oc}},
+			},
+		})
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		r, ok := resp.(api.SimulateFlow200JSONResponse)
+		if !ok {
+			t.Fatalf("want 200, got %T", resp)
+		}
+		if got := stepPort(r.Trace.Steps, "r"); got != string(oc) {
+			t.Fatalf("per-node outcome %q → reservation port %q (steps=%+v)", oc, got, r.Trace.Steps)
 		}
 	}
 }
