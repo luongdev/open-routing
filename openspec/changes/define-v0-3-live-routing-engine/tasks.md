@@ -36,13 +36,23 @@ decision-trace requirements.
 
 ## Wave 3 — Lease presence & DB-solid capacity
 
-- [ ] Lease/TTL presence: gateway heartbeat renews a Redis-primary connection
-      lease; expiry = offline; DB stores last-known/audit, rebuilt on gateway start.
-- [ ] Capacity as per-(agent,channel) slot rows (voice=1, chat=N) held/released
-      transactionally — NOT the capacity=1-only partial-unique index (review BLOCK).
-- [ ] LiveCandidateSource (eligible AND Ready AND leased-connected AND
-      under-capacity) as a hint; keep buildSnapshot for simulation.
-- [ ] Tests: lease expiry removes offerability, capacity gating, chat=N concurrency.
+- [x] Lease/TTL presence: gateway heartbeat renews a Redis-primary connection
+      lease; expiry = offline; DB (agent_sessions) is the audit trail. (Redis
+      rebuild-on-gateway-start deferred per D2 — documented in internal/presence.)
+- [x] Capacity as per-(agent,channel) slot rows (voice=1, chat=N) held/released
+      transactionally (FOR UPDATE SKIP LOCKED) — NOT the capacity=1 partial-unique
+      index. Acquire (offer), confirm (accept), release (terminal), sweep (pending
+      expired), reconcile (terminal orphan). NOTE: relaxing the existing
+      ux_reservations_agent_active index to per-(agent,channel) for true chat=N
+      end-to-end is deferred to W4 — v0.3 live channel is voice (cap=1).
+- [x] LiveCandidateSource (eligible AND Ready AND leased-connected AND
+      under-capacity) as a hint; buildSnapshot kept for simulation; NO silent
+      live→sim fallback; presence error parks the route (review BLOCK/HIGH).
+- [x] Tests: disconnected removes offerability, capacity gating, concurrent
+      acquire = exactly N (chat), sweep/reconcile, accept-confirm/complete-release.
+- [ ] FOLLOW-UP (W5): confirmed-slot reclaim for an agent who crashed mid-call
+      (reservation stuck 'accepted') — presence-loss → RONA/abandonment, built on
+      the W3 lease. Not reclaimed by the W3 terminal-orphan reconcile by design.
 
 ## Wave 4 — The matcher (the engine)
 
