@@ -317,7 +317,9 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 
 	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID}
 	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer))
+	decStart := time.Now()
 	res, rErr := ex.Run(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, input)
+	observeRouteDecision(e.deps.Logger, "create", time.Since(decStart))
 	if rErr != nil {
 		return crErr("execute_failed"), nil
 	}

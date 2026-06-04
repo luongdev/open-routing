@@ -149,7 +149,9 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 	}
 	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, excluded: excluded, attempt: maxAttempt}
 	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs))
+	decStart := time.Now()
 	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, input)
+	observeRouteDecision(e.deps.Logger, "resume", time.Since(decStart))
 	if err != nil {
 		return err
 	}
