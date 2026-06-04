@@ -113,6 +113,38 @@ func TestScript_SandboxHolesClosed(t *testing.T) {
 	}
 }
 
+// load/loadstring/collectgarbage are removed from the sandbox (review B2).
+func TestScript_DynamicCodeBlocked(t *testing.T) {
+	for _, code := range []string{`return load("return 1")()`, `return loadstring("return 1")()`, `collectgarbage(); return 1`} {
+		res := runScript(t, code, nil)
+		if res.Trace.Outcome != "failed" {
+			t.Fatalf("sandbox should block %q (outcome %q)", code, res.Trace.Outcome)
+		}
+	}
+}
+
+// Non-finite numbers (NaN/Inf) don't leak into the var bag (review H9).
+func TestScript_NonFiniteRejected(t *testing.T) {
+	res := runScript(t, `return 0/0`, nil) // NaN
+	if res.Trace.Outcome != "completed" {
+		t.Fatalf("0/0 outcome = %q, want completed", res.Trace.Outcome)
+	}
+	if res.Vars["out"] != nil {
+		t.Fatalf("NaN leaked into var: %v", res.Vars["out"])
+	}
+}
+
+// pairs(vars) is deterministic across runs (sorted-key insertion, review H8).
+func TestScript_DeterministicPairs(t *testing.T) {
+	code := `local s = ""; for k,_ in pairs(vars) do s = s .. k .. "," end; return s`
+	input := map[string]any{"zebra": 1, "alpha": 2, "mike": 3, "bravo": 4}
+	a := runScript(t, code, input)
+	b := runScript(t, code, input)
+	if a.Vars["out"] != b.Vars["out"] {
+		t.Fatalf("pairs order nondeterministic: %v vs %v", a.Vars["out"], b.Vars["out"])
+	}
+}
+
 // A self-referential table can't overflow the Go stack during Lua→Go conversion.
 func TestScript_CyclicTableBounded(t *testing.T) {
 	res := runScript(t, `local t = {}; t.self = t; return t`, nil)

@@ -16,7 +16,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"math"
 	mrand "math/rand"
+	"sort"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -28,6 +30,7 @@ import (
 const maxLuaDepth = 64
 
 const scriptDeadline = 200 * time.Millisecond
+const scriptMemMB = 64 // gopher-lua memory cap (allocator DoS guard)
 
 type scriptConfig struct {
 	Code   string `json:"code"`
@@ -79,7 +82,8 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	defer L.Close()
-	L.SetContext(dctx)
+	L.SetContext(dctx) // verified: gopher-lua aborts tight loops on ctx cancel
+	L.SetMx(scriptMemMB) // bound allocator DoS (string.format/table.concat/rep)
 	// Only pure libs — NO io/os/debug/package (no file, network, os.time).
 	for _, lib := range []struct {
 		name string
@@ -95,10 +99,11 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 		L.Call(1, 0)
 	}
 	// Close sandbox holes OpenBase leaves: dofile/loadfile read host files; print
-	// writes to os.Stdout. Remove string.rep — a single Go-level rep(s, 1e9) call
-	// allocates past the context deadline (it only fences between VM ops) → OOM
-	// (cross-AI review BLOCK/HIGH).
-	for _, g := range []string{"dofile", "loadfile", "print"} {
+	// writes to os.Stdout; load/loadstring compile arbitrary strings (bypass the
+	// publish-time syntax check); collectgarbage forces a host GC (CPU DoS). Review
+	// B2 — the tight-loop concern was a false positive (SetContext aborts loops);
+	// allocator OOM is bounded by SetMx above.
+	for _, g := range []string{"dofile", "loadfile", "load", "loadstring", "collectgarbage", "print"} {
 		L.SetGlobal(g, lua.LNil)
 	}
 	if strTbl, ok := L.GetGlobal("string").(*lua.LTable); ok {
@@ -168,8 +173,15 @@ func goToLua(L *lua.LState, v any) lua.LValue {
 		return lua.LString(t)
 	case map[string]any:
 		tbl := L.NewTable()
-		for k, e := range t {
-			tbl.RawSetString(k, goToLua(L, e))
+		// Insert in sorted key order: gopher-lua preserves string-key insertion
+		// order, so this makes pairs(vars)/next deterministic (review H8).
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			tbl.RawSetString(k, goToLua(L, t[k]))
 		}
 		return tbl
 	case []any:
@@ -207,7 +219,11 @@ func luaToGoDepth(v lua.LValue, depth int) any {
 	case lua.LBool:
 		return bool(t)
 	case lua.LNumber:
-		return float64(t)
+		f := float64(t)
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil // non-finite would break json.Marshal of vars/trace (review H9)
+		}
+		return f
 	case lua.LString:
 		return string(t)
 	case *lua.LTable:
