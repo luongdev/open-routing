@@ -389,4 +389,55 @@ CREATE TABLE traces (
 CREATE INDEX ix_traces_route ON traces (org_id, route_request_id);
 CREATE INDEX ix_traces_org_created ON traces (org_id, created_at DESC, id DESC);
 
+-- v0.3 W2: realtime transport (WS gateway). All durable so a dropped socket never
+-- loses an offer or double-applies a command (outbox-first delivery).
+
+-- agent_outbox is the ONLY outbound delivery source. server_seq is per-agent
+-- monotonic, allocated under a per-agent advisory lock INSIDE the producing tx
+-- (NOT a global IDENTITY, whose commit-order gap would skip rows on reconnect).
+-- The relay reads only committed rows in seq order; event_key makes a reconnect
+-- re-derivation idempotent.
+CREATE TABLE agent_outbox (
+    org_id            UUID NOT NULL,
+    agent_id          UUID NOT NULL,
+    server_seq        BIGINT NOT NULL,
+    event_key         TEXT NOT NULL,
+    type              TEXT NOT NULL,
+    reservation_id    UUID,
+    payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (org_id, agent_id, server_seq),
+    UNIQUE (org_id, agent_id, event_key)
+);
+
+-- ws_command_dedupe: an agent command applies at most once. status+result let a
+-- redelivered command return the original ack without re-running; request_hash
+-- rejects a reused client_msg_id carrying a different payload.
+CREATE TABLE ws_command_dedupe (
+    org_id            UUID NOT NULL,
+    agent_id          UUID NOT NULL,
+    client_msg_id     UUID NOT NULL,
+    command_type      TEXT NOT NULL,
+    request_hash      TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','done')),
+    result            JSONB,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (org_id, agent_id, client_msg_id)
+);
+
+-- agent_sessions: cluster-visible session inventory for per-command revocation.
+CREATE TABLE agent_sessions (
+    org_id            UUID NOT NULL,
+    session_id        UUID NOT NULL,
+    agent_id          UUID NOT NULL,
+    gateway_id        TEXT NOT NULL,
+    connected_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    terminated_at     TIMESTAMPTZ,
+    PRIMARY KEY (org_id, session_id)
+);
+CREATE INDEX ix_agent_sessions_agent ON agent_sessions (org_id, agent_id) WHERE terminated_at IS NULL;
+
 COMMIT;

@@ -35,6 +35,27 @@ type Agent struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AgentOutbox struct {
+	OrgID         pgtype.UUID        `json:"org_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	ServerSeq     int64              `json:"server_seq"`
+	EventKey      string             `json:"event_key"`
+	Type          string             `json:"type"`
+	ReservationID pgtype.UUID        `json:"reservation_id"`
+	Payload       []byte             `json:"payload"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type AgentSession struct {
+	OrgID        pgtype.UUID        `json:"org_id"`
+	SessionID    pgtype.UUID        `json:"session_id"`
+	AgentID      pgtype.UUID        `json:"agent_id"`
+	GatewayID    string             `json:"gateway_id"`
+	ConnectedAt  pgtype.Timestamptz `json:"connected_at"`
+	LastSeenAt   pgtype.Timestamptz `json:"last_seen_at"`
+	TerminatedAt pgtype.Timestamptz `json:"terminated_at"`
+}
+
 type AgentSkill struct {
 	AgentID     pgtype.UUID        `json:"agent_id"`
 	SkillID     pgtype.UUID        `json:"skill_id"`
@@ -242,4 +263,16 @@ type Trace struct {
 	SimulationInput      []byte             `json:"simulation_input"`
 	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
 	GraphHash            *string            `json:"graph_hash"`
+}
+
+type WsCommandDedupe struct {
+	OrgID       pgtype.UUID        `json:"org_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	ClientMsgID pgtype.UUID        `json:"client_msg_id"`
+	CommandType string             `json:"command_type"`
+	RequestHash string             `json:"request_hash"`
+	Status      string             `json:"status"`
+	Result      []byte             `json:"result"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
