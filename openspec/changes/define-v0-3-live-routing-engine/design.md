@@ -138,3 +138,95 @@ Simulation remains fully deterministic on the snapshot path.
 - **Stuck reservations / poison continuations**: carried from the v0.2 review
   (worker poison-pill, run_seq fence). The v0.2 hardening pass lands first so the
   live lifecycle builds on a sound base.
+
+## Round-2 concretions (implementation blueprint)
+
+codex + agy round-2 (see `plan-review.md` for round 1). codex supplied concrete
+schemas/SQL; agy then found races in them — both folded here. These pin the
+round-1 "weak" items (capacity, matcher, presence, WS idempotency, decision trace).
+
+### Capacity = slot rows (decided; NOT a counted column)
+```sql
+CREATE TABLE agent_capacity_slots (
+  org_id uuid NOT NULL, agent_id uuid NOT NULL, channel text NOT NULL,
+  slot_no int NOT NULL, reservation_id uuid NULL,
+  held_at timestamptz NULL, hold_expires_at timestamptz NULL,
+  PRIMARY KEY (org_id, agent_id, channel, slot_no),
+  UNIQUE (org_id, reservation_id) WHERE reservation_id IS NOT NULL
+);
+CREATE INDEX agent_capacity_slots_sweep_idx
+  ON agent_capacity_slots (hold_expires_at) WHERE hold_expires_at IS NOT NULL;
+```
+- Acquire one free slot inside the offer tx with `FOR UPDATE SKIP LOCKED LIMIT 1`;
+  no free row → abort offer + release route lock.
+- **accept MUST clear `hold_expires_at = NULL`** (agy BLOCK) so the leaked-hold
+  sweeper can't rip a live call's slot; release on terminal sets reservation_id NULL.
+- **accept tx re-checks `WHERE reservation_id = :resID`** on the slot (agy HIGH:
+  sweeper-vs-accept) so an accept of a swept offer fails closed.
+
+### Matcher
+- Availability-driven pull (agy fixes applied): lock **only the route** —
+  `FOR UPDATE OF rr SKIP LOCKED` (bare `FOR UPDATE` would lock the joined
+  queue/membership rows → cross-agent deadlock); the same statement sets
+  `status='offering'` (or `next_match_at = now()+Δ`) so a second puller can't grab
+  the same route before the offer tx (agy HIGH: pull-to-offer race).
+- Eligibility skills: denormalize `route_requests.required_skills text[]` + GIN
+  index and filter `required_skills <@ agent_skills` (agy HIGH: no per-row plpgsql).
+- Score (bypass math fixed — aging/SLA must be able to cross a priority band, agy
+  HIGH): `effective = priority*W_p + queue_weight*10 + aging + sla_boost +
+  idle_bonus`, with `W_p` and the aging cap chosen so a sufficiently-aged lower
+  band can overtake (e.g. uncapped aging or `W_p < max_aging`). Avoid sorting the
+  whole backlog on a `now()` function (agy HIGH): precompute a `deadline_score` /
+  order by indexable `priority DESC, created_at ASC` and refine in app, or
+  materialize aging on the sweep tick.
+- No double-offer: capacity slots + partial-unique
+  `reservations_one_active_per_route` (offered..wrap_up); for voice add
+  `reservations_one_live_offer_per_agent_channel` — but **NOT for chat=N** (slots
+  enforce it) and **only if blast/simultaneous ringing stays out of scope** (agy MED).
+
+### Presence lease (Redis primary, DB audit)
+`presence:{org}:{agent}:{session} = {lease_token,gateway_id,status,channels}` TTL
+30s, heartbeat 10s, mid-offer reconnect grace 45–60s; `agent_sessions:{org}:{agent}`
+set for lookup. DB `agent_presence_audit` for last-known/revocation. Offer tx:
+after locking route+slot, confirm Redis lease + `lease_token`, insert reservation
+with `agent_session_id`+`lease_token`; every accept/reject/complete must match the
+reservation `lease_token` (fences stale commands). **Redis outage → fail closed**
+for live offers (PART C).
+
+### WS protocol idempotency
+Envelope `{id,type,org_id,agent_id,session_id,seq,sent_at,payload,ack}`. Inbound
+commands deduped by `PRIMARY KEY (org_id, agent_id, client_msg_id)` in
+`ws_command_dedupe` (stores the result for replay). Outbound persisted to
+`agent_outbox` with a monotonic per-agent `server_seq`; reconnect `hello{last_server_seq}`
+replays `server_seq > last`, and current `offered` reservations are re-derived so an
+offer survives outbox retention expiry.
+
+### route_decisions (auditability)
+One row per decision: `decision_type` (interaction_offer|availability_pull|retry|
+sweep), `decision_version`, `matcher_instance`, `channel`, `queue_id`,
+`selected_agent_id`, `selected_slot_no`, `outcome` (offered|no_candidate|
+capacity_lost|lease_lost|route_lost), `reason`, and JSONB `eligibility/candidates/
+excluded/ranking/capacity_snapshot`; indexed by `(org_id, route_request_id,
+created_at DESC)` and `(org_id, selected_agent_id, …)`.
+
+### New data model (folded into the single pre-release migration)
+Tables: `agent_capacity_slots`, `agent_presence_audit`, `ws_command_dedupe`,
+`agent_outbox`, `route_decisions` (+ optional `agent_sessions`,
+`agent_routing_state` if RONA/Missed isn't modeled on the agent row).
+Columns: `reservations.{channel,agent_session_id,lease_token,version,
+offer_expires_at,wrapup_expires_at,assignment_handle,adapter_correlation_id,
+terminal_reason}`; `route_requests.{channel,queue_id,priority,waiting_since,
+next_match_at,match_attempt_seq,active_reservation_id,required_skills}`;
+`agents.{routing_state,routing_state_expires_at}`.
+
+### Decisions pinned (round-2 PART C)
+- Capacity = slot rows (final). RONA recovery = cooldown TTL + next explicit Ready
+  clears it. Offer-timeout authority = the continuation worker. Multi-session =
+  one routable primary session per agent. Redis outage = fail closed. Adapter
+  dedupe key = `(org_id, adapter_correlation_id, adapter_event_id)`. Sweep cadence
+  ~2s, batch ≤100 routes/100 agents per org. Clock = Postgres `now()` (never trust
+  gateway clocks). Retention policies for dedupe/outbox/decisions = TBD-at-impl,
+  bounded. Reservation state machine + race precedence (accept vs caller_abandoned,
+  timeout vs accept, disconnect vs reject) = define explicitly in Wave 1.
+- Fairness must be tested with seeded wait times + concurrent workers (not just
+  unit tests).
