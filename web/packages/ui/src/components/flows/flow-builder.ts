@@ -4419,7 +4419,8 @@ export class OrFlowBuilder extends LitElement {
         case 'compute': add(p['var']); break;
         case 'loop_for': add(p['item_var'], 'item'); add(p['index_var'], 'index'); break;
         case 'try_catch': add(p['error_var'], 'error'); break;
-        default: break;
+        // http_request (and any response-capture node) defines its save_as var.
+        default: add(p['save_as']); break;
       }
     }
     return [...out];

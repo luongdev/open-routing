@@ -34,6 +34,19 @@ describe('computeVarBag', () => {
     expect(bag.map(e => e.key)).not.toContain('result');
   });
 
+  it('http_request save_as surfaces the captured response as one variable', () => {
+    const resp = { items: [{ name: 'Alice' }], page: { total: 1 } };
+    const trace = [
+      step({ id: 's1', node_kind: 'http_request', label: 'HTTP request', outputs: { node: 'http_request', mode: 'recorded', method: 'GET', save_as: 'var_b', response: resp } }),
+    ];
+    const bag = computeVarBag(0, trace);
+    const entry = bag.find(e => e.key === 'var_b');
+    expect(entry?.value).toEqual(resp);
+    // the raw record metadata is NOT leaked as variables
+    expect(bag.map(e => e.key)).not.toContain('response');
+    expect(bag.map(e => e.key)).not.toContain('save_as');
+  });
+
   it('non-writing nodes (match_skill) do not leak their outputs as variables', () => {
     const trace = [
       step({ id: 's1', node_kind: 'match_skill', outputs: { candidates: 0, min_proficiency: 2, skill: 'sua_tieng_cho' } }),
