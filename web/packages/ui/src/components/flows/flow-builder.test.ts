@@ -689,74 +689,118 @@ describe('OrFlowBuilder', () => {
     (el as any)._edges = edges;
   }
 
+  const N = (id: string, kind: string, extra: any = {}) => ({ id, kind, label: id, description: '', x: 0, y: 0, params: {}, ...extra });
+  const regionOf = (id: string) => (el as any)._nodes.find((n: any) => n.id === id)?.region;
+
   it('a loop_for body port assigns the target node to the loop region', async () => {
-    await withNodes([
-      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
-      { id: 'sv', kind: 'set_var', label: 'Set', description: '', x: 0, y: 200, params: {} },
-    ]);
+    await withNodes([N('lf', 'loop_for'), N('sv', 'set_var')]);
     (el as any)._connectEdge('lf', 'body', 'branch', 'sv');
-    const sv = (el as any)._nodes.find((n: any) => n.id === 'sv');
-    expect(sv.region).toBe('lf');
+    expect(regionOf('sv')).toBe('lf');
   });
 
   it('a parallel body:1 port assigns region "<id>#1"', async () => {
-    await withNodes([
-      { id: 'par', kind: 'parallel', label: 'Parallel', description: '', x: 0, y: 0, params: { branches: 2 } },
-      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 200, params: {} },
-    ]);
+    await withNodes([N('par', 'parallel', { params: { branches: 2 } }), N('a', 'log')]);
     (el as any)._connectEdge('par', 'body:1', 'branch', 'a');
-    expect((el as any)._nodes.find((n: any) => n.id === 'a').region).toBe('par#1');
+    expect(regionOf('a')).toBe('par#1');
   });
 
-  it('extends the body region along the chain (in-region node → next node)', async () => {
-    await withNodes([
-      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
-      { id: 'sv', kind: 'set_var', label: 'Set', description: '', x: 0, y: 200, region: 'lf', params: {} },
-      { id: 'lg', kind: 'log', label: 'Log', description: '', x: 0, y: 400, params: {} },
-    ]);
-    (el as any)._connectEdge('sv', 'done', 'success', 'lg');
-    expect((el as any)._nodes.find((n: any) => n.id === 'lg').region).toBe('lf');
+  it('derives the body region along the whole chain, not just the entry', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('sv', 'set_var'), N('lg', 'log')],
+      [
+        { id: 'eb', from: 'lf', to: 'sv', from_port: 'body', label: 'body' },
+        { id: 'ef', from: 'sv', to: 'lg', from_port: 'done', label: 'done' },
+      ],
+    );
+    (el as any)._recomputeRegions();
+    expect(regionOf('sv')).toBe('lf');
+    expect(regionOf('lg')).toBe('lf'); // descendant joins (codex HIGH: no successor traversal)
   });
 
   it('a control node done port does NOT pull the successor into the body', async () => {
-    await withNodes([
-      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
-      { id: 'end', kind: 'end', label: 'End', description: '', x: 0, y: 200, params: {} },
-    ]);
-    (el as any)._connectEdge('lf', 'done', 'success', 'end');
-    expect((el as any)._nodes.find((n: any) => n.id === 'end').region ?? '').toBe('');
+    await withNodes(
+      [N('lf', 'loop_for'), N('end', 'end')],
+      [{ id: 'e', from: 'lf', to: 'end', from_port: 'done', label: 'done' }],
+    );
+    (el as any)._recomputeRegions();
+    expect(regionOf('end') ?? '').toBe('');
   });
 
-  it('eject removes a node and its in-region descendants from the body', async () => {
+  it('an end node is never flooded into a region', async () => {
     await withNodes(
+      [N('lf', 'loop_for'), N('sv', 'set_var'), N('end', 'end')],
       [
-        { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
-        { id: 'a', kind: 'set_var', label: 'A', description: '', x: 0, y: 200, region: 'lf', params: {} },
-        { id: 'b', kind: 'log', label: 'B', description: '', x: 0, y: 400, region: 'lf', params: {} },
+        { id: 'eb', from: 'lf', to: 'sv', from_port: 'body', label: 'body' },
+        { id: 'ef', from: 'sv', to: 'end', from_port: 'done', label: 'done' },
       ],
-      [{ id: 'e', from: 'a', to: 'b', from_port: 'done', label: 'done' }],
     );
+    (el as any)._recomputeRegions();
+    expect(regionOf('sv')).toBe('lf');
+    expect(regionOf('end') ?? '').toBe('');
+  });
+
+  it('reconnecting the body port to a new entry drops the old chain (no stale region)', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('a', 'set_var'), N('b', 'log')],
+      [{ id: 'eb', from: 'lf', to: 'a', from_port: 'body', label: 'body' }],
+    );
+    (el as any)._recomputeRegions();
+    expect(regionOf('a')).toBe('lf');
+    (el as any)._connectEdge('lf', 'body', 'branch', 'b'); // reconnect body → b
+    expect(regionOf('b')).toBe('lf');
+    expect(regionOf('a') ?? '').toBe(''); // a is no longer the body entry — stale region cleared
+  });
+
+  it('deleting a body edge drops its now-orphaned members back to top level', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('a', 'set_var'), N('b', 'log')],
+      [
+        { id: 'eb', from: 'lf', to: 'a', from_port: 'body', label: 'body' },
+        { id: 'ef', from: 'a', to: 'b', from_port: 'done', label: 'done' },
+      ],
+    );
+    (el as any)._recomputeRegions();
+    expect(regionOf('b')).toBe('lf');
+    (el as any)._deleteEdge('eb');
+    expect(regionOf('a') ?? '').toBe('');
+    expect(regionOf('b') ?? '').toBe('');
+  });
+
+  it('eject severs the incoming body/region edges so the derivation drops the node', async () => {
+    await withNodes(
+      [N('lf', 'loop_for'), N('a', 'set_var'), N('b', 'log')],
+      [
+        { id: 'eb', from: 'lf', to: 'a', from_port: 'body', label: 'body' },
+        { id: 'ef', from: 'a', to: 'b', from_port: 'done', label: 'done' },
+      ],
+    );
+    (el as any)._recomputeRegions();
     (el as any)._ejectFromRegion('a');
-    expect((el as any)._nodes.find((n: any) => n.id === 'a').region).toBeUndefined();
-    expect((el as any)._nodes.find((n: any) => n.id === 'b').region).toBeUndefined();
+    expect(regionOf('a') ?? '').toBe('');
+    expect(regionOf('b') ?? '').toBe('');
   });
 
   it('deleting a control node clears its members’ region membership', async () => {
-    await withNodes([
-      { id: 'par', kind: 'parallel', label: 'P', description: '', x: 0, y: 0, params: {} },
-      { id: 'a', kind: 'log', label: 'A', description: '', x: 0, y: 200, region: 'par#0', params: {} },
-      { id: 'b', kind: 'log', label: 'B', description: '', x: 0, y: 400, region: 'par#1', params: {} },
-    ]);
+    await withNodes(
+      [N('par', 'parallel'), N('a', 'log'), N('b', 'log')],
+      [
+        { id: 'e0', from: 'par', to: 'a', from_port: 'body:0', label: 'body:0' },
+        { id: 'e1', from: 'par', to: 'b', from_port: 'body:1', label: 'body:1' },
+      ],
+    );
+    (el as any)._recomputeRegions();
+    expect(regionOf('a')).toBe('par#0');
     (el as any)._deleteNode('par');
-    expect((el as any)._nodes.find((n: any) => n.id === 'a').region).toBeUndefined();
-    expect((el as any)._nodes.find((n: any) => n.id === 'b').region).toBeUndefined();
+    expect(regionOf('a') ?? '').toBe('');
+    expect(regionOf('b') ?? '').toBe('');
   });
 
   it('_serializeGraph carries node.region through to the backend shape', async () => {
-    await withNodes([
-      { id: 'lf', kind: 'loop_for', label: 'For each', description: '', x: 0, y: 0, params: {} },
-      { id: 'sv', kind: 'set_var', label: 'Set', description: '', x: 0, y: 200, region: 'lf', params: { name: 'x', value_expr: '1' } },
-    ]);
+    await withNodes(
+      [N('lf', 'loop_for'), N('sv', 'set_var', { params: { name: 'x', value_expr: '1' } })],
+      [{ id: 'eb', from: 'lf', to: 'sv', from_port: 'body', label: 'body' }],
+    );
+    (el as any)._recomputeRegions();
     const g = (el as any)._serializeGraph();
     const sv = g.nodes.find((n: any) => n.id === 'sv');
     expect(sv.region).toBe('lf');

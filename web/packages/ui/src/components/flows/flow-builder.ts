@@ -2385,6 +2385,7 @@ export class OrFlowBuilder extends LitElement {
       }
       this._nodes = nodes;
       this._edges = this._pruneEdges(nodes, rawEdges);
+      this._recomputeRegions(); // derive membership from the loaded graph (self-consistent)
       this._loaded = flow;
       this._dirty = false;
       this._selectedNodeId = this._nodes[0]?.id ?? null;
@@ -3208,7 +3209,7 @@ export class OrFlowBuilder extends LitElement {
       return isLinear ? false : (ed.from_port ?? ed.label ?? 'done') !== fromPort;
     });
     this._edges = [...kept, { id: this._genEdgeId(), from: fromId, to: toId, from_port: fromPort, label: fromPort, branch }];
-    this._assignRegionOnConnect(fromNode, fromPort, toId);
+    this._recomputeRegions();
     this._markDirty();
   }
 
@@ -3220,46 +3221,72 @@ export class OrFlowBuilder extends LitElement {
     return m ? `${ownerId}#${m[1]}` : null;
   }
 
-  // Membership is explicit, set as the body is wired: a body/body:N edge puts the
-  // target IN that region; a normal flow edge FROM an in-region node extends the
-  // body chain (the target joins the same region). Both stamp node.region, which
-  // the backend requires on every body node.
-  private _assignRegionOnConnect(fromNode: FlowNode | undefined, fromPort: string, toId: string): void {
-    if (!fromNode) return;
-    let region: string | null = null;
-    if (CONTROL_KINDS.has(fromNode.kind)) {
-      // A body/body:N port ENTERS the control's body; done/catch CONTINUE within
-      // whatever region the control node itself lives in (top level or an
-      // enclosing body — nested control).
-      region = this._regionIdForPort(fromNode.id, fromPort) ?? fromNode.region ?? null;
-    } else if (fromNode.region) {
-      // A normal in-region node's outgoing flow stays in the same body.
-      region = fromNode.region;
-    }
-    if (!region) return;
-    this._nodes = this._nodes.map(n =>
-      n.id === toId && (n.region ?? '') === '' ? { ...n, region: region! } : n
-    );
+  private static _isBodyPort(port: string): boolean {
+    return port === 'body' || /^body:\d+$/.test(port);
   }
 
-  // Clear a node (and its in-region flow descendants) out of its body region.
+  // Region membership is DERIVED from the graph, never tracked incrementally
+  // (which went stale on reconnect/delete/multi-path — cross-AI review). A body
+  // edge seeds its target as a region entry; membership then floods forward along
+  // FLOW edges (a control node's done/catch continues its OWN region; its body
+  // edges are not flow, so a nested body floods only from its own entry). Run
+  // after every graph mutation; produces exactly the explicit node.region the
+  // backend requires, with no orphans or stale ids.
+  private _recomputeRegions(): void {
+    const byId = new Map(this._nodes.map(n => [n.id, n]));
+    const region: Record<string, string> = {};
+    const seeded = new Set<string>();
+    const flowAdj = new Map<string, string[]>();
+    for (const e of this._edges) {
+      const from = byId.get(e.from);
+      const port = e.from_port ?? e.label ?? '';
+      if (from && CONTROL_KINDS.has(from.kind) && OrFlowBuilder._isBodyPort(port)) {
+        const r = this._regionIdForPort(from.id, port);
+        if (r && byId.has(e.to)) {
+          region[e.to] = r;
+          seeded.add(e.to);
+        }
+        continue; // body edge is a region declaration, not flow
+      }
+      (flowAdj.get(e.from) ?? flowAdj.set(e.from, []).get(e.from)!).push(e.to);
+    }
+    const queue = [...seeded];
+    while (queue.length) {
+      const n = queue.shift()!;
+      const rn = region[n];
+      if (rn === undefined) continue;
+      for (const m of flowAdj.get(n) ?? []) {
+        if (seeded.has(m) || region[m] !== undefined) continue; // entry/conflict: keep
+        // An end is terminal/top-level and can't live in a region (backend
+        // end_in_region) — leave it out so the stray edge reads as a boundary
+        // crossing the user must reroute through the control's done port.
+        if (byId.get(m)?.kind === 'end') continue;
+        region[m] = rn;
+        queue.push(m);
+      }
+    }
+    this._nodes = this._nodes.map(n => {
+      const next = region[n.id];
+      return (n.region ?? '') === (next ?? '') ? n : { ...n, region: next };
+    });
+  }
+
+  // "Remove from body" = sever the edges that bring this node into its region;
+  // the derivation then drops it (and any nodes that only reached the body
+  // through it) back to top level.
   private _ejectFromRegion(id: string): void {
     const node = this._nodes.find(n => n.id === id);
     if (!node || !node.region) return;
-    const region = node.region;
-    const succ = new Map<string, string[]>();
-    for (const e of this._edges) (succ.get(e.from) ?? succ.set(e.from, []).get(e.from)!).push(e.to);
-    const drop = new Set<string>();
-    const stack = [id];
-    while (stack.length) {
-      const cur = stack.pop()!;
-      if (drop.has(cur)) continue;
-      const n = this._nodes.find(x => x.id === cur);
-      if (!n || n.region !== region) continue;
-      drop.add(cur);
-      for (const nxt of succ.get(cur) ?? []) stack.push(nxt);
-    }
-    this._nodes = this._nodes.map(n => (drop.has(n.id) ? { ...n, region: undefined } : n));
+    const inRegionPred = (e: FlowEdge): boolean => {
+      if (e.to !== id) return false;
+      const from = this._nodes.find(n => n.id === e.from);
+      const port = e.from_port ?? e.label ?? '';
+      // a body edge into this node, or a flow edge from a node in the same region
+      if (from && CONTROL_KINDS.has(from.kind) && OrFlowBuilder._isBodyPort(port)) return true;
+      return (from?.region ?? '') === node.region;
+    };
+    this._edges = this._edges.filter(e => !inRegionPred(e));
+    this._recomputeRegions();
     this._markDirty();
   }
 
@@ -3279,21 +3306,16 @@ export class OrFlowBuilder extends LitElement {
   private _deleteEdge(id: string): void {
     this._edges = this._edges.filter(e => e.id !== id);
     if (this._selectedEdgeId === id) this._selectedEdgeId = null;
+    this._recomputeRegions(); // a severed body edge drops its (now unreachable) members
     this._markDirty();
   }
 
   private _deleteNode(id: string): void {
-    const deleted = this._nodes.find(n => n.id === id);
     this._nodes = this._nodes.filter(n => n.id !== id);
     this._edges = this._edges.filter(e => e.from !== id && e.to !== id);
-    // Deleting a control node orphans its body region — clear membership on every
-    // node that belonged to it (id or id#N), else they'd validate as boundary
-    // crossings into a non-existent region.
-    if (deleted && CONTROL_KINDS.has(deleted.kind)) {
-      this._nodes = this._nodes.map(n =>
-        n.region && (n.region === id || n.region.startsWith(id + '#')) ? { ...n, region: undefined } : n
-      );
-    }
+    // Deleting a control node (or any in-body node) re-derives membership: members
+    // that only reached the body through the removed node fall back to top level.
+    this._recomputeRegions();
     if (this._selectedNodeId === id) this._selectedNodeId = null;
     this._markDirty();
   }
@@ -4280,26 +4302,12 @@ export class OrFlowBuilder extends LitElement {
       return next;
     });
     if (key === 'cases' || key === 'branches') {
-      // Reducing branches drops the now-missing body:N ports; clear membership
-      // of nodes orphaned into a region that no longer exists.
+      // Reducing branches drops the now-missing body:N ports + their edges; the
+      // re-derivation then drops nodes orphaned out of a region that's gone.
       this._edges = this._pruneEdges(this._nodes, this._edges);
-      this._dropOrphanedRegions();
+      this._recomputeRegions();
     }
     this._markDirty();
-  }
-
-  // Clear node.region for any region whose owning port no longer exists (e.g.
-  // a parallel branch count was reduced below that branch index).
-  private _dropOrphanedRegions(): void {
-    const valid = new Set<string>();
-    for (const n of this._nodes) {
-      if (!CONTROL_KINDS.has(n.kind)) continue;
-      for (const o of outputsForNode(n)) {
-        const r = this._regionIdForPort(n.id, o.id);
-        if (r) valid.add(r);
-      }
-    }
-    this._nodes = this._nodes.map(n => (n.region && !valid.has(n.region) ? { ...n, region: undefined } : n));
   }
 
   override render() {
