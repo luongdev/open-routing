@@ -7,7 +7,7 @@ import (
 )
 
 // recSink records events and de-dupes by CorrelationID (mirrors how the engine
-// will apply each at most once).
+// applies each at most once).
 type recSink struct {
 	events []AssignmentEvent
 	seen   map[string]bool
@@ -65,43 +65,51 @@ func deliver(t *testing.T) (*MockVoice, *recSink, Handle) {
 
 func TestMockVoice_HappyPath(t *testing.T) {
 	m, sink, h := deliver(t)
-	if !eqTypes(sink.types(), EventAccepted, EventConnecting, EventEstablished) {
+	if !eqTypes(sink.types(), EventDelivered, EventConnecting, EventEstablished) {
 		t.Fatalf("after deliver: %v", sink.types())
 	}
-	if err := m.Complete(context.Background(), h); err != nil {
-		t.Fatalf("complete: %v", err)
+	if err := m.Release(context.Background(), h, ReleaseCompleted); err != nil {
+		t.Fatalf("release: %v", err)
 	}
-	if !eqTypes(sink.types(), EventAccepted, EventConnecting, EventEstablished, EventCompleted) {
+	if !eqTypes(sink.types(), EventDelivered, EventConnecting, EventEstablished, EventCompleted) {
 		t.Fatalf("after complete: %v", sink.types())
 	}
 }
 
-func TestMockVoice_TerminalVariants(t *testing.T) {
+func TestMockVoice_EngineCancel(t *testing.T) {
+	m, sink, h := deliver(t)
+	_ = m.Release(context.Background(), h, ReleaseCancelled)
+	last := sink.events[len(sink.events)-1]
+	if last.Type != EventCancelled || !last.Type.Terminal() {
+		t.Fatalf("cancel terminal = %q", last.Type)
+	}
+}
+
+func TestMockVoice_AdapterOriginatedTerminals(t *testing.T) {
 	cases := []struct {
 		name string
-		do   func(*MockVoice, context.Context, Handle) error
+		do   func(*MockVoice, context.Context, Handle)
 		want EventType
 	}{
-		{"failed", func(m *MockVoice, c context.Context, h Handle) error { return m.Fail(c, h, "boom") }, EventFailed},
-		{"disconnected", func(m *MockVoice, c context.Context, h Handle) error { return m.Disconnect(c, h) }, EventDisconnected},
-		{"caller_abandoned", func(m *MockVoice, c context.Context, h Handle) error { return m.Abandon(c, h) }, EventCallerAbandoned},
+		{"failed", func(m *MockVoice, c context.Context, h Handle) { m.Fail(c, h, "boom") }, EventFailed},
+		{"disconnected", func(m *MockVoice, c context.Context, h Handle) { m.Disconnect(c, h) }, EventDisconnected},
+		{"caller_abandoned", func(m *MockVoice, c context.Context, h Handle) { m.Abandon(c, h) }, EventCallerLeft},
+		{"rejected", func(m *MockVoice, c context.Context, h Handle) { m.Reject(c, h) }, EventRejected},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m, sink, h := deliver(t)
-			if err := tc.do(m, context.Background(), h); err != nil {
-				t.Fatalf("%s: %v", tc.name, err)
-			}
+			tc.do(m, context.Background(), h)
 			last := sink.events[len(sink.events)-1]
-			if last.Type != tc.want {
-				t.Fatalf("last = %q, want %q", last.Type, tc.want)
+			if last.Type != tc.want || !last.Type.Terminal() {
+				t.Fatalf("last = %q, want terminal %q", last.Type, tc.want)
 			}
-			if !last.Type.Terminal() {
-				t.Fatalf("%q should be terminal", last.Type)
-			}
-			// A second terminal call fails: the handle was released.
-			if err := tc.do(m, context.Background(), h); err == nil {
-				t.Fatalf("second %s on released handle should error", tc.name)
+			// A second terminal of ANY kind is an idempotent no-op (no new event).
+			n := len(sink.events)
+			tc.do(m, context.Background(), h)
+			_ = m.Release(context.Background(), h, ReleaseCompleted)
+			if len(sink.events) != n {
+				t.Fatalf("second terminal produced extra events: %v", sink.types())
 			}
 		})
 	}
@@ -109,17 +117,16 @@ func TestMockVoice_TerminalVariants(t *testing.T) {
 
 func TestMockVoice_FailedCarriesReason(t *testing.T) {
 	m, sink, h := deliver(t)
-	_ = m.Fail(context.Background(), h, "adapter exploded")
+	m.Fail(context.Background(), h, "adapter exploded")
 	last := sink.events[len(sink.events)-1]
 	if last.Reason != "adapter exploded" {
 		t.Fatalf("reason = %q", last.Reason)
 	}
 }
 
-// A redelivered event (same CorrelationID) is applied at most once.
+// A redelivered event (same CorrelationID) is applied at most once by the sink.
 func TestMockVoice_Idempotent(t *testing.T) {
 	_, sink, _ := deliver(t)
-	// Replay the established event verbatim.
 	est := sink.events[2]
 	_ = sink.OnAssignmentEvent(context.Background(), est)
 	if got := len(sink.events); got != 3 {
@@ -127,13 +134,39 @@ func TestMockVoice_Idempotent(t *testing.T) {
 	}
 }
 
-// Release is idempotent and the handle stays opaque to callers.
-func TestMockVoice_ReleaseIdempotent(t *testing.T) {
-	m, _, h := deliver(t)
-	if err := m.Release(context.Background(), h); err != nil {
-		t.Fatalf("release: %v", err)
-	}
-	if err := m.Release(context.Background(), h); err != nil {
-		t.Fatalf("second release should be a no-op: %v", err)
+// Release on an unknown handle is a no-op (not an error).
+func TestMockVoice_ReleaseUnknown(t *testing.T) {
+	m := NewMockVoice(fixedNow())
+	if err := m.Release(context.Background(), "mock-voice:nope", ReleaseCompleted); err != nil {
+		t.Fatalf("release unknown should be a no-op: %v", err)
 	}
 }
+
+// A terminal that races mid-setup stops the setup sequence (no post-terminal
+// events): inject a terminal from inside the sink on `connecting`.
+func TestMockVoice_NoPostTerminalEvents(t *testing.T) {
+	m := NewMockVoice(fixedNow())
+	sink := newRecSink()
+	racer := sinkFunc(func(ctx context.Context, ev AssignmentEvent) error {
+		_ = sink.OnAssignmentEvent(ctx, ev)
+		if ev.Type == EventConnecting {
+			m.Abandon(ctx, ev.Handle) // outside world ends it mid-setup
+		}
+		return nil
+	})
+	_, _ = m.Deliver(context.Background(), Assignment{ReservationID: "r9"}, racer)
+	// established must NOT appear after caller_abandoned.
+	for i, e := range sink.events {
+		if e.Type == EventEstablished {
+			for _, prior := range sink.events[:i] {
+				if prior.Type.Terminal() {
+					t.Fatalf("established emitted after a terminal: %v", sink.types())
+				}
+			}
+		}
+	}
+}
+
+type sinkFunc func(context.Context, AssignmentEvent) error
+
+func (f sinkFunc) OnAssignmentEvent(ctx context.Context, ev AssignmentEvent) error { return f(ctx, ev) }

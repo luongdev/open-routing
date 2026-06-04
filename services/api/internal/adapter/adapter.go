@@ -4,13 +4,25 @@
 // delivery Handle is opaque to the engine, so a real voice adapter (LiveKit/SIP,
 // v0.4) and non-media channels (chat, email) implement the same interface.
 //
-// Lifecycle (each event idempotent under CorrelationID so a redelivered adapter
-// callback is safe):
+// Lifecycle (each event idempotent under CorrelationID; the engine applies each
+// at most once). After Deliver the adapter drives the setup sequence and reports
+// EVERY transition — including any terminal — through the EventSink:
 //
-//	Deliver -> accepted -> connecting -> established -> completed
-//	                                              \-> failed
-//	                                              \-> disconnected
-//	            (any time)                        \-> caller_abandoned
+//	Deliver -> delivered -> connecting -> established -> completed
+//	   any non-terminal state -> { failed | rejected | disconnected | caller_abandoned | cancelled }
+//
+// Two terminal sources:
+//   - ADAPTER-ORIGINATED (failed, rejected, disconnected, caller_abandoned): the
+//     outside world (media stack / caller / agent device). The engine OBSERVES
+//     these via the sink.
+//   - ENGINE-INITIATED (completed, cancelled): the engine ends the delivery via
+//     Release(cause); the adapter tears down and emits the matching terminal so
+//     both sources converge on one observable terminal per assignment.
+//
+// Sink contract: OnAssignmentEvent is called in lifecycle order per handle. A
+// returned error means the engine did not durably accept the event; the adapter
+// SHOULD retry (the engine is idempotent by CorrelationID). The engine MUST treat
+// any terminal as final and ignore later events for the same handle.
 package adapter
 
 import (
@@ -27,26 +39,49 @@ type Handle string
 type EventType string
 
 const (
-	EventAccepted        EventType = "accepted"         // the agent took the offer; delivery begins
-	EventConnecting      EventType = "connecting"       // adapter is bridging agent <-> interaction
-	EventEstablished     EventType = "established"      // both parties connected; handling started
-	EventCompleted       EventType = "completed"        // handling finished normally -> WrapUp
-	EventFailed          EventType = "failed"           // adapter-side failure (typed handling failure)
-	EventDisconnected    EventType = "disconnected"     // the agent dropped mid-handling
-	EventCallerAbandoned EventType = "caller_abandoned" // the customer hung up / left
+	// EventDelivered: the adapter began delivering to the agent (NOT the matcher's
+	// reservation acceptance, which already happened — this is delivery-start).
+	EventDelivered    EventType = "delivered"
+	EventConnecting   EventType = "connecting"   // bridging agent <-> interaction
+	EventEstablished  EventType = "established"  // both parties connected; handling started
+	EventCompleted    EventType = "completed"    // engine-initiated normal end -> WrapUp
+	EventCancelled    EventType = "cancelled"    // engine-initiated teardown (reassign / cancel)
+	EventFailed       EventType = "failed"       // adapter-side fault (typed handling failure)
+	EventRejected     EventType = "rejected"     // the agent device declined (distinct from a fault)
+	EventDisconnected EventType = "disconnected" // the agent dropped mid-handling
+	EventCallerLeft   EventType = "caller_abandoned"
 )
 
-// Terminal reports whether an event ends the assignment (no further events).
+// Terminal reports whether an event ends the assignment (no further events). Any
+// of these may occur from ANY non-terminal state (setup can fail before
+// established; a caller can abandon while it rings).
 func (t EventType) Terminal() bool {
 	switch t {
-	case EventCompleted, EventFailed, EventDisconnected, EventCallerAbandoned:
+	case EventCompleted, EventCancelled, EventFailed, EventRejected, EventDisconnected, EventCallerLeft:
 		return true
 	}
 	return false
 }
 
+// ReleaseCause is why the engine is ending a delivery (engine-initiated). It maps
+// to the terminal event the adapter emits on Release.
+type ReleaseCause string
+
+const (
+	ReleaseCompleted ReleaseCause = "completed" // agent finished handling normally
+	ReleaseCancelled ReleaseCause = "cancelled" // reassign / cancel / caller-gone cleanup
+)
+
+func (c ReleaseCause) event() EventType {
+	if c == ReleaseCompleted {
+		return EventCompleted
+	}
+	return EventCancelled
+}
+
 // Assignment is the unit handed to an adapter for delivery. The engine fills it
-// from the accepted reservation; the adapter needs only enough to bridge.
+// from the reservation the matcher accepted; the adapter needs only enough to
+// bridge.
 type Assignment struct {
 	ReservationID  string
 	RouteRequestID string
@@ -68,8 +103,8 @@ type AssignmentEvent struct {
 }
 
 // EventSink receives adapter events. The engine implements this and maps each
-// onto the reservation lifecycle (accepted/completed/failed/...) idempotently by
-// CorrelationID. Defined here so adapters depend only on the contract.
+// onto the reservation lifecycle idempotently by CorrelationID. Defined here so
+// adapters depend only on the contract.
 type EventSink interface {
 	OnAssignmentEvent(ctx context.Context, ev AssignmentEvent) error
 }
@@ -79,11 +114,14 @@ type EventSink interface {
 type ChannelAdapter interface {
 	// Channel is the channel kind this adapter serves (e.g. "voice").
 	Channel() string
-	// Deliver bridges the assignment to the agent and returns an opaque handle.
-	// It reports lifecycle via the sink (synchronously or later). A non-nil error
-	// is a delivery setup failure (no handle, no events).
+	// Deliver registers a delivery and returns its opaque handle; the lifecycle
+	// (delivered -> ... -> terminal, including any setup failure) is reported via
+	// the sink, ordered per handle. A non-nil error means delivery could not be
+	// registered AT ALL — no handle, no events. Once a handle is returned, every
+	// terminal path is observable as a terminal sink event.
 	Deliver(ctx context.Context, a Assignment, sink EventSink) (Handle, error)
-	// Release tears down a delivery (normal completion, reassign, or abandonment).
-	// Idempotent: releasing an unknown/already-released handle is not an error.
-	Release(ctx context.Context, h Handle) error
+	// Release ends a delivery the ENGINE initiated (cause) and emits the matching
+	// terminal event exactly once. Idempotent: releasing an already-terminal or
+	// unknown handle is a no-op (nil), so a redelivered teardown is safe.
+	Release(ctx context.Context, h Handle, cause ReleaseCause) error
 }

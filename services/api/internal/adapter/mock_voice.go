@@ -2,21 +2,32 @@ package adapter
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
 
+const mockVoicePrefix = "mock-voice:"
+
 // MockVoice is the v0.3 stand-in for a real voice adapter (LiveKit/SIP lands in
-// v0.4 behind this same contract). It performs NO media: Deliver immediately
-// drives accepted -> connecting -> established through the sink, and the terminal
-// transition (completed / failed / disconnected / caller_abandoned) is driven by
-// the engine or a test via the exposed methods. Deterministic: the handle is
-// derived from the reservation id and events carry a stable correlation id.
+// v0.4 behind this same contract). It performs NO media: Deliver drives
+// delivered -> connecting -> established through the sink, and a terminal
+// transition is driven either by the engine (Release) or — to simulate the
+// outside world in tests — by Fail/Disconnect/Abandon/Reject. Deterministic: the
+// handle derives from the reservation id and events carry a stable correlation id.
+//
+// Concurrency: every terminal transition is a compare-and-set under the mutex
+// (review fix #2/#6 — exactly one terminal per handle, redelivery is a no-op);
+// the Deliver setup loop re-checks liveness before each emit (review fix #3/#5).
 type MockVoice struct {
 	mu   sync.Mutex
 	now  func() time.Time
-	live map[Handle]EventSink // handle -> sink for later terminal events
+	live map[Handle]*mvState
+}
+
+type mvState struct {
+	sink       EventSink
+	terminated bool
 }
 
 // NewMockVoice builds a mock voice adapter. now defaults to time.Now when nil.
@@ -24,61 +35,73 @@ func NewMockVoice(now func() time.Time) *MockVoice {
 	if now == nil {
 		now = time.Now
 	}
-	return &MockVoice{now: now, live: map[Handle]EventSink{}}
+	return &MockVoice{now: now, live: map[Handle]*mvState{}}
 }
 
 func (m *MockVoice) Channel() string { return "voice" }
 
 func (m *MockVoice) Deliver(ctx context.Context, a Assignment, sink EventSink) (Handle, error) {
-	h := Handle("mock-voice:" + a.ReservationID)
+	h := Handle(mockVoicePrefix + a.ReservationID)
 	m.mu.Lock()
-	m.live[h] = sink
+	m.live[h] = &mvState{sink: sink}
 	m.mu.Unlock()
-	// No media — bring the assignment to "established" right away so the engine's
-	// handling phase can run. Each step is idempotent under its correlation id.
-	for _, t := range []EventType{EventAccepted, EventConnecting, EventEstablished} {
-		if err := m.emit(ctx, sink, a.ReservationID, h, t, ""); err != nil {
-			return h, err
+	// No media — bring the assignment to "established" right away. Re-check
+	// liveness before each emit so a terminal that races in mid-setup stops the
+	// sequence (no post-terminal events).
+	for _, t := range []EventType{EventDelivered, EventConnecting, EventEstablished} {
+		if !m.isLive(h) {
+			break
 		}
+		_ = m.emit(ctx, sink, a.ReservationID, h, t, "")
 	}
 	return h, nil
 }
 
-func (m *MockVoice) Release(_ context.Context, h Handle) error {
-	m.mu.Lock()
-	delete(m.live, h) // idempotent: deleting an absent key is a no-op
-	m.mu.Unlock()
+// Release ends a delivery the engine initiated (ReleaseCompleted / ReleaseCancelled)
+// and emits the matching terminal. Idempotent: an already-terminal or unknown
+// handle is a no-op.
+func (m *MockVoice) Release(ctx context.Context, h Handle, cause ReleaseCause) error {
+	m.fireTerminal(ctx, h, cause.event(), "")
 	return nil
 }
 
-// Complete / Fail / Disconnect / Abandon drive the terminal transition for a live
-// handle (the engine calls these from real signals; tests call them directly). A
-// terminal event releases the handle.
-func (m *MockVoice) Complete(ctx context.Context, h Handle) error {
-	return m.terminal(ctx, h, EventCompleted, "")
+// Fail / Disconnect / Abandon / Reject simulate ADAPTER-ORIGINATED terminals (the
+// outside world) for tests. All idempotent no-ops on an already-terminal handle.
+func (m *MockVoice) Fail(ctx context.Context, h Handle, reason string) {
+	m.fireTerminal(ctx, h, EventFailed, reason)
 }
-func (m *MockVoice) Fail(ctx context.Context, h Handle, reason string) error {
-	return m.terminal(ctx, h, EventFailed, reason)
+func (m *MockVoice) Disconnect(ctx context.Context, h Handle) {
+	m.fireTerminal(ctx, h, EventDisconnected, "agent_disconnected")
 }
-func (m *MockVoice) Disconnect(ctx context.Context, h Handle) error {
-	return m.terminal(ctx, h, EventDisconnected, "agent_disconnected")
+func (m *MockVoice) Abandon(ctx context.Context, h Handle) {
+	m.fireTerminal(ctx, h, EventCallerLeft, "caller_hung_up")
 }
-func (m *MockVoice) Abandon(ctx context.Context, h Handle) error {
-	return m.terminal(ctx, h, EventCallerAbandoned, "caller_hung_up")
+func (m *MockVoice) Reject(ctx context.Context, h Handle) {
+	m.fireTerminal(ctx, h, EventRejected, "declined_by_device")
 }
 
-func (m *MockVoice) terminal(ctx context.Context, h Handle, t EventType, reason string) error {
+func (m *MockVoice) isLive(h Handle) bool {
 	m.mu.Lock()
-	sink, ok := m.live[h]
+	defer m.mu.Unlock()
+	s, ok := m.live[h]
+	return ok && !s.terminated
+}
+
+// fireTerminal compare-and-sets the terminated tombstone under the lock so only
+// one caller wins, then emits the terminal event OUTSIDE the lock (the sink may
+// re-enter the adapter — e.g. the engine calling Release — so holding the lock
+// across emit would deadlock).
+func (m *MockVoice) fireTerminal(ctx context.Context, h Handle, t EventType, reason string) {
+	m.mu.Lock()
+	s, ok := m.live[h]
+	if !ok || s.terminated {
+		m.mu.Unlock()
+		return
+	}
+	s.terminated = true
+	sink := s.sink
 	m.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("adapter: unknown or already-terminated handle %q", h)
-	}
-	resID := string(h)[len("mock-voice:"):]
-	if err := m.emit(ctx, sink, resID, h, t, reason); err != nil {
-		return err
-	}
-	return m.Release(ctx, h)
+	_ = m.emit(ctx, sink, strings.TrimPrefix(string(h), mockVoicePrefix), h, t, reason)
 }
 
 func (m *MockVoice) emit(ctx context.Context, sink EventSink, resID string, h Handle, t EventType, reason string) error {
