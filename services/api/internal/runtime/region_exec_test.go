@@ -131,6 +131,184 @@ func TestRunParallel_MergesInBranchOrder(t *testing.T) {
 	}
 }
 
+// A branch rewriting a key back to its SNAPSHOT value must still win when it is
+// the last writer — value-diff merging would drop it (review BLOCK). Branch 0
+// sets z=2, branch 1 sets z=1 (== the pre-parallel snapshot); the merge must
+// reflect branch 1 (last-writer-wins), so the downstream z==1 test is true.
+func TestRunParallel_WriteTrackingNotValueDiff(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("zinit", NodeSetVar, setVarConfig{Name: "z", ValueExpr: "1"}),
+			node("par", NodeParallel, parallelConfig{}),
+			inRegion(node("b0", NodeSetVar, setVarConfig{Name: "z", ValueExpr: "2"}), "par#0"),
+			inRegion(node("b1", NodeSetVar, setVarConfig{Name: "z", ValueExpr: "1"}), "par#1"),
+			node("iff", NodeIfElse, ifElseConfig{Expr: "z == 1"}),
+			node("yes", NodeLog, logConfig{Message: "z is 1"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "zinit"}, {From: "zinit", To: "par"},
+			{From: "par", To: "b0", Label: "body:0"},
+			{From: "par", To: "b1", Label: "body:1"},
+			{From: "par", To: "iff", Label: "done"},
+			{From: "iff", To: "yes", Label: "true"}, {From: "iff", To: "end", Label: "false"}, {From: "yes", To: "end"},
+		},
+	}
+	tr, err := simRun(t, g, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := portOf(tr, "iff"); got != "true" {
+		t.Fatalf("z==1 → %q, want true (last writer set z back to the snapshot value; steps=%v)", got, stepIDs(tr))
+	}
+}
+
+// A parallel branch must run against an ISOLATED bag — branch 1 must not see
+// branch 0's write. a starts 0; branch 0 sets a=1; branch 1 copies a→b. If the
+// branches share a bag, b would be 1; isolated, branch 1 reads the snapshot
+// (a=0) so b==0 downstream.
+func TestRunParallel_BranchesAreIsolated(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("ainit", NodeSetVar, setVarConfig{Name: "a", ValueExpr: "0"}),
+			node("par", NodeParallel, parallelConfig{}),
+			inRegion(node("b0", NodeSetVar, setVarConfig{Name: "a", ValueExpr: "1"}), "par#0"),
+			inRegion(node("b1", NodeSetVar, setVarConfig{Name: "b", ValueExpr: "a"}), "par#1"),
+			node("iff", NodeIfElse, ifElseConfig{Expr: "b == 0"}),
+			node("yes", NodeLog, logConfig{Message: "b is 0"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "ainit"}, {From: "ainit", To: "par"},
+			{From: "par", To: "b0", Label: "body:0"},
+			{From: "par", To: "b1", Label: "body:1"},
+			{From: "par", To: "iff", Label: "done"},
+			{From: "iff", To: "yes", Label: "true"}, {From: "iff", To: "end", Label: "false"}, {From: "yes", To: "end"},
+		},
+	}
+	tr, err := simRun(t, g, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := portOf(tr, "iff"); got != "true" {
+		t.Fatalf("branch 1 saw branch 0's write: b==0 → %q, want true", got)
+	}
+}
+
+// loop_while must evaluate the condition BEFORE the limit check, so a loop that
+// terminates naturally on its maxIter-th test completes (not loop_limit). With
+// max_iter=1 the body flips the flag on the single allowed iteration; the next
+// cond test is false → done (the limit-first ordering tripped loop_limit here).
+func TestRunLoopWhile_CompletesAtExactlyMaxIter(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("init", NodeSetVar, setVarConfig{Name: "run", ValueExpr: "true"}),
+			node("lw", NodeLoopWhile, loopWhileConfig{CondExpr: "run", MaxIter: 1}),
+			inRegion(node("stop", NodeSetVar, setVarConfig{Name: "run", ValueExpr: "false"}), "lw"),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{{From: "t", To: "init"}, {From: "init", To: "lw"}, {From: "lw", To: "stop", Label: "body"}, {From: "lw", To: "end", Label: "done"}},
+	}
+	tr, err := simRun(t, g, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if tr.Outcome != "completed" {
+		t.Fatalf("outcome=%q code=%q, want completed (cond-before-limit)", tr.Outcome, tr.FailureCode)
+	}
+	if got := countKind(tr, NodeSetVar); got != 2 {
+		t.Fatalf("set_var ran %d times, want 2 (init + one iteration)", got)
+	}
+}
+
+// try_catch marks the EXACT failing step as caught — the second body step here
+// fails, the first (a log) must NOT be flagged.
+func TestRunTryCatch_MarksTheFailingLeaf(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("tc", NodeTryCatch, tryCatchConfig{}),
+			inRegion(node("ok", NodeLog, logConfig{Message: "before"}), "tc"),
+			inRegion(node("boom", NodeRouteQueue, routeQueueConfig{Queue: "ghost"}), "tc"),
+			node("recover", NodeLog, logConfig{Message: "recovered"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "tc"},
+			{From: "tc", To: "ok", Label: "body"}, {From: "ok", To: "boom"},
+			{From: "tc", To: "recover", Label: "catch"},
+			{From: "tc", To: "end", Label: "done"},
+			{From: "recover", To: "end"},
+		},
+	}
+	tr, err := simRun(t, g, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for _, s := range tr.Steps {
+		if s.NodeID == "ok" && s.Caught {
+			t.Fatalf("the non-failing log step was marked caught")
+		}
+		if s.NodeID == "boom" && !s.Caught {
+			t.Fatalf("the failing route_queue step was not marked caught")
+		}
+	}
+}
+
+func TestDeepClone_IsolatesNestedContainers(t *testing.T) {
+	orig := map[string]any{
+		"m": map[string]any{"k": 1},
+		"s": []any{1, 2},
+	}
+	c := cloneVars(orig)
+	orig["m"].(map[string]any)["k"] = 99
+	orig["s"].([]any)[0] = 99
+	if got := c["m"].(map[string]any)["k"]; got != 1 {
+		t.Fatalf("nested map shared: clone m.k = %v, want 1", got)
+	}
+	if got := c["s"].([]any)[0]; got != 1 {
+		t.Fatalf("nested slice shared: clone s[0] = %v, want 1", got)
+	}
+}
+
+// RunResult.Vars must reflect the parallel-merged bag, not the stale map Run
+// captured before parallel reassigned state.vars (review MED).
+func TestRun_VarsReflectParallelMerge(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("par", NodeParallel, parallelConfig{}),
+			inRegion(node("b0", NodeSetVar, setVarConfig{Name: "merged", ValueExpr: "7"}), "par#0"),
+			inRegion(node("b1", NodeSetVar, setVarConfig{Name: "other", ValueExpr: "9"}), "par#1"),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "par"},
+			{From: "par", To: "b0", Label: "body:0"},
+			{From: "par", To: "b1", Label: "body:1"},
+			{From: "par", To: "end", Label: "done"},
+		},
+	}
+	if issues, err := ValidateGraph(context.Background(), g, DefaultRegistry(), nil); err != nil || len(issues) != 0 {
+		t.Fatalf("invalid: %v %+v", err, issues)
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	ex := NewExecutor(DefaultRegistry(), WithAutoResume())
+	res, err := ex.Run(context.Background(), NewVirtualClock(time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC)), plan, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Vars["merged"] != float64(7) || res.Vars["other"] != float64(9) {
+		t.Fatalf("RunResult.Vars stale after parallel: merged=%v other=%v", res.Vars["merged"], res.Vars["other"])
+	}
+}
+
 // try_catch catches a body domain failure (route_queue with no snapshot →
 // missing_catalog_reference) and takes the catch port.
 func TestRunTryCatch_CatchesDomainFailure(t *testing.T) {

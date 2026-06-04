@@ -18,6 +18,10 @@ type execState struct {
 	driver       RoutingDriver
 	scopes       []map[string]any  // 3D-2 loop control-var scopes (innermost last)
 	nodeOutcomes map[string]string // per-node scripted reservation result port
+	// writes, when non-nil, records the keys SetVar touches. parallel turns this
+	// on per branch so the merge keys actual WRITES (last-writer-wins) — a value
+	// diff drops a branch that rewrites a key back to its snapshot value.
+	writes map[string]bool
 }
 
 type EmittedEvent struct {
@@ -39,7 +43,12 @@ func (s *execState) Var(k string) (any, bool) {
 
 // SetVar writes to the ROOT bag (not a loop scope) so accumulator patterns
 // persist across iterations (3D-2 spec §4).
-func (s *execState) SetVar(k string, v any) { s.vars[k] = v }
+func (s *execState) SetVar(k string, v any) {
+	s.vars[k] = v
+	if s.writes != nil {
+		s.writes[k] = true
+	}
+}
 
 func (s *execState) pushScope(m map[string]any) { s.scopes = append(s.scopes, m) }
 func (s *execState) popScope()                  { s.scopes = s.scopes[:len(s.scopes)-1] }
@@ -131,8 +140,13 @@ func WithNodeOutcomes(m map[string]string) ExecutorOption {
 // validator did not (defensively) reject.
 func WithMaxSteps(n int) ExecutorOption { return func(e *Executor) { e.maxSteps = n } }
 
+// defaultMaxSteps is the cycle guard. It must sit well above defaultLoopMaxIter
+// (1000): a single loop_for over a max-size array already executes 1000+ body
+// steps, so a 1000-step cap would spuriously trip on a legal loop.
+const defaultMaxSteps = 100000
+
 func NewExecutor(reg *Registry, opts ...ExecutorOption) *Executor {
-	ex := &Executor{reg: reg, maxSteps: 1000}
+	ex := &Executor{reg: reg, maxSteps: defaultMaxSteps}
 	for _, o := range opts {
 		o(ex)
 	}
@@ -171,6 +185,9 @@ func (ex *Executor) finish(res *RunResult, state *execState, outcome, failureCod
 	res.Trace.Outcome = outcome
 	res.Trace.FailureCode = failureCode
 	res.Events = state.events
+	// parallel reassigns state.vars to the merged bag, so the map Run captured at
+	// the start is stale — resync from the live state.
+	res.Vars = state.vars
 	return *res, err
 }
 

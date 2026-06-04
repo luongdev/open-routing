@@ -23,6 +23,7 @@ type runner struct {
 	steps           int
 	iter            *int // current loop iteration, for the trace
 	branch          *int // current parallel branch, for the trace
+	failIndex       int  // trace index of the most-recent failing step (try_catch)
 }
 
 type walkResult struct {
@@ -33,7 +34,7 @@ type walkResult struct {
 
 func newRunner(ex *Executor, state *execState, clock Clock, plan CompiledPlan, res *RunResult) *runner {
 	r := &runner{
-		ex: ex, state: state, clock: clock, res: res,
+		ex: ex, state: state, clock: clock, res: res, failIndex: -1,
 		stepByID:        make(map[string]PlanStep, len(plan.Steps)),
 		flowByFrom:      make(map[string][]CompiledEdge),
 		regionByID:      make(map[string]CompiledRegion),
@@ -94,22 +95,28 @@ func (r *runner) walk(regionID, entry string) (walkResult, error) {
 			return walkResult{}, fmt.Errorf("runtime: plan has no step for node %q", cur)
 		}
 
-		var port string
+		var sr StepResult
 		var fail *RoutingFailure
 		if ControlKinds[step.Kind] {
 			// Record the control node first (placeholder), then run its body so
-			// body steps appear AFTER it; backfill its port/status.
+			// body steps appear AFTER it; backfill its port/status/duration.
 			idx := r.record(step, "ok", "", "", nil, 0)
-			p, f, err := r.runControl(step)
+			t0 := time.Now()
+			p, f, susp, err := r.runControl(step)
+			r.res.Trace.Steps[idx].DurationMs = float64(time.Since(t0).Microseconds()) / 1000
 			if err != nil {
 				return walkResult{}, err
+			}
+			if susp != nil {
+				return walkResult{suspended: susp}, nil
 			}
 			r.res.Trace.Steps[idx].Port = p
 			if f != nil {
 				r.res.Trace.Steps[idx].Status = "failed"
 				r.res.Trace.Steps[idx].Error = f.Message
+				r.failIndex = idx // a control-origin failure (loop_limit etc.) is the control node itself
 			}
-			port, fail = p, f
+			sr, fail = StepResult{Port: p}, f
 		} else {
 			out, susp, err := r.execNode(step)
 			if err != nil {
@@ -121,13 +128,13 @@ func (r *runner) walk(regionID, entry string) (walkResult, error) {
 			if out.Terminal {
 				return walkResult{terminated: true}, nil
 			}
-			port, fail = out.Port, out.Failure
+			sr, fail = out, out.Failure
 		}
 
 		if fail != nil {
 			return walkResult{fail: fail}, nil
 		}
-		next, ok := resolveNext(cur, StepResult{Port: port}, r.flowByFrom)
+		next, ok := resolveNext(cur, sr, r.flowByFrom)
 		if !ok {
 			return walkResult{}, nil // region/level done
 		}
@@ -147,7 +154,7 @@ func (r *runner) execNode(step PlanStep) (StepResult, *Suspension, error) {
 	out, err := node.Execute(r.state, step)
 	dur := float64(time.Since(t0).Microseconds()) / 1000
 	if err != nil {
-		r.record(step, "failed", out.Port, err.Error(), out.Output, dur)
+		r.failIndex = r.record(step, "failed", out.Port, err.Error(), out.Output, dur)
 		return StepResult{}, nil, err
 	}
 	if out.Suspension != nil && !r.ex.autoResume {
@@ -160,21 +167,44 @@ func (r *runner) execNode(step PlanStep) (StepResult, *Suspension, error) {
 		}
 	}
 	status := "ok"
-	if out.Failure != nil {
-		status = "failed"
-	}
 	errMsg := ""
 	if out.Failure != nil {
+		status = "failed"
 		errMsg = out.Failure.Message
 	}
-	r.record(step, status, out.Port, errMsg, out.Output, dur)
+	idx := r.record(step, status, out.Port, errMsg, out.Output, dur)
+	if out.Failure != nil {
+		r.failIndex = idx
+	}
 	return out, nil, nil
 }
 
+// cloneVars deep-copies the var bag so a parallel branch mutating a nested
+// map/slice cannot corrupt the shared snapshot (a shallow copy aliases the
+// nested containers).
 func cloneVars(m map[string]any) map[string]any {
 	c := make(map[string]any, len(m))
 	for k, v := range m {
-		c[k] = v
+		c[k] = deepClone(v)
 	}
 	return c
+}
+
+func deepClone(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		m := make(map[string]any, len(t))
+		for k, e := range t {
+			m[k] = deepClone(e)
+		}
+		return m
+	case []any:
+		s := make([]any, len(t))
+		for i, e := range t {
+			s[i] = deepClone(e)
+		}
+		return s
+	default:
+		return v // scalars are immutable
+	}
 }
