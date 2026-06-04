@@ -68,6 +68,24 @@ func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.P
 	return n, nil
 }
 
+// SweepCapacity reclaims leaked capacity slots cross-org on the raw pool (like
+// the continuation worker): PENDING holds whose timer elapsed (RONA before
+// accept) and slots whose reservation already went terminal. Returns the rows
+// freed. A confirmed slot for an agent who crashed mid-call is NOT freed here —
+// that abandonment is presence-loss driven (W5).
+func (e *Endpoints) SweepCapacity(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	rawq := generated.New(pool)
+	swept, err := rawq.SweepExpiredCapacityHolds(ctx)
+	if err != nil {
+		return 0, err
+	}
+	reclaimed, err := rawq.ReconcileOrphanedSlotsAllOrgs(ctx)
+	if err != nil {
+		return swept, err
+	}
+	return swept + reclaimed, nil
+}
+
 func (e *Endpoints) processContinuation(ctx context.Context, workerID string, c generated.Continuation) error {
 	// OrgDB preflight reads the org from ctx; the worker's ctx is cross-org, so
 	// scope it to THIS continuation's org before any org-scoped query.

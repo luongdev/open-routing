@@ -248,6 +248,34 @@ func TestCapacity_SweepAndReconcile(t *testing.T) {
 	}
 }
 
+// TestCapacity_SweepCapacityWorker covers the combined cross-org worker sweep
+// (expired pending hold + terminal-reservation orphan) on the raw pool.
+func TestCapacity_SweepCapacityWorker(t *testing.T) {
+	f := newCapFixture(t)
+	if f == nil {
+		return
+	}
+	agent := uuid.Must(uuid.NewV7())
+	f.inTx(t, func(q *generated.Queries) error { return f.svc.ProvisionInTx(f.ctx, q, f.orgID, agent, "chat") })
+	f.inTx(t, func(q *generated.Queries) error {
+		_, ok, err := f.svc.AcquireInTx(f.ctx, q, f.orgID, agent, "chat", uuid.Must(uuid.NewV7()), time.Now().Add(-time.Hour))
+		if err != nil || !ok {
+			t.Fatalf("acquire expired: ok=%v err=%v", ok, err)
+		}
+		return nil
+	})
+	freed, err := New(Deps{}).SweepCapacity(f.ctx, sharedPool)
+	if err != nil {
+		t.Fatalf("sweep capacity: %v", err)
+	}
+	if freed < 1 {
+		t.Fatalf("worker sweep freed %d, want >=1 (the expired pending hold)", freed)
+	}
+	if free := f.countFree(t, agent, "chat"); free != chatCapacity {
+		t.Fatalf("after worker sweep free=%d, want %d", free, chatCapacity)
+	}
+}
+
 func (f *capFixture) countFree(t *testing.T, agent uuid.UUID, channel string) int32 {
 	t.Helper()
 	free, err := generated.New(sharedPool).CountFreeCapacitySlots(f.ctx, generated.CountFreeCapacitySlotsParams{

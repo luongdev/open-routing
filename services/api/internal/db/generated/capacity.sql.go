@@ -191,6 +191,31 @@ func (q *Queries) ReconcileOrphanedSlots(ctx context.Context, orgID pgtype.UUID)
 	return result.RowsAffected(), nil
 }
 
+const reconcileOrphanedSlotsAllOrgs = `-- name: ReconcileOrphanedSlotsAllOrgs :execrows
+UPDATE agent_capacity_slots s
+SET reservation_id = NULL, hold_expires_at = NULL, updated_at = NOW()
+WHERE s.reservation_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM reservations r
+      WHERE r.org_id = s.org_id AND r.id = s.reservation_id
+        AND r.state IN ('offered', 'accepted')
+  )
+`
+
+// ReconcileOrphanedSlotsAllOrgs is the cross-org sweep variant for the background
+// worker (run via the raw pool — no org filter, like the continuation worker).
+// It reclaims a slot whose reservation is gone or already TERMINAL. Note: a slot
+// whose reservation is still 'accepted' (an agent who crashed mid-call) is NOT
+// reclaimed here — that abandonment cleanup is presence-loss driven (W5 RONA),
+// built on the W3 lease.
+func (q *Queries) ReconcileOrphanedSlotsAllOrgs(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, reconcileOrphanedSlotsAllOrgs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const releaseCapacitySlot = `-- name: ReleaseCapacitySlot :execrows
 UPDATE agent_capacity_slots
 SET reservation_id = NULL, hold_expires_at = NULL, updated_at = NOW()

@@ -73,6 +73,22 @@ WHERE s.org_id = $1 AND s.reservation_id IS NOT NULL
         AND r.state IN ('offered', 'accepted')
   );
 
+-- ReconcileOrphanedSlotsAllOrgs is the cross-org sweep variant for the background
+-- worker (run via the raw pool — no org filter, like the continuation worker).
+-- It reclaims a slot whose reservation is gone or already TERMINAL. Note: a slot
+-- whose reservation is still 'accepted' (an agent who crashed mid-call) is NOT
+-- reclaimed here — that abandonment cleanup is presence-loss driven (W5 RONA),
+-- built on the W3 lease.
+-- name: ReconcileOrphanedSlotsAllOrgs :execrows
+UPDATE agent_capacity_slots s
+SET reservation_id = NULL, hold_expires_at = NULL, updated_at = NOW()
+WHERE s.reservation_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM reservations r
+      WHERE r.org_id = s.org_id AND r.id = s.reservation_id
+        AND r.state IN ('offered', 'accepted')
+  );
+
 -- CountFreeCapacitySlots is how many free slots (<= current cap) the agent has
 -- on the channel (used by tests; the live hint uses CountHeldCapacitySlots so it
 -- doesn't depend on slots being pre-provisioned).
