@@ -35,6 +35,16 @@ type Agent struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AgentCapacitySlot struct {
+	OrgID         pgtype.UUID        `json:"org_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	Channel       string             `json:"channel"`
+	SlotNo        int32              `json:"slot_no"`
+	ReservationID pgtype.UUID        `json:"reservation_id"`
+	HoldExpiresAt pgtype.Timestamptz `json:"hold_expires_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AgentOutbox struct {
 	OrgID         pgtype.UUID        `json:"org_id"`
 	AgentID       pgtype.UUID        `json:"agent_id"`

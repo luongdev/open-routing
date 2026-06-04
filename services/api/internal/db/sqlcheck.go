@@ -30,27 +30,28 @@ var ErrSQLMissingOrgFilter = errors.New("orgdb: SQL string missing org_id filter
 // name would silently bypass the check). For v0.1 we accept the explicit
 // allowlist semantics.
 var tenantTables = map[string]struct{}{
-	"_scaffold":           {}, // legacy Phase 1; removed once scaffold queries drop out
-	"agents":              {}, // CAT-01
-	"skills":              {}, // CAT-02
-	"queues":              {}, // CAT-04
-	"channels":            {}, // CAT-05
-	"adapters":            {}, // CAT-06
-	"break_reasons":       {}, // CAT-07
-	"agent_skills":        {}, // CAT-03 (junction; carries denormalized org_id per D-72)
-	"agent_states":        {}, // STATE-01 (Phase 4; denormalized org_id per D-78 — sweeper bypasses ctx-org and relies on this column)
-	"import_jobs":         {}, // IMP-06 (Phase 5; denormalized org_id per RESEARCH §Pattern 8 — sweeper bypasses ctx-org and relies on this column)
-	"flows":               {}, // FLOW (v0.2 — flow drafts)
-	"flow_versions":       {}, // FLOW (v0.2 — immutable published versions)
-	"flow_entry_bindings": {}, // FLOW (v0.2 — route entry → active published version)
-	"route_requests":      {}, // RT (v0.2 — interaction spine)
-	"reservations":        {}, // RT (v0.2 — reservation lifecycle)
-	"continuations":       {}, // RT (v0.2 — durable delayed work, SKIP LOCKED)
-	"runtime_events":      {}, // RT (v0.2 — canonical event envelope, outbox-first)
-	"traces":              {}, // RT (v0.2 — trace read records)
-	"agent_outbox":        {}, // WS (v0.3 — durable outbound, per-agent server_seq)
-	"ws_command_dedupe":   {}, // WS (v0.3 — at-most-once inbound commands)
-	"agent_sessions":      {}, // WS (v0.3 — session inventory / revocation)
+	"_scaffold":            {}, // legacy Phase 1; removed once scaffold queries drop out
+	"agents":               {}, // CAT-01
+	"skills":               {}, // CAT-02
+	"queues":               {}, // CAT-04
+	"channels":             {}, // CAT-05
+	"adapters":             {}, // CAT-06
+	"break_reasons":        {}, // CAT-07
+	"agent_skills":         {}, // CAT-03 (junction; carries denormalized org_id per D-72)
+	"agent_states":         {}, // STATE-01 (Phase 4; denormalized org_id per D-78 — sweeper bypasses ctx-org and relies on this column)
+	"import_jobs":          {}, // IMP-06 (Phase 5; denormalized org_id per RESEARCH §Pattern 8 — sweeper bypasses ctx-org and relies on this column)
+	"flows":                {}, // FLOW (v0.2 — flow drafts)
+	"flow_versions":        {}, // FLOW (v0.2 — immutable published versions)
+	"flow_entry_bindings":  {}, // FLOW (v0.2 — route entry → active published version)
+	"route_requests":       {}, // RT (v0.2 — interaction spine)
+	"reservations":         {}, // RT (v0.2 — reservation lifecycle)
+	"continuations":        {}, // RT (v0.2 — durable delayed work, SKIP LOCKED)
+	"runtime_events":       {}, // RT (v0.2 — canonical event envelope, outbox-first)
+	"traces":               {}, // RT (v0.2 — trace read records)
+	"agent_outbox":         {}, // WS (v0.3 — durable outbound, per-agent server_seq)
+	"ws_command_dedupe":    {}, // WS (v0.3 — at-most-once inbound commands)
+	"agent_sessions":       {}, // WS (v0.3 — session inventory / revocation)
+	"agent_capacity_slots": {}, // CAP (v0.3 W3 — per-(agent,channel) capacity slots)
 }
 
 // SQLChecker memoizes the org_id-presence verdict for each unique SQL

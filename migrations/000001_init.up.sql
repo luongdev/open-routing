@@ -440,4 +440,28 @@ CREATE TABLE agent_sessions (
 );
 CREATE INDEX ix_agent_sessions_agent ON agent_sessions (org_id, agent_id) WHERE terminated_at IS NULL;
 
+-- agent_capacity_slots (v0.3 W3): DB-solid per-(agent,channel) capacity. One row
+-- per concurrent interaction the agent can hold on a channel (voice=1, chat=N).
+-- Slot state is derived: free = reservation_id NULL; pending = reservation_id
+-- set AND hold_expires_at set (sweepable); confirmed = reservation_id set AND
+-- hold_expires_at NULL (held for a live call, never swept by the timer). The
+-- offer tx acquires a free slot under FOR UPDATE SKIP LOCKED — the authoritative
+-- capacity gate (the candidate-source free-count is only a hint).
+CREATE TABLE agent_capacity_slots (
+    org_id            UUID NOT NULL,
+    agent_id          UUID NOT NULL,
+    channel           TEXT NOT NULL,
+    slot_no           INT NOT NULL,
+    reservation_id    UUID,
+    hold_expires_at   TIMESTAMPTZ,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (org_id, agent_id, channel, slot_no)
+);
+CREATE INDEX ix_agent_capacity_slots_sweep
+    ON agent_capacity_slots (hold_expires_at) WHERE hold_expires_at IS NOT NULL;
+-- A reservation holds at most one slot anywhere (guards a double-acquire). Keyed
+-- on reservation_id, NOT agent — so it does NOT impose capacity=1.
+CREATE UNIQUE INDEX ux_agent_capacity_slots_one_per_reservation
+    ON agent_capacity_slots (org_id, reservation_id) WHERE reservation_id IS NOT NULL;
+
 COMMIT;
