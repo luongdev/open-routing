@@ -206,6 +206,8 @@ const RUNTIME_KINDS = new Set<FlowNodeKind>([
   // sim resolves from a scripted value, live times out.
   'get_dtmf', 'prompt_text', 'wait_signal', 'manual_approval', 'detect_speech',
   'csat_survey', 'nps_survey',
+  // 3D-5 sandboxed Lua script over the var bag.
+  'script',
 ]);
 
 // Control-flow kinds own a body region (their `body`/`body:N` port enters a
@@ -424,6 +426,11 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
     { key: 'prompt', label: 'Question', type: 'textarea', hint: 'Supports ${var}', placeholder: 'How likely are you to recommend us? (0-10)' },
     { key: 'save_as', label: 'Save score to variable', type: 'text', placeholder: 'nps' },
     { key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' },
+  ],
+  // 3D-5 sandboxed Lua. Read the bag via `vars`, return a value → save_as.
+  script: [
+    { key: 'code', label: 'Lua script', type: 'textarea', hint: 'Sandboxed Lua: read `vars`, `return` a value. No IO/clock. e.g. return vars.a + vars.b', placeholder: 'local t = vars.customer.tier\nif t == "gold" then return 2 else return 1 end' },
+    { key: 'save_as', label: 'Save result to variable', type: 'text', placeholder: 'result' },
   ],
 };
 

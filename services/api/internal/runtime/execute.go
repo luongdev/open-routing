@@ -56,6 +56,21 @@ func (s *execState) SetVar(k string, v any) {
 	}
 }
 
+// Vars returns a merged snapshot: root bag overlaid by each loop scope
+// (innermost last wins), matching Var's lookup order.
+func (s *execState) Vars() map[string]any {
+	out := make(map[string]any, len(s.vars))
+	for k, v := range s.vars {
+		out[k] = v
+	}
+	for _, scope := range s.scopes {
+		for k, v := range scope {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func (s *execState) pushScope(m map[string]any) { s.scopes = append(s.scopes, m) }
 func (s *execState) popScope()                  { s.scopes = s.scopes[:len(s.scopes)-1] }
 func (s *execState) Emit(t string, p any) {

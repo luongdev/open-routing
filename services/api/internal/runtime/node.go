@@ -71,6 +71,9 @@ const (
 	NodeDetectSpeech   NodeKind = "detect_speech"
 	NodeCSATSurvey     NodeKind = "csat_survey"
 	NodeNPSSurvey      NodeKind = "nps_survey"
+	// 3D-5 script (node_script.go): a sandboxed Lua escape hatch over the var bag
+	// (no IO, deterministic-seeded RNG, context-bounded).
+	NodeScript NodeKind = "script"
 )
 
 // V02NodeKinds is the locked v0.2 subset, in palette order. Tests assert the
@@ -91,6 +94,8 @@ var V02NodeKinds = []NodeKind{
 	// 3D-4: interactive input (suspend-for-value).
 	NodeGetDTMF, NodePromptText, NodeWaitSignal, NodeManualApproval, NodeDetectSpeech,
 	NodeCSATSurvey, NodeNPSSurvey,
+	// 3D-5: sandboxed script escape hatch.
+	NodeScript,
 }
 
 // ControlKinds are the region-owning control-flow nodes the executor runs via
@@ -167,6 +172,11 @@ type ExecCtx interface {
 	Now() time.Time
 	Var(key string) (any, bool)
 	SetVar(key string, val any)
+	// Vars returns a snapshot of the full variable bag (root + any active loop
+	// scopes merged, innermost winning) — for nodes that need the whole bag at
+	// once (e.g. the script node exposes it as a table). Mutating the result does
+	// not affect the run; use SetVar to write.
+	Vars() map[string]any
 	Emit(eventType string, payload any)
 
 	// Routing surface (Wave 3 part 2). Candidates is the working candidate pool

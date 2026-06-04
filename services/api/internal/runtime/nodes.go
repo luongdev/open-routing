@@ -65,6 +65,8 @@ var defaultDescriptors = []Descriptor{
 	{Kind: NodeDetectSpeech, Title: "Detect Speech", Category: "input", Summary: "Recognize spoken intent (recognized / no_match / timeout)."},
 	{Kind: NodeCSATSurvey, Title: "CSAT Survey", Category: "input", Summary: "1-5 satisfaction rating (done / timeout)."},
 	{Kind: NodeNPSSurvey, Title: "NPS Survey", Category: "input", Summary: "0-10 Net Promoter Score (done / timeout)."},
+	// 3D-5: sandboxed Lua script over the var bag.
+	{Kind: NodeScript, Title: "Script", Category: "data", Summary: "Sandboxed Lua over the variable bag (no IO; result → save_as)."},
 }
 
 var descriptorByKind = func() map[NodeKind]Descriptor {
@@ -108,6 +110,8 @@ func DefaultRegistry() *Registry {
 	for _, k := range inputKinds {
 		r.Register(inputNode{base(k)})
 	}
+	// 3D-5 sandboxed script.
+	r.Register(scriptNode{base(NodeScript)})
 	return r
 }
 
