@@ -135,7 +135,7 @@ describe('OrFlowList', () => {
     await settle();
     const dialog = document.querySelector('or-dialog');
     expect(dialog).toBeTruthy();
-    const confirmBtn = dialog!.querySelector('or-button[variant="destructive"]') as HTMLElement;
+    const confirmBtn = dialog!.querySelector('button[data-action="confirm"]') as HTMLElement;
     expect(confirmBtn).toBeTruthy();
     confirmBtn.click();
     await settle();

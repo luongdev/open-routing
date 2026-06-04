@@ -1,7 +1,15 @@
 import { html, render } from 'lit';
 import './or-dialog.js';
-import './or-button.js';
 import type { OrDialog } from './or-dialog.js';
+
+// Plain buttons (not or-button) styled inline with theme vars: the helper
+// renders into the dialog's LIGHT DOM, where a custom element's slotted text is
+// fragile, so a self-contained button is more robust.
+const BTN_BASE =
+  'padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;line-height:1.2;border:1px solid transparent;';
+const BTN_CANCEL = BTN_BASE + 'background:var(--card,#fff);border-color:var(--border,#e5e5e5);color:var(--foreground,#111);';
+const BTN_DANGER = BTN_BASE + 'background:var(--destructive,#dc2626);color:#fff;';
+const BTN_PRIMARY = BTN_BASE + 'background:var(--primary,#2563eb);color:var(--primary-foreground,#fff);';
 
 export interface ConfirmOptions {
   title: string;
@@ -20,6 +28,7 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = document.createElement('or-dialog') as OrDialog;
     dialog.size = 'sm';
+    dialog.centered = true;
 
     let settled = false;
     const finish = (v: boolean): void => {
@@ -37,11 +46,13 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
       html`
         <span slot="header" style="font-weight:600;font-size:0.95rem">${opts.title}</span>
         <p style="margin:0;line-height:1.55;color:var(--muted-foreground, #555)">${opts.message}</p>
-        <span slot="footer">
-          <or-button variant="default" @click=${() => finish(false)}>${opts.cancelLabel ?? 'Cancel'}</or-button>
-          <or-button variant=${opts.danger ? 'destructive' : 'primary'} @click=${() => finish(true)}>
+        <span slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" data-action="cancel" style=${BTN_CANCEL} @click=${() => finish(false)}>
+            ${opts.cancelLabel ?? 'Cancel'}
+          </button>
+          <button type="button" data-action="confirm" style=${opts.danger ? BTN_DANGER : BTN_PRIMARY} @click=${() => finish(true)}>
             ${opts.confirmLabel ?? 'Confirm'}
-          </or-button>
+          </button>
         </span>
       `,
       dialog,
