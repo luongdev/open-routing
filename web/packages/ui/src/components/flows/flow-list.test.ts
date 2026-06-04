@@ -118,7 +118,6 @@ describe('OrFlowList', () => {
   });
 
   it('delete action confirms then DELETEs with the right path params', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const mockDelete = vi.fn().mockResolvedValue({ data: null, error: null });
     (el as any).orgId = 'test-org';
     (el as any).client = {
@@ -131,8 +130,15 @@ describe('OrFlowList', () => {
       .dispatchEvent(
         new CustomEvent('or-row-action', { detail: { row: MOCK_FLOW, action: 'delete' }, bubbles: true, composed: true })
       );
+    // The styled confirm dialog mounts on document.body — confirm via its
+    // destructive button (replaces window.confirm).
     await settle();
-    expect(window.confirm).toHaveBeenCalled();
+    const dialog = document.querySelector('or-dialog');
+    expect(dialog).toBeTruthy();
+    const confirmBtn = dialog!.querySelector('or-button[variant="destructive"]') as HTMLElement;
+    expect(confirmBtn).toBeTruthy();
+    confirmBtn.click();
+    await settle();
     expect(mockDelete).toHaveBeenCalled();
     const [path, opts] = mockDelete.mock.calls[0] as [string, any];
     expect(path).toBe('/v1/orgs/{org_id}/flows/{id}');

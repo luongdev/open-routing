@@ -43,3 +43,5 @@ export { OrToast } from './or-toast.js';
 // W0.0-21: or-dropdown menu popover with keyboard nav
 export { OrDropdown } from './or-dropdown.js';
 export type { DropdownItem } from './or-dropdown.js';
+export { confirmDialog, confirmDelete } from './confirm.js';
+export type { ConfirmOptions } from './confirm.js';
