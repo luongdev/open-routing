@@ -139,8 +139,8 @@ func (p *parser) parsePrimary() (Node, *ParseError) {
 func (p *parser) parseCall(nameTok token) (Node, *ParseError) {
 	p.next() // consume (
 	ns, name := "", nameTok.lit
-	if i := strings.Index(nameTok.lit, "."); i >= 0 {
-		ns, name = nameTok.lit[:i], nameTok.lit[i+1:]
+	if a, b, ok := strings.Cut(nameTok.lit, "."); ok {
+		ns, name = a, b
 	}
 	var args []Node
 	if p.cur().kind != tkRParen {

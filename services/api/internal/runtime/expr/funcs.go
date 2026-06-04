@@ -346,7 +346,7 @@ func pad(a []any, left bool) (any, error) {
 		if left {
 			s = padStr + s
 		} else {
-			s = s + padStr
+			s += padStr
 		}
 	}
 	return s, nil

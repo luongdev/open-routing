@@ -183,10 +183,9 @@ func validateRegions(g *Graph) []ValidationIssue {
 			if !ok {
 				issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("parallel %q needs body:0..body:N branches (contiguous, unique, at least one)", n.ID), NodeID: n.ID})
 			}
-		} else { // loop_for / loop_while / try_catch: exactly one "body" (branch 0)
-			if len(idxs) != 1 || idxs[0] != 0 {
-				issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("%s %q must declare exactly one body region (edge label \"body\")", n.Kind, n.ID), NodeID: n.ID})
-			}
+		} else if len(idxs) != 1 || idxs[0] != 0 {
+			// loop_for / loop_while / try_catch: exactly one "body" (branch 0).
+			issues = append(issues, ValidationIssue{Code: IssueRegionBranches, Message: fmt.Sprintf("%s %q must declare exactly one body region (edge label \"body\")", n.Kind, n.ID), NodeID: n.ID})
 		}
 	}
 
@@ -219,7 +218,9 @@ func validateRegionExits(g *Graph, regionOf map[string]string) []ValidationIssue
 			if byRegion[r] == nil {
 				byRegion[r] = &radj{succ: map[string][]string{}}
 			}
-			byRegion[r].succ[n.ID] = byRegion[r].succ[n.ID] // ensure key
+			if _, ok := byRegion[r].succ[n.ID]; !ok {
+				byRegion[r].succ[n.ID] = nil // ensure the node is a key in its region adjacency
+			}
 		}
 	}
 	for _, e := range g.Edges {

@@ -89,7 +89,7 @@ func (e *Endpoints) ListRouteRequests(ctx context.Context, req api.ListRouteRequ
 	}
 	// Fetch one extra to compute has_more without a cursor (cursor paging is
 	// additive — v0.2 returns a bounded first page).
-	rows, err := generated.New(e.deps.OrgDB).ListRouteRequests(ctx, generated.ListRouteRequestsParams{OrgID: pgUUID(orgID), Limit: int32(limit + 1)})
+	rows, err := generated.New(e.deps.OrgDB).ListRouteRequests(ctx, generated.ListRouteRequestsParams{OrgID: pgUUID(orgID), Limit: int32(limit + 1)}) //nolint:gosec // limit is bounded (<=100) by the handler
 	if err != nil {
 		return api.ListRouteRequests500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_failed"}}, nil
 	}
@@ -207,7 +207,7 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	}
 	_, err = generated.New(sp).InsertReservationOffer(o.ctx, generated.InsertReservationOfferParams{
 		ID: pgUUID(resID), OrgID: pgUUID(o.orgID), RouteRequestID: pgUUID(o.routeID),
-		AgentID: agent.ID, Attempt: int32(o.attempt + 1),
+		AgentID: agent.ID, Attempt: int32(o.attempt + 1), //nolint:gosec // attempt is bounded (<=10) by max_attempts
 		ExpiresAt: pgtype.Timestamptz{Time: exp, Valid: true},
 	})
 	if isUniqueViolation(err) {

@@ -112,9 +112,9 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 		if b, mErr := json.Marshal(ctx.Vars()); mErr == nil {
 			h := fnv.New64a()
 			_, _ = h.Write(b)
-			seed = int64(h.Sum64())
+			seed = int64(h.Sum64()) //nolint:gosec // deterministic seed; 64-bit reinterpretation is intended
 		}
-		rng := mrand.New(mrand.NewSource(seed))
+		rng := mrand.New(mrand.NewSource(seed)) //nolint:gosec // deterministic replay needs a non-crypto PRNG
 		mathTbl.RawSetString("random", L.NewFunction(func(l *lua.LState) int {
 			switch l.GetTop() {
 			case 0:
@@ -154,7 +154,7 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 
 // goToLua converts a JSON-shaped Go value (the bag's value space) into a Lua
 // value. Objects become string-keyed tables; arrays become 1-based tables.
-func goToLua(L *lua.LState, v any) lua.LValue {
+func goToLua(ls *lua.LState, v any) lua.LValue {
 	switch t := v.(type) {
 	case nil:
 		return lua.LNil
@@ -167,15 +167,15 @@ func goToLua(L *lua.LState, v any) lua.LValue {
 	case string:
 		return lua.LString(t)
 	case map[string]any:
-		tbl := L.NewTable()
+		tbl := ls.NewTable()
 		for k, e := range t {
-			tbl.RawSetString(k, goToLua(L, e))
+			tbl.RawSetString(k, goToLua(ls, e))
 		}
 		return tbl
 	case []any:
-		tbl := L.NewTable()
+		tbl := ls.NewTable()
 		for i, e := range t {
-			tbl.RawSetInt(i+1, goToLua(L, e))
+			tbl.RawSetInt(i+1, goToLua(ls, e))
 		}
 		return tbl
 	default:
@@ -188,7 +188,7 @@ func goToLua(L *lua.LState, v any) lua.LValue {
 		if json.Unmarshal(b, &any2) != nil {
 			return lua.LString(string(b))
 		}
-		return goToLua(L, any2)
+		return goToLua(ls, any2)
 	}
 }
 

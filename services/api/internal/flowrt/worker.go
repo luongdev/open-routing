@@ -30,7 +30,7 @@ func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.P
 	rawq := generated.New(pool)
 	wid := workerID
 	claimed, err := rawq.ClaimDueContinuations(ctx, generated.ClaimDueContinuationsParams{
-		ClaimedAt: ts(now), ClaimedBy: &wid, ClaimExpiresAt: ts(now.Add(lease)), Limit: int32(limit),
+		ClaimedAt: ts(now), ClaimedBy: &wid, ClaimExpiresAt: ts(now.Add(lease)), Limit: int32(limit), //nolint:gosec // worker batch limit is small + bounded
 	})
 	if err != nil {
 		return 0, err

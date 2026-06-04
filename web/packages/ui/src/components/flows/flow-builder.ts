@@ -4501,7 +4501,8 @@ export class OrFlowBuilder extends LitElement {
 
   private _toggleExprMode(id: string): void {
     const next = new Set(this._exprAdvanced);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     this._exprAdvanced = next;
     // Drop the cached Visual model so re-entering Visual re-parses the DSL the
     // user may have just hand-edited in Advanced.
