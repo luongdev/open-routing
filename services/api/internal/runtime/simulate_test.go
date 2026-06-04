@@ -128,6 +128,72 @@ func TestSimulate_EmptyPoolToNoCandidateFallback(t *testing.T) {
 	}
 }
 
+func TestSimulate_SetVarAndComputeFeedDownstream(t *testing.T) {
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("sv", NodeSetVar, setVarConfig{Name: "tier", ValueExpr: "gold"}),
+			node("cp", NodeCompute, computeConfig{Expr: "num.abs(-5)", Var: "score"}),
+			node("iff", NodeIfElse, ifElseConfig{Expr: "tier == gold AND score > 3"}),
+			node("y", NodeLog, logConfig{Message: "vip"}),
+			node("end", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "sv"}, {From: "sv", To: "cp"}, {From: "cp", To: "iff"},
+			{From: "iff", To: "y", Label: "true"}, {From: "iff", To: "end", Label: "false"}, {From: "y", To: "end"},
+		},
+	}
+	plan, err := Compile(g, DefaultRegistry())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	tr, err := Simulate(context.Background(), DefaultRegistry(), plan, SimInput{
+		ClockStart: time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("simulate: %v", err)
+	}
+	// set_var(tier=gold) + compute(score=abs(-5)=5) → if_else(tier==gold AND score>3) true.
+	if got := portOf(tr, "iff"); got != "true" {
+		t.Fatalf("if_else port = %q, want true (steps=%v)", got, stepIDs(tr))
+	}
+	took := false
+	for _, s := range tr.Steps {
+		if s.NodeID == "y" {
+			took = true
+		}
+	}
+	if !took {
+		t.Fatalf("expected the true branch (log node) to run: %v", stepIDs(tr))
+	}
+}
+
+func TestSetVarCompute_Validate(t *testing.T) {
+	reg := DefaultRegistry()
+	bad := &Graph{Nodes: []GraphNode{
+		node("t", NodeTrigger, nil),
+		node("sv", NodeSetVar, setVarConfig{Name: "", ValueExpr: "gold"}),       // empty name
+		node("sv2", NodeSetVar, setVarConfig{Name: "x", ValueExpr: "num.abs("}), // bad expr
+		node("cp", NodeCompute, computeConfig{Expr: "1 +", Var: "1bad"}),        // bad expr + bad var
+		node("end", NodeEnd, nil),
+	}, Edges: []GraphEdge{{From: "t", To: "sv"}, {From: "sv", To: "sv2"}, {From: "sv2", To: "cp"}, {From: "cp", To: "end"}}}
+	issues, err := ValidateGraph(context.Background(), bad, reg, nil)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	wantFields := map[string]bool{"name": false, "value_expr": false, "expr": false, "var": false}
+	for _, is := range issues {
+		if _, ok := wantFields[is.Field]; ok {
+			wantFields[is.Field] = true
+		}
+	}
+	for f, seen := range wantFields {
+		if !seen {
+			t.Errorf("expected a validation issue on field %q; issues=%+v", f, issues)
+		}
+	}
+}
+
 func TestSimulate_Deterministic(t *testing.T) {
 	in := SimInput{
 		Snapshot:         simSnapshot(),

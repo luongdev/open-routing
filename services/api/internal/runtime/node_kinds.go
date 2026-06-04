@@ -3,9 +3,15 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/luongdev/open-routing/services/api/internal/runtime/expr"
 )
+
+// varNameRe bounds a settable variable name: an identifier, optionally dotted.
+// Mirrors the expr engine's variable-path grammar so a set_var name is a valid
+// lookup path downstream.
+var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // node_kinds.go holds the v0.2 executable subset. Each kind owns its config
 // shape, Validate (field + catalog-reference checks), and Compile (normalize to
@@ -380,6 +386,69 @@ func (endNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs)
 
 func (endNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
 	cfg, err := decodeConfig[endConfig](n.Config)
+	if err != nil {
+		return PlanStep{}, err
+	}
+	return compileConfig(n, cfg)
+}
+
+// ---- set_var / compute (3D-1: deterministic data nodes) ----
+
+type setVarConfig struct {
+	Name      string `json:"name"`
+	ValueExpr string `json:"value_expr"`
+}
+type setVarNode struct{ baseNode }
+
+func (setVarNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
+	cfg, err := decodeConfig[setVarConfig](n.Config)
+	if err != nil {
+		return malformed(n.ID, err), nil
+	}
+	var issues []ValidationIssue
+	switch {
+	case cfg.Name == "":
+		issues = append(issues, fieldIssue(n.ID, "name", IssueInvalidConfig, "set_var requires a variable name"))
+	case !varNameRe.MatchString(cfg.Name):
+		issues = append(issues, fieldIssue(n.ID, "name", IssueInvalidConfig, "variable name must be an identifier (optionally dotted)"))
+	}
+	issues = append(issues, checkExpr(n.ID, "value_expr", cfg.ValueExpr)...)
+	return issues, nil
+}
+
+func (setVarNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
+	cfg, err := decodeConfig[setVarConfig](n.Config)
+	if err != nil {
+		return PlanStep{}, err
+	}
+	return compileConfig(n, cfg)
+}
+
+type computeConfig struct {
+	Expr string `json:"expr"`
+	Var  string `json:"var,omitempty"`
+}
+type computeNode struct{ baseNode }
+
+func (computeNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRefs) ([]ValidationIssue, error) {
+	cfg, err := decodeConfig[computeConfig](n.Config)
+	if err != nil {
+		return malformed(n.ID, err), nil
+	}
+	var issues []ValidationIssue
+	if cfg.Expr == "" {
+		issues = append(issues, fieldIssue(n.ID, "expr", IssueInvalidConfig, "compute requires an expression"))
+	} else {
+		issues = append(issues, checkExpr(n.ID, "expr", cfg.Expr)...)
+	}
+	if cfg.Var != "" && !varNameRe.MatchString(cfg.Var) {
+		issues = append(issues, fieldIssue(n.ID, "var", IssueInvalidConfig, "variable name must be an identifier (optionally dotted)"))
+	}
+	return issues, nil
+}
+
+func (computeNode) Compile(n GraphNode, _ *Graph) (PlanStep, error) {
+	cfg, err := decodeConfig[computeConfig](n.Config)
 	if err != nil {
 		return PlanStep{}, err
 	}

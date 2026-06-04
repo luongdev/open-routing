@@ -36,3 +36,4 @@ func (e exprEnv) Lookup(path string) (any, bool) {
 // evalBool / evalString are the runtime's entry points into the engine.
 func evalBool(src string, ctx ExecCtx) (bool, error)     { return expr.EvalBool(src, exprEnv{ctx}) }
 func evalString(src string, ctx ExecCtx) (string, error) { return expr.EvalString(src, exprEnv{ctx}) }
+func evalValue(src string, ctx ExecCtx) (any, error)     { return expr.EvalValue(src, exprEnv{ctx}) }

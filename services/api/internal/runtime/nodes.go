@@ -34,6 +34,8 @@ var defaultDescriptors = []Descriptor{
 	{Kind: NodeEffect, Title: "Effect", Category: "action", Summary: "Record/mock side effect (no live external call in v0.2)."},
 	{Kind: NodeLog, Title: "Log", Category: "action", Summary: "Emit a trace log entry."},
 	{Kind: NodeEnd, Title: "End", Category: "exit", Summary: "Terminate the flow."},
+	{Kind: NodeSetVar, Title: "Set Variable", Category: "data", Summary: "Assign an expression result to a variable."},
+	{Kind: NodeCompute, Title: "Compute", Category: "data", Summary: "Evaluate an expression (optionally into a variable)."},
 }
 
 var descriptorByKind = func() map[NodeKind]Descriptor {
@@ -62,6 +64,8 @@ func DefaultRegistry() *Registry {
 	r.Register(effectNode{base(NodeEffect)})
 	r.Register(logNode{base(NodeLog)})
 	r.Register(endNode{base(NodeEnd)})
+	r.Register(setVarNode{base(NodeSetVar)})
+	r.Register(computeNode{base(NodeCompute)})
 	return r
 }
 

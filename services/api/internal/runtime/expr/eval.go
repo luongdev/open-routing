@@ -39,6 +39,23 @@ func EvalString(src string, env Env) (string, error) {
 	return toStr(v), nil
 }
 
+// EvalValue parses + evaluates src to its typed value (set_var / compute). The
+// internal `unresolved` sentinel (an undefined bareword) is unwrapped to a plain
+// string so it never leaks into stored variables or the trace.
+func EvalValue(src string, env Env) (any, error) {
+	if strings.TrimSpace(src) == "" {
+		return "", nil
+	}
+	v, err := evalSrc(src, env)
+	if err != nil {
+		return nil, err
+	}
+	if u, ok := v.(unresolved); ok {
+		return string(u), nil
+	}
+	return v, nil
+}
+
 func evalSrc(src string, env Env) (any, error) {
 	n, perr := Parse(src)
 	if perr != nil {

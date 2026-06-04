@@ -34,6 +34,8 @@ const (
 	NodeEffect      NodeKind = "effect"
 	NodeLog         NodeKind = "log"
 	NodeEnd         NodeKind = "end"
+	NodeSetVar      NodeKind = "set_var"
+	NodeCompute     NodeKind = "compute"
 )
 
 // V02NodeKinds is the locked v0.2 subset, in palette order. Tests assert the
@@ -41,6 +43,8 @@ const (
 var V02NodeKinds = []NodeKind{
 	NodeTrigger, NodeIfElse, NodeSwitchCase, NodeWait, NodeMatchSkill, NodeFilter,
 	NodeRouteQueue, NodeReservation, NodeFallback, NodeEffect, NodeLog, NodeEnd,
+	// 3D-1: deterministic data nodes (graduated from the "Soon" palette).
+	NodeSetVar, NodeCompute,
 }
 
 // GraphNode / GraphEdge are the parsed authoring graph. Config is the node's

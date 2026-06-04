@@ -209,6 +209,36 @@ func (fallbackNode) Execute(_ ExecCtx, step PlanStep) (StepResult, error) {
 	return StepResult{Output: omitEmpty(out)}, nil
 }
 
+func (setVarNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
+	cfg, err := decodeConfig[setVarConfig](step.Compiled)
+	if err != nil {
+		return StepResult{}, err
+	}
+	val, err := evalValue(cfg.ValueExpr, ctx)
+	if err != nil {
+		return StepResult{}, err
+	}
+	ctx.SetVar(cfg.Name, val)
+	return StepResult{Output: map[string]any{"name": cfg.Name, "value": val}}, nil
+}
+
+func (computeNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
+	cfg, err := decodeConfig[computeConfig](step.Compiled)
+	if err != nil {
+		return StepResult{}, err
+	}
+	val, err := evalValue(cfg.Expr, ctx)
+	if err != nil {
+		return StepResult{}, err
+	}
+	out := map[string]any{"result": val}
+	if cfg.Var != "" {
+		ctx.SetVar(cfg.Var, val)
+		out["var"] = cfg.Var
+	}
+	return StepResult{Output: out}, nil
+}
+
 func (endNode) Execute(_ ExecCtx, step PlanStep) (StepResult, error) {
 	cfg, err := decodeConfig[endConfig](step.Compiled)
 	if err != nil {
