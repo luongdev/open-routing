@@ -2101,6 +2101,10 @@ export class OrFlowBuilder extends LitElement {
   @property({ type: Object }) accessor client!: ApiClient;
 
   @state() private accessor _selectedNodeId: string | null = null;
+  // Copy/paste clipboard: a node's content snapshot (no id/edges) + a paste
+  // counter so repeated pastes cascade instead of stacking.
+  private _clipboardNode: Omit<FlowNode, 'id'> | null = null;
+  private _pasteCount = 0;
 
   // Palette filter + per-group collapse. A non-empty query force-expands every
   // matching group (collapse state is ignored while searching) so a hit is
@@ -3024,26 +3028,67 @@ export class OrFlowBuilder extends LitElement {
     this._markDirty();
   }
 
-  // Delete/Backspace removes the selected edge or node — but not while typing in
-  // a config input (else Backspace nukes the node mid-edit).
+  // Keyboard: Delete/Backspace removes the selected edge/node; Cmd/Ctrl+C copies
+  // the selected node; Cmd/Ctrl+V pastes a duplicate. Never steals a shortcut
+  // while typing in a config field (text selection / native copy stay intact).
   private _onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     if (this._simMode === 'sim') return;
-    // Only ever acts when THIS canvas has a selection (set by interacting with
-    // it), so it can't touch the graph from unrelated parts of the page.
-    if (!this._selectedEdgeId && !this._selectedNodeId) return;
-    // Never steal Delete/Backspace from a text field — check both the event
-    // target and the focused element so typing anywhere is safe (agy HIGH-1).
     const editable = (n: unknown): boolean => {
       const el = n as HTMLElement | null;
       const tag = el?.tagName?.toLowerCase();
       return tag === 'input' || tag === 'textarea' || tag === 'select' || !!el?.isContentEditable;
     };
-    if (editable(e.composedPath()[0]) || editable(document.activeElement)) return;
+    const typing = editable(e.composedPath()[0]) || editable(document.activeElement);
+    const mod = e.metaKey || e.ctrlKey;
+
+    if (mod && (e.key === 'c' || e.key === 'C')) {
+      if (typing || !this._selectedNodeId) return;
+      this._copyNode(this._selectedNodeId);
+      e.preventDefault();
+      return;
+    }
+    if (mod && (e.key === 'v' || e.key === 'V')) {
+      if (typing || !this._clipboardNode) return;
+      this._pasteNode();
+      e.preventDefault();
+      return;
+    }
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    // Only ever acts when THIS canvas has a selection (set by interacting with
+    // it), so it can't touch the graph from unrelated parts of the page.
+    if (!this._selectedEdgeId && !this._selectedNodeId) return;
+    if (typing) return;
     e.preventDefault();
     if (this._selectedEdgeId) this._deleteEdge(this._selectedEdgeId);
     else if (this._selectedNodeId) this._deleteNode(this._selectedNodeId);
   };
+
+  // Snapshot the selected node's content (NOT its id/position) for paste.
+  private _copyNode(id: string): void {
+    const n = this._nodes.find(x => x.id === id);
+    if (!n) return;
+    this._clipboardNode = structuredClone({
+      kind: n.kind, label: n.label, description: n.description,
+      x: n.x, y: n.y, params: n.params, outputs: n.outputs,
+    });
+    this._pasteCount = 0;
+    this._flashAction(`Copied "${n.label ?? n.kind}".`, 'ok');
+  }
+
+  // Paste a fresh-id clone, offset so repeated pastes cascade. Edges are NOT
+  // copied (a duplicated node starts unconnected). The new node is selected.
+  private _pasteNode(): void {
+    const c = this._clipboardNode;
+    if (!c) return;
+    this._pasteCount += 1;
+    const off = 30 * this._pasteCount;
+    const id = this._genNodeId();
+    const clone = structuredClone(c) as FlowNode;
+    this._nodes = [...this._nodes, { ...clone, id, x: c.x + off, y: c.y + off }];
+    this._selectedNodeId = id;
+    this._markDirty();
+    this._flashAction(`Pasted "${clone.label ?? clone.kind}".`, 'ok');
+  }
 
   private _genEdgeId(): string {
     let id = '';

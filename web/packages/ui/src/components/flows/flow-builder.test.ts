@@ -165,6 +165,29 @@ describe('OrFlowBuilder', () => {
     expect(input!.classList.contains('catalog-input--unknown')).toBe(true);
   });
 
+  it('copy + paste duplicates the selected node with a fresh id and offset', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    const before = (el as any)._nodes.length;
+    const src = (el as any)._nodes[0];
+    (el as any)._copyNode(src.id);
+    (el as any)._pasteNode();
+    const nodes = (el as any)._nodes;
+    expect(nodes.length).toBe(before + 1);
+    const pasted = nodes[nodes.length - 1];
+    expect(pasted.id).not.toBe(src.id);
+    expect(pasted.kind).toBe(src.kind);
+    expect(pasted.x).toBe(src.x + 30);
+    expect(pasted.y).toBe(src.y + 30);
+    expect((el as any)._selectedNodeId).toBe(pasted.id); // pasted node is selected
+    // a second paste cascades further, not stacking on the first
+    (el as any)._pasteNode();
+    const pasted2 = (el as any)._nodes[(el as any)._nodes.length - 1];
+    expect(pasted2.x).toBe(src.x + 60);
+  });
+
   it('Validate reports a clean graph', async () => {
     const mockPost = vi.fn().mockResolvedValue({ data: { valid: true, issues: [] }, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';
