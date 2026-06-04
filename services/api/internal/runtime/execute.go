@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
 
@@ -138,85 +137,23 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 		vars[k] = v
 	}
 	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver}
-
-	stepByID := make(map[string]PlanStep, len(plan.Steps))
-	for _, s := range plan.Steps {
-		stepByID[s.NodeID] = s
-	}
-	edgesByFrom := make(map[string][]CompiledEdge)
-	for _, e := range plan.Edges {
-		edgesByFrom[e.From] = append(edgesByFrom[e.From], e)
-	}
-
 	res := RunResult{Vars: vars}
-	cur := plan.Entry
 
-	for i := 0; i < ex.maxSteps; i++ {
-		if err := ctx.Err(); err != nil {
-			return ex.finish(&res, state, "failed", "", err)
-		}
-		step, ok := stepByID[cur]
-		if !ok {
-			return ex.finish(&res, state, "failed", "", fmt.Errorf("runtime: plan has no step for node %q", cur))
-		}
-		node, ok := ex.reg.Lookup(step.Kind)
-		if !ok {
-			return ex.finish(&res, state, "failed", "", fmt.Errorf("runtime: no registered node for kind %q", step.Kind))
-		}
-
-		// Duration is wall-clock CPU time, measured with the real monotonic clock
-		// — NOT the run clock. A node (reservation timeout, wait) advances the
-		// VIRTUAL clock, which would otherwise be recorded as execution time and
-		// contradict the trace contract (cross-AI review BLOCK/HIGH). This field
-		// is observability only and is excluded from replay equality.
-		t0 := time.Now()
-		out, err := node.Execute(state, step)
-		ts := TraceStep{
-			NodeID:     cur,
-			Kind:       step.Kind,
-			Port:       out.Port,
-			Output:     out.Output,
-			DurationMs: float64(time.Since(t0).Microseconds()) / 1000,
-		}
-		if err != nil {
-			ts.Status, ts.Error = "failed", err.Error()
-			res.Trace.Steps = append(res.Trace.Steps, ts)
-			return ex.finish(&res, state, "failed", "", err)
-		}
-		if out.Failure != nil {
-			ts.Status, ts.Error = "failed", out.Failure.Message
-			res.Trace.Steps = append(res.Trace.Steps, ts)
-			return ex.finish(&res, state, "failed", string(out.Failure.Code), nil)
-		}
-		if out.Suspension != nil && !ex.autoResume {
-			ts.Status = "suspended"
-			res.Trace.Steps = append(res.Trace.Steps, ts)
-			res.Suspension = out.Suspension
-			return ex.finish(&res, state, "suspended", "", nil)
-		}
-		if out.Suspension != nil {
-			// Simulation: advance the virtual clock past the delay and continue.
-			if d := out.Suspension.ResumeAt.Sub(clock.Now()); d > 0 {
-				clock.Advance(d)
-			}
-		}
-		ts.Status = "ok"
-		res.Trace.Steps = append(res.Trace.Steps, ts)
-
-		if out.Terminal {
-			return ex.finish(&res, state, "completed", "", nil)
-		}
-
-		nextID, ok := resolveNext(cur, out, edgesByFrom)
-		if !ok {
-			// No out-edge and not terminal: the path ran off the end of the
-			// graph. Treat as completion rather than error (validation already
-			// requires an end node; this is the graceful tail).
-			return ex.finish(&res, state, "completed", "", nil)
-		}
-		cur = nextID
+	// The region runner walks top-level flow (regionID "") and recurses into
+	// control-node body regions. A flat (region-free) plan walks the same way.
+	rt := newRunner(ex, state, clock, plan, &res)
+	wr, err := rt.walk("", plan.Entry)
+	switch {
+	case err != nil:
+		return ex.finish(&res, state, "failed", "", err)
+	case wr.suspended != nil:
+		res.Suspension = wr.suspended
+		return ex.finish(&res, state, "suspended", "", nil)
+	case wr.fail != nil: // an uncaught domain failure at top level
+		return ex.finish(&res, state, "failed", string(wr.fail.Code), nil)
+	default: // terminal end or ran off the end of the graph
+		return ex.finish(&res, state, "completed", "", nil)
 	}
-	return ex.finish(&res, state, "failed", "", fmt.Errorf("runtime: exceeded max steps (%d) — possible cycle", ex.maxSteps))
 }
 
 func (ex *Executor) finish(res *RunResult, state *execState, outcome, failureCode string, err error) (RunResult, error) {

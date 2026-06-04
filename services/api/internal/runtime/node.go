@@ -153,6 +153,9 @@ const (
 	FailMultipleActiveBindings        RoutingFailureCode = "multiple_active_bindings"
 	FailInvalidGraph                  RoutingFailureCode = "invalid_graph"
 	FailReservationTransitionConflict RoutingFailureCode = "reservation_transition_conflict"
+	// 3D-2 control-flow failures (catchable by try_catch).
+	FailLoopLimit        RoutingFailureCode = "loop_limit"
+	FailInvalidLoopInput RoutingFailureCode = "invalid_loop_input"
 )
 
 // RoutingFailure is a typed terminal failure a node yields (recorded on the
