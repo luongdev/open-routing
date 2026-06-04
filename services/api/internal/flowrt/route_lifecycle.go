@@ -278,9 +278,14 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	// accept — the reservation is the assignment's source of truth).
 	engaged := string(api.AgentStatusEngaged)
 	ch := route.Channel
-	_, _ = qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+	// Best-effort: a stale agent state (guard miss → ErrNoRows) must not roll back
+	// the accept, but a REAL DB error must surface — it has poisoned the tx, so
+	// swallowing it would only fail the next query opaquely (review M7).
+	if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
 		AgentID: resv.AgentID, OrgID: pgUUID(orgID), ToStatus: &engaged, ExpectedFrom: string(api.AgentStatusReady), EngagedChannel: &ch,
-	})
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_state_failed"}}, nil
+	}
 	routeID := apiUUID(route.ID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.accepted", map[string]any{"reservation_id": resID.String()})
 	e.appendEvent(ctx, qtx, orgID, routeID, "agent.engaged", map[string]any{"agent_id": apiUUID(resv.AgentID).String()})
@@ -372,9 +377,12 @@ func (e *Endpoints) CompleteReservation(ctx context.Context, req api.CompleteRes
 	}
 	wrapUp := string(api.AgentStatusWrapUp)
 	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
-	_, _ = qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+	// Best-effort, but surface a real DB error (review M7).
+	if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
 		AgentID: comp.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
-	})
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_state_failed"}}, nil
+	}
 	routeID := apiUUID(comp.RouteRequestID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.completed", map[string]any{"reservation_id": resID.String()})
 	e.appendEvent(ctx, qtx, orgID, routeID, "agent.wrapup", map[string]any{"agent_id": apiUUID(comp.AgentID).String()})

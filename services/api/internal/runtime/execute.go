@@ -263,6 +263,12 @@ func (ex *Executor) RunResume(ctx context.Context, clock Clock, plan CompiledPla
 
 func (ex *Executor) drive(state *execState, clock Clock, plan CompiledPlan, entry string) (RunResult, error) {
 	res := RunResult{Vars: state.vars}
+	// Refuse a stored plan compiled under a different format version — executing
+	// it under the wrong contract is worse than failing fast (review L1). A
+	// zero/unstamped version (in-memory test plans) is allowed.
+	if plan.FormatVersion != 0 && plan.FormatVersion != PlanFormatVersion {
+		return ex.finish(&res, state, "failed", string(FailInvalidGraph), nil)
+	}
 	// The region runner walks top-level flow (regionID "") and recurses into
 	// control-node body regions. A flat (region-free) plan walks the same way.
 	rt := newRunner(ex, state, clock, plan, &res)

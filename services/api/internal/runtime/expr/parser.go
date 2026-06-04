@@ -8,7 +8,15 @@ import (
 // Parse turns source into an AST. Precedence (loose→tight): OR < AND < NOT <
 // comparison < primary. NOT binds looser than comparison (SQL-style:
 // `NOT a == b` == `NOT (a == b)`). Comparisons are non-chaining.
+// maxExprLen / maxExprDepth bound a single expression so a pathologically long
+// or deeply-nested one can't DoS the parser/evaluator (review M3).
+const maxExprLen = 4096
+const maxExprDepth = 64
+
 func Parse(src string) (Node, *ParseError) {
+	if len(src) > maxExprLen {
+		return nil, &ParseError{0, "expression too long"}
+	}
 	toks, err := lex(src)
 	if err != nil {
 		return nil, err
@@ -25,8 +33,9 @@ func Parse(src string) (Node, *ParseError) {
 }
 
 type parser struct {
-	toks []token
-	pos  int
+	toks  []token
+	pos   int
+	depth int
 }
 
 func (p *parser) cur() token  { return p.toks[p.pos] }
@@ -44,6 +53,13 @@ func boolBP(k tokKind) int {
 }
 
 func (p *parser) parseExpr(minBP int) (Node, *ParseError) {
+	// Bound recursion (parens/AND/OR/NOT all re-enter here) so a deeply nested
+	// expression can't overflow the Go stack (review M3).
+	p.depth++
+	if p.depth > maxExprDepth {
+		return nil, &ParseError{p.cur().pos, "expression nested too deeply"}
+	}
+	defer func() { p.depth-- }()
 	left, err := p.parseNot()
 	if err != nil {
 		return nil, err

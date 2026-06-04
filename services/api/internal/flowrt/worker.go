@@ -53,7 +53,7 @@ func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.P
 		if errors.Is(perr, errLostLease) {
 			continue
 		}
-		e.deps.Logger.ErrorContext(ctx, "continuation process failed", "id", apiUUID(c.ID), "kind", c.Kind, "attempt", c.AttemptCount, "err", perr)
+		e.deps.Logger.ErrorContext(ctx, "continuation process failed", "org_id", apiUUID(c.OrgID), "id", apiUUID(c.ID), "kind", c.Kind, "attempt", c.AttemptCount, "err", perr)
 		// Dead-letter only once retries are exhausted; otherwise let the claim
 		// lease expire so the row is retried (a transient DB error must not strand
 		// the route forever — review H6).
@@ -173,7 +173,11 @@ func (e *Endpoints) fireWrapUpExpiry(ctx context.Context, workerID string, c gen
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
-	_, _ = qtx.ExpireWrapUp(ctx, generated.ExpireWrapUpParams{AgentID: c.AgentID, OrgID: c.OrgID}) // idempotent
+	// Idempotent, but a real DB error must surface for retry — only a guard-miss
+	// (ErrNoRows) is the benign no-op (review M6).
+	if _, err := qtx.ExpireWrapUp(ctx, generated.ExpireWrapUpParams{AgentID: c.AgentID, OrgID: c.OrgID}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	if err := e.resolveDone(ctx, qtx, c, workerID); err != nil {
 		return err
 	}

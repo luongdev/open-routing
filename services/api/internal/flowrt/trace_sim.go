@@ -56,8 +56,12 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 	for _, code := range order {
 		pool = append(pool, *byAgent[code])
 	}
+	// Rank by longest-available so a direct route_queue → reservation (no
+	// match_skill) still offers the longest-idle agent first (review M10).
+	pool = runtime.RankCandidates(pool, nil)
 
 	qc := map[string][]runtime.Candidate{}
+	q := generated.New(tx)
 	for _, n := range graph.Nodes {
 		if n.Kind != runtime.NodeRouteQueue {
 			continue
@@ -65,9 +69,17 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 		var cfg struct {
 			Queue string `json:"queue"`
 		}
-		if json.Unmarshal(n.Config, &cfg) == nil && cfg.Queue != "" {
-			qc[cfg.Queue] = pool
+		if json.Unmarshal(n.Config, &cfg) != nil || cfg.Queue == "" {
+			continue
 		}
+		// Only map a pool for a queue that still EXISTS and is ENABLED. A queue
+		// disabled/deleted after publish is omitted so route_queue yields
+		// missing_catalog_reference instead of routing to it (review H7).
+		qrow, qerr := q.GetQueueByCode(ctx, generated.GetQueueByCodeParams{OrgID: orgID, Code: cfg.Queue})
+		if qerr != nil || !qrow.Enabled {
+			continue
+		}
+		qc[cfg.Queue] = pool
 	}
 	return &runtime.Snapshot{QueueCandidates: qc}, nil
 }
