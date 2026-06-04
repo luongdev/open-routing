@@ -1674,7 +1674,7 @@ export interface components {
          * @description Typed taxonomy of routing failures recorded on a route request and its trace.
          * @enum {string}
          */
-        RoutingFailureCode: "missing_published_flow" | "missing_catalog_reference" | "no_eligible_candidate" | "multiple_active_bindings" | "invalid_graph" | "reservation_transition_conflict";
+        RoutingFailureCode: "missing_published_flow" | "missing_catalog_reference" | "no_eligible_candidate" | "multiple_active_bindings" | "invalid_graph" | "reservation_transition_conflict" | "loop_limit" | "invalid_loop_input";
         /** @description Maps a route entry point (channel + entry code) to its active published flow version. */
         FlowEntryBinding: {
             id: components["schemas"]["UUIDv7"];
@@ -1795,6 +1795,14 @@ export interface components {
             /** @description Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation. */
             duration_ms?: number | null;
             error?: string | null;
+            /** @description The id of the control-flow body region this step ran inside (loop/parallel/try_catch), if any. */
+            region?: string | null;
+            /** @description Zero-based loop iteration index for steps inside a loop_for/loop_while body. */
+            iteration?: number | null;
+            /** @description Zero-based branch index for steps inside a parallel branch. */
+            branch?: number | null;
+            /** @description True when this step's domain failure was caught by an enclosing try_catch. */
+            caught?: boolean | null;
         };
         /** @description An ordered runtime or simulation trace explaining a routing outcome. */
         Trace: {

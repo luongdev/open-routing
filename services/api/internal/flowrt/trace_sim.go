@@ -93,6 +93,16 @@ func mapTraceSteps(tr runtime.Trace) []api.TraceStep {
 			e := s.Error
 			st.Error = &e
 		}
+		if s.Region != "" {
+			rg := s.Region
+			st.Region = &rg
+		}
+		st.Iteration = s.Iteration
+		st.Branch = s.Branch
+		if s.Caught {
+			c := true
+			st.Caught = &c
+		}
 		out[i] = st
 	}
 	return out

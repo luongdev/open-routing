@@ -336,6 +336,8 @@ func (e RouteRequestStatus) Valid() bool {
 // Defines values for RoutingFailureCode.
 const (
 	InvalidGraph                  RoutingFailureCode = "invalid_graph"
+	InvalidLoopInput              RoutingFailureCode = "invalid_loop_input"
+	LoopLimit                     RoutingFailureCode = "loop_limit"
 	MissingCatalogReference       RoutingFailureCode = "missing_catalog_reference"
 	MissingPublishedFlow          RoutingFailureCode = "missing_published_flow"
 	MultipleActiveBindings        RoutingFailureCode = "multiple_active_bindings"
@@ -347,6 +349,10 @@ const (
 func (e RoutingFailureCode) Valid() bool {
 	switch e {
 	case InvalidGraph:
+		return true
+	case InvalidLoopInput:
+		return true
+	case LoopLimit:
 		return true
 	case MissingCatalogReference:
 		return true
@@ -1635,7 +1641,12 @@ type TraceKind string
 
 // TraceStep defines model for TraceStep.
 type TraceStep struct {
+	// Branch Zero-based branch index for steps inside a parallel branch.
+	Branch      *int      `json:"branch,omitempty"`
 	CatalogRefs *[]string `json:"catalog_refs,omitempty"`
+
+	// Caught True when this step's domain failure was caught by an enclosing try_catch.
+	Caught *bool `json:"caught,omitempty"`
 
 	// DurationMs Execution (CPU) time of the step in ms — NOT virtual wait time advanced by wait/reservation.
 	DurationMs   *float32                `json:"duration_ms,omitempty"`
@@ -1643,12 +1654,18 @@ type TraceStep struct {
 	Error        *string                 `json:"error,omitempty"`
 	Index        int                     `json:"index"`
 	Input        *map[string]interface{} `json:"input,omitempty"`
-	NodeId       string                  `json:"node_id"`
-	NodeKind     string                  `json:"node_kind"`
-	Output       *map[string]interface{} `json:"output,omitempty"`
+
+	// Iteration Zero-based loop iteration index for steps inside a loop_for/loop_while body.
+	Iteration *int                    `json:"iteration,omitempty"`
+	NodeId    string                  `json:"node_id"`
+	NodeKind  string                  `json:"node_kind"`
+	Output    *map[string]interface{} `json:"output,omitempty"`
 
 	// Port The output port the node took (e.g. true/false, accepted/timeout).
-	Port   *string         `json:"port,omitempty"`
+	Port *string `json:"port,omitempty"`
+
+	// Region The id of the control-flow body region this step ran inside (loop/parallel/try_catch), if any.
+	Region *string         `json:"region,omitempty"`
 	Status TraceStepStatus `json:"status"`
 }
 

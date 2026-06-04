@@ -88,6 +88,26 @@ func stepPort(steps []api.TraceStep, nodeID string) string {
 	return ""
 }
 
+func TestMapTraceSteps_CarriesRegionNesting(t *testing.T) {
+	it := 2
+	br := 1
+	tr := runtime.Trace{Steps: []runtime.TraceStep{
+		{NodeID: "a", Kind: runtime.NodeSetVar, Status: "ok", Region: "lf", Iteration: &it},
+		{NodeID: "b", Kind: runtime.NodeRouteQueue, Status: "failed", Region: "tc", Branch: &br, Caught: true},
+		{NodeID: "c", Kind: runtime.NodeLog, Status: "ok"}, // flat step: nesting fields stay nil
+	}}
+	out := mapTraceSteps(tr)
+	if out[0].Region == nil || *out[0].Region != "lf" || out[0].Iteration == nil || *out[0].Iteration != 2 {
+		t.Fatalf("step a region/iteration not mapped: %+v", out[0])
+	}
+	if out[1].Branch == nil || *out[1].Branch != 1 || out[1].Caught == nil || !*out[1].Caught {
+		t.Fatalf("step b branch/caught not mapped: %+v", out[1])
+	}
+	if out[2].Region != nil || out[2].Iteration != nil || out[2].Branch != nil || out[2].Caught != nil {
+		t.Fatalf("flat step c should have nil nesting fields: %+v", out[2])
+	}
+}
+
 func TestSimulateFlow_RoutesAcceptedPersistsAndDoesNotMutateLiveState(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {

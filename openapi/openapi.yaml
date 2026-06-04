@@ -821,6 +821,8 @@ components:
         - multiple_active_bindings
         - invalid_graph
         - reservation_transition_conflict
+        - loop_limit
+        - invalid_loop_input
 
     FlowEntryBinding:
       type: object
@@ -1082,6 +1084,22 @@ components:
         error:
           type: string
           nullable: true
+        region:
+          type: string
+          nullable: true
+          description: The id of the control-flow body region this step ran inside (loop/parallel/try_catch), if any.
+        iteration:
+          type: integer
+          nullable: true
+          description: Zero-based loop iteration index for steps inside a loop_for/loop_while body.
+        branch:
+          type: integer
+          nullable: true
+          description: Zero-based branch index for steps inside a parallel branch.
+        caught:
+          type: boolean
+          nullable: true
+          description: True when this step's domain failure was caught by an enclosing try_catch.
 
     Trace:
       type: object
