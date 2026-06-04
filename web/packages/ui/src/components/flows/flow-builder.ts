@@ -191,6 +191,7 @@ const KIND_PROPS: Record<FlowNodeKind, { tone: PaletteEntry['tone']; icon: strin
 const RUNTIME_KINDS = new Set<FlowNodeKind>([
   'trigger', 'if_else', 'switch_case', 'wait', 'match_skill', 'filter',
   'route_queue', 'reservation', 'fallback', 'effect', 'log', 'end',
+  'set_var', 'compute',
 ]);
 
 const DONE_OUT: FlowNodeOutput[] = [{ id: 'done', label: 'done', kind: 'success' }];
@@ -216,6 +217,8 @@ const KIND_OUTPUTS: Partial<Record<FlowNodeKind, FlowNodeOutput[]>> = {
   effect: DONE_OUT,
   log: DONE_OUT,
   end: [],
+  set_var: DONE_OUT,
+  compute: DONE_OUT,
 };
 
 // switch_case ports are dynamic (one per case + default); everything else is
@@ -237,7 +240,7 @@ function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput
 interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'cases' | 'condition' | 'catalog';
+  type: 'text' | 'number' | 'select' | 'cases' | 'condition' | 'catalog' | 'expr';
   options?: string[];
   // For type 'catalog': which catalog list feeds the searchable picker.
   source?: 'skill' | 'queue' | 'adapter';
@@ -267,6 +270,8 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   effect: [{ key: 'adapter', label: 'Adapter', type: 'catalog', source: 'adapter' }, { key: 'action', label: 'Action', type: 'text' }],
   log: [{ key: 'message', label: 'Message', type: 'text' }, { key: 'level', label: 'Level', type: 'select', options: ['debug', 'info', 'warn', 'error'] }],
   end: [{ key: 'outcome', label: 'Outcome', type: 'text' }],
+  set_var: [{ key: 'name', label: 'Variable name', type: 'text' }, { key: 'value_expr', label: 'Value (expression)', type: 'expr' }],
+  compute: [{ key: 'expr', label: 'Expression', type: 'expr' }, { key: 'var', label: 'Store in variable (optional)', type: 'text' }],
 };
 
 // Fraction (0..1) of card WIDTH where output port `idx` sits along the
@@ -3799,6 +3804,15 @@ export class OrFlowBuilder extends LitElement {
     }
     if (f.type === 'catalog') {
       return this._renderCatalogField(node, f);
+    }
+    if (f.type === 'expr') {
+      // A value expression (not a boolean) — the Advanced DSL editor + function
+      // autocomplete, without the AND/OR Visual builder.
+      return html`
+        <div class="form-section">
+          <label>${f.label}</label>
+          ${this._renderAdvancedExpr(node, f, String(v ?? ''))}
+        </div>`;
     }
     return html`
       <div class="form-section">
