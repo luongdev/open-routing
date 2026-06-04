@@ -142,6 +142,29 @@ describe('OrFlowBuilder', () => {
     expect(live[1].started_at_ms).toBeCloseTo(0.1, 5);
   });
 
+  it('fetches catalog refs and renders a searchable picker that flags unknown codes', async () => {
+    const items = (arr: any[]) => ({ data: { items: arr }, error: null });
+    const get = vi.fn().mockImplementation((p: string) => {
+      if (p.includes('expr-functions')) return Promise.resolve({ data: { functions: [] }, error: null });
+      if (p.endsWith('/skills')) return Promise.resolve(items([{ code: 'skill_es', name: 'Spanish' }]));
+      if (p.endsWith('/queues') || p.endsWith('/adapters')) return Promise.resolve(items([]));
+      return Promise.resolve({ data: { ...MOCK_FLOW, graph: { nodes: [{ id: 'm', type: 'match_skill', x: 0, y: 0, config: { skill: 'aaaa' } }], edges: [] } }, error: null });
+    });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: get };
+    await settle();
+    // catalog lists loaded
+    expect((el as any)._catalogRefs.skill).toEqual([{ code: 'skill_es', name: 'Spanish' }]);
+    // select the match_skill node → inspector renders the catalog field; the
+    // stored "aaaa" is not in the catalog → flagged.
+    (el as any)._selectedNodeId = 'm';
+    await (el as any).updateComplete;
+    const trigger = el.shadowRoot!.querySelector('.catalog-trigger');
+    expect(trigger).toBeTruthy();
+    expect(trigger!.classList.contains('catalog-trigger--unknown')).toBe(true);
+  });
+
   it('Validate reports a clean graph', async () => {
     const mockPost = vi.fn().mockResolvedValue({ data: { valid: true, issues: [] }, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';

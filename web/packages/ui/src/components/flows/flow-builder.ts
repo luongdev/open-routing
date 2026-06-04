@@ -237,8 +237,15 @@ function outputsForNode(node: Pick<FlowNode, 'kind' | 'params'>): FlowNodeOutput
 interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'cases' | 'condition';
+  type: 'text' | 'number' | 'select' | 'cases' | 'condition' | 'catalog';
   options?: string[];
+  // For type 'catalog': which catalog list feeds the searchable picker.
+  source?: 'skill' | 'queue' | 'adapter';
+}
+
+interface CatalogRef {
+  code: string;
+  name: string;
 }
 
 // Comparison operators for the basic condition builder — longest first so
@@ -252,12 +259,12 @@ const KIND_FIELDS: Partial<Record<FlowNodeKind, FieldDef[]>> = {
   if_else: [{ key: 'expr', label: 'Condition', type: 'condition' }],
   switch_case: [{ key: 'expr', label: 'Value expression', type: 'text' }, { key: 'cases', label: 'Cases', type: 'cases' }],
   wait: [{ key: 'duration_ms', label: 'Duration (ms)', type: 'number' }],
-  match_skill: [{ key: 'skill', label: 'Skill code', type: 'text' }, { key: 'min_proficiency', label: 'Min proficiency', type: 'number' }],
+  match_skill: [{ key: 'skill', label: 'Skill', type: 'catalog', source: 'skill' }, { key: 'min_proficiency', label: 'Min proficiency', type: 'number' }],
   filter: [{ key: 'expr', label: 'Predicate', type: 'condition' }],
-  route_queue: [{ key: 'queue', label: 'Queue code', type: 'text' }],
+  route_queue: [{ key: 'queue', label: 'Queue', type: 'catalog', source: 'queue' }],
   reservation: [{ key: 'timeout_sec', label: 'Timeout (sec)', type: 'number' }, { key: 'max_attempts', label: 'Max attempts', type: 'number' }],
   fallback: [{ key: 'reason', label: 'Reason', type: 'text' }],
-  effect: [{ key: 'adapter', label: 'Adapter code', type: 'text' }, { key: 'action', label: 'Action', type: 'text' }],
+  effect: [{ key: 'adapter', label: 'Adapter', type: 'catalog', source: 'adapter' }, { key: 'action', label: 'Action', type: 'text' }],
   log: [{ key: 'message', label: 'Message', type: 'text' }, { key: 'level', label: 'Level', type: 'select', options: ['debug', 'info', 'warn', 'error'] }],
   end: [{ key: 'outcome', label: 'Outcome', type: 'text' }],
 };
@@ -1093,6 +1100,43 @@ export class OrFlowBuilder extends LitElement {
     }
     .expr-copy:hover:not([disabled]) { color: var(--foreground); }
     .expr-copy[disabled] { opacity: 0.4; cursor: default; }
+    .catalog-field { display: flex; gap: 5px; align-items: stretch; }
+    .catalog-trigger {
+      flex: 1; min-width: 0;
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      border: 1px solid var(--border);
+      background: var(--background);
+      color: var(--foreground);
+      border-radius: 7px;
+      padding: 6px 9px;
+      font: inherit; font-size: 13px;
+      cursor: pointer; text-align: left;
+    }
+    .catalog-trigger:hover { border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); }
+    .catalog-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .catalog-trigger--unknown { border-color: var(--destructive, #e5484d); }
+    .catalog-placeholder { color: var(--muted-foreground); }
+    .catalog-clear {
+      flex-shrink: 0; border: 1px solid var(--border); background: var(--card);
+      color: var(--muted-foreground); cursor: pointer; padding: 0 7px; border-radius: 6px;
+      display: inline-flex; align-items: center;
+    }
+    .catalog-clear:hover { color: var(--foreground); }
+    .catalog-pop {
+      margin-top: 5px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--card); overflow: hidden;
+    }
+    .catalog-search { border: 0; border-bottom: 1px dashed var(--border); border-radius: 0; }
+    .catalog-search:focus { border-bottom-color: color-mix(in oklch, var(--primary) 45%, var(--border)); }
+    .catalog-list { max-height: 200px; overflow-y: auto; padding: 4px; }
+    .catalog-empty { font-size: 11px; color: var(--muted-foreground); padding: 8px; }
+    .catalog-item {
+      display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
+      border: 0; background: transparent; cursor: pointer; padding: 5px 7px; border-radius: 5px;
+    }
+    .catalog-item:hover, .catalog-item.on { background: var(--muted); }
+    .catalog-item-code { font-size: 12px; font-weight: 600; color: var(--foreground); }
+    .catalog-item-name { font-size: 10.5px; color: var(--muted-foreground); }
     .cond-group {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -2150,6 +2194,12 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _exprPickerNode: string | null = null;
   // Ephemeral Visual-builder group per node id (derived from the stored DSL).
   @state() private accessor _condGroups: Map<string, Group> = new Map();
+  // Catalog reference lists for the inspector's searchable code pickers.
+  @state() private accessor _catalogRefs: Record<'skill' | 'queue' | 'adapter', CatalogRef[]> = { skill: [], queue: [], adapter: [] };
+  private _catalogRefsFetched = false;
+  // Open catalog picker keyed by `${nodeId}:${fieldKey}`, + its search text.
+  @state() private accessor _catalogPicker: string | null = null;
+  @state() private accessor _catalogQuery = '';
 
   @state() private accessor _actionToast: string | null = null;
   @state() private accessor _actionTone: 'ok' | 'warn' | 'error' = 'ok';
@@ -2236,6 +2286,10 @@ export class OrFlowBuilder extends LitElement {
       this._catalogFetched = true;
       void this._fetchExprCatalog();
     }
+    if (!this._catalogRefsFetched && this.client && this.orgId) {
+      this._catalogRefsFetched = true;
+      void this._fetchCatalogRefs();
+    }
     if (this._wheelBound) return;
     const svg = this._svgEl();
     if (svg) {
@@ -2252,6 +2306,28 @@ export class OrFlowBuilder extends LitElement {
     } catch {
       this._exprCatalog = []; // picker just stays empty if the fetch fails
     }
+  }
+
+  // Catalog reference lists for the inspector's searchable code pickers (skill /
+  // queue / adapter) — so a user PICKS an existing code instead of typing one
+  // that won't match (and fails validation).
+  private async _fetchCatalogRefs(): Promise<void> {
+    const load = async (path: string): Promise<CatalogRef[]> => {
+      try {
+        const { data } = (await this.client.GET(path as never, {
+          params: { path: { org_id: this.orgId }, query: { limit: 200 } },
+        } as never)) as { data?: { items?: Array<{ code: string; name?: string }> } };
+        return (data?.items ?? []).map(i => ({ code: i.code, name: i.name ?? i.code }));
+      } catch {
+        return [];
+      }
+    };
+    const [skill, queue, adapter] = await Promise.all([
+      load('/v1/orgs/{org_id}/skills'),
+      load('/v1/orgs/{org_id}/queues'),
+      load('/v1/orgs/{org_id}/adapters'),
+    ]);
+    this._catalogRefs = { skill, queue, adapter };
   }
 
   override disconnectedCallback(): void {
@@ -3732,6 +3808,9 @@ export class OrFlowBuilder extends LitElement {
           </select>
         </div>`;
     }
+    if (f.type === 'catalog') {
+      return this._renderCatalogField(node, f);
+    }
     return html`
       <div class="form-section">
         <label>${f.label}</label>
@@ -3741,6 +3820,63 @@ export class OrFlowBuilder extends LitElement {
             const raw = (e.target as HTMLInputElement).value;
             this._updateNodeParam(node.id, f.key, f.type === 'number' ? (raw === '' ? undefined : Number(raw)) : raw);
           }}>
+      </div>`;
+  }
+
+  // Searchable catalog-reference picker: PICK an existing skill/queue/adapter
+  // code instead of typing one that won't match the catalog.
+  private _renderCatalogField(node: FlowNode, f: FieldDef) {
+    const source = f.source!;
+    const list = this._catalogRefs[source];
+    const current = node.params?.[f.key] === undefined ? '' : String(node.params?.[f.key]);
+    const pickerKey = `${node.id}:${f.key}`;
+    const open = this._catalogPicker === pickerKey;
+    const q = open ? this._catalogQuery.trim().toLowerCase() : '';
+    const filtered = q
+      ? list.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+      : list;
+    const known = current === '' || list.some(r => r.code === current);
+    const selected = list.find(r => r.code === current);
+    return html`
+      <div class="form-section">
+        <label>${f.label}</label>
+        <div class="catalog-field">
+          <button class=${'catalog-trigger' + (known ? '' : ' catalog-trigger--unknown')}
+            title=${known ? '' : 'Not in the catalog — pick a valid one'}
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this._catalogPicker = open ? null : pickerKey;
+              this._catalogQuery = '';
+            }}>
+            <span class=${current ? '' : 'catalog-placeholder'}>
+              ${current ? (selected ? `${selected.code} — ${selected.name}` : current) : `Select a ${source}…`}
+            </span>
+            <uk-icon icon="chevron-down" height="14" width="14"></uk-icon>
+          </button>
+          ${current
+            ? html`<button class="catalog-clear" title="Clear" @click=${(e: Event) => { e.stopPropagation(); this._updateNodeParam(node.id, f.key, undefined); }}>
+                <uk-icon icon="x" height="12" width="12"></uk-icon></button>`
+            : nothing}
+        </div>
+        ${open ? html`
+          <div class="catalog-pop">
+            <input class="form-input catalog-search" type="text" placeholder=${`Search ${source}s…`}
+              .value=${this._catalogQuery}
+              @click=${(e: Event) => e.stopPropagation()}
+              @input=${(e: Event) => { this._catalogQuery = (e.target as HTMLInputElement).value; }}>
+            <div class="catalog-list">
+              ${list.length === 0
+                ? html`<div class="catalog-empty">No ${source}s in the catalog.</div>`
+                : filtered.length === 0
+                  ? html`<div class="catalog-empty">No match.</div>`
+                  : filtered.map(r => html`
+                      <button class=${'catalog-item' + (r.code === current ? ' on' : '')}
+                        @click=${() => { this._updateNodeParam(node.id, f.key, r.code); this._catalogPicker = null; }}>
+                        <span class="catalog-item-code">${r.code}</span>
+                        <span class="catalog-item-name">${r.name}</span>
+                      </button>`)}
+            </div>
+          </div>` : nothing}
       </div>`;
   }
 
