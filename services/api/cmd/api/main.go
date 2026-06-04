@@ -49,11 +49,12 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
-	"github.com/luongdev/open-routing/services/api/internal/wsgateway"
 	"github.com/luongdev/open-routing/services/api/internal/imports"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
 	"github.com/luongdev/open-routing/services/api/internal/telemetry"
+	"github.com/luongdev/open-routing/services/api/internal/wsgateway"
 )
 
 func main() {
@@ -243,11 +244,13 @@ func run() int {
 		Endpoints: flowrtEndpoints,
 	}
 
-	// v0.3 W2: agent WebSocket gateway (transport over the runtime command service).
+	// v0.3 W2/W3: agent WebSocket gateway (transport over the runtime command
+	// service) + W3 connection-lease presence (Redis-primary).
 	wsGateway := wsgateway.New(wsgateway.Deps{
-		OrgDB:  orgDB,
-		Cmd:    flowrtEndpoints,
-		Logger: slog.Default(),
+		OrgDB:    orgDB,
+		Cmd:      flowrtEndpoints,
+		Presence: presence.NewRedisStore(rdb, 0),
+		Logger:   slog.Default(),
 	})
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).

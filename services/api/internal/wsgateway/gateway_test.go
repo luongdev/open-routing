@@ -17,6 +17,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 )
 
 // fakeCmd records the last command and returns a canned result (the real
@@ -119,6 +120,41 @@ func TestGateway_WelcomeRelayAndCommand(t *testing.T) {
 	if fc.last != string(flowrt.CmdAccept) {
 		t.Fatalf("executor saw %q, want reservation.accept", fc.last)
 	}
+}
+
+func TestGateway_DrivesPresence(t *testing.T) {
+	if sharedPool == nil {
+		t.Skip("no testcontainer pool")
+	}
+	org, agent := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	mem := presence.NewMemStore()
+	g := New(Deps{OrgDB: db.NewOrgDB(sharedPool, db.NewSQLChecker(), db.ValidationPanic), Cmd: &fakeCmd{}, Presence: mem})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.Handler()(w, r.WithContext(orgkey.SetOrgID(r.Context(), org)))
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http")+"/v1/agent/ws",
+		&websocket.DialOptions{HTTPHeader: http.Header{"X-Agent-Id": {agent.String()}}})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	_ = readFrame(t, conn) // welcome
+
+	// Connect → lease present.
+	if c, _ := mem.Connected(context.Background(), org, agent); !c {
+		t.Fatal("connect must set the presence lease")
+	}
+	// Close → CAS drop releases it.
+	_ = conn.Close(websocket.StatusNormalClosure, "")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, _ := mem.Connected(context.Background(), org, agent); !c {
+			return // dropped
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("close must drop the presence lease")
 }
 
 func TestGateway_RejectsMissingAgent(t *testing.T) {

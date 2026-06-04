@@ -17,6 +17,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 )
 
 // CommandExecutor is the runtime command service (flowrt.Endpoints) — the gateway
@@ -29,6 +30,7 @@ type CommandExecutor interface {
 type Deps struct {
 	OrgDB     *db.OrgDB
 	Cmd       CommandExecutor
+	Presence  presence.Store // optional connection lease (nil ⇒ no presence tracking)
 	Logger    *slog.Logger
 	GatewayID string
 }
@@ -89,9 +91,11 @@ func (g *Gateway) serve(parent context.Context, conn *websocket.Conn, orgID, age
 		_ = conn.Close(websocket.StatusInternalError, "session")
 		return
 	}
+	g.renewPresence(ctx, orgID, agentID, sessionID)
 	defer func() {
 		// Best-effort terminate so a crashed/closed socket frees the session.
 		_, _ = generated.New(g.d.OrgDB).TerminateAgentSession(context.WithoutCancel(ctx), generated.TerminateAgentSessionParams{OrgID: pgUUID(orgID), SessionID: pgUUID(sessionID)})
+		g.dropPresence(context.WithoutCancel(ctx), orgID, agentID, sessionID)
 		_ = conn.Close(websocket.StatusNormalClosure, "bye")
 	}()
 
@@ -217,6 +221,7 @@ func (g *Gateway) readLoop(ctx context.Context, cancel context.CancelFunc, conn 
 			}
 		case in.Type == TypeHeartbeat:
 			_, _ = q.TouchAgentSession(ctx, generated.TouchAgentSessionParams{OrgID: pgUUID(orgID), SessionID: pgUUID(sessionID)})
+			g.renewPresence(ctx, orgID, agentID, sessionID)
 		case isCommand(in.Type):
 			g.handleCommand(ctx, cancel, send, orgID, agentID, sessionID, in)
 		}
@@ -248,6 +253,28 @@ func (g *Gateway) handleCommand(ctx context.Context, cancel context.CancelFunc, 
 	}
 	ack.Status, ack.Reservation = res.Status, res.ReservationID
 	g.enqueue(ctx, cancel, send, ack)
+}
+
+// renewPresence/dropPresence are best-effort: a presence-store blip must never
+// tear a live socket (the readDeadline already bounds a half-open conn; the DB
+// agent_sessions row remains the audit trail). Drop is CAS-by-sessionID so a late
+// teardown can't evict a fresh reconnect.
+func (g *Gateway) renewPresence(ctx context.Context, orgID, agentID, sessionID uuid.UUID) {
+	if g.d.Presence == nil {
+		return
+	}
+	if err := g.d.Presence.Renew(ctx, orgID, agentID, sessionID.String()); err != nil && g.d.Logger != nil {
+		g.d.Logger.WarnContext(ctx, "presence renew failed", "err", err, "agent_id", agentID)
+	}
+}
+
+func (g *Gateway) dropPresence(ctx context.Context, orgID, agentID, sessionID uuid.UUID) {
+	if g.d.Presence == nil {
+		return
+	}
+	if err := g.d.Presence.Drop(ctx, orgID, agentID, sessionID.String()); err != nil && g.d.Logger != nil {
+		g.d.Logger.WarnContext(ctx, "presence drop failed", "err", err, "agent_id", agentID)
+	}
 }
 
 func pgUUID(u uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: u, Valid: true} }
