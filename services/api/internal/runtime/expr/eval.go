@@ -2,6 +2,7 @@ package expr
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +53,12 @@ func EvalValue(src string, env Env) (any, error) {
 	}
 	if u, ok := v.(unresolved); ok {
 		return string(u), nil
+	}
+	// Reject NaN/Inf: they can't be JSON-marshaled (a stored value / trace step
+	// would fail to serialize), so surface them as a node error instead of a
+	// downstream 500 (cross-AI review HIGH).
+	if f, ok := v.(float64); ok && (math.IsNaN(f) || math.IsInf(f, 0)) {
+		return nil, fmt.Errorf("expression produced a non-finite number")
 	}
 	return v, nil
 }

@@ -147,6 +147,20 @@ func TestCheck_RejectsBadCallsStatically(t *testing.T) {
 	}
 }
 
+func TestEvalValue_RejectsNonFinite(t *testing.T) {
+	e := env(nil)
+	for _, src := range []string{`num.sqrt(-1)`, `num.mod(1, 0)`} {
+		if _, err := EvalValue(src, e); err == nil {
+			t.Errorf("EvalValue(%q) = nil error, want non-finite rejection", src)
+		}
+	}
+	// a finite value passes through typed
+	v, err := EvalValue(`num.abs(-4)`, e)
+	if err != nil || v != float64(4) {
+		t.Fatalf("EvalValue(num.abs(-4)) = %v, %v; want 4", v, err)
+	}
+}
+
 func TestEvalString_SwitchValue(t *testing.T) {
 	e := env(map[string]any{"lang": "es"})
 	got, err := EvalString(`lang`, e)

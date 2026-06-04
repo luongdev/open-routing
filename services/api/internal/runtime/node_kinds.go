@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/luongdev/open-routing/services/api/internal/runtime/expr"
 )
@@ -12,6 +13,24 @@ import (
 // Mirrors the expr engine's variable-path grammar so a set_var name is a valid
 // lookup path downstream.
 var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
+
+// reservedVarNames are expr keywords the lexer parses as bool/operator tokens,
+// so a variable so named could be stored but never referenced. Single-segment
+// names matching these (case-insensitive) are rejected.
+var reservedVarNames = map[string]struct{}{"true": {}, "false": {}, "and": {}, "or": {}, "not": {}}
+
+// validVarName reports whether name is a usable variable identifier.
+func validVarName(name string) bool {
+	if !varNameRe.MatchString(name) {
+		return false
+	}
+	if !strings.Contains(name, ".") {
+		if _, reserved := reservedVarNames[strings.ToLower(name)]; reserved {
+			return false
+		}
+	}
+	return true
+}
 
 // node_kinds.go holds the v0.2 executable subset. Each kind owns its config
 // shape, Validate (field + catalog-reference checks), and Compile (normalize to
@@ -408,11 +427,15 @@ func (setVarNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogRe
 	var issues []ValidationIssue
 	switch {
 	case cfg.Name == "":
-		issues = append(issues, fieldIssue(n.ID, "name", IssueInvalidConfig, "set_var requires a variable name"))
-	case !varNameRe.MatchString(cfg.Name):
-		issues = append(issues, fieldIssue(n.ID, "name", IssueInvalidConfig, "variable name must be an identifier (optionally dotted)"))
+		issues = append(issues, fieldIssue(n.ID, "name", IssueMissingField, "set_var requires a variable name"))
+	case !validVarName(cfg.Name):
+		issues = append(issues, fieldIssue(n.ID, "name", IssueInvalidConfig, "variable name must be an identifier (optionally dotted) and not a reserved word"))
 	}
-	issues = append(issues, checkExpr(n.ID, "value_expr", cfg.ValueExpr)...)
+	if cfg.ValueExpr == "" {
+		issues = append(issues, fieldIssue(n.ID, "value_expr", IssueMissingField, "set_var requires a value expression (use \"\" for an empty string)"))
+	} else {
+		issues = append(issues, checkExpr(n.ID, "value_expr", cfg.ValueExpr)...)
+	}
 	return issues, nil
 }
 
@@ -441,8 +464,8 @@ func (computeNode) Validate(_ context.Context, n GraphNode, _ *Graph, _ CatalogR
 	} else {
 		issues = append(issues, checkExpr(n.ID, "expr", cfg.Expr)...)
 	}
-	if cfg.Var != "" && !varNameRe.MatchString(cfg.Var) {
-		issues = append(issues, fieldIssue(n.ID, "var", IssueInvalidConfig, "variable name must be an identifier (optionally dotted)"))
+	if cfg.Var != "" && !validVarName(cfg.Var) {
+		issues = append(issues, fieldIssue(n.ID, "var", IssueInvalidConfig, "variable name must be an identifier (optionally dotted) and not a reserved word"))
 	}
 	return issues, nil
 }
