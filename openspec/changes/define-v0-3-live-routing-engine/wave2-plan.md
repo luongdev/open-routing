@@ -123,3 +123,45 @@ inventory / revocation is needed). Org-scoped; sqlc + Go regen drift gates.
   gateway doesn't import the full handler surface).
 - D-W2-3 agent identity source in the trusted-host model (header vs signed token).
 - D-W2-4 outbox retention / pruning cadence.
+
+## Review revisions (codex W2 plan review — corrected architecture)
+
+The naive plan above has real bugs; the implementation follows these instead:
+
+- **Outbox is the ONLY delivery source; commit-then-relay** (BLOCK): never push
+  from producer memory. A relay SELECTs committed `agent_outbox` rows ordered by
+  seq and pushes; NOTIFY is only a wake-up hint. Fixes the push-before-commit hole.
+- **Per-agent seq under a lock, NOT `GENERATED IDENTITY`** (BLOCK): IDENTITY has a
+  commit-order gap (seq 10 assigned to tx A, 11 to tx B; B commits+relays first;
+  reconnect at 11 skips 10 forever). Allocate `server_seq` per agent under a
+  per-agent advisory/row lock inside the state-change tx; the relay only reads
+  committed rows in seq order, so a gap means "wait", never "skip".
+- **One command transaction owns dedupe + transition** (BLOCK): a
+  `ReservationCommandService` runs `ws_command_dedupe` insert + the reservation
+  transition + result store in ONE tx (used by BOTH the HTTP handlers and WS — the
+  WS layer must NOT wrap tx-owning HTTP handlers). Dedupe row gets
+  `status` + nullable `result` + `request_hash`; a same `client_msg_id` with a
+  different payload is rejected; concurrent duplicates lock/wait on the row.
+- **Identity from the authenticated connection, never the envelope** (HIGH):
+  ignore client-sent org_id/agent_id/session_id (spoofable in a trusted-host
+  model); derive them at connect.
+- **agent_sessions mandatory** (HIGH): `terminated_at`/`expires_at`; per-command
+  revocation check; revoked session pauses outbound + rejects commands.
+- **Command CAS carries org+agent+reservation state+version+offer-token** (HIGH):
+  an agent cannot accept another agent's offered reservation by guessing the id.
+- **Offer token, not lease_token, in W2** (MED): the capacity/presence lease is
+  W3; W2 uses a per-offer token owned by reservation state.
+- **Stable outbox event keys** + `UNIQUE(org_id, agent_id, event_key)` (HIGH) so a
+  reconnect re-derivation of an offered reservation can't duplicate an outbox row.
+- **ack semantics**: ack is derived from the dedupe result (retry-safe), not a
+  separate racy frame.
+- **Backpressure**: advance "delivered seq" only AFTER a successful Write; on
+  overflow close `1013` and let reconnect replay. Protocol hardening: max frame,
+  heartbeat timeout, hello-first, protocol version, read/write deadlines.
+- **Retention**: define a replay window; if `hello.last_server_seq` < retention
+  floor, send a `reset` marker (client re-syncs) rather than silently dropping.
+
+Testability (no W3/W4 needed): seed an offered reservation via the v0.2 flow,
+enqueue outbox rows via a test producer seam, and assert transport / replay /
+command dispatch + the two race tests (concurrent duplicate command; reversed
+outbox commit order).
