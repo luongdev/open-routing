@@ -9,10 +9,11 @@ RETURNING *;
 -- caller treats it as a no-op / 409.
 -- name: AcceptReservation :one
 -- expires_at guard (review H2): an offer whose timeout already elapsed cannot be
--- accepted even if its timeout continuation hasn't fired yet.
+-- accepted even if its timeout continuation hasn't fired yet. clock_timestamp()
+-- (not NOW()/tx-start) so a long-running tx can't accept past real expiry.
 UPDATE reservations
 SET state = 'accepted', resolved_at = NOW(), updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND state = 'offered' AND expires_at > NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'offered' AND expires_at > clock_timestamp()
 RETURNING *;
 
 -- name: RejectReservation :one

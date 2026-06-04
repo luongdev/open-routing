@@ -30,7 +30,6 @@ import (
 const maxLuaDepth = 64
 
 const scriptDeadline = 200 * time.Millisecond
-const scriptMemMB = 64 // gopher-lua memory cap (allocator DoS guard)
 
 type scriptConfig struct {
 	Code   string `json:"code"`
@@ -83,7 +82,9 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	defer L.Close()
 	L.SetContext(dctx) // verified: gopher-lua aborts tight loops on ctx cancel
-	L.SetMx(scriptMemMB) // bound allocator DoS (string.format/table.concat/rep)
+	// NOTE: do NOT use L.SetMx — gopher-lua's memory guard calls os.Exit(3) on the
+	// whole process (re-review BLOCK). Allocator DoS is bounded instead by the
+	// 200ms deadline + removing the unbounded builders (string.rep below).
 	// Only pure libs — NO io/os/debug/package (no file, network, os.time).
 	for _, lib := range []struct {
 		name string
@@ -106,8 +107,12 @@ func (scriptNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	for _, g := range []string{"dofile", "loadfile", "load", "loadstring", "collectgarbage", "print"} {
 		L.SetGlobal(g, lua.LNil)
 	}
+	// string.rep / string.format can allocate unboundedly from a tiny script
+	// (rep(s,1e9), format("%999999999d",1)); with SetMx removed, drop them — a
+	// script can still build strings with `..` (bounded by the 200ms deadline).
 	if strTbl, ok := L.GetGlobal("string").(*lua.LTable); ok {
 		strTbl.RawSetString("rep", lua.LNil)
+		strTbl.RawSetString("format", lua.LNil)
 	}
 	// Deterministic-but-not-fixed RNG: seed from the input bag so a run replays
 	// identically (same input → same sequence) yet different interactions differ

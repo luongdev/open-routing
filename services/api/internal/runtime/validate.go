@@ -505,7 +505,26 @@ func validatePorts(g *Graph) []ValidationIssue {
 					Message: fmt.Sprintf("node %q has %d out-edges labelled %s; labels must be unique", n.ID, c, disp)})
 			}
 		}
-		ports, fixed := fixedOutPorts[n.Kind]
+		var ports []string
+		var fixed bool
+		if n.Kind == NodeSwitchCase {
+			// switch_case ports are dynamic: its declared cases + the built-in
+			// default. Validate against that so a missing/typo'd case edge is caught
+			// (re-review BLOCK) rather than silently completing at runtime.
+			cfg, _ := decodeConfig[switchCaseConfig](n.Config)
+			seenC := map[string]bool{}
+			for _, c := range cfg.Cases {
+				c = strings.TrimSpace(c)
+				if c != "" && c != "default" && !seenC[c] {
+					seenC[c] = true
+					ports = append(ports, c)
+				}
+			}
+			ports = append(ports, "default")
+			fixed = true
+		} else {
+			ports, fixed = fixedOutPorts[n.Kind]
+		}
 		if !fixed {
 			continue
 		}

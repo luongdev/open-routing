@@ -154,3 +154,22 @@ func checkInterpExprs(nodeID, field, s string) []ValidationIssue {
 	}
 	return issues
 }
+
+// IsInteractiveInputKind reports whether a kind is an interactive-input node
+// (the only kinds a live input submit may resume). Used by the flowrt submit
+// handler to reject a submit aimed at a wait/reservation cursor.
+func IsInteractiveInputKind(k NodeKind) bool {
+	_, ok := inputSpecs[k]
+	return ok
+}
+
+// StepKind returns the compiled step's kind for a node id ("" if absent) — lets
+// callers inspect the cursor node without re-parsing the graph.
+func (p CompiledPlan) StepKind(nodeID string) NodeKind {
+	for _, s := range p.Steps {
+		if s.NodeID == nodeID {
+			return s.Kind
+		}
+	}
+	return ""
+}

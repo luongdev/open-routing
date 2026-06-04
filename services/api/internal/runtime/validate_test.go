@@ -287,3 +287,24 @@ func mustIssues(t *testing.T, g *Graph) []ValidationIssue {
 	}
 	return issues
 }
+
+func TestValidate_SwitchCasePorts(t *testing.T) {
+	// switch_case must wire every declared case + default; a missing case port is
+	// invalid_port_cardinality (re-review BLOCK).
+	g := &Graph{
+		Nodes: []GraphNode{
+			node("t", NodeTrigger, nil),
+			node("s", NodeSwitchCase, switchCaseConfig{Expr: "tier", Cases: []string{"gold", "silver"}}),
+			node("eg", NodeEnd, nil), node("ed", NodeEnd, nil),
+		},
+		Edges: []GraphEdge{
+			{From: "t", To: "s"},
+			{From: "s", To: "eg", Label: "gold"},
+			{From: "s", To: "ed", Label: "default"},
+			// "silver" port intentionally unwired.
+		},
+	}
+	if !codesOf(mustIssues(t, g))[IssuePortCardinality] {
+		t.Fatalf("want invalid_port_cardinality for switch_case missing 'silver'")
+	}
+}

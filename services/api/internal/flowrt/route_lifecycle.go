@@ -99,6 +99,10 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 // It re-reads the live candidate pool (route_queue/match_skill re-run) and the
 // offerer excludes agents already offered on this route, so a reject/timeout
 // re-offers a fresh agent.
+// errNotInputCursor: a live input submit targeted a route whose parked cursor is
+// not an interactive-input node (re-review H3) → the handler maps it to 409.
+var errNotInputCursor = errors.New("flowrt: route is not parked at an input node")
+
 func (e *Endpoints) resumeRoute(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID uuid.UUID, route generated.RouteRequest, signal string) error {
 	return e.resumeRouteWith(ctx, tx, qtx, orgID, route, signal, nil)
 }
@@ -128,6 +132,12 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 	var cur runtime.ResumeCursor
 	if len(route.ResumeCursor) > 0 {
 		_ = json.Unmarshal(route.ResumeCursor, &cur)
+	}
+	// A live input submit (scriptedInputs set) may only target an interactive-input
+	// cursor — never a parked wait/reservation node, which would otherwise resume
+	// early on the injected value (re-review H3).
+	if len(scriptedInputs) > 0 && !runtime.IsInteractiveInputKind(plan.StepKind(cur.NodeID)) {
+		return errNotInputCursor
 	}
 	// Replay from the route's ORIGINAL interaction_input (not the post-suspension
 	// vars) so re-running from entry is deterministic — set_var/compute before the
@@ -216,6 +226,9 @@ func (e *Endpoints) SubmitRouteInput(ctx context.Context, req api.SubmitRouteInp
 
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.input_submitted", map[string]any{"node_id": target})
 	if err := e.resumeRouteWith(ctx, tx, qtx, orgID, route, "", map[string]any{target: req.Body.Value}); err != nil {
+		if errors.Is(err, errNotInputCursor) {
+			return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "not_an_input_node"}), nil
+		}
 		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "resume_failed"}}, nil
 	}
 	if err := tx.Commit(ctx); err != nil {

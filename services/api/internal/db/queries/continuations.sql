@@ -38,5 +38,16 @@ UPDATE continuations
 SET status = 'cancelled', last_error = $4, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND claimed_by = $3;
 
+-- CancelExhaustedContinuations dead-letters rows that hit the attempt cap but
+-- were never cleanly failed (e.g. a worker crashed mid-process), so a poison row
+-- can't linger unclaimable forever once its lease expires (re-review H5).
+-- $1=now, $2=max attempts.
+-- name: CancelExhaustedContinuations :execrows
+UPDATE continuations
+SET status = 'cancelled', last_error = 'attempts exhausted', updated_at = $1
+WHERE due_at <= $1
+  AND attempt_count >= $2
+  AND (status = 'pending' OR (status = 'claimed' AND claim_expires_at < $1));
+
 -- name: GetContinuation :one
 SELECT * FROM continuations WHERE id = $1 AND org_id = $2;

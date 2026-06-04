@@ -166,3 +166,12 @@ func TestScript_PerRunSeed(t *testing.T) {
 		t.Fatalf("different input produced same RNG value %v — seed not input-derived", a.Vars["out"])
 	}
 }
+
+// string.format and string.rep are removed (allocator DoS; SetMx is unsafe).
+func TestScript_AllocatorsBlocked(t *testing.T) {
+	for _, code := range []string{`return string.rep("a", 10)`, `return string.format("%d", 1)`} {
+		if runScript(t, code, nil).Trace.Outcome != "failed" {
+			t.Fatalf("expected %q to fail (allocator removed)", code)
+		}
+	}
+}

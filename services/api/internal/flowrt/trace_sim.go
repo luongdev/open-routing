@@ -76,8 +76,11 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 		// disabled/deleted after publish is omitted so route_queue yields
 		// missing_catalog_reference instead of routing to it (review H7).
 		qrow, qerr := q.GetQueueByCode(ctx, generated.GetQueueByCodeParams{OrgID: orgID, Code: cfg.Queue})
-		if qerr != nil || !qrow.Enabled {
-			continue
+		if errors.Is(qerr, pgx.ErrNoRows) || (qerr == nil && !qrow.Enabled) {
+			continue // missing or disabled → route_queue yields missing_catalog_reference
+		}
+		if qerr != nil {
+			return nil, qerr // real DB error must not masquerade as a missing queue (re-review MED)
 		}
 		qc[cfg.Queue] = pool
 	}

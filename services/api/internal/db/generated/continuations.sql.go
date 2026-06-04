@@ -11,6 +11,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelExhaustedContinuations = `-- name: CancelExhaustedContinuations :execrows
+UPDATE continuations
+SET status = 'cancelled', last_error = 'attempts exhausted', updated_at = $1
+WHERE due_at <= $1
+  AND attempt_count >= $2
+  AND (status = 'pending' OR (status = 'claimed' AND claim_expires_at < $1))
+`
+
+type CancelExhaustedContinuationsParams struct {
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	AttemptCount int32              `json:"attempt_count"`
+}
+
+// CancelExhaustedContinuations dead-letters rows that hit the attempt cap but
+// were never cleanly failed (e.g. a worker crashed mid-process), so a poison row
+// can't linger unclaimable forever once its lease expires (re-review H5).
+// $1=now, $2=max attempts.
+func (q *Queries) CancelExhaustedContinuations(ctx context.Context, arg CancelExhaustedContinuationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelExhaustedContinuations, arg.UpdatedAt, arg.AttemptCount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const claimDueContinuations = `-- name: ClaimDueContinuations :many
 UPDATE continuations
 SET status = 'claimed', claimed_at = $1, claimed_by = $2, claim_expires_at = $3,
