@@ -194,11 +194,11 @@ type RouteRequest struct {
 	Status               string             `json:"status"`
 	FailureCode          *string            `json:"failure_code"`
 	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	ResumeCursor         []byte             `json:"resume_cursor"`
 	CurrentReservationID pgtype.UUID        `json:"current_reservation_id"`
 	RunSeq               int32              `json:"run_seq"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
 type RuntimeEvent struct {

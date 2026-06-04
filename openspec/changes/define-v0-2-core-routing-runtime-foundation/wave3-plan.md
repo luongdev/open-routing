@@ -42,12 +42,13 @@ WrapUp expiry are in `internal/state/`.
    `CompleteReservation`. Complete = reservation done + agent Engaged→WrapUp;
    the route's own status is driven by the flow run.
 
-## Additive migration 000003
-`ALTER TABLE route_requests ADD COLUMN resume_cursor JSONB,
- ADD COLUMN current_reservation_id UUID, ADD COLUMN run_seq INT NOT NULL DEFAULT 0;`
-(run_seq bumped on each suspend for cursor fencing / debugging.) Down drops them.
-`ux_reservations_route_active` (includes `completed`) is kept: **v0.2 contract =
-one terminal accepted assignment per route** (documented; transfer/consult/
+## Schema (pre-release: folded into 000001, NOT a new migration)
+The route run-lock columns live directly in the `route_requests` CREATE TABLE in
+`migrations/000001_init.up.sql`: `resume_cursor JSONB`, `current_reservation_id
+UUID`, `run_seq INTEGER NOT NULL DEFAULT 0` (run_seq bumped on each suspend for
+cursor fencing). Pre-release we keep ONE consolidated migration pair — no
+forward 000003. `ux_reservations_route_active` (includes `completed`) is kept:
+**v0.2 contract = one terminal accepted assignment per route** (transfer/consult/
 multi-reservation is v0.3 — would loosen the index).
 
 ## Cursor schema (resume_cursor JSONB)

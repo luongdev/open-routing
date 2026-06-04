@@ -270,6 +270,14 @@ CREATE TABLE route_requests (
                         CHECK (status IN ('pending','running','waiting','completed','failed','cancelled')),
     failure_code      TEXT,
     read_set_snapshot JSONB,
+    -- Live-run execution lock + resume position (Wave 3). The route_requests row
+    -- is the per-route exclusive lock: a process flips status->running before
+    -- running the executor, parks resume_cursor on suspend, and releases it.
+    -- Cursor lives here (not on continuations) to avoid the API<->worker deadlock
+    -- when an accept races a reservation timeout. run_seq fences cursor staleness.
+    resume_cursor          JSONB,
+    current_reservation_id UUID,
+    run_seq                INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- A request that has started executing must have a pinned version; flow_code
