@@ -109,24 +109,33 @@ func mapStepStatus(s string) api.TraceStepStatus {
 	}
 }
 
-// scriptedOutcomes maps the request's ordered scripted reservation outcomes to
-// the runtime driver's enum.
-func scriptedOutcomes(in *[]api.SimulateScriptedReservationOutcome) []runtime.ReservationOutcome {
+// scriptedOutcomes splits the request's scripted reservation outcomes: entries
+// WITH node_id pin that node's result port (per-node map); the rest form the
+// legacy ordered per-offer queue.
+func scriptedOutcomes(in *[]api.SimulateScriptedReservationOutcome) ([]runtime.ReservationOutcome, map[string]string) {
 	if in == nil {
-		return nil
+		return nil, nil
 	}
-	out := make([]runtime.ReservationOutcome, 0, len(*in))
+	var queue []runtime.ReservationOutcome
+	byNode := map[string]string{}
 	for _, o := range *in {
+		if o.NodeId != nil && *o.NodeId != "" {
+			byNode[*o.NodeId] = string(o.Outcome) // the result port (accepted/timeout/no_candidate)
+			continue
+		}
 		switch o.Outcome {
 		case api.Accepted:
-			out = append(out, runtime.ResvAccepted)
+			queue = append(queue, runtime.ResvAccepted)
 		case api.Timeout:
-			out = append(out, runtime.ResvTimeout)
+			queue = append(queue, runtime.ResvTimeout)
 		default:
-			out = append(out, runtime.ResvRejected)
+			queue = append(queue, runtime.ResvRejected)
 		}
 	}
-	return out
+	if len(byNode) == 0 {
+		byNode = nil
+	}
+	return queue, byNode
 }
 
 func (e *Endpoints) SimulateFlow(ctx context.Context, req api.SimulateFlowRequestObject) (api.SimulateFlowResponseObject, error) {
@@ -186,13 +195,14 @@ func (e *Endpoints) SimulateFlow(ctx context.Context, req api.SimulateFlowReques
 
 	var input map[string]any
 	var scripted []runtime.ReservationOutcome
+	var nodeOutcomes map[string]string
 	if req.Body != nil {
 		input = req.Body.InteractionInput
-		scripted = scriptedOutcomes(req.Body.ScriptedReservationOutcomes)
+		scripted, nodeOutcomes = scriptedOutcomes(req.Body.ScriptedReservationOutcomes)
 	}
 
 	trace, rErr := runtime.Simulate(ctx, e.reg, plan, runtime.SimInput{
-		Input: input, Snapshot: snapshot, ScriptedOutcomes: scripted, ClockStart: clockStart,
+		Input: input, Snapshot: snapshot, ScriptedOutcomes: scripted, NodeOutcomes: nodeOutcomes, ClockStart: clockStart,
 	})
 	if rErr != nil {
 		e.deps.Logger.ErrorContext(ctx, "simulate: run", "err", rErr)

@@ -104,6 +104,24 @@ func TestSimulate_ReservationTimeoutToFallback(t *testing.T) {
 	}
 }
 
+func TestSimulate_PerNodeScriptedOutcome(t *testing.T) {
+	// A per-node scripted outcome pins the reservation's port directly (no
+	// candidates needed), bypassing the offer loop — the per-node sim control.
+	for _, port := range []string{"accepted", "timeout", "no_candidate"} {
+		tr, err := Simulate(context.Background(), DefaultRegistry(), routingPlan(t), SimInput{
+			Snapshot:     &Snapshot{QueueCandidates: map[string][]Candidate{"q1": {}}}, // empty pool
+			NodeOutcomes: map[string]string{"rsv": port},
+			ClockStart:   time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC),
+		})
+		if err != nil {
+			t.Fatalf("simulate: %v", err)
+		}
+		if got := portOf(tr, "rsv"); got != port {
+			t.Fatalf("scripted node outcome %q → reservation port %q", port, got)
+		}
+	}
+}
+
 func TestSimulate_EmptyPoolToNoCandidateFallback(t *testing.T) {
 	// match_skill on an empty pool must NOT fail terminally — it flows to the
 	// reservation, which yields no_candidate -> fallback (review BLOCK).

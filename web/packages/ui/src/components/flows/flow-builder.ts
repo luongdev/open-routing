@@ -2135,9 +2135,9 @@ export class OrFlowBuilder extends LitElement {
   @state() private accessor _liveTrace: TraceStep[] | null = null;
   @state() private accessor _simRunning = false;
   @state() private accessor _initVars: InitVar[] = MOCK_INIT_VARS.map(v => ({ ...v }));
-  // Scripted reservation outcomes (drive reservation accepted/timeout branches in
-  // the deterministic sim), consumed in order.
-  @state() private accessor _simScripted: Array<'accepted' | 'rejected' | 'timeout'> = [];
+  // Per-node scripted reservation result (sim branch control): node id → port.
+  // Set by selecting a reservation node in sim and picking its outcome.
+  @state() private accessor _simNodeOutcomes: Record<string, 'accepted' | 'timeout' | 'no_candidate'> = {};
   // Input draft for the wait_input form. Resets each time the sim lands on a
   // wait_input step. Pre-filled with the "expected" value from the trace so
   // the demo can be stepped through without typing each time.
@@ -2688,7 +2688,7 @@ export class OrFlowBuilder extends LitElement {
     }
     this._simRunning = true;
     try {
-      const scripted = this._simScripted.map(o => ({ outcome: o }));
+      const scripted = Object.entries(this._simNodeOutcomes).map(([node_id, outcome]) => ({ node_id, outcome }));
       const res = (await this.client.POST('/v1/orgs/{org_id}/flows/{id}/simulate' as never, {
         params: { path: { org_id: this.orgId, id: this._loaded.id } },
         body: {
@@ -2716,6 +2716,35 @@ export class OrFlowBuilder extends LitElement {
     } finally {
       this._simRunning = false;
     }
+  }
+
+  // When a reservation node is selected in sim, let the user pin its branch
+  // outcome (accepted/timeout/no_candidate) — per-node sim control. Applied on
+  // the next Re-run (↺).
+  private _renderSimOutcomePicker() {
+    const id = this._selectedNodeId;
+    const node = id ? this._nodes.find(n => n.id === id) : undefined;
+    if (!node || node.kind !== 'reservation') return nothing;
+    const cur = this._simNodeOutcomes[node.id] ?? '';
+    return html`
+      <div class="form-section sim-outcome">
+        <label>
+          <span>Reservation outcome — ${node.label ?? node.kind}</span>
+          <button class="expr-mode" title="Re-run (↺) to apply"
+            @click=${() => void this._runSimulation()}>Re-run</button>
+        </label>
+        <select class="form-input"
+          @change=${(e: Event) => {
+            const v = (e.target as HTMLSelectElement).value;
+            const next = { ...this._simNodeOutcomes };
+            if (v === '') delete next[node.id];
+            else next[node.id] = v as 'accepted' | 'timeout' | 'no_candidate';
+            this._simNodeOutcomes = next;
+          }}>
+          <option value="" ?selected=${cur === ''}>— (use candidates)</option>
+          ${['accepted', 'timeout', 'no_candidate'].map(o => html`<option value=${o} ?selected=${cur === o}>${o}</option>`)}
+        </select>
+      </div>`;
   }
 
   // Build the simulation's interaction_input (the var bag) from the editable
@@ -3541,6 +3570,7 @@ export class OrFlowBuilder extends LitElement {
             @pointermove=${(e: PointerEvent) => this._onNodePointerMove(e)}
             @pointerup=${(e: PointerEvent) => this._onNodePointerUp(e)}
             @pointercancel=${(e: PointerEvent) => this._onNodePointerUp(e)}
+            @click=${() => { if (isSim) this._selectedNodeId = node.id; }}
           >
             <div class="node-card-head">
               <span class="icon-tile icon-tile--${tone}">
@@ -4136,6 +4166,7 @@ export class OrFlowBuilder extends LitElement {
                   </button>`}
               </div>
               ${!isSim && this._validation ? this._renderValidationPanel() : nothing}
+              ${isSim ? this._renderSimOutcomePicker() : nothing}
               ${isSim && this._currentStep
                 ? this._renderSimInspector(this._currentStep)
                 : this._renderInspector(selected)}
@@ -4401,32 +4432,7 @@ export class OrFlowBuilder extends LitElement {
                 />
               </div>
             `)}
-          </div>
-          <div class="run-panel-header" style="margin-top:12px">
-            <uk-icon icon="user-check" height="13" width="13"></uk-icon>
-            Reservation outcomes
-          </div>
-          <div class="initvar-list">
-            ${this._simScripted.map((o, i) => html`
-              <div class="scripted-row">
-                <span class="scripted-idx">#${i + 1}</span>
-                <select class="initvar-input" .value=${o}
-                  @change=${(e: Event) => {
-                    const val = (e.target as HTMLSelectElement).value as 'accepted' | 'rejected' | 'timeout';
-                    this._simScripted = this._simScripted.map((x, j) => (j === i ? val : x));
-                  }}>
-                  ${['accepted', 'rejected', 'timeout'].map(k => html`<option value=${k} ?selected=${o === k}>${k}</option>`)}
-                </select>
-                <button class="cond-rm" title="Remove" @click=${() => { this._simScripted = this._simScripted.filter((_, j) => j !== i); }}>
-                  <uk-icon icon="x" height="12" width="12"></uk-icon>
-                </button>
-              </div>
-            `)}
-            <button class="initvar-add" title="Script the next reservation offer's outcome"
-              @click=${() => { this._simScripted = [...this._simScripted, 'accepted']; }}>
-              <uk-icon icon="plus" height="12" width="12"></uk-icon>
-              Add outcome
-            </button>
+            <div class="initvar-hint">Click a reservation node on the canvas to script its outcome.</div>
           </div>
         </div>
 

@@ -872,13 +872,20 @@ components:
 
     SimulateScriptedReservationOutcome:
       type: object
-      description: A scripted reservation outcome for deterministic simulation (applied in order).
+      description: >
+        A scripted reservation outcome for deterministic simulation. With
+        `node_id` set it pins THAT reservation node's result port directly
+        (per-node, order-independent). Without `node_id`, entries form an ordered
+        per-offer queue (legacy).
       required:
         - outcome
       properties:
         outcome:
           type: string
-          enum: [accepted, rejected, timeout]
+          enum: [accepted, rejected, timeout, no_candidate]
+        node_id:
+          type: string
+          description: When set, this outcome is the result port of that reservation node.
         agent_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"

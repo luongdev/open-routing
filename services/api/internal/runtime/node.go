@@ -140,6 +140,10 @@ type ExecCtx interface {
 	SetCandidates(c []Candidate)
 	Snapshot() *Snapshot
 	Reserve(agentID string, timeout time.Duration) ReservationOutcome
+	// ScriptedOutcome returns a per-node scripted result PORT (accepted/timeout/
+	// no_candidate) for a reservation node id, when the simulation pinned one —
+	// so a node takes that branch directly instead of running the offer loop.
+	ScriptedOutcome(nodeID string) (string, bool)
 }
 
 // RoutingFailureCode is the typed taxonomy of routing failures. Mirrors the

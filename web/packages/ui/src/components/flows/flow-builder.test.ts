@@ -200,12 +200,15 @@ describe('OrFlowBuilder', () => {
       { key: 'age', value: '30', type: 'number', source: 'user' },
       { key: 'vip', value: 'true', type: 'boolean', source: 'user' },
     ];
-    (el as any)._simScripted = ['timeout', 'accepted'];
+    (el as any)._simNodeOutcomes = { rsv1: 'timeout', rsv2: 'accepted' };
     await (el as any)._runSimulation();
 
     const body = (mockPost.mock.calls[0] as [string, any])[1].body;
     expect(body.interaction_input).toEqual({ 'customer.tier': 'gold', age: 30, vip: true });
-    expect(body.scripted_reservation_outcomes).toEqual([{ outcome: 'timeout' }, { outcome: 'accepted' }]);
+    expect(body.scripted_reservation_outcomes).toEqual([
+      { node_id: 'rsv1', outcome: 'timeout' },
+      { node_id: 'rsv2', outcome: 'accepted' },
+    ]);
   });
 
   it('fits the viewport to the graph on load (nodes are framed, not off-screen)', async () => {

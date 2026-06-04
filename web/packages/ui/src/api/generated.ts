@@ -1694,10 +1694,12 @@ export interface components {
             version: components["schemas"]["FlowVersion"];
             binding: components["schemas"]["FlowEntryBinding"];
         };
-        /** @description A scripted reservation outcome for deterministic simulation (applied in order). */
+        /** @description A scripted reservation outcome for deterministic simulation. With `node_id` set it pins THAT reservation node's result port directly (per-node, order-independent). Without `node_id`, entries form an ordered per-offer queue (legacy). */
         SimulateScriptedReservationOutcome: {
             /** @enum {string} */
-            outcome: "accepted" | "rejected" | "timeout";
+            outcome: "accepted" | "rejected" | "timeout" | "no_candidate";
+            /** @description When set, this outcome is the result port of that reservation node. */
+            node_id?: string;
             agent_id?: components["schemas"]["UUIDv7"];
         };
         /** @description An immutable published version of a flow, created by publish. Route requests pin a flow_version_id at start; traces reference it. */

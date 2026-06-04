@@ -131,6 +131,11 @@ func (reservationNode) Execute(ctx ExecCtx, step PlanStep) (StepResult, error) {
 	if err != nil {
 		return StepResult{}, err
 	}
+	// A per-node scripted outcome pins this reservation's result port directly
+	// (the simulator's per-node branch control) — skip the offer loop.
+	if port, ok := ctx.ScriptedOutcome(step.NodeID); ok {
+		return StepResult{Port: port, Output: map[string]any{"scripted": port}}, nil
+	}
 	timeout := time.Duration(cfg.TimeoutSec) * time.Second
 	maxAttempts := reservationMaxAttempts(cfg.MaxAttempts)
 	// Working copy of the ranked pool; a rejected/timed-out candidate is removed

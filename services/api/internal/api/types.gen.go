@@ -365,15 +365,18 @@ func (e RoutingFailureCode) Valid() bool {
 
 // Defines values for SimulateScriptedReservationOutcomeOutcome.
 const (
-	Accepted SimulateScriptedReservationOutcomeOutcome = "accepted"
-	Rejected SimulateScriptedReservationOutcomeOutcome = "rejected"
-	Timeout  SimulateScriptedReservationOutcomeOutcome = "timeout"
+	Accepted    SimulateScriptedReservationOutcomeOutcome = "accepted"
+	NoCandidate SimulateScriptedReservationOutcomeOutcome = "no_candidate"
+	Rejected    SimulateScriptedReservationOutcomeOutcome = "rejected"
+	Timeout     SimulateScriptedReservationOutcomeOutcome = "timeout"
 )
 
 // Valid indicates whether the value is a known member of the SimulateScriptedReservationOutcomeOutcome enum.
 func (e SimulateScriptedReservationOutcomeOutcome) Valid() bool {
 	switch e {
 	case Accepted:
+		return true
+	case NoCandidate:
 		return true
 	case Rejected:
 		return true
@@ -1554,9 +1557,12 @@ type SimulateFlowResponse struct {
 	VirtualClockStart time.Time `json:"virtual_clock_start"`
 }
 
-// SimulateScriptedReservationOutcome A scripted reservation outcome for deterministic simulation (applied in order).
+// SimulateScriptedReservationOutcome A scripted reservation outcome for deterministic simulation. With `node_id` set it pins THAT reservation node's result port directly (per-node, order-independent). Without `node_id`, entries form an ordered per-offer queue (legacy).
 type SimulateScriptedReservationOutcome struct {
-	AgentId *UUIDv7                                   `json:"agent_id,omitempty"`
+	AgentId *UUIDv7 `json:"agent_id,omitempty"`
+
+	// NodeId When set, this outcome is the result port of that reservation node.
+	NodeId  *string                                   `json:"node_id,omitempty"`
 	Outcome SimulateScriptedReservationOutcomeOutcome `json:"outcome"`
 }
 

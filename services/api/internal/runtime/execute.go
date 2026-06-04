@@ -10,13 +10,14 @@ import (
 // on auto-resume); nodes see only the ExecCtx surface.
 type execState struct {
 	context.Context
-	clock      Clock
-	vars       map[string]any
-	events     []EmittedEvent
-	candidates []Candidate
-	snapshot   *Snapshot
-	driver     RoutingDriver
-	scopes     []map[string]any // 3D-2 loop control-var scopes (innermost last)
+	clock        Clock
+	vars         map[string]any
+	events       []EmittedEvent
+	candidates   []Candidate
+	snapshot     *Snapshot
+	driver       RoutingDriver
+	scopes       []map[string]any  // 3D-2 loop control-var scopes (innermost last)
+	nodeOutcomes map[string]string // per-node scripted reservation result port
 }
 
 type EmittedEvent struct {
@@ -53,6 +54,10 @@ func (s *execState) Reserve(agentID string, timeout time.Duration) ReservationOu
 		return ResvRejected
 	}
 	return s.driver.Reserve(s.clock, agentID, timeout)
+}
+func (s *execState) ScriptedOutcome(nodeID string) (string, bool) {
+	p, ok := s.nodeOutcomes[nodeID]
+	return p, ok
 }
 
 // TraceStep is one executed node's record: routing decision (Port), the node's
@@ -93,11 +98,12 @@ type RunResult struct {
 // in simulation it advances the (virtual) clock past the delay and continues;
 // live it parks and returns the Suspension for the continuation worker.
 type Executor struct {
-	reg        *Registry
-	autoResume bool
-	maxSteps   int
-	snapshot   *Snapshot
-	driver     RoutingDriver
+	reg          *Registry
+	autoResume   bool
+	maxSteps     int
+	snapshot     *Snapshot
+	driver       RoutingDriver
+	nodeOutcomes map[string]string
 }
 
 type ExecutorOption func(*Executor)
@@ -114,6 +120,11 @@ func WithAutoResume() ExecutorOption { return func(e *Executor) { e.autoResume =
 // empty pool and a reject-only driver.
 func WithRouting(snapshot *Snapshot, driver RoutingDriver) ExecutorOption {
 	return func(e *Executor) { e.snapshot = snapshot; e.driver = driver }
+}
+
+// WithNodeOutcomes pins per-reservation-node result ports (node id → port).
+func WithNodeOutcomes(m map[string]string) ExecutorOption {
+	return func(e *Executor) { e.nodeOutcomes = m }
 }
 
 // WithMaxSteps bounds the walk; the default guards against a cycle the
@@ -136,7 +147,7 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 	for k, v := range input {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver}
+	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes}
 	res := RunResult{Vars: vars}
 
 	// The region runner walks top-level flow (regionID "") and recurses into
