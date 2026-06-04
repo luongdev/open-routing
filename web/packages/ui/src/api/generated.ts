@@ -735,6 +735,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org_id}/route-requests/{id}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a captured value to a route waiting at an interactive-input node
+         * @description Resumes a route parked at an interactive-input node (get_dtmf, prompt_text, manual_approval, …) by supplying the captured value. The node stores it into its variable and takes the captured branch instead of timing out. The route must be in the `waiting` state.
+         */
+        post: operations["SubmitRouteInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/traces/{id}": {
         parameters: {
             query?: never;
@@ -1837,6 +1869,13 @@ export interface components {
             interaction_input?: {
                 [key: string]: unknown;
             };
+        };
+        /** @description A captured value submitted to a route waiting at an interactive-input node. */
+        SubmitRouteInput: {
+            /** @description The input node to answer. Optional — defaults to the node the route is currently parked at (its resume cursor). */
+            node_id?: string;
+            /** @description The captured value (digits, text, "approved"/"rejected", a survey score, …). */
+            value: unknown;
         };
         /** @description The interaction spine — reservations, events, and traces reference it. */
         RouteRequest: {
@@ -4165,6 +4204,53 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             /** @description Reservation is no longer offered. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    SubmitRouteInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitRouteInput"];
+            };
+        };
+        responses: {
+            /** @description Input accepted; the route resumed (run to completion or re-parked). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRequest"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Route is not waiting for input (already resumed, completed, or raced). */
             409: {
                 headers: {
                     [name: string]: unknown;

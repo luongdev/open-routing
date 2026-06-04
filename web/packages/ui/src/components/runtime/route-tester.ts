@@ -225,6 +225,8 @@ export class OrRouteTester extends LitElement {
   @state() private accessor _trace: Trace | null = null;
   @state() private accessor _actionError: string | null = null;
   @state() private accessor _busyResId: string | null = null;
+  @state() private accessor _inputValue = '';
+  @state() private accessor _submittingInput = false;
 
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _bindingsFetched = false;
@@ -510,6 +512,56 @@ export class OrRouteTester extends LitElement {
     `;
   }
 
+  private async _submitInput(): Promise<void> {
+    if (!this._route || !this.orgId || !this.client || this._submittingInput) return;
+    this._submittingInput = true;
+    this._actionError = null;
+    try {
+      const res = await this.client.POST('/v1/orgs/{org_id}/route-requests/{id}/input' as never, {
+        params: { path: { org_id: this.orgId, id: this._route.id } },
+        body: { value: this._inputValue },
+      } as never);
+      const { error } = res as { error: unknown };
+      if (error) {
+        this._actionError = (error as { reason?: string })?.reason ?? 'submit input failed';
+      } else {
+        this._inputValue = '';
+      }
+      await this._refresh();
+      if (this._route && !TERMINAL.has(this._route.status) && this._pollTimer === null) {
+        this._startPolling();
+      }
+    } finally {
+      this._submittingInput = false;
+    }
+  }
+
+  // A route waiting with no offered reservation is parked at an interactive-input
+  // (or wait) node — let the tester answer it.
+  private _renderInputCard() {
+    const r = this._route;
+    if (!r || r.status !== 'waiting') return nothing;
+    if (this._reservations.some((res) => res.state === 'offered')) return nothing; // reservation wait → handled above
+    return html`
+      <div class="card">
+        <h2 class="card-title"><uk-icon icon="message-square" width="15" height="15"></uk-icon> Waiting for input</h2>
+        <div class="field">
+          <label class="field-label">Captured value</label>
+          <input
+            .value=${this._inputValue}
+            placeholder="e.g. 1234 · approved · gold"
+            @input=${(e: Event) => { this._inputValue = (e.target as HTMLInputElement).value; }}
+            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') void this._submitInput(); }}
+          />
+          <div class="field-hint">Submitted to the node the route is parked at; it takes the captured branch.</div>
+        </div>
+        <button type="button" class="uk-button uk-button-primary" ?disabled=${this._submittingInput} @click=${() => void this._submitInput()}>
+          ${this._submittingInput ? html`<span class="spinner"></span> Submitting…` : 'Submit input'}
+        </button>
+      </div>
+    `;
+  }
+
   private _renderTraceCard() {
     if (!this._route) return nothing;
     const t = this._trace;
@@ -546,6 +598,7 @@ export class OrRouteTester extends LitElement {
         <div>${this._renderCreateCard()}</div>
         <div>
           ${this._renderRouteCard()}
+          ${this._renderInputCard()}
           ${this._renderReservationsCard()}
           ${this._renderTraceCard()}
         </div>

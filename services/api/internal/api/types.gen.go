@@ -1613,6 +1613,15 @@ type Skill struct {
 	Version   int        `json:"version"`
 }
 
+// SubmitRouteInput A captured value submitted to a route waiting at an interactive-input node.
+type SubmitRouteInput struct {
+	// NodeId The input node to answer. Optional — defaults to the node the route is currently parked at (its resume cursor).
+	NodeId *string `json:"node_id,omitempty"`
+
+	// Value The captured value (digits, text, "approved"/"rejected", a survey score, …).
+	Value interface{} `json:"value"`
+}
+
 // Trace An ordered runtime or simulation trace explaining a routing outcome.
 type Trace struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
@@ -2286,6 +2295,9 @@ type UpdateQueueJSONRequestBody = UpdateQueueRequest
 
 // CreateRouteRequestJSONRequestBody defines body for CreateRouteRequest for application/json ContentType.
 type CreateRouteRequestJSONRequestBody = CreateRouteRequest
+
+// SubmitRouteInputJSONRequestBody defines body for SubmitRouteInput for application/json ContentType.
+type SubmitRouteInputJSONRequestBody = SubmitRouteInput
 
 // CreateSkillJSONRequestBody defines body for CreateSkill for application/json ContentType.
 type CreateSkillJSONRequestBody = CreateSkillRequest

@@ -181,6 +181,9 @@ type ServerInterface interface {
 	// Get a route request by ID
 	// (GET /v1/orgs/{org_id}/route-requests/{id})
 	GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Submit a captured value to a route waiting at an interactive-input node
+	// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
+	SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// List the reservations a route request generated (sequential offers)
 	// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
 	ListRouteRequestReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
@@ -532,6 +535,12 @@ func (_ Unimplemented) CreateRouteRequest(w http.ResponseWriter, r *http.Request
 // Get a route request by ID
 // (GET /v1/orgs/{org_id}/route-requests/{id})
 func (_ Unimplemented) GetRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a captured value to a route waiting at an interactive-input node
+// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
+func (_ Unimplemented) SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2978,6 +2987,47 @@ func (siw *ServerInterfaceWrapper) GetRouteRequest(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// SubmitRouteInput operation middleware
+func (siw *ServerInterfaceWrapper) SubmitRouteInput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitRouteInput(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRouteRequestReservations operation middleware
 func (siw *ServerInterfaceWrapper) ListRouteRequestReservations(w http.ResponseWriter, r *http.Request) {
 
@@ -3617,6 +3667,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}", wrapper.GetRouteRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/input", wrapper.SubmitRouteInput)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/reservations", wrapper.ListRouteRequestReservations)
@@ -7169,6 +7222,74 @@ func (response GetRouteRequest500JSONResponse) VisitGetRouteRequestResponse(w ht
 	return err
 }
 
+type SubmitRouteInputRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+	Body  *SubmitRouteInputJSONRequestBody
+}
+
+type SubmitRouteInputResponseObject interface {
+	VisitSubmitRouteInputResponse(w http.ResponseWriter) error
+}
+
+type SubmitRouteInput200JSONResponse RouteRequest
+
+func (response SubmitRouteInput200JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitRouteInput404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SubmitRouteInput404JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitRouteInput409JSONResponse ErrorResponse
+
+func (response SubmitRouteInput409JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitRouteInput500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response SubmitRouteInput500JSONResponse) VisitSubmitRouteInputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRouteRequestReservationsRequestObject struct {
 	OrgId OrgIdPath    `json:"org_id"`
 	Id    EntityIdPath `json:"id"`
@@ -7845,6 +7966,9 @@ type StrictServerInterface interface {
 	// Get a route request by ID
 	// (GET /v1/orgs/{org_id}/route-requests/{id})
 	GetRouteRequest(ctx context.Context, request GetRouteRequestRequestObject) (GetRouteRequestResponseObject, error)
+	// Submit a captured value to a route waiting at an interactive-input node
+	// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
+	SubmitRouteInput(ctx context.Context, request SubmitRouteInputRequestObject) (SubmitRouteInputResponseObject, error)
 	// List the reservations a route request generated (sequential offers)
 	// (GET /v1/orgs/{org_id}/route-requests/{id}/reservations)
 	ListRouteRequestReservations(ctx context.Context, request ListRouteRequestReservationsRequestObject) (ListRouteRequestReservationsResponseObject, error)
@@ -9461,6 +9585,40 @@ func (sh *strictHandler) GetRouteRequest(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetRouteRequestResponseObject); ok {
 		if err := validResponse.VisitGetRouteRequestResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitRouteInput operation middleware
+func (sh *strictHandler) SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request SubmitRouteInputRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	var body SubmitRouteInputJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitRouteInput(ctx, request.(SubmitRouteInputRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitRouteInput")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitRouteInputResponseObject); ok {
+		if err := validResponse.VisitSubmitRouteInputResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

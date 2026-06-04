@@ -96,6 +96,14 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 // offerer excludes agents already offered on this route, so a reject/timeout
 // re-offers a fresh agent.
 func (e *Endpoints) resumeRoute(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID uuid.UUID, route generated.RouteRequest, signal string) error {
+	return e.resumeRouteWith(ctx, tx, qtx, orgID, route, signal, nil)
+}
+
+// resumeRouteWith is resumeRoute plus per-node captured input values: a live
+// submit to an interactive-input node passes {nodeID: value} so that node takes
+// its captured branch on the re-run instead of timing out. nil for agent/timer
+// resumes.
+func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID uuid.UUID, route generated.RouteRequest, signal string, scriptedInputs map[string]any) error {
 	fv, err := qtx.GetFlowVersion(ctx, generated.GetFlowVersionParams{ID: route.FlowVersionID, OrgID: pgUUID(orgID)})
 	if err != nil {
 		return err
@@ -140,12 +148,71 @@ func (e *Endpoints) resumeRoute(ctx context.Context, tx *db.OrgTx, qtx *generate
 		}
 	}
 	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, excluded: excluded, attempt: maxAttempt}
-	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer))
+	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs))
 	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, input)
 	if err != nil {
 		return err
 	}
 	return e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, offerer, res)
+}
+
+// SubmitRouteInput answers a route parked at an interactive-input node: it locks
+// the route, injects the captured value for the target node (the body's node_id
+// or the resume cursor), and resumes — the input node takes its captured branch
+// instead of timing out. 409 when the route is not waiting.
+func (e *Endpoints) SubmitRouteInput(ctx context.Context, req api.SubmitRouteInputRequestObject) (api.SubmitRouteInputResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	if req.Body == nil {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "missing_body"}), nil
+	}
+	routeID := uuid.UUID(req.Id)
+	tx, err := e.deps.OrgDB.BeginTx(ctx)
+	if err != nil {
+		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "tx_begin_failed"}}, nil
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := generated.New(tx)
+
+	// Lock the route: pending/waiting → running. 0 rows ⇒ not waiting (already
+	// resumed, completed, or raced) → 409.
+	route, err := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "route_not_waiting"}), nil
+	}
+	if err != nil {
+		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "route_lock_failed"}}, nil
+	}
+
+	target := ""
+	if req.Body.NodeId != nil {
+		target = *req.Body.NodeId
+	}
+	if target == "" {
+		var cur runtime.ResumeCursor
+		if len(route.ResumeCursor) > 0 {
+			_ = json.Unmarshal(route.ResumeCursor, &cur)
+		}
+		target = cur.NodeID
+	}
+	if target == "" {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "no_parked_input_node"}), nil
+	}
+
+	e.appendEvent(ctx, qtx, orgID, routeID, "route.input_submitted", map[string]any{"node_id": target})
+	if err := e.resumeRouteWith(ctx, tx, qtx, orgID, route, "", map[string]any{target: req.Body.Value}); err != nil {
+		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "resume_failed"}}, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
+	}
+	row, err := generated.New(e.deps.OrgDB).GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if err != nil {
+		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "reload_failed"}}, nil
+	}
+	return api.SubmitRouteInput200JSONResponse(mapRouteRequest(row)), nil
 }
 
 // resolveReservation is the shared accept/reject body: acquire the route lock,

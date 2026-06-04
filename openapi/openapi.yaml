@@ -1171,6 +1171,20 @@ components:
           type: object
           additionalProperties: true
 
+    SubmitRouteInput:
+      type: object
+      description: A captured value submitted to a route waiting at an interactive-input node.
+      required:
+        - value
+      properties:
+        node_id:
+          type: string
+          description: >
+            The input node to answer. Optional — defaults to the node the route is
+            currently parked at (its resume cursor).
+        value:
+          description: The captured value (digits, text, "approved"/"rejected", a survey score, …).
+
     RouteRequest:
       type: object
       description: The interaction spine — reservations, events, and traces reference it.
@@ -3740,6 +3754,45 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: Reservation is no longer offered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}/input:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: SubmitRouteInput
+      summary: Submit a captured value to a route waiting at an interactive-input node
+      description: >
+        Resumes a route parked at an interactive-input node (get_dtmf,
+        prompt_text, manual_approval, …) by supplying the captured value. The
+        node stores it into its variable and takes the captured branch instead of
+        timing out. The route must be in the `waiting` state.
+      security:
+        - OrgHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRouteInput"
+      responses:
+        "200":
+          description: Input accepted; the route resumed (run to completion or re-parked).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Route is not waiting for input (already resumed, completed, or raced).
           content:
             application/json:
               schema:
