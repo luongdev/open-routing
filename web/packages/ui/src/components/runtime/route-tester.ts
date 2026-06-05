@@ -10,7 +10,7 @@ import { when } from 'lit/directives/when.js';
 import type { ApiClient } from '../../api/client.js';
 import { adoptShadowSheets } from '../../styles/shadow-sheets.js';
 
-type RouteStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled';
+type RouteStatus = 'pending' | 'running' | 'waiting' | 'waiting_match' | 'offering' | 'completed' | 'failed' | 'cancelled';
 type ReservationState = 'offered' | 'accepted' | 'rejected' | 'timeout' | 'cancelled' | 'completed';
 
 interface RouteRequest {
@@ -63,11 +63,15 @@ interface FlowEntryBinding {
 const ROUTE_PILL: Record<RouteStatus, { bg: string; text: string }> = {
   pending: { bg: 'var(--muted)', text: 'var(--muted-foreground)' },
   running: { bg: 'color-mix(in oklch, oklch(0.55 0.2 250) 14%, transparent)', text: 'oklch(0.4 0.2 250)' },
-  waiting: { bg: 'color-mix(in oklch, oklch(0.75 0.18 80) 18%, transparent)', text: 'oklch(0.5 0.18 80)' },
+  waiting: { bg: 'color-mix(in oklch, oklch(0.6 0.16 220) 16%, transparent)', text: 'oklch(0.42 0.16 220)' },
+  waiting_match: { bg: 'color-mix(in oklch, oklch(0.75 0.18 80) 18%, transparent)', text: 'oklch(0.5 0.18 80)' },
+  offering: { bg: 'color-mix(in oklch, oklch(0.7 0.16 300) 18%, transparent)', text: 'oklch(0.46 0.16 300)' },
   completed: { bg: 'color-mix(in oklch, oklch(0.65 0.18 145) 18%, transparent)', text: 'oklch(0.45 0.18 145)' },
   failed: { bg: 'color-mix(in oklch, var(--destructive) 12%, transparent)', text: 'var(--destructive)' },
   cancelled: { bg: 'var(--muted)', text: 'var(--muted-foreground)' },
 };
+
+const FALLBACK_PILL = { bg: 'var(--muted)', text: 'var(--muted-foreground)' };
 
 const RES_PILL: Record<ReservationState, { bg: string; text: string }> = {
   offered: { bg: 'color-mix(in oklch, oklch(0.75 0.18 80) 18%, transparent)', text: 'oklch(0.5 0.18 80)' },
@@ -451,7 +455,7 @@ export class OrRouteTester extends LitElement {
     if (!r) {
       return html`<div class="card"><div class="empty">No route yet — create one to see status, reservations, and the trace.</div></div>`;
     }
-    const pill = ROUTE_PILL[r.status];
+    const pill = ROUTE_PILL[r.status] ?? FALLBACK_PILL;
     const polling = this._pollTimer !== null;
     return html`
       <div class="card">
@@ -487,7 +491,7 @@ export class OrRouteTester extends LitElement {
   }
 
   private _renderReservationRow(res: Reservation) {
-    const pill = RES_PILL[res.state];
+    const pill = RES_PILL[res.state] ?? FALLBACK_PILL;
     const busy = this._busyResId === res.id;
     return html`
       <div class="res-row">
