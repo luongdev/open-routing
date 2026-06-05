@@ -337,6 +337,62 @@ func (q *Queries) ListOfferedAgentsForRoute(ctx context.Context, arg ListOffered
 	return items, nil
 }
 
+const listReclaimableAcceptedReservations = `-- name: ListReclaimableAcceptedReservations :many
+SELECT r.id, r.org_id, r.route_request_id, r.agent_id
+FROM reservations r
+WHERE r.state = 'accepted'
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_sessions s
+    WHERE s.org_id = r.org_id AND s.agent_id = r.agent_id AND s.last_seen_at > $1
+  )
+ORDER BY r.updated_at ASC
+LIMIT $2
+`
+
+type ListReclaimableAcceptedReservationsParams struct {
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	Limit      int32              `json:"limit"`
+}
+
+type ListReclaimableAcceptedReservationsRow struct {
+	ID             pgtype.UUID `json:"id"`
+	OrgID          pgtype.UUID `json:"org_id"`
+	RouteRequestID pgtype.UUID `json:"route_request_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+}
+
+// ListReclaimableAcceptedReservations finds accepted reservations (a live call)
+// whose agent has not been seen on ANY session since $1 (now - reclaim grace) —
+// i.e. the agent vanished mid-call and the capacity slot is stuck held. Grace on
+// last_seen_at (not terminated_at) so a brief WS blip+reconnect refreshes a new
+// session before the cutoff and is NOT reclaimed (the W5 "no reject on a blip"
+// principle, extended to confirmed calls). Cross-org (raw pool); the per-route
+// reclaim re-scopes + re-fences under org.
+func (q *Queries) ListReclaimableAcceptedReservations(ctx context.Context, arg ListReclaimableAcceptedReservationsParams) ([]ListReclaimableAcceptedReservationsRow, error) {
+	rows, err := q.db.Query(ctx, listReclaimableAcceptedReservations, arg.LastSeenAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReclaimableAcceptedReservationsRow{}
+	for rows.Next() {
+		var i ListReclaimableAcceptedReservationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.RouteRequestID,
+			&i.AgentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReservationsByRoute = `-- name: ListReservationsByRoute :many
 SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at FROM reservations
 WHERE org_id = $1 AND route_request_id = $2
@@ -382,6 +438,44 @@ func (q *Queries) ListReservationsByRoute(ctx context.Context, arg ListReservati
 		return nil, err
 	}
 	return items, nil
+}
+
+const reclaimStaleAcceptedReservation = `-- name: ReclaimStaleAcceptedReservation :one
+UPDATE reservations r
+SET state = 'cancelled', reason = 'agent_lost', resolved_at = NOW(), updated_at = NOW()
+WHERE r.id = $1 AND r.org_id = $2 AND r.state = 'accepted'
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_sessions s
+    WHERE s.org_id = r.org_id AND s.agent_id = r.agent_id AND s.last_seen_at > $3
+  )
+RETURNING r.route_request_id, r.agent_id, r.adapter_handle
+`
+
+type ReclaimStaleAcceptedReservationParams struct {
+	ID         pgtype.UUID        `json:"id"`
+	OrgID      pgtype.UUID        `json:"org_id"`
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+}
+
+type ReclaimStaleAcceptedReservationRow struct {
+	RouteRequestID pgtype.UUID `json:"route_request_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+	AdapterHandle  *string     `json:"adapter_handle"`
+}
+
+// ReclaimStaleAcceptedReservation is the atomic per-call fence + flip: cancel the
+// reservation (freeing its capacity slot) ONLY if it is still accepted AND the
+// agent is still unseen since $3. The conditional UPDATE row-locks, so two racing
+// reclaims or an agent that reconnected (its new session's last_seen_at > $3)
+// yield 0 rows ⇒ no-op. RETURNING carries what the post-flip cleanup needs (the
+// route to maybe tear down, the agent to move out of Engaged, the adapter handle
+// to release). Reclaim is reservation-scoped, not route-scoped, because a route
+// can be terminal while its accepted reservation still holds the live call's slot.
+func (q *Queries) ReclaimStaleAcceptedReservation(ctx context.Context, arg ReclaimStaleAcceptedReservationParams) (ReclaimStaleAcceptedReservationRow, error) {
+	row := q.db.QueryRow(ctx, reclaimStaleAcceptedReservation, arg.ID, arg.OrgID, arg.LastSeenAt)
+	var i ReclaimStaleAcceptedReservationRow
+	err := row.Scan(&i.RouteRequestID, &i.AgentID, &i.AdapterHandle)
+	return i, err
 }
 
 const rejectReservation = `-- name: RejectReservation :one

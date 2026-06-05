@@ -30,7 +30,11 @@ decision-trace requirements.
       runtime-owned transactional handlers (review HIGH).
 - [x] Outbound push from the durable reservation row; reconnect replays an
       in-flight offer; ack + server-side dedupe so replay can't double-apply.
-- [ ] Backpressure + per-org connection caps; structured logs + metrics.
+- [x] Backpressure + per-org connection caps; structured logs + metrics.
+      (Backpressure: enqueue drops a slow consumer → reconnect+replay. Caps:
+      WS_MAX_CONNS_PER_ORG per gateway instance, 429 before upgrade. Metrics:
+      internal/metrics registry on /metrics — ws conns/overflow/commands +
+      matcher offers/reclaims.)
 - [x] Tests: connect, offer push, accept upstream, reconnect-replays-offer,
       duplicate-command-deduped, queue/skill authz on command.
 
@@ -50,9 +54,14 @@ decision-trace requirements.
       live→sim fallback; presence error parks the route (review BLOCK/HIGH).
 - [x] Tests: disconnected removes offerability, capacity gating, concurrent
       acquire = exactly N (chat), sweep/reconcile, accept-confirm/complete-release.
-- [ ] FOLLOW-UP (W5): confirmed-slot reclaim for an agent who crashed mid-call
-      (reservation stuck 'accepted') — presence-loss → RONA/abandonment, built on
-      the W3 lease. Not reclaimed by the W3 terminal-orphan reconcile by design.
+- [x] Confirmed-slot reclaim for an agent who vanished mid-call (reservation
+      stuck 'accepted'): the matcher tick reclaims when the agent is unseen on any
+      session past reclaimGrace (90s, aligned to presence TTL) — grace on
+      last_seen_at so a blip+reconnect is NOT reclaimed. Reservation-scoped (a
+      route can be terminal while its accepted reservation still holds the slot):
+      cancel reservation (agent_lost) → free slot → agent out of Engaged → tear the
+      route down if still live. Auto-reassign to another agent is adapter/media-
+      coupled → v0.4.
 
 ## Wave 4 — The matcher (the engine)
 

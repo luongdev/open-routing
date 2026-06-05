@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -27,6 +28,7 @@ type Config struct {
 	ValidationMode     string   // ORGDB_VALIDATION_MODE — default "panic"; accepts "error" (D-02)
 	CORSAllowedOrigins []string // CORS_ALLOWED_ORIGINS — comma-separated list of origins (D7-16)
 	MatcherEnabled     bool     // MATCHER_ENABLED — default false; v0.3 W4 queue+matcher (park on no agent → matcher pull) instead of offer-now-or-fallback
+	WSMaxConnsPerOrg   int      // WS_MAX_CONNS_PER_ORG — default 500; per-org agent WS connection cap on one gateway instance (0 ⇒ unlimited)
 }
 
 // Load reads every environment variable, validates defaults / enums, and
@@ -75,6 +77,11 @@ func Load() (*Config, error) {
 		}
 	}
 
+	wsMaxConns, err := getEnvIntOrDefault("WS_MAX_CONNS_PER_ORG", 500)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -89,6 +96,7 @@ func Load() (*Config, error) {
 		ValidationMode:     validationMode,
 		CORSAllowedOrigins: corsAllowedOrigins,
 		MatcherEnabled:     getEnvOrDefault("MATCHER_ENABLED", "false") == "true",
+		WSMaxConnsPerOrg:   wsMaxConns,
 	}, nil
 }
 
@@ -118,4 +126,17 @@ func getEnvOrDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// getEnvIntOrDefault parses a non-negative int env var, returning def if unset.
+func getEnvIntOrDefault(key string, def int) (int, error) {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("config: %s must be a non-negative integer, got %q", key, v)
+	}
+	return n, nil
 }

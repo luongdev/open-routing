@@ -8,11 +8,15 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
+	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
+	"github.com/luongdev/open-routing/services/api/internal/metrics"
 )
 
 // matcher.go is the availability-driven pull: for each available agent (Ready +
@@ -31,6 +35,11 @@ const (
 	matcherWeightAge     = 1.0
 	matcherOfferExpiry   = 20 * time.Second // RONA ring window before the timeout sweep re-queues
 	staleOfferingTimeout = 30 * time.Second // an 'offering' route older than this lost its worker → re-token
+	// reclaimGrace is how long an agent may go unseen (no session heartbeat) while
+	// holding an accepted call before the slot is reclaimed and the call torn down.
+	// Aligned with presence.DefaultTTL (90s) so a normal heartbeat cadence + one
+	// missed beat never trips it — only a genuine mid-call vanish does.
+	reclaimGrace = 90 * time.Second
 )
 
 // matcherBatch is the per-tick cap on agents/orgs/expired routes, configurable via
@@ -50,6 +59,25 @@ func (e *Endpoints) matcherBatch() int32 {
 // offers attached this tick.
 func (e *Endpoints) RunMatcher(ctx context.Context, pool *pgxpool.Pool, matcherInstance string, now time.Time) (int, error) {
 	rawq := generated.New(pool)
+
+	// 0. Confirmed-slot reclaim: an agent who vanished mid-call (unseen on any
+	//    session past reclaimGrace) leaves a reservation stuck 'accepted' holding a
+	//    capacity slot forever. Tear the route down + free the slot so capacity and
+	//    the interaction aren't lost. Auto-reassign to another agent is adapter/
+	//    media-coupled (v0.4) — v0.3 abandons the dropped call. The cutoff captured
+	//    here is reused by each per-route fence so a reconnect after this point wins.
+	reclaimCutoff := ts(now.Add(-reclaimGrace))
+	stale, err := rawq.ListReclaimableAcceptedReservations(ctx, generated.ListReclaimableAcceptedReservationsParams{
+		LastSeenAt: reclaimCutoff, Limit: e.matcherBatch(),
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, s := range stale {
+		if rErr := e.reclaimAbandonedCall(ctx, apiUUID(s.OrgID), apiUUID(s.RouteRequestID), apiUUID(s.ID), reclaimCutoff); rErr != nil {
+			e.deps.Logger.ErrorContext(ctx, "confirmed-slot reclaim failed", "org_id", apiUUID(s.OrgID), "route_id", apiUUID(s.RouteRequestID), "reservation_id", apiUUID(s.ID), "err", rErr)
+		}
+	}
 
 	// 1. Stale-offering recovery: re-token so the crashed worker's CommitMatchOffer
 	//    (fenced on the old token) can't land; the route returns to waiting_match.
@@ -112,6 +140,79 @@ func (e *Endpoints) fallbackExpiredRoute(ctx context.Context, orgID, routeID uui
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// reclaimAbandonedCall frees the stuck capacity slot of ONE call whose agent
+// vanished. The fenced flip (still-accepted AND still-unseen) makes it a no-op if
+// the agent reconnected or the call completed between discovery and here, so a
+// momentary blip never kills a live call. It is reservation-scoped, not route-
+// scoped: a route can already be terminal while its accepted reservation still
+// holds the live call's slot, so we release the slot + move the (gone) agent out
+// of Engaged regardless of route state, and additionally tear the route down only
+// if it is still live (a parked call-handling route can't continue agent-less).
+// Auto-reassign to another agent is adapter/media-coupled → v0.4.
+func (e *Endpoints) reclaimAbandonedCall(ctx context.Context, orgID, routeID, resID uuid.UUID, cutoff pgtype.Timestamptz) error {
+	ctx = orgkey.SetOrgID(ctx, orgID)
+	tx, err := e.deps.OrgDB.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := generated.New(tx)
+
+	rec, err := qtx.ReclaimStaleAcceptedReservation(ctx, generated.ReclaimStaleAcceptedReservationParams{
+		ID: pgUUID(resID), OrgID: pgUUID(orgID), LastSeenAt: cutoff,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // reservation resolved or agent returned → no-op
+	}
+	if err != nil {
+		return err
+	}
+
+	if e.deps.Capacity != nil {
+		if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); rErr != nil {
+			return rErr
+		}
+	}
+	wrapUp := string(api.AgentStatusWrapUp)
+	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
+	if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+		AgentID: rec.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	// Tear the route down if still live; if already terminal, just fetch its channel
+	// for the adapter release. Either way the slot above is freed.
+	var channel string
+	routeRow, aErr := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	switch {
+	case aErr == nil:
+		channel = routeRow.Channel
+	case errors.Is(aErr, pgx.ErrNoRows):
+		rr, gErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+		if gErr != nil {
+			return gErr
+		}
+		channel = rr.Channel
+	default:
+		return aErr
+	}
+	e.appendEvent(ctx, qtx, orgID, routeID, "route.agent_lost", map[string]any{
+		"reservation_id": resID.String(), "agent_id": apiUUID(rec.AgentID).String(),
+	})
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	var handles []string
+	if rec.AdapterHandle != nil && *rec.AdapterHandle != "" {
+		handles = []string{*rec.AdapterHandle}
+	}
+	e.releaseAssignments(ctx, channel, handles, adapter.ReleaseCancelled)
+	metrics.MatcherReclaims.Inc()
+	return nil
 }
 
 // RunMatchCycle runs one availability-driven pass for a single org: list the
@@ -263,6 +364,7 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 	if err := tx.Commit(ctx); err != nil {
 		return false, err
 	}
+	metrics.MatcherOffers.Inc()
 	return true, nil
 }
 

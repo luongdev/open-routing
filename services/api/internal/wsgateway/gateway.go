@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -17,6 +18,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
+	"github.com/luongdev/open-routing/services/api/internal/metrics"
 	"github.com/luongdev/open-routing/services/api/internal/presence"
 )
 
@@ -33,15 +35,52 @@ type Deps struct {
 	Presence  presence.Store // optional connection lease (nil ⇒ no presence tracking)
 	Logger    *slog.Logger
 	GatewayID string
+	// MaxConnsPerOrg caps concurrent agent connections per org on THIS gateway
+	// instance (0 ⇒ unlimited). A blunt safety valve against one org exhausting
+	// the gateway's goroutines/sockets; per-replica, not a global quota.
+	MaxConnsPerOrg int
 }
 
-type Gateway struct{ d Deps }
+type Gateway struct {
+	d     Deps
+	mu    sync.Mutex
+	conns map[uuid.UUID]int // org → open connection count (this instance)
+}
 
 func New(d Deps) *Gateway {
 	if d.GatewayID == "" {
 		d.GatewayID = "gw"
 	}
-	return &Gateway{d: d}
+	return &Gateway{d: d, conns: map[uuid.UUID]int{}}
+}
+
+// acquireSlot reserves a per-org connection slot, returning false when the org is
+// at its cap. releaseSlot returns it. Both are no-ops when MaxConnsPerOrg<=0.
+func (g *Gateway) acquireSlot(org uuid.UUID) bool {
+	if g.d.MaxConnsPerOrg <= 0 {
+		return true
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.conns[org] >= g.d.MaxConnsPerOrg {
+		return false
+	}
+	g.conns[org]++
+	return true
+}
+
+func (g *Gateway) releaseSlot(org uuid.UUID) {
+	if g.d.MaxConnsPerOrg <= 0 {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.conns[org] > 0 {
+		g.conns[org]--
+	}
+	if g.conns[org] == 0 {
+		delete(g.conns, org)
+	}
 }
 
 const (
@@ -71,10 +110,21 @@ func (g *Gateway) Handler() http.HandlerFunc {
 			http.Error(w, "missing or invalid X-Agent-Id", http.StatusBadRequest)
 			return
 		}
+		// Cap BEFORE the upgrade so an over-cap org gets a plain 429, not a socket
+		// that's immediately closed (cheaper, and the client sees a clear status).
+		if !g.acquireSlot(orgID) {
+			metrics.WSConnectionsRejected.Inc()
+			http.Error(w, "too many connections for org", http.StatusTooManyRequests)
+			return
+		}
+		defer g.releaseSlot(orgID)
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return // Accept already wrote the response
 		}
+		metrics.WSConnectionsTotal.Inc()
+		metrics.WSConnectionsActive.Inc()
+		defer metrics.WSConnectionsActive.Dec()
 		ctx := orgkey.SetOrgID(context.WithoutCancel(r.Context()), orgID)
 		g.serve(ctx, conn, orgID, agentID)
 	}
@@ -138,6 +188,7 @@ func (g *Gateway) enqueue(ctx context.Context, cancel context.CancelFunc, send c
 	case send <- msg:
 		return true
 	default:
+		metrics.WSRelayOverflow.Inc()
 		cancel() // overflow → drop the connection (review: close, rely on replay)
 		return false
 	}
@@ -229,15 +280,18 @@ func (g *Gateway) readLoop(ctx context.Context, cancel context.CancelFunc, conn 
 }
 
 func (g *Gateway) handleCommand(ctx context.Context, cancel context.CancelFunc, send chan<- Outbound, orgID, agentID, sessionID uuid.UUID, in Inbound) {
+	metrics.WSCommandsTotal.Inc()
 	ack := Outbound{Type: TypeAck, ReplyTo: in.ID}
 	cmdID, err := uuid.Parse(in.ID)
 	if err != nil {
+		metrics.WSCommandErrors.Inc()
 		ack.Type, ack.Reason = TypeError, "bad message id"
 		g.enqueue(ctx, cancel, send, ack)
 		return
 	}
 	resID, err := uuid.Parse(in.Reservation)
 	if err != nil {
+		metrics.WSCommandErrors.Inc()
 		ack.Type, ack.Reason = TypeError, "bad reservation id"
 		g.enqueue(ctx, cancel, send, ack)
 		return
@@ -249,6 +303,7 @@ func (g *Gateway) handleCommand(ctx context.Context, cancel context.CancelFunc, 
 	sum := sha256.Sum256([]byte(in.Type + "|" + in.Reservation + "|" + in.LeaseToken))
 	res, err := g.d.Cmd.ExecuteAgentCommand(ctx, orgID, agentID, sessionID, cmdID, resID, in.LeaseToken, flowrt.AgentCommandKind(in.Type), hex.EncodeToString(sum[:]))
 	if err != nil {
+		metrics.WSCommandErrors.Inc()
 		ack.Type, ack.Reason = TypeError, "command failed"
 		g.enqueue(ctx, cancel, send, ack)
 		return

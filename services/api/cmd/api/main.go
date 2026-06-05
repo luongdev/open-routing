@@ -259,10 +259,11 @@ func run() int {
 	// v0.3 W2/W3: agent WebSocket gateway (transport over the runtime command
 	// service) + W3 connection-lease presence (Redis-primary).
 	wsGateway := wsgateway.New(wsgateway.Deps{
-		OrgDB:    orgDB,
-		Cmd:      flowrtEndpoints,
-		Presence: presenceStore,
-		Logger:   slog.Default(),
+		OrgDB:          orgDB,
+		Cmd:            flowrtEndpoints,
+		Presence:       presenceStore,
+		Logger:         slog.Default(),
+		MaxConnsPerOrg: cfg.WSMaxConnsPerOrg,
 	})
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).

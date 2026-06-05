@@ -290,3 +290,44 @@ func TestGateway_RejectsMissingAgent(t *testing.T) {
 		t.Fatal("dial without X-Agent-Id should fail")
 	}
 }
+
+func TestGateway_ConnSlotCapPerOrg(t *testing.T) {
+	g := New(Deps{MaxConnsPerOrg: 2})
+	orgA := uuid.Must(uuid.NewV7())
+	orgB := uuid.Must(uuid.NewV7())
+
+	if !g.acquireSlot(orgA) || !g.acquireSlot(orgA) {
+		t.Fatal("first two slots for orgA must be granted")
+	}
+	if g.acquireSlot(orgA) {
+		t.Fatal("third slot for orgA must be rejected (cap=2)")
+	}
+	// A different org has its own budget.
+	if !g.acquireSlot(orgB) {
+		t.Fatal("orgB must not be affected by orgA's cap")
+	}
+	// Releasing frees a slot; the map entry is dropped at zero.
+	g.releaseSlot(orgA)
+	if !g.acquireSlot(orgA) {
+		t.Fatal("a released slot must be reusable")
+	}
+	g.releaseSlot(orgA)
+	g.releaseSlot(orgA)
+	g.releaseSlot(orgA) // extra release must not underflow
+	g.mu.Lock()
+	_, present := g.conns[orgA]
+	g.mu.Unlock()
+	if present {
+		t.Fatal("orgA entry must be deleted once it returns to zero")
+	}
+}
+
+func TestGateway_ConnCapUnlimitedWhenZero(t *testing.T) {
+	g := New(Deps{MaxConnsPerOrg: 0})
+	org := uuid.Must(uuid.NewV7())
+	for i := 0; i < 1000; i++ {
+		if !g.acquireSlot(org) {
+			t.Fatalf("cap=0 means unlimited; rejected at %d", i)
+		}
+	}
+}
