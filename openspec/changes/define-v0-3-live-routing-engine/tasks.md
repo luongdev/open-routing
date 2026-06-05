@@ -7,31 +7,31 @@ decision-trace requirements.
 
 ## Wave 0 — v0.2 hardening (prerequisite)
 
-- [ ] Land the FIX-NOW batch from the v0.2 review (`v0.2-review-findings.md`):
+- [x] Land the FIX-NOW batch from the v0.2 review (`v0.2-review-findings.md`):
       run_seq fence, Lua sandbox, region-suspension reject, branch-port validation,
       accept guards, worker poison-pill, snapshot enabled filter, etc. The live
       lifecycle builds on this base.
 
 ## Wave 1 — Channel-neutral assignment contract (review: before lifecycle)
 
-- [ ] Channel-neutral assignment-event contract: Deliver(interaction, agent) ->
+- [x] Channel-neutral assignment-event contract: Deliver(interaction, agent) ->
       opaque handle + events accepted -> connecting -> established ->
       (completed | failed | disconnected | caller_abandoned), idempotent with
       correlation. Handle opaque to the engine (chat/email fit later).
-- [ ] Mock voice adapter driving that lifecycle without media.
-- [ ] Tests: adapter event mapping incl. caller_abandoned + failed.
+- [x] Mock voice adapter driving that lifecycle without media.
+- [x] Tests: adapter event mapping incl. caller_abandoned + failed.
 
 ## Wave 2 — Realtime transport (WS gateway)
 
-- [ ] WS message envelope (reuse v0.2 canonical event shape) with per-message ids;
+- [x] WS message envelope (reuse v0.2 canonical event shape) with per-message ids;
       accept/reject/complete carry reservation version/lease token.
-- [ ] Gateway in cmd/api: scoped agent identity + org binding + session revocation;
+- [x] Gateway in cmd/api: scoped agent identity + org binding + session revocation;
       heartbeat/ping; graceful close. Gateway only transports; commands run through
       runtime-owned transactional handlers (review HIGH).
-- [ ] Outbound push from the durable reservation row; reconnect replays an
+- [x] Outbound push from the durable reservation row; reconnect replays an
       in-flight offer; ack + server-side dedupe so replay can't double-apply.
 - [ ] Backpressure + per-org connection caps; structured logs + metrics.
-- [ ] Tests: connect, offer push, accept upstream, reconnect-replays-offer,
+- [x] Tests: connect, offer push, accept upstream, reconnect-replays-offer,
       duplicate-command-deduped, queue/skill authz on command.
 
 ## Wave 3 — Lease presence & DB-solid capacity
