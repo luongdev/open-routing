@@ -129,10 +129,20 @@ decision-trace requirements.
       oldest-wait SLA age, held slots, and a recent-route-requests feed, polling
       2s. Rich rates (offers/sec, accept latency, reject reasons, route-decision
       p95) remain additive.
-- [ ] Protocol contract tests: golden WS schema + reconnect / duplicate-command /
-      timeout / stale-offer fixtures.
-- [ ] OpenAPI/WS schema + migrations (fold into the single pre-release migration);
-      sqlc + Go/TS regen drift gates; org-scoping on every new table/query/session.
+- [x] Per-route event timeline: GET /v1/orgs/{org_id}/route-requests/{id}/events
+      surfaces the runtime_events log; the Route Tester renders it as a colour-
+      coded timeline (route.created → reservation.offered → accepted → engaged →
+      completed). Closes the "how do I know it ran right/wrong" observability gap.
+- [x] Protocol contract tests: golden WS envelope schema (inbound/outbound frame
+      JSON locked) + identity-spoof-unrepresentable + command classification
+      (protocol_test.go). Behavioral fixtures (reconnect-replay, dedupe, timeout,
+      stale-offer) already covered by gateway_test.go + flowrt matcher/command.
+- [x] OpenAPI/WS schema + migrations: no new schema for W2/W3 (reused
+      agent_sessions.last_seen_at); event-timeline endpoint folded into the spec.
+      Drift gates clean (sqlc + go generate + pnpm gen → no diff). Org-scoping is
+      structurally enforced by the OrgDB SQLChecker (WHERE org_id per tenant
+      alias); new OrgDB queries org-scoped, cross-org ones are explicit raw-pool
+      sweeps re-fenced per org.
 - [~] Backend + frontend test gates; live-engine e2e smoke. CI: a black-box
       integration test (TestE2E_MatcherPullToComplete) drives matcher pull → offer
       → lease-fenced accept → resume → complete → slot freed → WrapUp with real
