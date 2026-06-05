@@ -302,6 +302,52 @@ func TestMatcher_RunMatcherPullsPerOrg(t *testing.T) {
 	}
 }
 
+// TestMatcher_RoutingStats: the ops snapshot reflects the queue as a route moves
+// from parked (waiting_match) to offered (waiting + a held slot).
+func TestMatcher_RoutingStats(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	me := newMatcherEndpoints(lf)
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_q", simGraph(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if _, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"},
+	}); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	stats := func() api.GetRoutingStats200JSONResponse {
+		resp, err := me.GetRoutingStats(lf.ctx, api.GetRoutingStatsRequestObject{})
+		if err != nil {
+			t.Fatalf("stats: %v", err)
+		}
+		return resp.(api.GetRoutingStats200JSONResponse)
+	}
+
+	s := stats()
+	if s.WaitingMatch != 1 || s.HeldSlots != 0 {
+		t.Fatalf("parked stats = %+v, want waiting_match=1 held=0", s)
+	}
+
+	_ = lf.mem.Renew(context.Background(), lf.orgID, lf.agentID(t, "agent_a"), "sess-1")
+	if _, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1"); err != nil {
+		t.Fatalf("cycle: %v", err)
+	}
+	s = stats()
+	if s.WaitingMatch != 0 || s.WaitingOffer != 1 || s.HeldSlots != 1 {
+		t.Fatalf("offered stats = %+v, want waiting_match=0 waiting_offer=1 held=1", s)
+	}
+}
+
 // TestMatcher_RunMatcherSLAFallback: a route whose match_deadline has passed is
 // given up by the SLA sweep → resumed with no_candidate → takes the reservation
 // node's fallback port to a terminal end (no offer).

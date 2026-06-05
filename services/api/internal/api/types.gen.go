@@ -305,12 +305,14 @@ func (e ReservationState) Valid() bool {
 
 // Defines values for RouteRequestStatus.
 const (
-	RouteRequestStatusCancelled RouteRequestStatus = "cancelled"
-	RouteRequestStatusCompleted RouteRequestStatus = "completed"
-	RouteRequestStatusFailed    RouteRequestStatus = "failed"
-	RouteRequestStatusPending   RouteRequestStatus = "pending"
-	RouteRequestStatusRunning   RouteRequestStatus = "running"
-	RouteRequestStatusWaiting   RouteRequestStatus = "waiting"
+	RouteRequestStatusCancelled    RouteRequestStatus = "cancelled"
+	RouteRequestStatusCompleted    RouteRequestStatus = "completed"
+	RouteRequestStatusFailed       RouteRequestStatus = "failed"
+	RouteRequestStatusOffering     RouteRequestStatus = "offering"
+	RouteRequestStatusPending      RouteRequestStatus = "pending"
+	RouteRequestStatusRunning      RouteRequestStatus = "running"
+	RouteRequestStatusWaiting      RouteRequestStatus = "waiting"
+	RouteRequestStatusWaitingMatch RouteRequestStatus = "waiting_match"
 )
 
 // Valid indicates whether the value is a known member of the RouteRequestStatus enum.
@@ -322,11 +324,15 @@ func (e RouteRequestStatus) Valid() bool {
 		return true
 	case RouteRequestStatusFailed:
 		return true
+	case RouteRequestStatusOffering:
+		return true
 	case RouteRequestStatusPending:
 		return true
 	case RouteRequestStatusRunning:
 		return true
 	case RouteRequestStatusWaiting:
+		return true
+	case RouteRequestStatusWaitingMatch:
 		return true
 	default:
 		return false
@@ -1537,6 +1543,24 @@ type RouteRequestStatus string
 
 // RoutingFailureCode Typed taxonomy of routing failures recorded on a route request and its trace.
 type RoutingFailureCode string
+
+// RoutingStats Live matcher/queue snapshot for an org — for the ops view.
+type RoutingStats struct {
+	// HeldSlots Capacity slots currently held (pending offers + confirmed live calls).
+	HeldSlots int `json:"held_slots"`
+
+	// Offering Routes the matcher has claimed and is building an offer for (transient).
+	Offering int `json:"offering"`
+
+	// OldestWaitingSeconds SLA age (seconds) of the oldest queued route; 0 when the queue is empty.
+	OldestWaitingSeconds int `json:"oldest_waiting_seconds"`
+
+	// WaitingMatch Routes parked in the queue waiting for an available agent.
+	WaitingMatch int `json:"waiting_match"`
+
+	// WaitingOffer Routes with an outstanding offer awaiting an agent accept/reject.
+	WaitingOffer int `json:"waiting_offer"`
+}
 
 // SimulateFlowRequest Deterministic simulation of the draft graph against synthetic input. Does not mutate live reservations or agent state.
 type SimulateFlowRequest struct {

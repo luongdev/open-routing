@@ -222,6 +222,21 @@ func (q *Queries) CommitMatchOffer(ctx context.Context, arg CommitMatchOfferPara
 	return i, err
 }
 
+const countHeldSlotsForOrg = `-- name: CountHeldSlotsForOrg :one
+SELECT count(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND reservation_id IS NOT NULL
+`
+
+// CountHeldSlotsForOrg is occupancy: capacity slots currently held (a pending
+// offer hold or a confirmed live call) across the org.
+func (q *Queries) CountHeldSlotsForOrg(ctx context.Context, orgID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countHeldSlotsForOrg, orgID)
+	var held int32
+	err := row.Scan(&held)
+	return held, err
+}
+
 const enqueueRouteForMatch = `-- name: EnqueueRouteForMatch :one
 
 UPDATE route_requests
@@ -304,6 +319,39 @@ func (q *Queries) EnqueueRouteForMatch(ctx context.Context, arg EnqueueRouteForM
 		&i.RunSeq,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRoutingQueueStats = `-- name: GetRoutingQueueStats :one
+SELECT
+  count(*) FILTER (WHERE status = 'waiting_match')::int AS waiting_match,
+  count(*) FILTER (WHERE status = 'offering')::int AS offering,
+  count(*) FILTER (WHERE status = 'waiting' AND current_reservation_id IS NOT NULL)::int AS waiting_offer,
+  COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since) FILTER (WHERE status = 'waiting_match')), 0)::int AS oldest_waiting_seconds
+FROM route_requests
+WHERE org_id = $1 AND status IN ('waiting_match', 'offering', 'waiting')
+`
+
+type GetRoutingQueueStatsRow struct {
+	WaitingMatch         int32 `json:"waiting_match"`
+	Offering             int32 `json:"offering"`
+	WaitingOffer         int32 `json:"waiting_offer"`
+	OldestWaitingSeconds int32 `json:"oldest_waiting_seconds"`
+}
+
+// GetRoutingQueueStats is the live ops snapshot for an org: queue depth, the
+// transient offering count, outstanding offers, and the oldest queued route's SLA
+// age. Scoped to LIVE statuses so it scans the small working set, not terminal
+// history.
+func (q *Queries) GetRoutingQueueStats(ctx context.Context, orgID pgtype.UUID) (GetRoutingQueueStatsRow, error) {
+	row := q.db.QueryRow(ctx, getRoutingQueueStats, orgID)
+	var i GetRoutingQueueStatsRow
+	err := row.Scan(
+		&i.WaitingMatch,
+		&i.Offering,
+		&i.WaitingOffer,
+		&i.OldestWaitingSeconds,
 	)
 	return i, err
 }

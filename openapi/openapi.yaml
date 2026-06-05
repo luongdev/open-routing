@@ -1212,7 +1212,7 @@ components:
           nullable: true
         status:
           type: string
-          enum: [pending, running, waiting, completed, failed, cancelled]
+          enum: [pending, running, waiting, waiting_match, offering, completed, failed, cancelled]
         failure_code:
           allOf:
             - $ref: "#/components/schemas/RoutingFailureCode"
@@ -1228,6 +1228,32 @@ components:
           type: string
           format: date-time
           readOnly: true
+
+    RoutingStats:
+      type: object
+      description: Live matcher/queue snapshot for an org — for the ops view.
+      required:
+        - waiting_match
+        - offering
+        - waiting_offer
+        - oldest_waiting_seconds
+        - held_slots
+      properties:
+        waiting_match:
+          type: integer
+          description: Routes parked in the queue waiting for an available agent.
+        offering:
+          type: integer
+          description: Routes the matcher has claimed and is building an offer for (transient).
+        waiting_offer:
+          type: integer
+          description: Routes with an outstanding offer awaiting an agent accept/reject.
+        oldest_waiting_seconds:
+          type: integer
+          description: SLA age (seconds) of the oldest queued route; 0 when the queue is empty.
+        held_slots:
+          type: integer
+          description: Capacity slots currently held (pending offers + confirmed live calls).
 
     Reservation:
       type: object
@@ -3570,6 +3596,28 @@ paths:
                 $ref: "#/components/schemas/FlowVersion"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/routing/stats:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+    get:
+      tags: [Runtime]
+      operationId: GetRoutingStats
+      summary: Live matcher/queue snapshot for the ops view
+      description: >
+        A point-in-time snapshot of the org's live routing state — queue depth,
+        the oldest queued route's SLA age, outstanding offers, and held capacity.
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Routing stats.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingStats"
         "500":
           $ref: "#/components/responses/InternalServerError"
 

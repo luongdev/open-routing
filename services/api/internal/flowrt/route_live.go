@@ -267,6 +267,30 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	return resID.String(), true, nil
 }
 
+// GetRoutingStats returns the org's live matcher/queue snapshot for the ops view.
+func (e *Endpoints) GetRoutingStats(ctx context.Context, _ api.GetRoutingStatsRequestObject) (api.GetRoutingStatsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.GetRoutingStats500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	q := generated.New(e.deps.OrgDB)
+	qs, err := q.GetRoutingQueueStats(ctx, pgUUID(orgID))
+	if err != nil {
+		return api.GetRoutingStats500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "stats_failed"}}, nil
+	}
+	held, err := q.CountHeldSlotsForOrg(ctx, pgUUID(orgID))
+	if err != nil {
+		return api.GetRoutingStats500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "occupancy_failed"}}, nil
+	}
+	return api.GetRoutingStats200JSONResponse{
+		WaitingMatch:         int(qs.WaitingMatch),
+		Offering:             int(qs.Offering),
+		WaitingOffer:         int(qs.WaitingOffer),
+		OldestWaitingSeconds: int(qs.OldestWaitingSeconds),
+		HeldSlots:            int(held),
+	}, nil
+}
+
 // AbandonRouteRequest tears down a route whose caller hung up: cancel the route
 // (any non-terminal state) + cancel its outstanding offered reservations, freeing
 // each agent's capacity hold. One tx so the route terminates and slots free

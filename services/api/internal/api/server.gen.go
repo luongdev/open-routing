@@ -193,6 +193,9 @@ type ServerInterface interface {
 	// Get the runtime trace for a route request
 	// (GET /v1/orgs/{org_id}/route-requests/{id}/trace)
 	GetRouteRequestTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// Live matcher/queue snapshot for the ops view
+	// (GET /v1/orgs/{org_id}/routing/stats)
+	GetRoutingStats(w http.ResponseWriter, r *http.Request, orgId OrgIdPath)
 	// List skills
 	// (GET /v1/orgs/{org_id}/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, params ListSkillsParams)
@@ -562,6 +565,12 @@ func (_ Unimplemented) ListRouteRequestReservations(w http.ResponseWriter, r *ht
 // Get the runtime trace for a route request
 // (GET /v1/orgs/{org_id}/route-requests/{id}/trace)
 func (_ Unimplemented) GetRouteRequestTrace(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Live matcher/queue snapshot for the ops view
+// (GET /v1/orgs/{org_id}/routing/stats)
+func (_ Unimplemented) GetRoutingStats(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3160,6 +3169,38 @@ func (siw *ServerInterfaceWrapper) GetRouteRequestTrace(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// GetRoutingStats operation middleware
+func (siw *ServerInterfaceWrapper) GetRoutingStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRoutingStats(w, r, orgId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSkills operation middleware
 func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
 
@@ -3729,6 +3770,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/trace", wrapper.GetRouteRequestTrace)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/routing/stats", wrapper.GetRoutingStats)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/skills", wrapper.ListSkills)
@@ -7518,6 +7562,44 @@ func (response GetRouteRequestTrace500JSONResponse) VisitGetRouteRequestTraceRes
 	return err
 }
 
+type GetRoutingStatsRequestObject struct {
+	OrgId OrgIdPath `json:"org_id"`
+}
+
+type GetRoutingStatsResponseObject interface {
+	VisitGetRoutingStatsResponse(w http.ResponseWriter) error
+}
+
+type GetRoutingStats200JSONResponse RoutingStats
+
+func (response GetRoutingStats200JSONResponse) VisitGetRoutingStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRoutingStats500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response GetRoutingStats500JSONResponse) VisitGetRoutingStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSkillsRequestObject struct {
 	OrgId  OrgIdPath `json:"org_id"`
 	Params ListSkillsParams
@@ -8098,6 +8180,9 @@ type StrictServerInterface interface {
 	// Get the runtime trace for a route request
 	// (GET /v1/orgs/{org_id}/route-requests/{id}/trace)
 	GetRouteRequestTrace(ctx context.Context, request GetRouteRequestTraceRequestObject) (GetRouteRequestTraceResponseObject, error)
+	// Live matcher/queue snapshot for the ops view
+	// (GET /v1/orgs/{org_id}/routing/stats)
+	GetRoutingStats(ctx context.Context, request GetRoutingStatsRequestObject) (GetRoutingStatsResponseObject, error)
 	// List skills
 	// (GET /v1/orgs/{org_id}/skills)
 	ListSkills(ctx context.Context, request ListSkillsRequestObject) (ListSkillsResponseObject, error)
@@ -9823,6 +9908,32 @@ func (sh *strictHandler) GetRouteRequestTrace(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetRouteRequestTraceResponseObject); ok {
 		if err := validResponse.VisitGetRouteRequestTraceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetRoutingStats operation middleware
+func (sh *strictHandler) GetRoutingStats(w http.ResponseWriter, r *http.Request, orgId OrgIdPath) {
+	var request GetRoutingStatsRequestObject
+
+	request.OrgId = orgId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRoutingStats(ctx, request.(GetRoutingStatsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRoutingStats")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetRoutingStatsResponseObject); ok {
+		if err := validResponse.VisitGetRoutingStatsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

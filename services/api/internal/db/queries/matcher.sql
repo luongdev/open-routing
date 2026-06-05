@@ -174,6 +174,26 @@ WHERE agent_routing_state.org_id = $1
   AND (agent_routing_state.last_ready_at IS NULL
        OR agent_routing_state.last_ready_at <= $4);
 
+-- GetRoutingQueueStats is the live ops snapshot for an org: queue depth, the
+-- transient offering count, outstanding offers, and the oldest queued route's SLA
+-- age. Scoped to LIVE statuses so it scans the small working set, not terminal
+-- history.
+-- name: GetRoutingQueueStats :one
+SELECT
+  count(*) FILTER (WHERE status = 'waiting_match')::int AS waiting_match,
+  count(*) FILTER (WHERE status = 'offering')::int AS offering,
+  count(*) FILTER (WHERE status = 'waiting' AND current_reservation_id IS NOT NULL)::int AS waiting_offer,
+  COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since) FILTER (WHERE status = 'waiting_match')), 0)::int AS oldest_waiting_seconds
+FROM route_requests
+WHERE org_id = $1 AND status IN ('waiting_match', 'offering', 'waiting');
+
+-- CountHeldSlotsForOrg is occupancy: capacity slots currently held (a pending
+-- offer hold or a confirmed live call) across the org.
+-- name: CountHeldSlotsForOrg :one
+SELECT count(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND reservation_id IS NOT NULL;
+
 -- MarkAgentReady stamps last_ready_at and clears any RONA cooldown when an agent
 -- becomes Ready. last_ready_at is the Ready-race fence MarkAgentMissed reads: a
 -- stale missed-offer timeout that fires AFTER this Ready won't re-sideline the

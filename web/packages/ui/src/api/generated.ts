@@ -562,6 +562,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org_id}/routing/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Live matcher/queue snapshot for the ops view
+         * @description A point-in-time snapshot of the org's live routing state — queue depth, the oldest queued route's SLA age, outstanding offers, and held capacity.
+         */
+        get: operations["GetRoutingStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/route-requests": {
         parameters: {
             query?: never;
@@ -1918,7 +1948,7 @@ export interface components {
             flow_version_id?: components["schemas"]["UUIDv7"];
             flow_code?: string | null;
             /** @enum {string} */
-            status: "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+            status: "pending" | "running" | "waiting" | "waiting_match" | "offering" | "completed" | "failed" | "cancelled";
             failure_code?: components["schemas"]["RoutingFailureCode"];
             /** @description The trace for this route request, once execution has produced one. */
             trace_id?: components["schemas"]["UUIDv7"];
@@ -1926,6 +1956,19 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at?: string;
+        };
+        /** @description Live matcher/queue snapshot for an org — for the ops view. */
+        RoutingStats: {
+            /** @description Routes parked in the queue waiting for an available agent. */
+            waiting_match: number;
+            /** @description Routes the matcher has claimed and is building an offer for (transient). */
+            offering: number;
+            /** @description Routes with an outstanding offer awaiting an agent accept/reject. */
+            waiting_offer: number;
+            /** @description SLA age (seconds) of the oldest queued route; 0 when the queue is empty. */
+            oldest_waiting_seconds: number;
+            /** @description Capacity slots currently held (pending offers + confirmed live calls). */
+            held_slots: number;
         };
         /** @description An offer of a route request to an agent, with its lifecycle state. */
         Reservation: {
@@ -3979,6 +4022,37 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    GetRoutingStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routing stats. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingStats"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };
