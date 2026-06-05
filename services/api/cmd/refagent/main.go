@@ -52,6 +52,7 @@ func realMain() int {
 	agent := flag.String("agent", "", "agent id (X-Agent-Id)")
 	markReady := flag.Bool("ready", false, "PATCH the agent to Ready before connecting")
 	autoComplete := flag.Bool("complete", false, "send reservation.complete after a successful accept")
+	passive := flag.Bool("passive", false, "connect + stay Ready but DON'T auto-accept offers (so a human can accept/reject them in the Route Tester)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -71,7 +72,7 @@ func realMain() int {
 		}
 	}
 
-	if err := run(ctx, log, *base, *org, *agent, *autoComplete); err != nil && ctx.Err() == nil {
+	if err := run(ctx, log, *base, *org, *agent, *autoComplete, *passive); err != nil && ctx.Err() == nil {
 		log.Error("session ended", "err", err)
 		return 1
 	}
@@ -99,7 +100,7 @@ func patchReady(ctx context.Context, base, org, agent string) error {
 	return nil
 }
 
-func run(ctx context.Context, log *slog.Logger, base, org, agent string, autoComplete bool) error {
+func run(ctx context.Context, log *slog.Logger, base, org, agent string, autoComplete, passive bool) error {
 	wsURL := "ws" + strings.TrimPrefix(strings.TrimRight(base, "/"), "http") + "/v1/agent/ws"
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: http.Header{"X-Org-Id": {org}, "X-Agent-Id": {agent}},
@@ -154,6 +155,10 @@ func run(ctx context.Context, log *slog.Logger, base, org, agent string, autoCom
 				res, _ = f.Payload["reservation_id"].(string)
 			}
 			leases[res] = lease
+			if passive {
+				log.Info("offer received (passive — leaving for a human to accept/reject)", "reservation", res, "seq", f.Seq)
+				continue
+			}
 			log.Info("offer received → accepting", "reservation", res, "seq", f.Seq)
 			if err := write(ctx, conn, clientCmd{ID: uuid.NewString(), Type: "reservation.accept", Reservation: res, LeaseToken: lease}); err != nil {
 				return err

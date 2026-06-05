@@ -79,6 +79,25 @@ describe('OrRouteTester', () => {
     (el as any)._stopPolling?.();
   });
 
+  it('loads the trace by route id even when the route DTO has no trace_id', async () => {
+    // Regression: the API always leaves route.trace_id null (the trace references
+    // the route). Gating the trace fetch on route.trace_id meant it never loaded.
+    const noTraceId = { ...ROUTE, trace_id: undefined };
+    const get = vi.fn().mockImplementation((p: string) =>
+      p.endsWith('/trace') ? Promise.resolve({ data: TRACE, error: null })
+        : p.endsWith('/reservations') ? Promise.resolve({ data: { items: [] }, error: null })
+          : p.includes('/bindings') ? Promise.resolve({ data: { items: [BINDING] }, error: null })
+            : Promise.resolve({ data: noTraceId, error: null }));
+    (el as any).orgId = 'test-org';
+    (el as any).client = { GET: get, POST: vi.fn().mockResolvedValue({ data: noTraceId, error: null }) };
+    await settle();
+    await (el as any)._createRoute();
+    await settle();
+    expect((el as any)._route?.trace_id).toBeUndefined();
+    expect((el as any)._trace?.steps?.length).toBeGreaterThan(0);
+    (el as any)._stopPolling?.();
+  });
+
   it('rejects malformed interaction_input JSON before POSTing', async () => {
     const post = vi.fn();
     (el as any).orgId = 'test-org';

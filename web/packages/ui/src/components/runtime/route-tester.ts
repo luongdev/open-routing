@@ -352,12 +352,15 @@ export class OrRouteTester extends LitElement {
     const resv = (resvRes as { data: { items?: Reservation[] } | null }).data;
     this._reservations = resv?.items ?? [];
 
-    if (route?.trace_id) {
+    // Fetch the trace by ROUTE id — the API resolves it (route.trace_id is always
+    // null in the DTO; the trace references the route, not vice-versa). Gating on
+    // route.trace_id meant the trace was never fetched → "no steps" forever.
+    if (route) {
       const traceRes = await this.client.GET('/v1/orgs/{org_id}/route-requests/{id}/trace' as never, {
         params: { path: { org_id: this.orgId, id } },
       } as never);
       const trace = (traceRes as { data: Trace | null }).data;
-      if (trace) this._trace = trace;
+      if (trace) this._trace = trace; // keep the last trace if a poll briefly 404s
     }
 
     if (route && TERMINAL.has(route.status)) this._stopPolling();
