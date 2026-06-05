@@ -106,10 +106,14 @@ decision-trace requirements.
 
 ## Wave 6 — Reference client + ops + closure
 
-- [ ] Minimal reference agent client to prove transport + lifecycle end to end.
-- [ ] Live ops view: queue depth, oldest-waiting / SLA age, occupancy by channel,
-      offers/sec, accept latency, abandon/timeout rate, reject reasons,
-      stuck-reservation alerts, live route-decision p95.
+- [x] Minimal reference agent client to prove transport + lifecycle end to end.
+      (cmd/refagent: dials the WS gateway, hello/heartbeat, auto-accepts offers
+      echoing the lease_token, optional complete. Gateway test proves the
+      offer-frame lease round-trips relay→client→command.)
+- [~] Live ops view: backend snapshot endpoint shipped (GET /routing/stats —
+      queue depth, oldest-waiting SLA age, outstanding offers, held slots). Rich
+      rates (offers/sec, accept latency, reject reasons, p95) + the frontend view
+      remain.
 - [ ] Protocol contract tests: golden WS schema + reconnect / duplicate-command /
       timeout / stale-offer fixtures.
 - [ ] OpenAPI/WS schema + migrations (fold into the single pre-release migration);
