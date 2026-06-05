@@ -54,6 +54,7 @@ var tenantTables = map[string]struct{}{
 	"agent_capacity_slots": {}, // CAP (v0.3 W3 — per-(agent,channel) capacity slots)
 	"route_decisions":      {}, // MATCH (v0.3 W4 — matcher decision audit)
 	"agent_routing_state":  {}, // MATCH (v0.3 W4 — RONA routing state)
+	"delivery_commands":    {}, // DELIVERY (v0.4 W1 — durable delivery outbox)
 }
 
 // SQLChecker memoizes the org_id-presence verdict for each unique SQL

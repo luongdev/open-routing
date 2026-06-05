@@ -1,4 +1,5 @@
 BEGIN;
+DROP TABLE IF EXISTS delivery_commands;
 DROP TABLE IF EXISTS agent_routing_state;
 DROP TABLE IF EXISTS route_decisions;
 DROP TABLE IF EXISTS agent_capacity_slots;

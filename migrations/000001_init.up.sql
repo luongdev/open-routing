@@ -396,6 +396,37 @@ CREATE TABLE continuations (
 CREATE INDEX ix_continuations_due ON continuations (due_at) WHERE status IN ('pending','claimed');
 CREATE INDEX ix_continuations_org ON continuations (org_id, created_at DESC, id DESC);
 
+-- delivery_commands is the v0.4 durable delivery outbox: on accept, the engine
+-- commits ONE row here in the same tx as the reservation flip, so a crash between
+-- accept-commit and the adapter Deliver never loses the delivery (the v0.3 gap).
+-- A runtime drain worker claims due rows (lease + crash-recovery like
+-- continuations), calls the channel adapter, persists the returned handle, and
+-- marks the row delivered. id IS the delivery_attempt_id — the adapter idempotency
+-- key (a redelivered command maps to the same room). UNIQUE(org_id,reservation_id)
+-- makes the producer idempotent; a reassignment hop is a NEW reservation → a new
+-- row, so it never collides with the dropped hop's command.
+CREATE TABLE delivery_commands (
+    id                UUID PRIMARY KEY,
+    org_id            UUID NOT NULL,
+    reservation_id    UUID NOT NULL,
+    route_request_id  UUID NOT NULL,
+    agent_id          UUID NOT NULL,
+    channel           TEXT NOT NULL,
+    interaction       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status            TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','delivered','failed')),
+    handle            TEXT,
+    claimed_at        TIMESTAMPTZ,
+    claim_expires_at  TIMESTAMPTZ,
+    claimed_by        TEXT,
+    attempt_count     INTEGER NOT NULL DEFAULT 0,
+    last_error        TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, reservation_id)
+);
+CREATE INDEX ix_delivery_commands_pending ON delivery_commands (created_at) WHERE status = 'pending';
+
 -- Append-only canonical event envelope (outbox-first). Immutable facts —
 -- no version/enabled/updated_at. Distinct from the org audit retention contract.
 CREATE TABLE runtime_events (

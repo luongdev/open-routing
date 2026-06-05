@@ -26,18 +26,22 @@ suite. See discussion.md.
 
 ## Wave 1 — Durable delivery outbox (prove with the mock)
 
-- [ ] `delivery_command` durable rows (model on `agent_outbox`): accept commits a
-      delivery intent in the SAME tx as the reservation flip.
-- [ ] Delivery drain worker (cmd/runtime tick): claim due delivery commands
-      (FOR UPDATE SKIP LOCKED), call adapter `Deliver`, persist the returned handle
-      on the reservation, mark the command done. At-least-once + idempotent.
-- [ ] Idempotent Deliver: a redelivered command maps to the same handle (no double
-      room). Dedupe key = `delivery_attempt_id` (NOT reservation_id — a reclaimed/
-      reassigned call must never create-or-get the stale room).
-- [ ] Route the EXISTING in-process MockVoice through the outbox so the mechanism
-      is proven before real media; crash-between-accept-and-deliver redelivers.
-- [ ] Tests: accept→durable command→drain→handle persisted; crash/replay redelivers
-      once; capacity/teardown still correct.
+- [x] `delivery_commands` durable rows (modeled on `continuations` claim/lease):
+      table in 000001, registered as a tenant table. UNIQUE(org,reservation) makes
+      the producer idempotent.
+- [x] Delivery drain worker `DrainDeliveries` (for the cmd/runtime tick): claim due
+      commands (FOR UPDATE SKIP LOCKED + claim lease), call adapter `Deliver`,
+      persist the handle on the reservation, mark delivered; Deliver fault → mark
+      failed + teardown. At-least-once + idempotent.
+- [x] Idempotent: dedupe at the producer on (org, reservation); the command id IS
+      the `delivery_attempt_id` the adapter dedupes Deliver on. A reassignment hop =
+      new reservation → new command (never the stale room).
+- [x] Tests: enqueue→drain→handle bound + command delivered; idempotent producer;
+      second drain is a no-op.
+- [ ] NEXT: route the live accept path through the outbox (gate behind a flag like
+      MATCHER_ENABLED so the deployed in-process Deliver is unchanged until flipped)
+      + wire DrainDeliveries into the cmd/runtime tick; crash-between-accept-and-
+      deliver redelivers.
 
 ## Wave 2 — Inbound assignment-event webhook
 
