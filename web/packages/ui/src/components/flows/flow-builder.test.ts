@@ -529,19 +529,21 @@ describe('OrFlowBuilder', () => {
     expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
   });
 
-  it('an on-node input value suppresses the bottom Submit prompt (one input place)', async () => {
+  it('input nodes have ONE input place: on-node field + a branch note, no bottom submit form', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
     (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
     await settle();
-    // Land the sim on a wait_input step (get_dtmf).
+    // Enter sim mode and land on a wait_input step (get_dtmf).
+    (el as any)._simMode = 'sim';
     (el as any)._liveTrace = [{ id: 'w1', node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }];
     (el as any)._simStep = 0;
-    // No on-node value → paused, demands the bottom submit.
-    expect((el as any)._pausedForInput).toBe(true);
-    // Provide it on the node → no second submit at the bottom.
-    (el as any)._simNodeInputs = { d: '1234' };
+    await (el as any).updateComplete;
+    // Never hard-pauses for a separate submit, and the bottom shows a branch note,
+    // NOT a duplicate input/submit form.
     expect((el as any)._pausedForInput).toBe(false);
+    expect(el.shadowRoot!.querySelector('.input-branch-note')).toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.input-form')).toBeNull();
   });
 
   it('editing an init var re-runs the simulation (so the trace is not stale)', async () => {

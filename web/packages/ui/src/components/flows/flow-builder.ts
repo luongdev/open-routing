@@ -2245,6 +2245,33 @@ export class OrFlowBuilder extends LitElement {
       border: 1px solid color-mix(in oklch, var(--warning) 35%, var(--border));
       border-radius: 8px;
     }
+    /* The bottom card's hint for an input node — points to the single on-node
+       input field and shows the branch the current value takes. NOT an input. */
+    .input-branch-note {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+      margin-top: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted-foreground);
+      background: color-mix(in oklch, var(--muted) 40%, var(--card));
+      border-radius: 8px;
+    }
+    .input-branch-note uk-icon { flex: 0 0 auto; margin-top: 1px; }
+    .branch-tag {
+      display: inline-block;
+      padding: 0 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+    }
+    .branch-tag--captured { background: color-mix(in oklch, var(--success) 18%, transparent); color: var(--success); }
+    .branch-tag--timeout  { background: color-mix(in oklch, var(--warning) 22%, transparent); color: var(--warning); }
+    /* On-node: which branch the current value takes (empty → timeout). */
+    .node-card-siminput-branch { font-size: 9px; margin-top: 3px; text-align: center; color: var(--muted-foreground); }
     .input-form-prompt {
       display: flex;
       align-items: flex-start;
@@ -2916,12 +2943,10 @@ export class OrFlowBuilder extends LitElement {
   // Submit is the only way to advance — otherwise users can silently skip
   // the input by clicking the chevron, defeating the "engine paused
   // waiting for value" model.
+  // The on-node value field is the single input place now, so we never hard-pause
+  // the playback for a separate bottom submit (user report: one input, not two).
   private get _pausedForInput(): boolean {
-    const step = this._currentStep;
-    if (!step || !WAIT_INPUT_KINDS.has(step.node_kind)) return false;
-    // Already provided via the on-node value field → don't demand a second
-    // submit at the bottom (one input place, not two — user report).
-    return (this._simNodeInputs[step.node_id] ?? '') === '';
+    return false;
   }
 
   private get _hitNodeIds(): Set<string> {
@@ -4371,6 +4396,9 @@ export class OrFlowBuilder extends LitElement {
                   @click=${(e: MouseEvent) => e.stopPropagation()}
                   @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                   @change=${(e: Event) => { e.stopPropagation(); void this._setNodeInput(node.id, (e.target as HTMLInputElement).value); }}>
+                <div class="node-card-siminput-branch">
+                  ${(this._simNodeInputs[node.id] ?? '') !== '' ? '→ captured' : '→ timeout (empty)'}
+                </div>
               </div>` : ''}
             <div class=${'node-card-ports' + (pinnable ? ' node-card-ports--pick' : '')}
               title=${pinnable ? 'Click a port to force that branch in the simulation' : 'Output cases this node can produce'}>
@@ -5478,17 +5506,19 @@ export class OrFlowBuilder extends LitElement {
     }
     const tone = this._toneFor(step.node_kind);
     const icon = this._iconFor(step.node_kind);
-    // Only demand the bottom interactive submit when the value was NOT already
-    // provided on the node card (one input place — user report).
-    const needsInput = WAIT_INPUT_KINDS.has(step.node_kind) && (this._simNodeInputs[step.node_id] ?? '') === '';
+    // Input/capture nodes are driven by the value typed on the NODE CARD (the
+    // single input place). The bottom card only explains the branch mapping —
+    // there is no second input/submit here (user report: one input, not two).
+    const isInputNode = WAIT_INPUT_KINDS.has(step.node_kind);
+    const hasValue = (this._simNodeInputs[step.node_id] ?? '') !== '';
     return html`
       <div class="run-panel-header">
-        <uk-icon icon=${needsInput ? 'pause-circle' : 'activity'} height="13" width="13"></uk-icon>
-        ${needsInput ? 'Paused — input required' : 'Now executing'}
+        <uk-icon icon="activity" height="13" width="13"></uk-icon>
+        Now executing
       </div>
       <div class=${step.status === 'fail' && step.caught ? 'sim-runcard sim-runcard--paused'
         : step.status === 'fail' ? 'sim-runcard sim-runcard--fail'
-        : needsInput ? 'sim-runcard sim-runcard--paused' : 'sim-runcard'}>
+        : 'sim-runcard'}>
         <div class="sim-runcard-head">
           <span class="icon-tile icon-tile--${tone}">
             <uk-icon icon=${icon} height="12" width="12"></uk-icon>
@@ -5505,7 +5535,15 @@ export class OrFlowBuilder extends LitElement {
             ${step.status}
           </span>
         </div>
-        ${needsInput ? this._renderInputForm(step) : nothing}
+        ${isInputNode ? html`
+          <div class="input-branch-note">
+            <uk-icon icon="corner-left-up" height="13" width="13"></uk-icon>
+            <span>Type the captured value on the <strong>node card</strong>.
+              ${hasValue
+                ? html`Now: <span class="branch-tag branch-tag--captured">captured</span> branch.`
+                : html`Empty → <span class="branch-tag branch-tag--timeout">timeout</span> branch. Type a value for <strong>captured</strong>.`}
+            </span>
+          </div>` : nothing}
         ${step.status === 'fail' && step.caught ? html`
           <div class="sim-runcard-error sim-runcard-error--caught">
             <div style="font-weight:600;font-size:12px;color:color-mix(in oklch, var(--warning) 85%, var(--foreground))">
