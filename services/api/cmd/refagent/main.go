@@ -115,6 +115,10 @@ func run(ctx context.Context, log *slog.Logger, base, org, agent string, autoCom
 	}
 	go heartbeat(ctx, conn)
 
+	// Remember each offer's lease_token by reservation so accept AND complete both
+	// echo it — the WS fence guards complete too (the read loop is single-threaded,
+	// so a plain map needs no lock).
+	leases := map[string]string{}
 	for {
 		typ, data, rErr := conn.Read(ctx)
 		if rErr != nil {
@@ -134,7 +138,7 @@ func run(ctx context.Context, log *slog.Logger, base, org, agent string, autoCom
 		case "ack":
 			log.Info("ack", "reply_to", f.ReplyTo, "status", f.Status, "reservation", f.Reservation)
 			if autoComplete && f.Status == "accepted" && f.Reservation != "" {
-				if err := write(ctx, conn, clientCmd{ID: uuid.NewString(), Type: "reservation.complete", Reservation: f.Reservation}); err != nil {
+				if err := write(ctx, conn, clientCmd{ID: uuid.NewString(), Type: "reservation.complete", Reservation: f.Reservation, LeaseToken: leases[f.Reservation]}); err != nil {
 					return err
 				}
 				log.Info("sent complete", "reservation", f.Reservation)
@@ -147,6 +151,7 @@ func run(ctx context.Context, log *slog.Logger, base, org, agent string, autoCom
 			if res == "" {
 				res, _ = f.Payload["reservation_id"].(string)
 			}
+			leases[res] = lease
 			log.Info("offer received → accepting", "reservation", res, "seq", f.Seq)
 			if err := write(ctx, conn, clientCmd{ID: uuid.NewString(), Type: "reservation.accept", Reservation: res, LeaseToken: lease}); err != nil {
 				return err

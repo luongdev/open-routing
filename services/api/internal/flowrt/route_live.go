@@ -225,6 +225,10 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 			return "", false, aErr
 		}
 		if !ok {
+			// Record the capacity miss on the PARENT tx (survives the savepoint
+			// rollback) so the interaction-offer path has the same decision audit the
+			// matcher writes (cross-AI review: inline path had an audit blind spot).
+			recordInlineDecision(o.ctx, generated.New(o.tx), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "capacity_lost")
 			_ = sp.Rollback(o.ctx)
 			return "", false, nil
 		}
@@ -259,6 +263,8 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 		}
 		return "", false, fErr
 	}
+	// interaction_offer audit row, committed with the offer (same savepoint).
+	recordInlineDecision(o.ctx, generated.New(sp), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "offered")
 	if err := sp.Commit(o.ctx); err != nil {
 		return "", false, err
 	}
@@ -358,6 +364,18 @@ func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRout
 		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
 	}
 	return api.AbandonRouteRequest200JSONResponse(mapRouteRequest(row)), nil
+}
+
+// recordInlineDecision writes an interaction_offer route_decisions row for the
+// inline (interaction-driven) offer path, mirroring the matcher's availability_pull
+// audit. Best-effort: a missing audit row must not fail the offer.
+func recordInlineDecision(ctx context.Context, q *generated.Queries, orgID, routeID uuid.UUID, channel, agentCode string, agentID uuid.UUID, outcome string) {
+	detail, _ := json.Marshal(map[string]any{"agent_code": agentCode, "channel": channel, "source": "inline"})
+	_ = q.InsertRouteDecision(ctx, generated.InsertRouteDecisionParams{
+		ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID),
+		DecisionType: "interaction_offer", MatcherInstance: "inline", Channel: channel,
+		SelectedAgentID: pgUUID(agentID), Outcome: outcome, Detail: detail,
+	})
 }
 
 func (e *Endpoints) appendEvent(ctx context.Context, q *generated.Queries, orgID, routeID uuid.UUID, typ string, payload map[string]any) {

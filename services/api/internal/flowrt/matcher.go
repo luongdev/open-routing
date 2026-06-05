@@ -128,6 +128,11 @@ func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherI
 	if len(agents) == 0 {
 		return 0, nil
 	}
+	if len(agents) == matcherAgentBatch {
+		// No silent caps: a full batch means more available agents than we considered
+		// this tick — the rest are picked up next tick (longest-idle ordering is stable).
+		e.deps.Logger.WarnContext(ctx, "matcher agent batch truncated", "org_id", orgID, "cap", matcherAgentBatch)
+	}
 
 	// Filter to leased-connected agents (the live offerability gate). An offer to a
 	// disconnected agent would ring nobody and burn a RONA attempt.

@@ -241,6 +241,28 @@ func TestLive_NoAgentParksWaitingMatch(t *testing.T) {
 	}
 }
 
+// TestLive_InlineOfferWritesDecision: the interaction-driven (inline) offer path
+// writes an interaction_offer route_decisions row, matching the matcher's audit.
+func TestLive_InlineOfferWritesDecision(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	lf.seedLiveFlow(t)
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+	routeID := lf.createRoute(t)
+	var n int
+	if err := sharedPool.QueryRow(lf.ctx,
+		"SELECT count(*) FROM route_decisions WHERE org_id=$1 AND route_request_id=$2 AND decision_type='interaction_offer' AND outcome='offered'",
+		lf.orgID, routeID).Scan(&n); err != nil {
+		t.Fatalf("count decisions: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("interaction_offer decisions = %d, want 1 (inline audit parity)", n)
+	}
+}
+
 // TestLive_AbandonReleasesAndCancels: a caller hang-up tears the route down —
 // the outstanding offer is cancelled, its capacity slot freed, the route goes
 // cancelled, and a second abandon is a 409 (already terminal).

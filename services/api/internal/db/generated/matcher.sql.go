@@ -331,7 +331,7 @@ SELECT
   -- min() across ALL live-queued rows (not just waiting_match): a route that began
   -- offering still retains waiting_since, so the oldest-caller SLA age doesn't drop
   -- to 0 the moment the head-of-queue starts being matched (cross-AI review MED).
-  COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since)), 0)::int AS oldest_waiting_seconds
+  GREATEST(COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since)), 0), 0)::int AS oldest_waiting_seconds
 FROM route_requests
 WHERE org_id = $1 AND status IN ('waiting_match', 'offering', 'waiting')
 `
@@ -421,8 +421,8 @@ WHERE a.org_id = $1
   AND (ars.agent_id IS NULL
        OR ars.routing_state = 'routable'
        OR (ars.state_expires_at IS NOT NULL AND ars.state_expires_at <= now()))
-GROUP BY a.id, a.code
-ORDER BY random()
+GROUP BY a.id, a.code, ars.last_ready_at, ast.updated_at
+ORDER BY COALESCE(ars.last_ready_at, ast.updated_at) ASC
 LIMIT $2
 `
 
@@ -448,9 +448,10 @@ type ListAvailableAgentsForMatchRow struct {
 // AND in the top-level WHERE: the ON keeps the join itself org-correct, the WHERE
 // ColumnRef satisfies SQLChecker (which ignores ON-clause org refs). agent_id /
 // skill_id are org-unique so this is belt-and-suspenders, not a behavior change.
-// random() (not a.code) so successive ticks SAMPLE different agents: a fixed
-// alphabetical LIMIT would let the first N at-capacity agents starve the N+1th who
-// actually has a free slot (capacity is gated in Go, not this query — review HIGH).
+// Longest-idle first (goal 3 tie-break): the agent who has been Ready/idle the
+// longest is offered first, so work spreads fairly instead of by code/insertion
+// order. last_ready_at is the precise Ready instant; ast.updated_at is the
+// fallback for agents predating the routing-state write.
 func (q *Queries) ListAvailableAgentsForMatch(ctx context.Context, arg ListAvailableAgentsForMatchParams) ([]ListAvailableAgentsForMatchRow, error) {
 	rows, err := q.db.Query(ctx, listAvailableAgentsForMatch, arg.OrgID, arg.Limit)
 	if err != nil {
