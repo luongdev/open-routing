@@ -529,6 +529,23 @@ describe('OrFlowBuilder', () => {
     expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
   });
 
+  it('a value-edit re-run lands on the final step, not back at "Ready" (no restart)', async () => {
+    const steps = [
+      { node_id: 'a', node_kind: 'trigger', label: 'A', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} },
+      { node_id: 'b', node_kind: 'send_message', label: 'B', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} },
+      { node_id: 'c', node_kind: 'end', label: 'C', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} },
+    ];
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps, outcome: 'completed' } }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: post };
+    await settle();
+    await (el as any)._runSimulation(true);
+    expect((el as any)._simStep).toBe(2);   // landed on the last step
+    await (el as any)._runSimulation(false);
+    expect((el as any)._simStep).toBe(-1);  // explicit re-run restarts to Ready
+  });
+
   it('input nodes have ONE input place: on-node field + a branch note, no bottom submit form', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;

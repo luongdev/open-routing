@@ -3079,7 +3079,7 @@ export class OrFlowBuilder extends LitElement {
 
   // Save the draft, run a real deterministic simulation (POST /simulate), and
   // play its trace back over the canvas. 422 surfaces the validation issues.
-  private async _runSimulation(): Promise<void> {
+  private async _runSimulation(landAtEnd = false): Promise<void> {
     if (this._isCreate || !this._loaded) {
       this._flashAction('Save the draft first.', 'warn');
       return;
@@ -3114,7 +3114,17 @@ export class OrFlowBuilder extends LitElement {
       }
       this._liveTrace = this._mapApiTrace(res.data.trace.steps);
       this._simMode = 'sim';
-      this._restartSim();
+      if (landAtEnd) {
+        // Editing an input value re-runs the whole sim; don't yank the user back
+        // to "Ready to run" — land on the final step so they see the new result
+        // (which branch the value took) without re-stepping (user report).
+        this._selectedNodeId = null;
+        this._inputDraft = '';
+        this._capturedInputs = {};
+        this._simStep = Math.max(0, this._liveTrace.length - 1);
+      } else {
+        this._restartSim();
+      }
       const outcome = res.data.trace.outcome ?? 'completed';
       this._flashAction(`Simulation ${outcome} — ${this._liveTrace.length} step(s).`, outcome === 'failed' ? 'warn' : 'ok');
     } finally {
@@ -3129,7 +3139,7 @@ export class OrFlowBuilder extends LitElement {
     if (next[nodeId] === outcome) delete next[nodeId];
     else next[nodeId] = outcome as 'accepted' | 'timeout' | 'no_candidate';
     this._simNodeOutcomes = next;
-    await this._runSimulation();
+    await this._runSimulation(true); // land on the result, don't restart playback
     // _restartSim (inside _runSimulation) nulls the selection; restore it so the
     // sidebar keeps showing this reservation node's outcome status.
     this._selectedNodeId = nodeId;
@@ -3208,7 +3218,7 @@ export class OrFlowBuilder extends LitElement {
     if (value === '') delete next[nodeId];
     else next[nodeId] = value;
     this._simNodeInputs = next;
-    await this._runSimulation();
+    await this._runSimulation(true); // land on the result, don't restart playback
     this._selectedNodeId = nodeId;
   }
 
@@ -5351,7 +5361,7 @@ export class OrFlowBuilder extends LitElement {
                     this._initVars = this._initVars.map((x, j) => (j === i ? { ...x, value: val } : x));
                   }}
                   @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  @change=${() => void this._runSimulation()}
+                  @change=${() => void this._runSimulation(true)}
                 />
               </div>
             `)}
