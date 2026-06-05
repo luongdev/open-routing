@@ -5296,7 +5296,7 @@ export class OrFlowBuilder extends LitElement {
 
   // ----- Sim run panel (bottom) -----
   private _renderSimRunPanel() {
-    const bag = computeVarBag(this._simStep, this._activeTrace);
+    const bag = computeVarBag(this._simStep, this._activeTrace, this._initVars);
     const currentStepId = this._currentStep?.id ?? 'init';
     return html`
       <section class="run-panel" aria-label="Simulator run panel">

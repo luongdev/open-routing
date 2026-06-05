@@ -527,9 +527,11 @@ export interface VarBagEntry {
 // Trace is parameterised so the success and failure scenarios produce
 // independent bags — passing MOCK_TRACE_STEPS unconditionally caused the
 // var bag to disagree with the canvas in the failure scenario.
-export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_STEPS): VarBagEntry[] {
+export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_STEPS, initVars: InitVar[] = MOCK_INIT_VARS): VarBagEntry[] {
   const bag = new Map<string, VarBagEntry>();
-  for (const v of MOCK_INIT_VARS) {
+  // Seed from the caller's LIVE init vars (what the run actually uses), not the
+  // hardcoded mock — otherwise editing customer.tier to "gold111" never shows.
+  for (const v of initVars) {
     bag.set(v.key, { key: v.key, value: v.value, set_at_step: 'init', set_at_node_label: 'Init vars' });
   }
   // Only set_var/compute actually write to the variable bag; every other node's
