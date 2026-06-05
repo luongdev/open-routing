@@ -529,6 +529,21 @@ describe('OrFlowBuilder', () => {
     expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
   });
 
+  it('an on-node input value suppresses the bottom Submit prompt (one input place)', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    // Land the sim on a wait_input step (get_dtmf).
+    (el as any)._liveTrace = [{ id: 'w1', node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }];
+    (el as any)._simStep = 0;
+    // No on-node value → paused, demands the bottom submit.
+    expect((el as any)._pausedForInput).toBe(true);
+    // Provide it on the node → no second submit at the bottom.
+    (el as any)._simNodeInputs = { d: '1234' };
+    expect((el as any)._pausedForInput).toBe(false);
+  });
+
   it('editing an init var re-runs the simulation (so the trace is not stale)', async () => {
     const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [] } }, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';

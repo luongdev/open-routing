@@ -2918,7 +2918,10 @@ export class OrFlowBuilder extends LitElement {
   // waiting for value" model.
   private get _pausedForInput(): boolean {
     const step = this._currentStep;
-    return !!step && WAIT_INPUT_KINDS.has(step.node_kind);
+    if (!step || !WAIT_INPUT_KINDS.has(step.node_kind)) return false;
+    // Already provided via the on-node value field → don't demand a second
+    // submit at the bottom (one input place, not two — user report).
+    return (this._simNodeInputs[step.node_id] ?? '') === '';
   }
 
   private get _hitNodeIds(): Set<string> {
@@ -5475,15 +5478,17 @@ export class OrFlowBuilder extends LitElement {
     }
     const tone = this._toneFor(step.node_kind);
     const icon = this._iconFor(step.node_kind);
-    const isWaitInput = WAIT_INPUT_KINDS.has(step.node_kind);
+    // Only demand the bottom interactive submit when the value was NOT already
+    // provided on the node card (one input place — user report).
+    const needsInput = WAIT_INPUT_KINDS.has(step.node_kind) && (this._simNodeInputs[step.node_id] ?? '') === '';
     return html`
       <div class="run-panel-header">
-        <uk-icon icon=${isWaitInput ? 'pause-circle' : 'activity'} height="13" width="13"></uk-icon>
-        ${isWaitInput ? 'Paused — input required' : 'Now executing'}
+        <uk-icon icon=${needsInput ? 'pause-circle' : 'activity'} height="13" width="13"></uk-icon>
+        ${needsInput ? 'Paused — input required' : 'Now executing'}
       </div>
       <div class=${step.status === 'fail' && step.caught ? 'sim-runcard sim-runcard--paused'
         : step.status === 'fail' ? 'sim-runcard sim-runcard--fail'
-        : isWaitInput ? 'sim-runcard sim-runcard--paused' : 'sim-runcard'}>
+        : needsInput ? 'sim-runcard sim-runcard--paused' : 'sim-runcard'}>
         <div class="sim-runcard-head">
           <span class="icon-tile icon-tile--${tone}">
             <uk-icon icon=${icon} height="12" width="12"></uk-icon>
@@ -5500,7 +5505,7 @@ export class OrFlowBuilder extends LitElement {
             ${step.status}
           </span>
         </div>
-        ${isWaitInput ? this._renderInputForm(step) : nothing}
+        ${needsInput ? this._renderInputForm(step) : nothing}
         ${step.status === 'fail' && step.caught ? html`
           <div class="sim-runcard-error sim-runcard-error--caught">
             <div style="font-weight:600;font-size:12px;color:color-mix(in oklch, var(--warning) 85%, var(--foreground))">
