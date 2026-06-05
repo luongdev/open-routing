@@ -211,3 +211,44 @@ Open Routing SHALL measure route-decision latency and report whether v0.2 runtim
 - **WHEN** runtime test fixtures execute route decisions under the supported v0.2 node set
 - **THEN** p95 route-decision latency is reported
 - **AND** regressions beyond the agreed budget are flagged for review before the metric becomes a blocking gate
+
+### Requirement: Reservation lifecycle from live signals
+
+The reservation lifecycle SHALL be drivable by real agent and adapter signals in
+addition to the v0.2 test-double endpoints, using the same transitions and route
+resume. The test-double endpoints SHALL remain for simulation, CI, and the Route
+Tester.
+
+#### Scenario: Live accept
+
+- **WHEN** a connected agent accepts an offered reservation over the realtime
+  transport
+- **THEN** the reservation moves offered → accepted via the same guarded
+  transition as the test-double path
+- **AND** the route resumes from its cursor
+
+#### Scenario: Live reject and re-offer
+
+- **WHEN** a connected agent rejects an offer
+- **THEN** the reservation moves offered → rejected and the engine re-offers per
+  the matcher rules
+
+#### Scenario: Disconnect mid-handling
+
+- **WHEN** a connected agent disconnects while handling an accepted interaction
+  and stays gone past the grace window
+- **THEN** the engine reclaims the held capacity slot, resolves the original
+  reservation so it cannot double-complete, and abandons the interaction
+- **AND** automatic reassignment to another agent is deferred to v0.4 (it is
+  media-coupled); see the routing-engine reclaim requirement
+
+### Requirement: Live timeout via durable continuations
+
+A live offer's timeout SHALL fire through the existing durable continuation worker
+so a missed accept is bounded without depending on any live connection.
+
+#### Scenario: Unanswered live offer
+
+- **WHEN** a live offer is not accepted before its timeout
+- **THEN** the continuation worker times it out and the engine re-offers or falls
+  back per the flow

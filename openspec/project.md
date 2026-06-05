@@ -13,7 +13,9 @@ Current OpenSpec state:
 - Completed capabilities live under `openspec/specs/`.
 - Phase 7 is complete and archived as `openspec/changes/archive/2026-06-02-ship-web-component-embed-bundle/`.
 - Milestone 1/v0.1 is archived.
-- Milestone v0.2 is proposed as `openspec/changes/define-v0-2-core-routing-runtime-foundation/`.
+- Milestone v0.2 (core routing runtime foundation) is complete and archived as `openspec/changes/archive/2026-06-04-define-v0-2-core-routing-runtime-foundation/`.
+- Milestone v0.3 (live routing engine) is complete and archived as `openspec/changes/archive/2026-06-05-define-v0-3-live-routing-engine/`; its behavior is merged into `openspec/specs/` (`routing-engine`, `channel-adapters`, `agent-connectivity`, and additions to `routing-runtime`/`delivery-foundation`). v0.3 ships a mock voice adapter; real LiveKit/SIP media is v0.4 behind the same contract.
+- No active change is open. Next milestone (v0.4): real media adapter, agent desktop, durable delivery outbox, automatic mid-call reassignment.
 - Original GSD planning remains in `.planning/` as migration source and historical detail.
 
 ## Locked Stack

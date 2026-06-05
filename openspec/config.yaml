@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: Open Routing
   Migrated from: .planning on 2026-06-02
-  Current active change: define-v0-2-core-routing-runtime-foundation
+  Current active change: none (v0.3 live routing engine shipped + archived 2026-06-05; next milestone v0.4: real media adapter, agent desktop, durable delivery outbox, mid-call reassignment)
 
   Tech stack:
   - Backend: Go, chi, pgx, sqlc, golang-migrate, slog, OpenTelemetry
