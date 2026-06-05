@@ -2999,10 +2999,12 @@ export class OrFlowBuilder extends LitElement {
     this._inputDraft = String(v);
   }
 
-  // Apply the bottom-panel input value for a capture node and re-run (one input,
-  // with an explicit Submit so it's clear how to apply — user report).
+  // Apply the bottom-panel input value for a capture node, re-run, then ADVANCE
+  // to the next step — Submit alone moves the sim forward, no separate Next click
+  // (user report).
   private async _submitNodeInput(nodeId: string): Promise<void> {
-    await this._setNodeInput(nodeId, this._inputDraft);
+    await this._setNodeInput(nodeId, this._inputDraft); // re-run + land on this node
+    this._stepBy(1); // Submit advances past the input node
   }
 
   private _submitInput(): void {
@@ -5298,7 +5300,7 @@ export class OrFlowBuilder extends LitElement {
           ?disabled=${paused}
           @click=${() => { if (atEnd) this._restartSim(); else this._stepBy(1); }}
         >
-          <uk-icon icon=${atEnd ? 'rotate-ccw' : 'chevron-right'} height="14" width="14"></uk-icon>
+          <uk-icon icon=${atEnd ? 'rotate-ccw' : 'play'} height="14" width="14"></uk-icon>
         </button>
         <button class="sim-pb-btn" title="Run to end" ?disabled=${atEnd || paused} @click=${this._runAllSim}>
           <uk-icon icon="fast-forward" height="14" width="14"></uk-icon>
