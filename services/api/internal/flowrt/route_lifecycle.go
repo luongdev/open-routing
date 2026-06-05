@@ -22,7 +22,11 @@ const wrapUpSeconds = 30
 // persistRunResult records the trace segment + events for one executor run and
 // either parks the route (offered → waiting + cursor + reservation_timeout
 // continuation) or finishes it (completed/failed). Runs inside the route tx.
-func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, fv generated.FlowVersion, snapJSON []byte, offerer *liveOfferer, res runtime.RunResult) error {
+// matchDeadlineSeconds bounds how long a route waits in the matcher queue before
+// the SLA sweep gives up (→ no_candidate fallback). Configurable later.
+const matchDeadlineSeconds = 120
+
+func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, fv generated.FlowVersion, snapJSON []byte, graph *runtime.Graph, offerer *liveOfferer, res runtime.RunResult) error {
 	steps := mapTraceSteps(res.Trace)
 	stepsJSON, _ := json.Marshal(steps)
 	outcome := res.Trace.Outcome
@@ -35,6 +39,20 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 		return err
 	}
 	switch {
+	case res.Suspension != nil && res.Suspension.WaitForMatch:
+		// W4: no agent available now → park in the matcher queue (waiting_match).
+		// The matcher offers when an agent frees; the SLA deadline bounds the wait.
+		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
+		curJSON, _ := json.Marshal(cur)
+		skills := requiredSkillsFromGraph(graph)
+		if _, err := qtx.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
+			ID: pgUUID(routeID), OrgID: pgUUID(orgID), Priority: 0,
+			RequiredSkills: skills, ResumeCursor: curJSON,
+			MatchDeadline: pgtype.Timestamptz{Time: time.Now().Add(matchDeadlineSeconds * time.Second), Valid: true},
+		}); err != nil {
+			return err
+		}
+		e.appendEvent(ctx, qtx, orgID, routeID, "route.queued", map[string]any{"required_skills": skills})
 	case res.Suspension != nil:
 		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
 		curJSON, _ := json.Marshal(cur)
@@ -162,14 +180,18 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 		}
 	}
 	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, channel: route.Channel, cap: e.deps.Capacity, excluded: excluded, attempt: maxAttempt}
-	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs))
+	opts := []runtime.ExecutorOption{runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs)}
+	if e.matcherMode() {
+		opts = append(opts, runtime.WithMatcher())
+	}
+	ex := runtime.NewExecutor(e.reg, opts...)
 	decStart := time.Now()
 	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, input)
 	observeRouteDecision(e.deps.Logger, "resume", time.Since(decStart))
 	if err != nil {
 		return err
 	}
-	return e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, offerer, res)
+	return e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, graph, offerer, res)
 }
 
 // SubmitRouteInput answers a route parked at an interactive-input node: it locks

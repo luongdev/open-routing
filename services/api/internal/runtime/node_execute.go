@@ -182,6 +182,11 @@ func liveReservation(ctx ExecCtx, step PlanStep, timeout time.Duration) (StepRes
 	if resuming && sig == "accepted" {
 		return StepResult{Port: "accepted", Output: map[string]any{"outcome": "accepted"}}, nil
 	}
+	// The matcher (or, in the inline path, the SLA deadline) gives up by resuming
+	// with no_candidate → fall through to the fallback path.
+	if resuming && sig == "no_candidate" {
+		return StepResult{Port: "no_candidate", Output: map[string]any{"outcome": "no_candidate"}}, nil
+	}
 	for _, c := range ctx.Candidates() {
 		resID, ok, err := ctx.Offer(c.AgentID, timeout)
 		if err != nil {
@@ -194,8 +199,17 @@ func liveReservation(ctx ExecCtx, step PlanStep, timeout time.Duration) (StepRes
 			}, nil
 		}
 	}
-	// No candidate could be offered. A `timeout` resume means the prior offer
-	// elapsed unanswered → distinguish "nobody answered" from "nobody eligible".
+	// No candidate available now. In MATCHER mode the route waits in the queue —
+	// the matcher offers when an agent frees, the SLA sweep bounds the wait — so
+	// park (waiting_match) instead of taking the no_candidate/timeout port.
+	if ctx.MatcherMode() {
+		return StepResult{
+			Suspension: &Suspension{WaitForMatch: true},
+			Output:     map[string]any{"queued": true},
+		}, nil
+	}
+	// Inline (W3) / sim: a `timeout` resume means the prior offer elapsed
+	// unanswered → distinguish "nobody answered" from "nobody eligible".
 	port := "no_candidate"
 	if resuming && sig == "timeout" {
 		port = "timeout"

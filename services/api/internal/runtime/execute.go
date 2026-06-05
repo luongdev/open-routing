@@ -26,6 +26,7 @@ type execState struct {
 	// Live routing (Wave 3): offerer makes durable offers; resumeAt/resumeSignal
 	// carry the inbound signal to the node a RunFrom re-enters at (one-shot).
 	offerer      Offerer
+	matcher      bool // W4: park waiting_match on no-candidate instead of no_candidate port
 	resumeAt     string
 	resumeSignal string
 }
@@ -94,6 +95,7 @@ func (s *execState) ScriptedInput(nodeID string) (any, bool) {
 	return v, ok
 }
 func (s *execState) LiveRouting() bool { return s.offerer != nil }
+func (s *execState) MatcherMode() bool { return s.matcher }
 func (s *execState) Offer(agentID string, timeout time.Duration) (string, bool, error) {
 	if s.offerer == nil {
 		return "", false, nil
@@ -167,6 +169,7 @@ type Executor struct {
 	nodeOutcomes   map[string]string
 	scriptedInputs map[string]any
 	offerer        Offerer
+	matcher        bool
 }
 
 type ExecutorOption func(*Executor)
@@ -200,6 +203,11 @@ func WithScriptedInputs(m map[string]any) ExecutorOption {
 // the Offerer and SUSPEND, instead of the sim's synchronous offer loop.
 func WithOfferer(o Offerer) ExecutorOption { return func(e *Executor) { e.offerer = o } }
 
+// WithMatcher turns on the W4 queue model: a reservation with no available
+// candidate parks waiting_match (the matcher offers later) instead of taking the
+// no_candidate port. flowrt sets it when the live matcher substrate is wired.
+func WithMatcher() ExecutorOption { return func(e *Executor) { e.matcher = true } }
+
 // WithMaxSteps bounds the walk; the default guards against a cycle the
 // validator did not (defensively) reject.
 func WithMaxSteps(n int) ExecutorOption { return func(e *Executor) { e.maxSteps = n } }
@@ -225,7 +233,7 @@ func (ex *Executor) Run(ctx context.Context, clock Clock, plan CompiledPlan, inp
 	for k, v := range input {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer}
+	state := &execState{Context: ctx, clock: clock, vars: vars, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, matcher: ex.matcher}
 	return ex.drive(state, clock, plan, plan.Entry)
 }
 
@@ -242,7 +250,7 @@ func (ex *Executor) RunFrom(ctx context.Context, clock Clock, plan CompiledPlan,
 	for k, v := range cur.Vars {
 		vars[k] = v
 	}
-	state := &execState{Context: ctx, clock: clock, vars: vars, candidates: candidates, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, resumeAt: cur.NodeID, resumeSignal: signal}
+	state := &execState{Context: ctx, clock: clock, vars: vars, candidates: candidates, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, matcher: ex.matcher, resumeAt: cur.NodeID, resumeSignal: signal}
 	return ex.drive(state, clock, plan, cur.NodeID)
 }
 

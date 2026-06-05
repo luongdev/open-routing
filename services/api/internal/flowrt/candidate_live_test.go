@@ -197,6 +197,49 @@ func TestLive_AcceptConfirmsAndCompleteReleases(t *testing.T) {
 	}
 }
 
+// TestLive_NoAgentParksWaitingMatch: in matcher mode, a route with no available
+// agent parks waiting_match (W4 enqueue) with the flow's required skills, instead
+// of falling through to fallback.
+func TestLive_NoAgentParksWaitingMatch(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	me := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(), MatcherEnabled: true,
+	})
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3) // exists but NOT connected → empty live pool
+	flowID := lf.seedFlow(t, "flow_q", simGraph(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	resp, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"},
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+
+	var status string
+	var skills []string
+	if err := sharedPool.QueryRow(lf.ctx,
+		"SELECT status, required_skills FROM route_requests WHERE id=$1 AND org_id=$2", routeID, lf.orgID).Scan(&status, &skills); err != nil {
+		t.Fatalf("read route: %v", err)
+	}
+	if status != "waiting_match" {
+		t.Fatalf("route status = %q, want waiting_match (parked for matcher)", status)
+	}
+	if len(skills) != 1 || skills[0] != "skill_es" {
+		t.Fatalf("required_skills = %v, want [skill_es]", skills)
+	}
+}
+
 func (lf *liveFixture) heldVoice(t *testing.T, agentID uuid.UUID) int32 {
 	return lf.held(t, agentID, "voice")
 }

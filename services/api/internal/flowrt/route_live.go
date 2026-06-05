@@ -340,7 +340,11 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 	}
 
 	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, channel: body.Channel, cap: e.deps.Capacity}
-	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer))
+	opts := []runtime.ExecutorOption{runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer)}
+	if e.matcherMode() {
+		opts = append(opts, runtime.WithMatcher())
+	}
+	ex := runtime.NewExecutor(e.reg, opts...)
 	decStart := time.Now()
 	res, rErr := ex.Run(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, input)
 	observeRouteDecision(e.deps.Logger, "create", time.Since(decStart))
@@ -348,7 +352,7 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 		return crErr("execute_failed"), nil
 	}
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.created", nil)
-	if err := e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, offerer, res); err != nil {
+	if err := e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, graph, offerer, res); err != nil {
 		return crErr("persist_failed"), nil
 	}
 

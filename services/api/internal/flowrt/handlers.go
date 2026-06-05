@@ -46,7 +46,17 @@ type Deps struct {
 	// both — see routingSnapshot (review BLOCK: no silent live→sim fallback).
 	Presence presence.Store
 	Capacity *CapacityService
-	Logger   *slog.Logger
+	// MatcherEnabled turns on the W4 queue model: a route with no available agent
+	// parks waiting_match for the matcher instead of falling through to fallback.
+	// Off until the matcher loop (cmd/runtime, W4 Stage 3) is wired, else parked
+	// routes would never be pulled.
+	MatcherEnabled bool
+	Logger         *slog.Logger
+}
+
+// matcherMode reports whether to run reservations in W4 queue mode.
+func (e *Endpoints) matcherMode() bool {
+	return e.deps.MatcherEnabled && e.deps.Capacity != nil && e.deps.Presence != nil
 }
 
 type Endpoints struct {
