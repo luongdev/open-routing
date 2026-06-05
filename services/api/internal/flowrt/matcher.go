@@ -160,6 +160,18 @@ func (e *Endpoints) reclaimAbandonedCall(ctx context.Context, orgID, routeID, re
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
 
+	// Lock the parent route row FIRST (top-down order: route → reservation →
+	// agent_state) so a concurrent caller-abandon teardown on the same route can't
+	// AB-BA deadlock us. This only locks — the conditional reservation flip below
+	// is still the authority on whether to reclaim (cross-AI review HIGH).
+	locked, err := qtx.LockRouteForReclaim(ctx, generated.LockRouteForReclaimParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // route vanished
+	}
+	if err != nil {
+		return err
+	}
+
 	rec, err := qtx.ReclaimStaleAcceptedReservation(ctx, generated.ReclaimStaleAcceptedReservationParams{
 		ID: pgUUID(resID), OrgID: pgUUID(orgID), LastSeenAt: cutoff,
 	})
@@ -183,22 +195,14 @@ func (e *Endpoints) reclaimAbandonedCall(ctx context.Context, orgID, routeID, re
 		return err
 	}
 
-	// Tear the route down if still live; if already terminal, just fetch its channel
-	// for the adapter release. Either way the slot above is freed.
-	var channel string
-	routeRow, aErr := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
-	switch {
-	case aErr == nil:
-		channel = routeRow.Channel
-	case errors.Is(aErr, pgx.ErrNoRows):
-		rr, gErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
-		if gErr != nil {
-			return gErr
-		}
-		channel = rr.Channel
-	default:
+	// Tear the route down if still live (the call can't continue agent-less). The
+	// route row is already locked above, so this adds no new lock-order edge; a
+	// terminal route is a benign no-op (ErrNoRows). Channel for the adapter release
+	// comes from the lock regardless of route state.
+	if _, aErr := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); aErr != nil && !errors.Is(aErr, pgx.ErrNoRows) {
 		return aErr
 	}
+	channel := locked.Channel
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.agent_lost", map[string]any{
 		"reservation_id": resID.String(), "agent_id": apiUUID(rec.AgentID).String(),
 	})

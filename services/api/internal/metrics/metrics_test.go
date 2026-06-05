@@ -26,6 +26,17 @@ func TestCounterAndGauge(t *testing.T) {
 	}
 }
 
+func TestDuplicateNamePanics(t *testing.T) {
+	r := NewRegistry()
+	r.Counter("or_dup_total", "first")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a duplicate metric name must panic")
+		}
+	}()
+	r.Counter("or_dup_total", "second")
+}
+
 func TestWritePrometheusSortedAndTyped(t *testing.T) {
 	r := NewRegistry()
 	r.Counter("or_z_total", "z").Inc()

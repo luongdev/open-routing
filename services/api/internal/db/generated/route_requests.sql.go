@@ -438,6 +438,35 @@ func (q *Queries) ListRouteRequests(ctx context.Context, arg ListRouteRequestsPa
 	return items, nil
 }
 
+const lockRouteForReclaim = `-- name: LockRouteForReclaim :one
+SELECT id, channel, status FROM route_requests
+WHERE id = $1 AND org_id = $2
+FOR UPDATE
+`
+
+type LockRouteForReclaimParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+type LockRouteForReclaimRow struct {
+	ID      pgtype.UUID `json:"id"`
+	Channel string      `json:"channel"`
+	Status  string      `json:"status"`
+}
+
+// LockRouteForReclaim takes the route-row lock WITHOUT mutating it, so the
+// confirmed-slot reclaim acquires the parent (route) before the child
+// (reservation) — matching teardownRouteTx's top-down lock order and avoiding an
+// AB-BA deadlock with a concurrent caller-abandon on the same route. Returns the
+// channel (for the post-commit adapter release) regardless of terminal state.
+func (q *Queries) LockRouteForReclaim(ctx context.Context, arg LockRouteForReclaimParams) (LockRouteForReclaimRow, error) {
+	row := q.db.QueryRow(ctx, lockRouteForReclaim, arg.ID, arg.OrgID)
+	var i LockRouteForReclaimRow
+	err := row.Scan(&i.ID, &i.Channel, &i.Status)
+	return i, err
+}
+
 const releaseRoute = `-- name: ReleaseRoute :exec
 UPDATE route_requests
 SET status = 'waiting', updated_at = NOW()

@@ -24,6 +24,7 @@ import (
 
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/presence"
 	"github.com/luongdev/open-routing/services/api/internal/runtime"
@@ -99,6 +100,13 @@ func run() int {
 		Capacity:       flowrt.NewCapacityService(),
 		Logger:         slog.Default(),
 		MatcherEnabled: cfg.MatcherEnabled,
+		// The matcher tick (here) reclaims a slot when an agent vanishes mid-call,
+		// which must Release the channel adapter delivery — so the runtime needs the
+		// same adapter wiring as cmd/api (cross-AI review MED). NOTE: the in-process
+		// MockVoice keeps handles per-process, so a runtime reclaim of a handle the
+		// api process created is a graceful no-op until real (out-of-process) media
+		// lands in v0.4; the contract call is correct either way.
+		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
 	})
 	workerID := "runtime-" + uuid.Must(uuid.NewV7()).String()
 	slog.InfoContext(ctx, "open-routing runtime starting (continuation worker)",

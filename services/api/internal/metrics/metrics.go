@@ -46,6 +46,14 @@ func NewRegistry() *Registry { return &Registry{} }
 func (r *Registry) register(name, help string, t kind) *Metric {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Panic on a duplicate name: two metrics sharing a name produce duplicate
+	// exposition lines that break standard Prometheus parsers. Registration is
+	// static (package init), so a dup is a programming error caught at startup.
+	for _, m := range r.metrics {
+		if m.name == name {
+			panic("metrics: duplicate registration of " + name)
+		}
+	}
 	m := &Metric{name: name, help: help, typ: t}
 	r.metrics = append(r.metrics, m)
 	return m

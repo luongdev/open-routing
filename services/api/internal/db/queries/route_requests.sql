@@ -5,6 +5,16 @@ INSERT INTO route_requests (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
+-- LockRouteForReclaim takes the route-row lock WITHOUT mutating it, so the
+-- confirmed-slot reclaim acquires the parent (route) before the child
+-- (reservation) — matching teardownRouteTx's top-down lock order and avoiding an
+-- AB-BA deadlock with a concurrent caller-abandon on the same route. Returns the
+-- channel (for the post-commit adapter release) regardless of terminal state.
+-- name: LockRouteForReclaim :one
+SELECT id, channel, status FROM route_requests
+WHERE id = $1 AND org_id = $2
+FOR UPDATE;
+
 -- AcquireRouteForRun is the route-level exclusive lock: it flips an idle route
 -- to 'running' so exactly one process (API handler or worker) executes the flow
 -- at a time. 0 rows returned ⇒ another process owns it or it was cancelled —
