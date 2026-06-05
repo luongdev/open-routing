@@ -7,6 +7,21 @@ Reference patterns to reuse (do NOT reinvent):
   is reclaim WITHOUT the abandon — re-queue instead.
 - Webhook auth → mirror the trusted-host org model; events carry org + correlation.
 
+## Identity mapping refinement (during Wave 0 build)
+
+The 4 agreed identities mostly already exist — only ONE new table is needed:
+- `interaction_id` → existing `route_requests.id` (the interaction spine).
+- `reservation_attempt_id` → existing `reservations.id` (each offer is already a
+  distinct row with `attempt`; a reassignment hop = a NEW reservations row).
+- `media_session_id` → existing `reservations.adapter_handle` (the room handle).
+- `delivery_attempt_id` → **NEW**: the `delivery_command` durable outbox row id
+  (the idempotency key the adapter dedupes Deliver on).
+
+So Wave 0's DB work shrinks to: confirm this mapping + add ownership-fence columns
+where the webhook needs them; the genuinely new schema (the `delivery_command`
+outbox) lands in Wave 1. Folded into migration 000001 (user decision 2026-06-05:
+keep single-migration purity, accept the cluster DB reset + re-seed on v0.4 deploy).
+
 ## Resolved by cross-AI discussion round 1 (see discussion.md)
 
 - **Q2** caller leg → external stack owns the trunk; OR receives an inbound ref.
