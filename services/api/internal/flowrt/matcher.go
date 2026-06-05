@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/luongdev/open-routing/services/api/internal/db"
@@ -16,25 +15,32 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
 )
 
-// matcher.go is the v0.3 W4 availability-driven pull: for each available agent
-// (Ready + leased-connected + routable + under-capacity) claim the best-ranked
-// eligible waiting route and attach an offer. The interaction-driven side
-// (enqueue on no available agent) lives in route_lifecycle.go; this is the other
-// half of the bidirectional matcher.
+// matcher.go is the availability-driven pull: for each available agent (Ready +
+// leased-connected + routable + under-capacity) claim the best-ranked eligible
+// waiting route and attach an offer. The interaction-driven side (enqueue on no
+// available agent) lives in route_lifecycle.go; this is the other half of the
+// bidirectional matcher.
 //
 // Ranking is computed in SQL (ClaimWaitingRoute) so uncapped aging can cross a
 // priority band — a sufficiently-aged low-priority route overtakes a fresh
-// high-priority one (no bounded-prefix starvation, plan rev2 BLOCK). The weights:
+// high-priority one (no bounded-prefix starvation). The weights:
 // effective = priority*W_p + age_seconds*W_age, deterministic id tie-break.
 const (
-	matcherAgentBatch    = 100
-	matcherOrgBatch      = 100
-	matcherExpiredBatch  = 100
+	matcherBatchDefault  = 100
 	matcherWeightPrio    = 100.0
 	matcherWeightAge     = 1.0
 	matcherOfferExpiry   = 20 * time.Second // RONA ring window before the timeout sweep re-queues
 	staleOfferingTimeout = 30 * time.Second // an 'offering' route older than this lost its worker → re-token
 )
+
+// matcherBatch is the per-tick cap on agents/orgs/expired routes, configurable via
+// Deps.MatcherBatch (0 ⇒ default). A full batch is logged, not silently dropped.
+func (e *Endpoints) matcherBatch() int32 {
+	if e.deps.MatcherBatch > 0 {
+		return int32(e.deps.MatcherBatch) //nolint:gosec // operator-configured, small
+	}
+	return matcherBatchDefault
+}
 
 // RunMatcher is the cross-org matcher tick (cmd/runtime, alongside the
 // continuation worker): (1) re-token routes stuck 'offering' from a crashed
@@ -54,7 +60,7 @@ func (e *Endpoints) RunMatcher(ctx context.Context, pool *pgxpool.Pool, matcherI
 	// 2. SLA deadline: a route nobody could match before its match_deadline gives up
 	//    → resume the reservation node's no_candidate port (fallback). Per route in
 	//    its own org-scoped tx so the run-lock flip + resume are atomic.
-	expired, err := rawq.ListExpiredMatchRoutes(ctx, matcherExpiredBatch)
+	expired, err := rawq.ListExpiredMatchRoutes(ctx, e.matcherBatch())
 	if err != nil {
 		return 0, err
 	}
@@ -65,7 +71,7 @@ func (e *Endpoints) RunMatcher(ctx context.Context, pool *pgxpool.Pool, matcherI
 	}
 
 	// 3. Availability-driven pull, per org with a waiting route.
-	orgs, err := rawq.ListOrgsWithWaitingMatch(ctx, matcherOrgBatch)
+	orgs, err := rawq.ListOrgsWithWaitingMatch(ctx, e.matcherBatch())
 	if err != nil {
 		return 0, err
 	}
@@ -120,7 +126,7 @@ func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherI
 	ctx = orgkey.SetOrgID(ctx, orgID)
 	q := generated.New(e.deps.OrgDB)
 	agents, err := q.ListAvailableAgentsForMatch(ctx, generated.ListAvailableAgentsForMatchParams{
-		OrgID: pgUUID(orgID), Limit: matcherAgentBatch,
+		OrgID: pgUUID(orgID), Limit: e.matcherBatch(),
 	})
 	if err != nil {
 		return 0, err
@@ -128,10 +134,10 @@ func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherI
 	if len(agents) == 0 {
 		return 0, nil
 	}
-	if len(agents) == matcherAgentBatch {
+	if len(agents) == int(e.matcherBatch()) {
 		// No silent caps: a full batch means more available agents than we considered
 		// this tick — the rest are picked up next tick (longest-idle ordering is stable).
-		e.deps.Logger.WarnContext(ctx, "matcher agent batch truncated", "org_id", orgID, "cap", matcherAgentBatch)
+		e.deps.Logger.WarnContext(ctx, "matcher agent batch truncated", "org_id", orgID, "cap", e.matcherBatch())
 	}
 
 	// Filter to leased-connected agents (the live offerability gate). An offer to a
@@ -173,7 +179,7 @@ func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherI
 // continuation → audit). The lock order is GLOBAL — route-claim (FOR UPDATE OF
 // rr) first, then the capacity slot (SKIP LOCKED), then the reservation — the
 // same order the inline offer and accept paths use, so the matcher can't deadlock
-// against them (plan rev2 R-lockorder).
+// against them.
 func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matcherInstance string, agentID uuid.UUID, agentCode string, skills []string) (bool, error) {
 	tx, err := e.deps.OrgDB.BeginTx(ctx)
 	if err != nil {
@@ -195,55 +201,37 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 	routeID := apiUUID(claimed.ID)
 	token := claimed.MatchOfferToken
 
-	resID := uuid.Must(uuid.NewV7())
 	// Stamp the hold from NOW (this offer), not the cycle start — a batch that takes
 	// seconds must not backdate later agents' holds into the past (review HIGH).
+	// Clamp to the queue SLA: an offer must never outlive the deadline at which the
+	// SLA sweep gives up to fallback. ClaimWaitingRoute already excluded routes past
+	// match_deadline, so exp > now.
 	exp := time.Now().Add(matcherOfferExpiry)
-	// Clamp the offer (and its timeout) to the queue SLA — an offer must never
-	// outlive the deadline at which the SLA sweep gives up to fallback (R-clamp).
-	// ClaimWaitingRoute already excluded routes past match_deadline, so exp > now.
 	if claimed.MatchDeadline.Valid && claimed.MatchDeadline.Time.Before(exp) {
 		exp = claimed.MatchDeadline.Time
 	}
 
-	var slotNo *int32
-	if e.deps.Capacity != nil {
-		if err := e.deps.Capacity.ProvisionInTx(ctx, qtx, orgID, agentID, claimed.Channel); err != nil {
-			return false, err
-		}
-		slot, ok, aErr := e.deps.Capacity.AcquireInTx(ctx, qtx, orgID, agentID, claimed.Channel, resID, exp)
-		if aErr != nil {
-			return false, aErr
-		}
-		if !ok {
-			// At capacity — return the route to the queue (token-fenced) and record
-			// the miss. Committing the requeue (vs rolling back) keeps the audit row.
-			return false, e.requeueAfterFailedOffer(ctx, tx, qtx, orgID, matcherInstance, claimed, agentID, "capacity_lost")
-		}
-		slotNo = &slot
-	}
-
-	leaseToken, sessionID, err := bindOfferLease(ctx, qtx, orgID, agentID)
+	// Attempt = claimed.MatchAttemptSeq+1: the claim no longer bumps the seq
+	// (CommitMatchOffer does, on success only), so this is the next attempt number.
+	att, capOK, err := attachOffer(ctx, qtx, e.deps.Capacity, orgID, routeID, agentID, claimed.Channel, claimed.MatchAttemptSeq+1, exp)
 	if err != nil {
+		if errors.Is(err, errAgentVanished) {
+			return false, nil // agent gone since the claim → tx rolls back, route stays waiting_match
+		}
 		return false, err
 	}
-	if _, err := qtx.InsertReservationOffer(ctx, generated.InsertReservationOfferParams{
-		ID: pgUUID(resID), OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID),
-		// +1: the claim no longer bumps match_attempt_seq (CommitMatchOffer does, on
-		// success only), so this offer's attempt number is the next one.
-		AgentID: pgUUID(agentID), Attempt: claimed.MatchAttemptSeq + 1,
-		ExpiresAt:  pgtype.Timestamptz{Time: exp, Valid: true},
-		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
-	}); err != nil {
-		return false, err
+	if !capOK {
+		// At capacity — return the route to the queue (token-fenced) + audit the miss.
+		// Committing the requeue (vs rolling back) keeps the decision row.
+		return false, e.requeueAfterFailedOffer(ctx, tx, qtx, orgID, matcherInstance, claimed, agentID, "capacity_lost")
 	}
 
 	// Token-fenced commit: a sweep that re-queued this offering route between the
 	// claim and here would have changed the token → ErrNoRows → roll back (the slot
-	// + reservation go with it) and record route_lost.
+	// + reservation + frame go with it) and record route_lost.
 	committed, err := qtx.CommitMatchOffer(ctx, generated.CommitMatchOfferParams{
 		ID: pgUUID(routeID), OrgID: pgUUID(orgID), MatchOfferToken: token,
-		ActiveReservationID: pgUUID(resID), ResumeCursor: claimed.ResumeCursor,
+		ActiveReservationID: pgUUID(att.resID), ResumeCursor: claimed.ResumeCursor,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		_ = tx.Rollback(ctx)
@@ -257,24 +245,18 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 	// row so a stale timer from a prior attempt is fenced by AcquireRouteForRunAtSeq.
 	if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
 		ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
-		RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(resID),
+		RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(att.resID),
 		FlowVersionID: claimed.FlowVersionID, Cursor: []byte("{}"), RunSeq: committed.RunSeq,
-		DueAt: pgtype.Timestamptz{Time: exp, Valid: true},
+		DueAt: ts(exp),
 	}); err != nil {
 		return false, err
 	}
 
-	if err := enqueueOfferFrame(ctx, qtx, orgID, agentID, resID, leaseToken, exp); err != nil {
-		if errors.Is(err, errAgentVanished) {
-			return false, nil // agent gone since the claim → drop the offer (tx rolls back → route stays waiting_match)
-		}
-		return false, err
-	}
-	if err := e.recordDecision(ctx, qtx, orgID, matcherInstance, claimed, agentID, "offered", agentCode, skills, slotNo); err != nil {
+	if err := e.recordDecision(ctx, qtx, orgID, matcherInstance, claimed, agentID, "offered", agentCode, skills, att.slotNo); err != nil {
 		return false, err
 	}
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{
-		"reservation_id": resID.String(), "agent_id": agentID.String(), "source": "matcher",
+		"reservation_id": att.resID.String(), "agent_id": agentID.String(), "source": "matcher",
 	})
 	if err := tx.Commit(ctx); err != nil {
 		return false, err

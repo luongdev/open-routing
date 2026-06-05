@@ -51,7 +51,11 @@ type Deps struct {
 	// Off until the matcher loop (cmd/runtime, W4 Stage 3) is wired, else parked
 	// routes would never be pulled.
 	MatcherEnabled bool
-	Logger         *slog.Logger
+	// MatcherBatch bounds how many agents/orgs/expired routes one matcher tick
+	// processes. 0 ⇒ matcherBatchDefault. A full batch is logged (no silent caps);
+	// the remainder is picked up next tick.
+	MatcherBatch int
+	Logger       *slog.Logger
 }
 
 // matcherMode reports whether to run reservations in W4 queue mode.

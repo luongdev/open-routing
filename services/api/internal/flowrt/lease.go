@@ -67,3 +67,52 @@ func enqueueOfferFrame(ctx context.Context, qtx *generated.Queries, orgID, agent
 	}
 	return nil
 }
+
+// attachedOffer is the result of the shared offer mechanics.
+type attachedOffer struct {
+	resID      uuid.UUID
+	leaseToken uuid.UUID
+	slotNo     *int32 // nil when capacity is not gated (sim/no-Capacity)
+}
+
+// attachOffer is the offer mechanics shared by both offer paths (the inline
+// liveOfferer and the matcher's tryOfferToAgent): acquire a capacity slot, bind
+// the lease, insert the offered reservation, and enqueue the durable offer frame —
+// all on the caller's tx/savepoint-bound q. It does NOT own the route transition,
+// the decision audit, or savepoint/commit management; the caller wraps those
+// (so the two paths share the mechanics but keep their distinct claim/commit
+// semantics). Returns capacityOK=false when the agent is at capacity (no rows
+// written). The error carries unique-violation / errAgentVanished for the caller
+// to classify as a candidate skip vs an abort.
+func attachOffer(ctx context.Context, q *generated.Queries, cap *CapacityService, orgID, routeID, agentID uuid.UUID, channel string, attempt int32, exp time.Time) (attachedOffer, bool, error) {
+	resID := uuid.Must(uuid.NewV7())
+	var slotNo *int32
+	if cap != nil {
+		if err := cap.ProvisionInTx(ctx, q, orgID, agentID, channel); err != nil {
+			return attachedOffer{}, false, err
+		}
+		slot, ok, err := cap.AcquireInTx(ctx, q, orgID, agentID, channel, resID, exp)
+		if err != nil {
+			return attachedOffer{}, false, err
+		}
+		if !ok {
+			return attachedOffer{}, false, nil // at capacity
+		}
+		slotNo = &slot
+	}
+	leaseToken, sessionID, err := bindOfferLease(ctx, q, orgID, agentID)
+	if err != nil {
+		return attachedOffer{}, false, err
+	}
+	if _, err := q.InsertReservationOffer(ctx, generated.InsertReservationOfferParams{
+		ID: pgUUID(resID), OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID),
+		AgentID: pgUUID(agentID), Attempt: attempt, ExpiresAt: ts(exp),
+		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
+	}); err != nil {
+		return attachedOffer{}, false, err // includes unique-violation (busy) — caller classifies
+	}
+	if err := enqueueOfferFrame(ctx, q, orgID, agentID, resID, leaseToken, exp); err != nil {
+		return attachedOffer{}, false, err // errAgentVanished — caller skips/aborts
+	}
+	return attachedOffer{resID: resID, leaseToken: leaseToken, slotNo: slotNo}, true, nil
+}

@@ -201,76 +201,39 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	if o.excluded[apiUUID(agent.ID)] {
 		return "", false, nil // already offered this agent on this route → skip
 	}
-	resID := uuid.Must(uuid.NewV7())
 	exp := time.Now().Add(timeout)
-	// Provision the agent's slot rows outside the per-offer savepoint so they
-	// persist across a skipped candidate (idempotent). The authoritative capacity
-	// gate is the acquire below — the candidate-source hint may be stale.
-	if o.cap != nil {
-		if err := o.cap.ProvisionInTx(o.ctx, generated.New(o.tx), o.orgID, apiUUID(agent.ID), o.channel); err != nil {
-			return "", false, err
-		}
-	}
+	// Each candidate's offer is wrapped in a savepoint so a capacity skip or a
+	// unique-violation (agent busy) rolls back just this attempt and the reservation
+	// node moves to the next candidate — the parent route tx survives.
 	sp, err := o.tx.BeginSavepoint(o.ctx)
 	if err != nil {
 		return "", false, err
 	}
-	// Acquire a capacity slot for THIS reservation inside the offer savepoint so
-	// the hold and the offer commit/roll back together. At capacity ⇒ skip the
-	// candidate (same control flow as a busy unique-violation).
-	if o.cap != nil {
-		_, ok, aErr := o.cap.AcquireInTx(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), o.channel, resID, exp)
-		if aErr != nil {
-			_ = sp.Rollback(o.ctx)
-			return "", false, aErr
-		}
-		if !ok {
-			// Record the capacity miss on the PARENT tx (survives the savepoint
-			// rollback) so the interaction-offer path has the same decision audit the
-			// matcher writes (cross-AI review: inline path had an audit blind spot).
-			recordInlineDecision(o.ctx, generated.New(o.tx), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "capacity_lost")
-			_ = sp.Rollback(o.ctx)
+	spq := generated.New(sp)
+	att, capOK, aErr := attachOffer(o.ctx, spq, o.cap, o.orgID, o.routeID, apiUUID(agent.ID), o.channel, int32(o.attempt+1), exp) //nolint:gosec // attempt bounded by max_attempts
+	if aErr != nil {
+		_ = sp.Rollback(o.ctx)
+		// Busy (unique-violation) or a vanished agent → skip this candidate, not a
+		// route failure; any other error aborts.
+		if isUniqueViolation(aErr) || errors.Is(aErr, errAgentVanished) {
 			return "", false, nil
 		}
+		return "", false, aErr
 	}
-	leaseToken, sessionID, lErr := bindOfferLease(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID))
-	if lErr != nil {
+	if !capOK {
+		// Record the capacity miss on the PARENT tx (survives the rollback) so the
+		// interaction-offer path keeps the same decision audit the matcher writes.
+		recordInlineDecision(o.ctx, generated.New(o.tx), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "capacity_lost")
 		_ = sp.Rollback(o.ctx)
-		return "", false, lErr
-	}
-	_, err = generated.New(sp).InsertReservationOffer(o.ctx, generated.InsertReservationOfferParams{
-		ID: pgUUID(resID), OrgID: pgUUID(o.orgID), RouteRequestID: pgUUID(o.routeID),
-		AgentID: agent.ID, Attempt: int32(o.attempt + 1), //nolint:gosec // attempt is bounded (<=10) by max_attempts
-		ExpiresAt:  pgtype.Timestamptz{Time: exp, Valid: true},
-		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
-	})
-	if isUniqueViolation(err) {
-		_ = sp.Rollback(o.ctx) // busy/ineligible → undo this offer (and its slot hold), try next candidate
 		return "", false, nil
 	}
-	if err != nil {
-		_ = sp.Rollback(o.ctx)
-		return "", false, err
-	}
-	// Deliver the durable offer frame (reservation id + lease_token to echo back)
-	// inside the same savepoint so a rolled-back offer doesn't leak an outbox row.
-	// A vanished agent ⇒ undo this offer and skip to the next candidate, never
-	// commit an undeliverable offer (cross-AI review HIGH).
-	if fErr := enqueueOfferFrame(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), resID, leaseToken, exp); fErr != nil {
-		_ = sp.Rollback(o.ctx)
-		if errors.Is(fErr, errAgentVanished) {
-			return "", false, nil
-		}
-		return "", false, fErr
-	}
-	// interaction_offer audit row, committed with the offer (same savepoint).
-	recordInlineDecision(o.ctx, generated.New(sp), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "offered")
+	recordInlineDecision(o.ctx, spq, o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "offered")
 	if err := sp.Commit(o.ctx); err != nil {
 		return "", false, err
 	}
 	o.attempt++
-	o.lastRes, o.lastExp, o.offered = resID, exp, true
-	return resID.String(), true, nil
+	o.lastRes, o.lastExp, o.offered = att.resID, exp, true
+	return att.resID.String(), true, nil
 }
 
 // GetRoutingStats returns the org's live matcher/queue snapshot for the ops view.
