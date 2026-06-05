@@ -84,14 +84,18 @@ SET status = 'waiting_match', next_match_at = now(),
 WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3;
 
 -- CommitMatchOffer flips a claimed route to 'waiting' (an offer was attached),
--- token-fenced so a superseded claim can't commit. 0 rows ⇒ the worker rolls
--- back its offer + releases the slot.
--- name: CommitMatchOffer :execrows
+-- token-fenced so a superseded claim can't commit. ErrNoRows ⇒ the worker rolls
+-- back its offer + releases the slot. Bumps run_seq (a new suspension at this
+-- offer) so a stale reservation_timeout from a prior attempt is fenced out by
+-- AcquireRouteForRunAtSeq — same invariant SuspendRoute upholds on the inline path.
+-- name: CommitMatchOffer :one
 UPDATE route_requests
 SET status = 'waiting', active_reservation_id = $4,
     current_reservation_id = $4, resume_cursor = $5,
+    run_seq = run_seq + 1,
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
-WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3;
+WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3
+RETURNING *;
 
 -- SweepStaleOffering reclaims routes stuck 'offering' (a worker crashed after the
 -- claim, before/inside the offer tx). Re-tokens so the original worker's commit
@@ -101,6 +105,45 @@ UPDATE route_requests
 SET status = 'waiting_match', next_match_at = now(),
     match_offer_token = gen_random_uuid(), offering_started_at = NULL, updated_at = now()
 WHERE status = 'offering' AND offering_started_at < $1;
+
+-- ListAvailableAgentsForMatch is the matcher's availability side: enabled agents
+-- in Ready state that are routable (no RONA hold, or an expired one) — each with
+-- their enabled skill codes aggregated so the caller can claim a skill-eligible
+-- route. Presence (the connection lease) is filtered in Go, not here (Redis).
+-- Bounded batch. Org-scoped: every tenant alias carries org_id in the WHERE
+-- (SQLChecker), and the LEFT-joined skill rows use `OR ... IS NULL` so a
+-- skill-less agent is not dropped (it can still serve a no-skill route).
+-- name: ListAvailableAgentsForMatch :many
+SELECT a.id AS agent_id,
+       a.code AS agent_code,
+       COALESCE(array_remove(array_agg(DISTINCT sk.code), NULL), '{}')::text[] AS skills
+FROM agents a
+JOIN agent_states ast ON ast.agent_id = a.id
+LEFT JOIN agent_routing_state ars ON ars.agent_id = a.id
+LEFT JOIN agent_skills ags ON ags.agent_id = a.id
+LEFT JOIN skills sk ON sk.id = ags.skill_id AND sk.enabled = TRUE
+WHERE a.org_id = $1
+  AND ast.org_id = $1
+  AND (ars.org_id = $1 OR ars.org_id IS NULL)
+  AND (ags.org_id = $1 OR ags.org_id IS NULL)
+  AND (sk.org_id = $1 OR sk.org_id IS NULL)
+  AND a.enabled = TRUE
+  AND ast.status = 'Ready'
+  AND (ars.agent_id IS NULL
+       OR ars.routing_state = 'routable'
+       OR (ars.state_expires_at IS NOT NULL AND ars.state_expires_at <= now()))
+GROUP BY a.id, a.code
+ORDER BY a.code
+LIMIT $2;
+
+-- InsertRouteDecision records one matcher decision (the D9 audit trail): who was
+-- selected/considered, the outcome, and a JSONB detail blob (ranking, excluded,
+-- eligibility). Written on every offer and every pre-offer failure.
+-- name: InsertRouteDecision :exec
+INSERT INTO route_decisions (
+    id, org_id, route_request_id, decision_type, matcher_instance, channel,
+    queue_id, selected_agent_id, selected_slot_no, outcome, reason, detail
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
 
 -- ClaimExpiredMatchRoutes flips queue-SLA-expired routes to 'running' (the route
 -- run-lock) so the continuation worker can resume them with the no_candidate

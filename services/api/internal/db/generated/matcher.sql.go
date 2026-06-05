@@ -168,12 +168,14 @@ func (q *Queries) ClaimWaitingRoute(ctx context.Context, arg ClaimWaitingRoutePa
 	return i, err
 }
 
-const commitMatchOffer = `-- name: CommitMatchOffer :execrows
+const commitMatchOffer = `-- name: CommitMatchOffer :one
 UPDATE route_requests
 SET status = 'waiting', active_reservation_id = $4,
     current_reservation_id = $4, resume_cursor = $5,
+    run_seq = run_seq + 1,
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
 type CommitMatchOfferParams struct {
@@ -185,20 +187,48 @@ type CommitMatchOfferParams struct {
 }
 
 // CommitMatchOffer flips a claimed route to 'waiting' (an offer was attached),
-// token-fenced so a superseded claim can't commit. 0 rows ⇒ the worker rolls
-// back its offer + releases the slot.
-func (q *Queries) CommitMatchOffer(ctx context.Context, arg CommitMatchOfferParams) (int64, error) {
-	result, err := q.db.Exec(ctx, commitMatchOffer,
+// token-fenced so a superseded claim can't commit. ErrNoRows ⇒ the worker rolls
+// back its offer + releases the slot. Bumps run_seq (a new suspension at this
+// offer) so a stale reservation_timeout from a prior attempt is fenced out by
+// AcquireRouteForRunAtSeq — same invariant SuspendRoute upholds on the inline path.
+func (q *Queries) CommitMatchOffer(ctx context.Context, arg CommitMatchOfferParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, commitMatchOffer,
 		arg.ID,
 		arg.OrgID,
 		arg.MatchOfferToken,
 		arg.ActiveReservationID,
 		arg.ResumeCursor,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const enqueueRouteForMatch = `-- name: EnqueueRouteForMatch :one
@@ -285,6 +315,111 @@ func (q *Queries) EnqueueRouteForMatch(ctx context.Context, arg EnqueueRouteForM
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertRouteDecision = `-- name: InsertRouteDecision :exec
+INSERT INTO route_decisions (
+    id, org_id, route_request_id, decision_type, matcher_instance, channel,
+    queue_id, selected_agent_id, selected_slot_no, outcome, reason, detail
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+`
+
+type InsertRouteDecisionParams struct {
+	ID              pgtype.UUID `json:"id"`
+	OrgID           pgtype.UUID `json:"org_id"`
+	RouteRequestID  pgtype.UUID `json:"route_request_id"`
+	DecisionType    string      `json:"decision_type"`
+	MatcherInstance string      `json:"matcher_instance"`
+	Channel         string      `json:"channel"`
+	QueueID         pgtype.UUID `json:"queue_id"`
+	SelectedAgentID pgtype.UUID `json:"selected_agent_id"`
+	SelectedSlotNo  *int32      `json:"selected_slot_no"`
+	Outcome         string      `json:"outcome"`
+	Reason          *string     `json:"reason"`
+	Detail          []byte      `json:"detail"`
+}
+
+// InsertRouteDecision records one matcher decision (the D9 audit trail): who was
+// selected/considered, the outcome, and a JSONB detail blob (ranking, excluded,
+// eligibility). Written on every offer and every pre-offer failure.
+func (q *Queries) InsertRouteDecision(ctx context.Context, arg InsertRouteDecisionParams) error {
+	_, err := q.db.Exec(ctx, insertRouteDecision,
+		arg.ID,
+		arg.OrgID,
+		arg.RouteRequestID,
+		arg.DecisionType,
+		arg.MatcherInstance,
+		arg.Channel,
+		arg.QueueID,
+		arg.SelectedAgentID,
+		arg.SelectedSlotNo,
+		arg.Outcome,
+		arg.Reason,
+		arg.Detail,
+	)
+	return err
+}
+
+const listAvailableAgentsForMatch = `-- name: ListAvailableAgentsForMatch :many
+SELECT a.id AS agent_id,
+       a.code AS agent_code,
+       COALESCE(array_remove(array_agg(DISTINCT sk.code), NULL), '{}')::text[] AS skills
+FROM agents a
+JOIN agent_states ast ON ast.agent_id = a.id
+LEFT JOIN agent_routing_state ars ON ars.agent_id = a.id
+LEFT JOIN agent_skills ags ON ags.agent_id = a.id
+LEFT JOIN skills sk ON sk.id = ags.skill_id AND sk.enabled = TRUE
+WHERE a.org_id = $1
+  AND ast.org_id = $1
+  AND (ars.org_id = $1 OR ars.org_id IS NULL)
+  AND (ags.org_id = $1 OR ags.org_id IS NULL)
+  AND (sk.org_id = $1 OR sk.org_id IS NULL)
+  AND a.enabled = TRUE
+  AND ast.status = 'Ready'
+  AND (ars.agent_id IS NULL
+       OR ars.routing_state = 'routable'
+       OR (ars.state_expires_at IS NOT NULL AND ars.state_expires_at <= now()))
+GROUP BY a.id, a.code
+ORDER BY a.code
+LIMIT $2
+`
+
+type ListAvailableAgentsForMatchParams struct {
+	OrgID pgtype.UUID `json:"org_id"`
+	Limit int32       `json:"limit"`
+}
+
+type ListAvailableAgentsForMatchRow struct {
+	AgentID   pgtype.UUID `json:"agent_id"`
+	AgentCode string      `json:"agent_code"`
+	Skills    []string    `json:"skills"`
+}
+
+// ListAvailableAgentsForMatch is the matcher's availability side: enabled agents
+// in Ready state that are routable (no RONA hold, or an expired one) — each with
+// their enabled skill codes aggregated so the caller can claim a skill-eligible
+// route. Presence (the connection lease) is filtered in Go, not here (Redis).
+// Bounded batch. Org-scoped: every tenant alias carries org_id in the WHERE
+// (SQLChecker), and the LEFT-joined skill rows use `OR ... IS NULL` so a
+// skill-less agent is not dropped (it can still serve a no-skill route).
+func (q *Queries) ListAvailableAgentsForMatch(ctx context.Context, arg ListAvailableAgentsForMatchParams) ([]ListAvailableAgentsForMatchRow, error) {
+	rows, err := q.db.Query(ctx, listAvailableAgentsForMatch, arg.OrgID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAvailableAgentsForMatchRow{}
+	for rows.Next() {
+		var i ListAvailableAgentsForMatchRow
+		if err := rows.Scan(&i.AgentID, &i.AgentCode, &i.Skills); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const returnRouteToQueue = `-- name: ReturnRouteToQueue :execrows
