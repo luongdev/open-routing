@@ -118,8 +118,11 @@ decision-trace requirements.
       timeout / stale-offer fixtures.
 - [ ] OpenAPI/WS schema + migrations (fold into the single pre-release migration);
       sqlc + Go/TS regen drift gates; org-scoping on every new table/query/session.
-- [ ] Backend + frontend test gates; live-engine e2e smoke (extends
-      scripts/e2e_v02_runtime.sh).
+- [~] Backend + frontend test gates; live-engine e2e smoke. CI: a black-box
+      integration test (TestE2E_MatcherPullToComplete) drives matcher pull → offer
+      → lease-fenced accept → resume → complete → slot freed → WrapUp with real
+      Endpoints. Manual: scripts/e2e_v03_runtime.sh seeds + runs cmd/refagent over
+      WS against a live stack (needs MATCHER_ENABLED). Frontend gates unchanged.
 - [ ] Cross-AI peer review of the full v0.3 diff; fix findings.
 - [ ] Merge accepted behavior into openspec/specs/ and archive this change.
 

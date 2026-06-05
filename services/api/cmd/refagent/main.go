@@ -79,8 +79,10 @@ func realMain() int {
 }
 
 func patchReady(ctx context.Context, base, org, agent string) error {
+	// force=true so a fresh agent (which starts Offline, and Offline→Ready is NOT
+	// an agent-initiated matrix edge) can be driven Ready for a demo/diagnostic run.
 	url := fmt.Sprintf("%s/v1/orgs/%s/agents/%s/status", strings.TrimRight(base, "/"), org, agent)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, strings.NewReader(`{"to":"Ready"}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, strings.NewReader(`{"to":"Ready","force":true}`))
 	if err != nil {
 		return err
 	}
