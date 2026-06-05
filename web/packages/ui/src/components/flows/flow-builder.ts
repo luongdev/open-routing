@@ -1640,17 +1640,16 @@ export class OrFlowBuilder extends LitElement {
       opacity: 0.4;
       cursor: not-allowed;
     }
+    /* A light primary-tinted button with a CORAL icon — a white icon on a solid
+       --primary background went invisible (uk-icon color issue). Coral-on-tint
+       both shows the icon and keeps the step-forward emphasis (user report). */
     .sim-pb-btn--primary {
-      background: var(--primary);
-      color: var(--primary-foreground);
+      background: color-mix(in oklch, var(--primary) 16%, var(--card));
+      color: var(--primary);
     }
-    /* uk-icon renders a mask whose color must be set on the icon element itself —
-       it does not always inherit the button's color, so the step-forward icon
-       went invisible on the red primary background (user report). */
-    .sim-pb-btn--primary uk-icon { color: var(--primary-foreground); }
     .sim-pb-btn--primary:hover:not(:disabled) {
-      background: var(--primary);
-      color: var(--primary-foreground);
+      background: color-mix(in oklch, var(--primary) 26%, var(--card));
+      color: var(--primary);
       filter: brightness(1.05);
     }
 
@@ -2256,6 +2255,24 @@ export class OrFlowBuilder extends LitElement {
       color: var(--foreground);
     }
     .sim-input-field:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 30%, transparent); }
+    .sim-input-row { display: flex; gap: 8px; align-items: stretch; }
+    .sim-input-row .sim-input-field { flex: 1; }
+    .sim-input-submit {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      padding: 0 12px;
+      border: none;
+      border-radius: 6px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .sim-input-submit:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 88%, black); }
+    .sim-input-submit:disabled { opacity: 0.5; cursor: not-allowed; }
     .sim-input-branch { margin-top: 6px; font-size: 12px; color: var(--muted-foreground); }
     .branch-tag {
       display: inline-block;
@@ -2969,12 +2986,23 @@ export class OrFlowBuilder extends LitElement {
       this._inputDraft = '';
       return;
     }
-    // Try common output keys for captured value. Falls back to empty.
-    // String() also coerces numeric DTMF values cleanly.
+    // Prefill the bottom input with the value pinned for this node (so the field
+    // reflects what you submitted), falling back to the trace's captured value.
+    const pinned = this._simNodeInputs[step.node_id];
+    if (pinned !== undefined) {
+      this._inputDraft = pinned;
+      return;
+    }
     const out = step.outputs;
-    const v = out['menu_choice'] ?? out['text'] ?? out['signal_payload'] ??
+    const v = out['captured'] ?? out['menu_choice'] ?? out['text'] ?? out['signal_payload'] ??
       out['supervisor_choice'] ?? out['captured_value'] ?? '';
     this._inputDraft = String(v);
+  }
+
+  // Apply the bottom-panel input value for a capture node and re-run (one input,
+  // with an explicit Submit so it's clear how to apply — user report).
+  private async _submitNodeInput(nodeId: string): Promise<void> {
+    await this._setNodeInput(nodeId, this._inputDraft);
   }
 
   private _submitInput(): void {
@@ -5477,11 +5505,8 @@ export class OrFlowBuilder extends LitElement {
     }
     const tone = this._toneFor(step.node_kind);
     const icon = this._iconFor(step.node_kind);
-    // Input/capture nodes are driven by the value typed on the NODE CARD (the
-    // single input place). The bottom card only explains the branch mapping —
-    // there is no second input/submit here (user report: one input, not two).
+    // Capture nodes get their single value input here in the bottom step card.
     const isInputNode = WAIT_INPUT_KINDS.has(step.node_kind);
-    const hasValue = (this._simNodeInputs[step.node_id] ?? '') !== '';
     return html`
       <div class="run-panel-header">
         <uk-icon icon="activity" height="13" width="13"></uk-icon>
@@ -5509,15 +5534,21 @@ export class OrFlowBuilder extends LitElement {
         ${isInputNode ? html`
           <div class="sim-input-control">
             <label class="sim-input-label">Captured value</label>
-            <input class="sim-input-field" type="text"
-              placeholder=${OrFlowBuilder._simInputHint(step.node_kind as FlowNodeKind)}
-              .value=${this._simNodeInputs[step.node_id] ?? ''}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-              @change=${(e: Event) => void this._setNodeInput(step.node_id, (e.target as HTMLInputElement).value)}>
+            <div class="sim-input-row">
+              <input class="sim-input-field" type="text"
+                placeholder=${OrFlowBuilder._simInputHint(step.node_kind as FlowNodeKind)}
+                .value=${this._inputDraft}
+                @input=${(e: Event) => { this._inputDraft = (e.target as HTMLInputElement).value; }}
+                @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') void this._submitNodeInput(step.node_id); }}>
+              <button class="sim-input-submit" ?disabled=${this._simRunning}
+                @click=${() => void this._submitNodeInput(step.node_id)}>
+                <uk-icon icon="corner-down-left" height="13" width="13"></uk-icon> Submit
+              </button>
+            </div>
             <div class="sim-input-branch">
-              ${hasValue
+              ${(this._simNodeInputs[step.node_id] ?? '') !== ''
                 ? html`Takes the <span class="branch-tag branch-tag--captured">captured</span> branch.`
-                : html`Empty → <span class="branch-tag branch-tag--timeout">timeout</span> branch. Type a value for <strong>captured</strong>.`}
+                : html`Empty → <span class="branch-tag branch-tag--timeout">timeout</span> branch. Type a value + Submit for <strong>captured</strong>.`}
             </div>
           </div>` : nothing}
         ${step.status === 'fail' && step.caught ? html`

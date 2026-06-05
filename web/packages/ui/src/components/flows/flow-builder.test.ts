@@ -594,9 +594,12 @@ describe('OrFlowBuilder', () => {
     const field = el.shadowRoot!.querySelector('.sim-input-field') as HTMLInputElement;
     expect(field).toBeTruthy(); // the input lives in the bottom step card
     field.value = '1234';
-    field.dispatchEvent(new Event('change'));
+    field.dispatchEvent(new Event('input'));
+    const submit = el.shadowRoot!.querySelector('.sim-input-submit') as HTMLButtonElement;
+    expect(submit).toBeTruthy(); // explicit Submit button in the panel
+    submit.click();
     await (el as any).updateComplete;
-    expect((el as any)._simNodeInputs.d).toBe('1234'); // typed value pinned for the run
+    expect((el as any)._simNodeInputs.d).toBe('1234'); // submitted value pinned for the run
   });
 
   it('editing switch_case cases regenerates outputs and prunes stale edges', async () => {
