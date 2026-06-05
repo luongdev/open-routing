@@ -267,9 +267,24 @@ CREATE TABLE route_requests (
     flow_code         TEXT,
     interaction_input JSONB NOT NULL DEFAULT '{}'::jsonb,
     status            TEXT NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending','running','waiting','completed','failed','cancelled')),
+                        CHECK (status IN ('pending','running','waiting','waiting_match','offering','completed','failed','cancelled')),
     failure_code      TEXT,
     read_set_snapshot JSONB,
+    -- Wave 4 matcher (queue + bidirectional pull). A route with no available
+    -- agent parks 'waiting_match'; the matcher claims it ('offering', token-fenced)
+    -- and attaches an offer. match_offer_token fences every claim/requeue/recover
+    -- so a stalled worker can't clobber a fresh offer.
+    queue_id            UUID,
+    priority            INTEGER NOT NULL DEFAULT 0,
+    required_skills     TEXT[] NOT NULL DEFAULT '{}',
+    waiting_since       TIMESTAMPTZ,
+    next_match_at       TIMESTAMPTZ,
+    match_deadline      TIMESTAMPTZ,
+    match_attempt_seq   INTEGER NOT NULL DEFAULT 0,
+    match_offer_token   UUID,
+    offering_started_at TIMESTAMPTZ,
+    active_reservation_id UUID,
+    excluded_agent_ids  UUID[] NOT NULL DEFAULT '{}',
     -- Live-run execution lock + resume position (Wave 3). The route_requests row
     -- is the per-route exclusive lock: a process flips status->running before
     -- running the executor, parks resume_cursor on suspend, and releases it.
@@ -286,6 +301,16 @@ CREATE TABLE route_requests (
     CHECK ((flow_version_id IS NULL) = (flow_code IS NULL))
 );
 CREATE INDEX ix_route_requests_org_created ON route_requests (org_id, created_at DESC, id DESC);
+-- Wave 4 matcher access paths: the availability-pull ranking prefix, the SLA
+-- deadline sweep, the stale-offering recovery sweep, and skill eligibility.
+CREATE INDEX ix_route_requests_pull
+    ON route_requests (org_id, queue_id, next_match_at, priority DESC, waiting_since ASC)
+    WHERE status = 'waiting_match';
+CREATE INDEX ix_route_requests_match_deadline
+    ON route_requests (org_id, match_deadline) WHERE status = 'waiting_match';
+CREATE INDEX ix_route_requests_offering
+    ON route_requests (org_id, offering_started_at) WHERE status = 'offering';
+CREATE INDEX ix_route_requests_required_skills ON route_requests USING GIN (required_skills);
 
 -- Reservation lifecycle. Retry = a NEW offered row (attempt+1), not a state.
 -- The two partial unique indexes ARE the double-booking / double-acceptance
@@ -302,6 +327,11 @@ CREATE TABLE reservations (
     expires_at        TIMESTAMPTZ NOT NULL,
     resolved_at       TIMESTAMPTZ,
     reason            TEXT,
+    -- Wave 4 D5 fencing: an accept/reject/complete must match the lease_token +
+    -- agent_session_id bound at offer time so a stale command for a superseded
+    -- (re-offered) reservation can't resolve it.
+    lease_token       UUID,
+    agent_session_id  UUID,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -467,5 +497,45 @@ CREATE INDEX ix_agent_capacity_slots_sweep
 -- on reservation_id, NOT agent — so it does NOT impose capacity=1.
 CREATE UNIQUE INDEX ux_agent_capacity_slots_one_per_reservation
     ON agent_capacity_slots (org_id, reservation_id) WHERE reservation_id IS NOT NULL;
+
+-- route_decisions (v0.3 W4, design D9): one row per matcher decision — the audit
+-- trail that makes a live routing decision fully explainable (who was considered,
+-- who was excluded and why, the ranking, the outcome).
+CREATE TABLE route_decisions (
+    id                UUID PRIMARY KEY,
+    org_id            UUID NOT NULL,
+    route_request_id  UUID NOT NULL,
+    decision_type     TEXT NOT NULL
+                        CHECK (decision_type IN ('interaction_offer','availability_pull','retry','sweep')),
+    decision_version  INTEGER NOT NULL DEFAULT 1,
+    matcher_instance  TEXT NOT NULL,
+    channel           TEXT NOT NULL,
+    queue_id          UUID,
+    selected_agent_id UUID,
+    selected_slot_no  INTEGER,
+    outcome           TEXT NOT NULL
+                        CHECK (outcome IN ('offered','no_candidate','capacity_lost','lease_lost','route_lost')),
+    reason            TEXT,
+    detail            JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ix_route_decisions_route ON route_decisions (org_id, route_request_id, created_at DESC);
+CREATE INDEX ix_route_decisions_agent ON route_decisions (org_id, selected_agent_id, created_at DESC) WHERE selected_agent_id IS NOT NULL;
+
+-- agent_routing_state (v0.3 W4 RONA): kept separate from the agents catalog row
+-- (which the catalog package maps with column-exact queries) so adding mutable
+-- routing state doesn't churn that package. A missed offer marks the agent
+-- non-routable until the TTL or an explicit Ready clears it; last_ready_at fences
+-- a late RONA write from clobbering a Ready that arrived after the ring.
+CREATE TABLE agent_routing_state (
+    org_id            UUID NOT NULL,
+    agent_id          UUID NOT NULL,
+    routing_state     TEXT NOT NULL DEFAULT 'routable'
+                        CHECK (routing_state IN ('routable','missed')),
+    state_expires_at  TIMESTAMPTZ,
+    last_ready_at     TIMESTAMPTZ,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (org_id, agent_id)
+);
 
 COMMIT;

@@ -1,4 +1,6 @@
 BEGIN;
+DROP TABLE IF EXISTS agent_routing_state;
+DROP TABLE IF EXISTS route_decisions;
 DROP TABLE IF EXISTS agent_capacity_slots;
 DROP TABLE IF EXISTS agent_sessions;
 DROP TABLE IF EXISTS ws_command_dedupe;

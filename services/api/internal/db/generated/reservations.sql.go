@@ -15,7 +15,7 @@ const acceptReservation = `-- name: AcceptReservation :one
 UPDATE reservations
 SET state = 'accepted', resolved_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'offered' AND expires_at > clock_timestamp()
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
 `
 
 type AcceptReservationParams struct {
@@ -43,6 +43,8 @@ func (q *Queries) AcceptReservation(ctx context.Context, arg AcceptReservationPa
 		&i.ExpiresAt,
 		&i.ResolvedAt,
 		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -53,7 +55,7 @@ const cancelOfferedReservationsForRoute = `-- name: CancelOfferedReservationsFor
 UPDATE reservations
 SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
 WHERE org_id = $1 AND route_request_id = $2 AND state = 'offered'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
 `
 
 type CancelOfferedReservationsForRouteParams struct {
@@ -81,6 +83,8 @@ func (q *Queries) CancelOfferedReservationsForRoute(ctx context.Context, arg Can
 			&i.ExpiresAt,
 			&i.ResolvedAt,
 			&i.Reason,
+			&i.LeaseToken,
+			&i.AgentSessionID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -98,7 +102,7 @@ const completeReservation = `-- name: CompleteReservation :one
 UPDATE reservations
 SET state = 'completed', resolved_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'accepted'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
 `
 
 type CompleteReservationParams struct {
@@ -120,6 +124,8 @@ func (q *Queries) CompleteReservation(ctx context.Context, arg CompleteReservati
 		&i.ExpiresAt,
 		&i.ResolvedAt,
 		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -127,7 +133,7 @@ func (q *Queries) CompleteReservation(ctx context.Context, arg CompleteReservati
 }
 
 const getReservation = `-- name: GetReservation :one
-SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at FROM reservations WHERE id = $1 AND org_id = $2
+SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at FROM reservations WHERE id = $1 AND org_id = $2
 `
 
 type GetReservationParams struct {
@@ -149,6 +155,8 @@ func (q *Queries) GetReservation(ctx context.Context, arg GetReservationParams) 
 		&i.ExpiresAt,
 		&i.ResolvedAt,
 		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -159,7 +167,7 @@ const insertReservationOffer = `-- name: InsertReservationOffer :one
 INSERT INTO reservations (
     id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at
 ) VALUES ($1, $2, $3, $4, 'offered', $5, NOW(), $6)
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
 `
 
 type InsertReservationOfferParams struct {
@@ -192,6 +200,8 @@ func (q *Queries) InsertReservationOffer(ctx context.Context, arg InsertReservat
 		&i.ExpiresAt,
 		&i.ResolvedAt,
 		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -231,7 +241,7 @@ func (q *Queries) ListOfferedAgentsForRoute(ctx context.Context, arg ListOffered
 }
 
 const listReservationsByRoute = `-- name: ListReservationsByRoute :many
-SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at FROM reservations
+SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at FROM reservations
 WHERE org_id = $1 AND route_request_id = $2
 ORDER BY attempt ASC
 `
@@ -261,6 +271,8 @@ func (q *Queries) ListReservationsByRoute(ctx context.Context, arg ListReservati
 			&i.ExpiresAt,
 			&i.ResolvedAt,
 			&i.Reason,
+			&i.LeaseToken,
+			&i.AgentSessionID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -278,7 +290,7 @@ const rejectReservation = `-- name: RejectReservation :one
 UPDATE reservations
 SET state = 'rejected', resolved_at = NOW(), reason = $3, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'offered'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
 `
 
 type RejectReservationParams struct {
@@ -301,6 +313,8 @@ func (q *Queries) RejectReservation(ctx context.Context, arg RejectReservationPa
 		&i.ExpiresAt,
 		&i.ResolvedAt,
 		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -311,7 +325,7 @@ const timeoutReservation = `-- name: TimeoutReservation :one
 UPDATE reservations
 SET state = 'timeout', resolved_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'offered'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
 `
 
 type TimeoutReservationParams struct {
@@ -333,6 +347,8 @@ func (q *Queries) TimeoutReservation(ctx context.Context, arg TimeoutReservation
 		&i.ExpiresAt,
 		&i.ResolvedAt,
 		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
