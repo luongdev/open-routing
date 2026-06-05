@@ -22,7 +22,7 @@ Reference patterns to reuse (do NOT reinvent):
 - **Q1 (console scope)** → DECIDED by user: minimal console IS in v0.4 (codex's
   position) so a human can answer a real call end-to-end; full desktop is v0.5+.
 
-## Open questions (original seed; Q1 still open)
+## Open questions (original seed — ALL resolved above; kept for rationale/context)
 
 ### Q1 — Agent desktop: in v0.4 or v0.5?
 The minimal console (Wave 5) needs a LiveKit *client* audio integration, which is

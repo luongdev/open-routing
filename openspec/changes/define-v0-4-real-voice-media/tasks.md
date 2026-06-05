@@ -16,12 +16,13 @@ suite. See discussion.md.
       another.
 - [ ] Inbound-interaction contract: the opentts/phone stack notifies Open Routing
       of an inbound caller leg (reference, not ownership) → routing begins.
-- [ ] Deterministic assignment/media state-transition table (the adapter's
-      anti-corruption mapping) + a late-event QUARANTINE rule: out-of-order,
-      skipped, duplicated, and post-terminal events are tolerated and never leak
-      capacity or deadlock.
-- [ ] Tests: the transition table as table-driven tests incl. every out-of-order /
-      late / duplicate path.
+- [x] Deterministic assignment/media state-transition table (the engine-side
+      anti-corruption FSM) + a late-event QUARANTINE rule: out-of-order, skipped,
+      duplicated, and post-terminal events are tolerated and never leak capacity or
+      deadlock. Shipped: `internal/assignment` — pure `Decide(state,event)`,
+      monotonic progress, first-terminal-wins, missed-event tolerant.
+- [x] Tests: table-driven (mirrors the table) + a 20k-trial property/fuzz proving
+      the invariants (monotonic, ≤1 terminal, sticky-terminal, totality).
 
 ## Wave 1 — Durable delivery outbox (prove with the mock)
 
