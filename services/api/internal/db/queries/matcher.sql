@@ -242,3 +242,40 @@ SET status = 'running',
 WHERE id = $1 AND org_id = $2 AND status = 'waiting_match'
   AND match_deadline IS NOT NULL AND match_deadline <= now()
 RETURNING *;
+
+-- ReassignRouteForMatch (v0.4 W4) re-queues an interaction whose agent dropped
+-- mid-call back to waiting_match for a fresh match to ANOTHER agent. Reuses the
+-- queue/skills already on the route from its first enqueue; bumps reassign_count;
+-- re-derives the exclusion set from every resolved-non-accepting reservation
+-- (rejected/timeout/cancelled — the dropped reservation is cancelled before this)
+-- so the matcher won't re-ring an agent who already failed this interaction.
+-- Fenced on non-terminal status; the caller enforces the hop cap. $3 = new
+-- match_deadline.
+-- name: ReassignRouteForMatch :one
+UPDATE route_requests
+SET status = 'waiting_match',
+    reassign_count = reassign_count + 1,
+    waiting_since = now(),
+    next_match_at = now(),
+    match_deadline = $3,
+    match_offer_token = NULL,
+    offering_started_at = NULL,
+    active_reservation_id = NULL,
+    current_reservation_id = NULL,
+    excluded_agent_ids = COALESCE(
+        (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
+        '{}'),
+    updated_at = now()
+WHERE id = $1 AND org_id = $2 AND status NOT IN ('cancelled', 'failed')
+RETURNING *;
+
+-- ReassignStaleReservation cancels the dropped accepted reservation (reason
+-- 'reassigned') so its slot can be freed and the interaction re-matched. Fenced on
+-- still-accepted so it can't race a concurrent complete. Returns the adapter handle
+-- to release post-commit.
+-- name: ReassignStaleReservation :one
+UPDATE reservations
+SET state = 'cancelled', reason = 'reassigned', resolved_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'accepted'
+RETURNING agent_id, adapter_handle;

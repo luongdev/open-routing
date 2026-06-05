@@ -77,12 +77,20 @@ suite. See discussion.md.
 
 ## Wave 4 — Automatic mid-call reassignment
 
-- [ ] On an established call dropping (agent disconnect/fail), re-queue the
-      interaction for re-matching to another agent with preserved caller context,
-      instead of abandoning (completes the v0.3 reclaim path).
-- [ ] Bounded reassign hops + a give-up fallback (flow no_agent terminal); a
-      "transferred" marker on the new offer; audit each hop on the decision spine.
-- [ ] Tests: drop → reassign to a second agent; exhausted hops → fallback.
+- [x] On an established call dropping, the adapter `disconnected`/`rejected`
+      terminal now RE-QUEUES the interaction (reassignRoute: cancel the dropped
+      reservation reason='reassigned', free the slot, agent out of Engaged, flip the
+      route to waiting_match) instead of abandoning. The W0 assignment FSM is the
+      decision authority in OnAssignmentEvent (disconnected/rejected→reassign,
+      caller_abandoned/failed→teardown) — wires the FSM (closes the deferred review).
+- [x] Bounded: route_requests.reassign_count, maxReassignHops=3; past the cap the
+      route is abandoned (route.reassign_exhausted). Context preserved on the route
+      (queue/skills reused); ReassignRouteForMatch re-derives excluded_agent_ids so
+      the matcher won't re-ring anyone who already failed this interaction. Each hop
+      audited via route.reassigned + or_matcher_reassigns_total.
+- [x] Tests (against a parked-call flow fixture, the realistic non-terminal live
+      state): disconnect → waiting_match + reassign_count++ + reservation cancelled
+      + slot freed; exhausted hops → abandoned; caller_abandoned still tears down.
 
 ## Wave 5 — Minimal agent console
 

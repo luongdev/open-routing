@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/luongdev/open-routing/services/api/internal/adapter"
+	"github.com/luongdev/open-routing/services/api/internal/assignment"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
@@ -131,9 +132,11 @@ func (e *Endpoints) releaseAssignments(ctx context.Context, channel string, hand
 // outside world ended the interaction. Idempotent by construction: teardownRouteTx
 // is a no-op on an already-terminal route (the contract lets adapters retry).
 //
-// v0.3 scope: ALL adapter-originated terminals tear the route down. Finer policy
-// (e.g. disconnect/reject → re-offer while the caller is still present) is the
-// adapter-driven mid-handling REASSIGN policy deferred to v0.4.
+// The W0 assignment FSM is the decision authority: an adapter terminal maps to an
+// Action — caller_abandoned/failed → teardown (the interaction is over), while
+// disconnected/rejected (the AGENT dropped/declined, the caller may still be there)
+// → reassign the interaction to another agent (v0.4 W4). Idempotent by
+// construction: both teardown and reassign no-op on an already-resolved reservation.
 func (e *Endpoints) OnAssignmentEvent(ctx context.Context, ev adapter.AssignmentEvent) error {
 	if !ev.Type.Terminal() || ev.Type == adapter.EventCompleted || ev.Type == adapter.EventCancelled {
 		return nil
@@ -161,18 +164,25 @@ func (e *Endpoints) OnAssignmentEvent(ctx context.Context, ev adapter.Assignment
 	}
 	orgID := apiUUID(resv.OrgID)
 	routeID := apiUUID(resv.RouteRequestID)
-	octx := orgkey.SetOrgID(ctx, orgID)
-	tx, err := e.deps.OrgDB.BeginTx(octx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(octx) }()
-	qtx := generated.New(tx)
-	if _, _, tErr := e.teardownRouteTx(octx, qtx, orgID, routeID, "route."+string(ev.Type)); tErr != nil {
-		if errors.Is(tErr, pgx.ErrNoRows) {
-			return nil // route already terminal — idempotent
+
+	// A live call was 'established' when the terminal arrived; the FSM picks the action.
+	switch assignment.Decide(assignment.StateEstablished, ev.Type).Action {
+	case assignment.ActionReassign, assignment.ActionReoffer:
+		return e.reassignRoute(ctx, orgID, routeID, resID)
+	default: // ActionTeardown — caller_abandoned / failed
+		octx := orgkey.SetOrgID(ctx, orgID)
+		tx, err := e.deps.OrgDB.BeginTx(octx)
+		if err != nil {
+			return err
 		}
-		return tErr
+		defer func() { _ = tx.Rollback(octx) }()
+		qtx := generated.New(tx)
+		if _, _, tErr := e.teardownRouteTx(octx, qtx, orgID, routeID, "route."+string(ev.Type)); tErr != nil {
+			if errors.Is(tErr, pgx.ErrNoRows) {
+				return nil // route already terminal — idempotent
+			}
+			return tErr
+		}
+		return tx.Commit(octx)
 	}
-	return tx.Commit(octx)
 }

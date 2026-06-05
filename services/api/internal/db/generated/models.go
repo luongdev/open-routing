@@ -288,6 +288,7 @@ type RouteRequest struct {
 	ResumeCursor         []byte             `json:"resume_cursor"`
 	CurrentReservationID pgtype.UUID        `json:"current_reservation_id"`
 	RunSeq               int32              `json:"run_seq"`
+	ReassignCount        int32              `json:"reassign_count"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }

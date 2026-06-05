@@ -93,6 +93,7 @@ var (
 	WSCommandsTotal       = Default.Counter("or_ws_commands_total", "Agent WS commands processed (accept/reject/complete).")
 	WSCommandErrors       = Default.Counter("or_ws_command_errors_total", "Agent WS commands that returned an error ack.")
 
-	MatcherOffers   = Default.Counter("or_matcher_offers_total", "Offers attached by the availability-driven matcher.")
-	MatcherReclaims = Default.Counter("or_matcher_reclaims_total", "Confirmed-slot reclaims after an agent's presence lapsed mid-call.")
+	MatcherOffers    = Default.Counter("or_matcher_offers_total", "Offers attached by the availability-driven matcher.")
+	MatcherReclaims  = Default.Counter("or_matcher_reclaims_total", "Confirmed-slot reclaims after an agent's presence lapsed mid-call.")
+	MatcherReassigns = Default.Counter("or_matcher_reassigns_total", "Mid-call agent drops re-queued for a fresh match (v0.4 reassignment).")
 )

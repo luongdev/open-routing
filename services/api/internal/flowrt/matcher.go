@@ -40,6 +40,11 @@ const (
 	// Aligned with presence.DefaultTTL (90s) so a normal heartbeat cadence + one
 	// missed beat never trips it — only a genuine mid-call vanish does.
 	reclaimGrace = 90 * time.Second
+	// maxReassignHops bounds how many times one interaction is re-matched after a
+	// mid-call agent drop before the flow's no_candidate fallback gives up — so a
+	// serially-dropping call can't loop forever.
+	maxReassignHops      = 3
+	reassignMatchTimeout = 30 * time.Second // SLA window for a reassignment hop to find a new agent
 )
 
 // matcherBatch is the per-tick cap on agents/orgs/expired routes, configurable via
@@ -216,6 +221,75 @@ func (e *Endpoints) reclaimAbandonedCall(ctx context.Context, orgID, routeID, re
 	}
 	e.releaseAssignments(ctx, channel, handles, adapter.ReleaseCancelled)
 	metrics.MatcherReclaims.Inc()
+	return nil
+}
+
+// reassignRoute handles a mid-call agent drop (adapter `disconnected`/`rejected`):
+// cancel the dropped accepted reservation, free its slot, move the dropped agent
+// out of Engaged, then — if under the hop cap — re-queue the interaction to
+// waiting_match for a fresh match to ANOTHER agent (the matcher excludes everyone
+// who already failed this interaction); past the cap, give up and tear the route
+// down. The dropped call's media handle is released post-commit. This completes the
+// v0.3 reclaim path: reclaim WITHOUT abandon — re-queue instead (v0.4 W4).
+func (e *Endpoints) reassignRoute(ctx context.Context, orgID, routeID, resID uuid.UUID) error {
+	octx := orgkey.SetOrgID(ctx, orgID)
+	tx, err := e.deps.OrgDB.BeginTx(octx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(octx) }()
+	qtx := generated.New(tx)
+
+	// Fence + cancel the dropped reservation (still 'accepted' → the live call). 0
+	// rows ⇒ it already resolved (raced complete) → no-op.
+	rec, err := qtx.ReassignStaleReservation(octx, generated.ReassignStaleReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if e.deps.Capacity != nil {
+		if rErr := e.deps.Capacity.ReleaseInTx(octx, qtx, orgID, resID); rErr != nil {
+			return rErr
+		}
+	}
+	// Move the dropped agent out of Engaged (it's disconnected; presence already
+	// excludes it from re-offers — this just clears its state).
+	wrapUp := string(api.AgentStatusWrapUp)
+	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
+	if _, uErr := qtx.UpdateAgentStateStatus(octx, generated.UpdateAgentStateStatusParams{
+		AgentID: rec.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
+	}); uErr != nil && !errors.Is(uErr, pgx.ErrNoRows) {
+		return uErr
+	}
+
+	route, err := qtx.GetRouteRequest(octx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if err != nil {
+		return err
+	}
+	event := "route.reassigned"
+	if route.ReassignCount >= maxReassignHops {
+		// Exhausted: give up — abandon the route (the slot is already freed above).
+		if _, aErr := qtx.AbandonRoute(octx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); aErr != nil && !errors.Is(aErr, pgx.ErrNoRows) {
+			return aErr
+		}
+		event = "route.reassign_exhausted"
+	} else if _, rErr := qtx.ReassignRouteForMatch(octx, generated.ReassignRouteForMatchParams{
+		RouteRequestID: pgUUID(routeID), OrgID: pgUUID(orgID), MatchDeadline: ts(time.Now().Add(reassignMatchTimeout)),
+	}); rErr != nil && !errors.Is(rErr, pgx.ErrNoRows) {
+		return rErr
+	}
+	e.appendEvent(octx, qtx, orgID, routeID, event, map[string]any{
+		"agent_id": apiUUID(rec.AgentID).String(), "reassign_count": int(route.ReassignCount),
+	})
+	if err := tx.Commit(octx); err != nil {
+		return err
+	}
+	if rec.AdapterHandle != nil && *rec.AdapterHandle != "" {
+		e.releaseAssignments(octx, route.Channel, []string{*rec.AdapterHandle}, adapter.ReleaseCancelled)
+	}
+	metrics.MatcherReassigns.Inc()
 	return nil
 }
 

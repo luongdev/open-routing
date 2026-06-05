@@ -17,7 +17,7 @@ SET status = 'running',
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'waiting_match'
   AND match_deadline IS NOT NULL AND match_deadline <= now()
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type AcquireExpiredMatchRouteForRunParams struct {
@@ -58,6 +58,7 @@ func (q *Queries) AcquireExpiredMatchRouteForRun(ctx context.Context, arg Acquir
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -92,7 +93,7 @@ SET status = 'offering',
     updated_at = now()
 FROM picked p
 WHERE rr.id = p.id AND rr.org_id = $1
-RETURNING rr.id, rr.org_id, rr.channel, rr.entry_code, rr.flow_version_id, rr.flow_code, rr.interaction_input, rr.status, rr.failure_code, rr.read_set_snapshot, rr.queue_id, rr.priority, rr.required_skills, rr.waiting_since, rr.next_match_at, rr.match_deadline, rr.match_attempt_seq, rr.match_offer_token, rr.offering_started_at, rr.active_reservation_id, rr.excluded_agent_ids, rr.resume_cursor, rr.current_reservation_id, rr.run_seq, rr.created_at, rr.updated_at
+RETURNING rr.id, rr.org_id, rr.channel, rr.entry_code, rr.flow_version_id, rr.flow_code, rr.interaction_input, rr.status, rr.failure_code, rr.read_set_snapshot, rr.queue_id, rr.priority, rr.required_skills, rr.waiting_since, rr.next_match_at, rr.match_deadline, rr.match_attempt_seq, rr.match_offer_token, rr.offering_started_at, rr.active_reservation_id, rr.excluded_agent_ids, rr.resume_cursor, rr.current_reservation_id, rr.run_seq, rr.reassign_count, rr.created_at, rr.updated_at
 `
 
 type ClaimWaitingRouteParams struct {
@@ -149,6 +150,7 @@ func (q *Queries) ClaimWaitingRoute(ctx context.Context, arg ClaimWaitingRoutePa
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -163,7 +165,7 @@ SET status = 'waiting', active_reservation_id = $4,
     match_attempt_seq = match_attempt_seq + 1,
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type CommitMatchOfferParams struct {
@@ -216,6 +218,7 @@ func (q *Queries) CommitMatchOffer(ctx context.Context, arg CommitMatchOfferPara
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -261,7 +264,7 @@ SET status = 'waiting_match',
     offering_started_at = NULL,
     updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type EnqueueRouteForMatchParams struct {
@@ -317,6 +320,7 @@ func (q *Queries) EnqueueRouteForMatch(ctx context.Context, arg EnqueueRouteForM
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -600,6 +604,103 @@ type MarkAgentReadyParams struct {
 func (q *Queries) MarkAgentReady(ctx context.Context, arg MarkAgentReadyParams) error {
 	_, err := q.db.Exec(ctx, markAgentReady, arg.OrgID, arg.AgentID)
 	return err
+}
+
+const reassignRouteForMatch = `-- name: ReassignRouteForMatch :one
+UPDATE route_requests
+SET status = 'waiting_match',
+    reassign_count = reassign_count + 1,
+    waiting_since = now(),
+    next_match_at = now(),
+    match_deadline = $3,
+    match_offer_token = NULL,
+    offering_started_at = NULL,
+    active_reservation_id = NULL,
+    current_reservation_id = NULL,
+    excluded_agent_ids = COALESCE(
+        (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
+        '{}'),
+    updated_at = now()
+WHERE id = $1 AND org_id = $2 AND status NOT IN ('cancelled', 'failed')
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
+`
+
+type ReassignRouteForMatchParams struct {
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	MatchDeadline  pgtype.Timestamptz `json:"match_deadline"`
+}
+
+// ReassignRouteForMatch (v0.4 W4) re-queues an interaction whose agent dropped
+// mid-call back to waiting_match for a fresh match to ANOTHER agent. Reuses the
+// queue/skills already on the route from its first enqueue; bumps reassign_count;
+// re-derives the exclusion set from every resolved-non-accepting reservation
+// (rejected/timeout/cancelled — the dropped reservation is cancelled before this)
+// so the matcher won't re-ring an agent who already failed this interaction.
+// Fenced on non-terminal status; the caller enforces the hop cap. $3 = new
+// match_deadline.
+func (q *Queries) ReassignRouteForMatch(ctx context.Context, arg ReassignRouteForMatchParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, reassignRouteForMatch, arg.RouteRequestID, arg.OrgID, arg.MatchDeadline)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.ReassignCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const reassignStaleReservation = `-- name: ReassignStaleReservation :one
+UPDATE reservations
+SET state = 'cancelled', reason = 'reassigned', resolved_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'accepted'
+RETURNING agent_id, adapter_handle
+`
+
+type ReassignStaleReservationParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+type ReassignStaleReservationRow struct {
+	AgentID       pgtype.UUID `json:"agent_id"`
+	AdapterHandle *string     `json:"adapter_handle"`
+}
+
+// ReassignStaleReservation cancels the dropped accepted reservation (reason
+// 'reassigned') so its slot can be freed and the interaction re-matched. Fenced on
+// still-accepted so it can't race a concurrent complete. Returns the adapter handle
+// to release post-commit.
+func (q *Queries) ReassignStaleReservation(ctx context.Context, arg ReassignStaleReservationParams) (ReassignStaleReservationRow, error) {
+	row := q.db.QueryRow(ctx, reassignStaleReservation, arg.ID, arg.OrgID)
+	var i ReassignStaleReservationRow
+	err := row.Scan(&i.AgentID, &i.AdapterHandle)
+	return i, err
 }
 
 const returnRouteToQueue = `-- name: ReturnRouteToQueue :execrows

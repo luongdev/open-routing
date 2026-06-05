@@ -293,6 +293,10 @@ CREATE TABLE route_requests (
     resume_cursor          JSONB,
     current_reservation_id UUID,
     run_seq                INTEGER NOT NULL DEFAULT 0,
+    -- v0.4 W4: how many times this interaction has been re-matched after a mid-call
+    -- agent drop. Bounded (maxReassignHops) before the flow's no_candidate fallback,
+    -- so a serially-dropping interaction can't loop forever.
+    reassign_count    INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- A request that has started executing must have a pinned version; flow_code
