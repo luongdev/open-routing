@@ -100,6 +100,7 @@ func run() int {
 		Capacity:       flowrt.NewCapacityService(),
 		Logger:         slog.Default(),
 		MatcherEnabled: cfg.MatcherEnabled,
+		DeliveryOutbox: cfg.DeliveryOutbox,
 		// The matcher tick (here) reclaims a slot when an agent vanishes mid-call,
 		// which must Release the channel adapter delivery — so the runtime needs the
 		// same adapter wiring as cmd/api (cross-AI review MED). NOTE: the in-process
@@ -144,6 +145,16 @@ func run() int {
 					slog.ErrorContext(ctx, "matcher tick failed", "err", mErr)
 				} else if offered > 0 {
 					slog.InfoContext(ctx, "matcher offered routes", "count", offered)
+				}
+			}
+			// v0.4 W1: drain the durable delivery outbox — hand accepted assignments
+			// to the channel adapter. Gated; the in-process post-commit Deliver path
+			// stays the default until DELIVERY_OUTBOX_ENABLED is flipped.
+			if cfg.DeliveryOutbox {
+				if delivered, dErr := endpoints.DrainDeliveries(ctx, pool, workerID, time.Now()); dErr != nil {
+					slog.ErrorContext(ctx, "delivery drain failed", "err", dErr)
+				} else if delivered > 0 {
+					slog.InfoContext(ctx, "drained deliveries", "count", delivered)
 				}
 			}
 		}

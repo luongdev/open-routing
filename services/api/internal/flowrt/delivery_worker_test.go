@@ -57,6 +57,40 @@ func TestDrainDeliveries_BindsHandle(t *testing.T) {
 	}
 }
 
+// TestAcceptEnqueuesDelivery_WhenOutboxOn: with DeliveryOutbox on, accept commits
+// a delivery_command in the accept tx and does NOT deliver in-process (handle stays
+// null until the drain worker runs). Proves the gated wiring end to end.
+func TestAcceptEnqueuesDelivery_WhenOutboxOn(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	oe := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(), MatcherEnabled: true,
+		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
+		DeliveryOutbox: true,
+	})
+	_, resID, agentID, _ := driveToAcceptedCall(t, lf, oe)
+
+	// Accept enqueued a durable command but did NOT deliver in-process yet.
+	if c := deliveryCount(t, lf.orgID, resID); c != 1 {
+		t.Fatalf("delivery_commands after accept = %d, want 1 (enqueued, not in-process)", c)
+	}
+	if h := reservationHandle(t, lf.orgID, resID); h != "" {
+		t.Fatalf("handle bound in-process %q — outbox path must defer to the drain worker", h)
+	}
+	_ = agentID
+
+	// The drain worker delivers it.
+	if n, err := oe.DrainDeliveries(lf.ctx, sharedPool, "w1", time.Now()); err != nil || n != 1 {
+		t.Fatalf("drain n=%d err=%v, want 1", n, err)
+	}
+	if h := reservationHandle(t, lf.orgID, resID); h == "" {
+		t.Fatal("handle not bound after drain")
+	}
+}
+
 func deliveryCount(t *testing.T, org, resID uuid.UUID) int {
 	t.Helper()
 	var n int

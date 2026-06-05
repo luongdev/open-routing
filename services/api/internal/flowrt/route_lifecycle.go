@@ -339,11 +339,20 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "accepted"); err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "resume_failed"}}, nil
 	}
+	// Durable delivery (gated): enqueue in the accept tx so it commits atomically.
+	if e.deliveryOutboxMode() {
+		if err := e.enqueueDelivery(ctx, qtx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel, route.InteractionInput); err != nil {
+			return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "enqueue_delivery_failed"}}, nil
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
 	}
-	// Post-commit: hand the assignment to the channel adapter (mirrors the WS path).
-	e.deliverAssignment(ctx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel)
+	// Post-commit in-process Deliver (v0.3 path); the outbox path delivers via the
+	// runtime drain worker instead.
+	if !e.deliveryOutboxMode() {
+		e.deliverAssignment(ctx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel)
+	}
 	return api.AcceptReservation200JSONResponse(mapReservation(acc)), nil
 }
 

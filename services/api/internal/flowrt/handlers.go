@@ -61,7 +61,19 @@ type Deps struct {
 	// back onto the reservation; nil/absent ⇒ no media delivery (the WS/HTTP
 	// test-double path still drives accept/complete directly).
 	Adapters map[string]adapter.ChannelAdapter
-	Logger   *slog.Logger
+	// DeliveryOutbox routes accept→deliver through the v0.4 durable delivery outbox
+	// (enqueue in the accept tx; the cmd/runtime drain worker calls the adapter)
+	// instead of the v0.3 post-commit in-process Deliver. Off by default so the
+	// deployed behavior is unchanged until flipped (mirrors MatcherEnabled). Needs
+	// DrainDeliveries running on the runtime tick to actually deliver.
+	DeliveryOutbox bool
+	Logger         *slog.Logger
+}
+
+// deliveryOutboxMode reports whether accept should enqueue a durable delivery
+// command instead of delivering in-process post-commit.
+func (e *Endpoints) deliveryOutboxMode() bool {
+	return e.deps.DeliveryOutbox && len(e.deps.Adapters) > 0
 }
 
 // matcherMode reports whether to run reservations in W4 queue mode.

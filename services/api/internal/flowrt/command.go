@@ -285,7 +285,16 @@ func (e *Endpoints) applyAccept(ctx context.Context, tx *db.OrgTx, qtx *generate
 		return out, err
 	}
 	out.Status = "accepted"
-	out.deliver = &adapterDeliver{orgID: orgID, resID: resID, routeID: routeID, agentID: agentID, channel: route.Channel}
+	if e.deliveryOutboxMode() {
+		// Durable: commit the delivery intent in THIS tx (the accept). The runtime
+		// drain worker hands it to the adapter — survives a crash before delivery.
+		if err := e.enqueueDelivery(ctx, qtx, orgID, resID, routeID, agentID, route.Channel, route.InteractionInput); err != nil {
+			return out, err
+		}
+	} else {
+		// v0.3 path: post-commit in-process Deliver (set on the result).
+		out.deliver = &adapterDeliver{orgID: orgID, resID: resID, routeID: routeID, agentID: agentID, channel: route.Channel}
+	}
 	return out, nil
 }
 

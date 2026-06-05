@@ -38,10 +38,11 @@ suite. See discussion.md.
       new reservation → new command (never the stale room).
 - [x] Tests: enqueue→drain→handle bound + command delivered; idempotent producer;
       second drain is a no-op.
-- [ ] NEXT: route the live accept path through the outbox (gate behind a flag like
-      MATCHER_ENABLED so the deployed in-process Deliver is unchanged until flipped)
-      + wire DrainDeliveries into the cmd/runtime tick; crash-between-accept-and-
-      deliver redelivers.
+- [x] Route the live accept path through the outbox, gated by DELIVERY_OUTBOX_ENABLED
+      (default off → deployed in-process Deliver unchanged until flipped). Both
+      accept paths (WS command + HTTP test-double) enqueue in the accept tx when on;
+      DrainDeliveries wired into the cmd/runtime tick. Test: outbox-on accept
+      enqueues + defers to the drain (no in-process handle), drain binds it.
 
 ## Wave 2 — Inbound assignment-event webhook
 

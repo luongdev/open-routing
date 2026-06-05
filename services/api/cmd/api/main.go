@@ -230,6 +230,7 @@ func run() int {
 		Capacity:       capacitySvc,
 		Logger:         slog.Default(),
 		MatcherEnabled: cfg.MatcherEnabled,
+		DeliveryOutbox: cfg.DeliveryOutbox,
 		// v0.3 mock voice adapter (real LiveKit/SIP media = v0.4 behind this contract):
 		// accept hands the assignment here; adapter terminals drive reservation teardown.
 		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
