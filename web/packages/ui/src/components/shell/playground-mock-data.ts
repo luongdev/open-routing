@@ -553,10 +553,13 @@ export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_S
         bag.set(name, { key: name, value: o['result'], set_at_step: step.id, set_at_node_label: step.label });
       }
     } else if (typeof o['save_as'] === 'string' && o['save_as'] !== '') {
-      // Response-capture nodes (http_request) write their (mock) response into
-      // the named variable — surface it like set_var/compute, not as I/O metadata.
+      // Capture nodes write into the named variable: input nodes (prompt/DTMF/…)
+      // under `captured`, http_request under `response`. Surface that value, not
+      // the I/O metadata. (Bug: input nodes showed an EMPTY var because only
+      // `response` was read.)
       const name = o['save_as'];
-      bag.set(name, { key: name, value: o['response'], set_at_step: step.id, set_at_node_label: step.label });
+      const captured = 'captured' in o ? o['captured'] : o['response'];
+      bag.set(name, { key: name, value: captured, set_at_step: step.id, set_at_node_label: step.label });
     }
   }
   return Array.from(bag.values());

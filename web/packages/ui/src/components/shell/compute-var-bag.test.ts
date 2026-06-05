@@ -22,6 +22,12 @@ describe('computeVarBag', () => {
     expect(bag.find(e => e.key === 'customer.tier')?.value).toBe('gold111');
   });
 
+  it('a capture node writes its `captured` value into save_as (not an empty var)', () => {
+    const trace = [step({ id: 's2', node_kind: 'prompt_text', outputs: { captured: 'alo??', port: 'captured', save_as: 'answer' } })];
+    const bag = computeVarBag(0, trace);
+    expect(bag.find(e => e.key === 'answer')?.value).toBe('alo??');
+  });
+
   it('set_var contributes ONE entry (var=value), not name+value rows', () => {
     const trace = [step({ id: 's1', node_kind: 'set_var', outputs: { name: 'var_a', value: 1 } })];
     const bag = computeVarBag(0, trace);

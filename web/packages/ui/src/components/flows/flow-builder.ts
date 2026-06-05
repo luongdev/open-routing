@@ -1644,6 +1644,10 @@ export class OrFlowBuilder extends LitElement {
       background: var(--primary);
       color: var(--primary-foreground);
     }
+    /* uk-icon renders a mask whose color must be set on the icon element itself —
+       it does not always inherit the button's color, so the step-forward icon
+       went invisible on the red primary background (user report). */
+    .sim-pb-btn--primary uk-icon { color: var(--primary-foreground); }
     .sim-pb-btn--primary:hover:not(:disabled) {
       background: var(--primary);
       color: var(--primary-foreground);
