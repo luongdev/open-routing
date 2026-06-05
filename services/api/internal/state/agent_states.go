@@ -268,6 +268,17 @@ func (s *Server) PatchAgentStatus(ctx context.Context, req api.PatchAgentStatusR
 			Error: api.ErrorCodeInternal, Reason: "update_failed",
 		}}, nil
 	}
+	// v0.3 W5: an agent going Ready stamps last_ready_at + clears any RONA cooldown,
+	// so a stale missed-offer timeout can't re-sideline this fresh availability and
+	// the matcher sees the agent immediately (the matcher reads agent_routing_state).
+	if row.Status == string(api.AgentStatusReady) {
+		if rErr := qtx.MarkAgentReady(ctx, generated.MarkAgentReadyParams{OrgID: pgUUID(orgID), AgentID: pgUUID(agentID)}); rErr != nil {
+			s.deps.Logger.ErrorContext(ctx, "patch agent status: mark routing-ready", "err", rErr)
+			return api.PatchAgentStatus500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{
+				Error: api.ErrorCodeInternal, Reason: "routing_ready_failed",
+			}}, nil
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		s.deps.Logger.ErrorContext(ctx, "patch agent status: commit", "err", err)
 		return api.PatchAgentStatus500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{

@@ -223,8 +223,16 @@ func (e *Endpoints) fireWrapUpExpiry(ctx context.Context, workerID string, c gen
 	qtx := generated.New(tx)
 	// Idempotent, but a real DB error must surface for retry — only a guard-miss
 	// (ErrNoRows) is the benign no-op (review M6).
-	if _, err := qtx.ExpireWrapUp(ctx, generated.ExpireWrapUpParams{AgentID: c.AgentID, OrgID: c.OrgID}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	expired, err := qtx.ExpireWrapUp(ctx, generated.ExpireWrapUpParams{AgentID: c.AgentID, OrgID: c.OrgID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
+	}
+	// WrapUp → Ready (post-interaction auto-ready) stamps last_ready_at so the RONA
+	// fence sees this fresh availability; NotReady does not.
+	if err == nil && expired.Status == "Ready" {
+		if rErr := qtx.MarkAgentReady(ctx, generated.MarkAgentReadyParams{OrgID: c.OrgID, AgentID: c.AgentID}); rErr != nil {
+			return rErr
+		}
 	}
 	if err := e.resolveDone(ctx, qtx, c, workerID); err != nil {
 		return err

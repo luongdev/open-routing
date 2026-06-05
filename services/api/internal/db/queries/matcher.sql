@@ -174,6 +174,17 @@ WHERE agent_routing_state.org_id = $1
   AND (agent_routing_state.last_ready_at IS NULL
        OR agent_routing_state.last_ready_at <= $4);
 
+-- MarkAgentReady stamps last_ready_at and clears any RONA cooldown when an agent
+-- becomes Ready. last_ready_at is the Ready-race fence MarkAgentMissed reads: a
+-- stale missed-offer timeout that fires AFTER this Ready won't re-sideline the
+-- agent (its offered_at is older than last_ready_at). Idempotent upsert.
+-- name: MarkAgentReady :exec
+INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_at, last_ready_at)
+VALUES ($1, $2, 'routable', NULL, now())
+ON CONFLICT (org_id, agent_id) DO UPDATE
+SET routing_state = 'routable', state_expires_at = NULL, last_ready_at = now(), updated_at = now()
+WHERE agent_routing_state.org_id = $1;
+
 -- InsertRouteDecision records one matcher decision (the D9 audit trail): who was
 -- selected/considered, the outcome, and a JSONB detail blob (ranking, excluded,
 -- eligibility). Written on every offer and every pre-offer failure.

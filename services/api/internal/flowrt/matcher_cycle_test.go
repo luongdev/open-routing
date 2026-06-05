@@ -238,6 +238,36 @@ func TestMatcher_RONAMissedAgentExcluded(t *testing.T) {
 	}
 }
 
+// TestMatcher_RONAReadyRaceFence: once an agent goes Ready (last_ready_at stamped),
+// a STALE missed-offer timeout — whose offer predates that Ready — must NOT
+// re-sideline them. This is the W5 last_ready_at write activating the fence.
+func TestMatcher_RONAReadyRaceFence(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	q := generated.New(sharedPool)
+
+	// The agent becomes Ready now (last_ready_at = now).
+	if err := q.MarkAgentReady(lf.ctx, generated.MarkAgentReadyParams{OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID)}); err != nil {
+		t.Fatalf("mark ready: %v", err)
+	}
+	// A timeout for an offer made BEFORE that Ready tries to mark them missed.
+	n, err := q.MarkAgentMissed(lf.ctx, generated.MarkAgentMissedParams{
+		OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID),
+		StateExpiresAt: ts(time.Now().Add(time.Minute)), LastReadyAt: ts(time.Now().Add(-time.Minute)), // offered_at in the past
+	})
+	if err != nil {
+		t.Fatalf("mark missed: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("stale-offer timeout marked a re-readied agent missed (%d rows) — Ready-race fence failed", n)
+	}
+}
+
 // TestMatcher_RunMatcherPullsPerOrg drives the full cmd/runtime tick (RunMatcher):
 // a parked route + a connected Ready agent → the per-org pull offers it.
 func TestMatcher_RunMatcherPullsPerOrg(t *testing.T) {

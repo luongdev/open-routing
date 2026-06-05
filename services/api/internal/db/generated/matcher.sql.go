@@ -528,6 +528,28 @@ func (q *Queries) MarkAgentMissed(ctx context.Context, arg MarkAgentMissedParams
 	return result.RowsAffected(), nil
 }
 
+const markAgentReady = `-- name: MarkAgentReady :exec
+INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_at, last_ready_at)
+VALUES ($1, $2, 'routable', NULL, now())
+ON CONFLICT (org_id, agent_id) DO UPDATE
+SET routing_state = 'routable', state_expires_at = NULL, last_ready_at = now(), updated_at = now()
+WHERE agent_routing_state.org_id = $1
+`
+
+type MarkAgentReadyParams struct {
+	OrgID   pgtype.UUID `json:"org_id"`
+	AgentID pgtype.UUID `json:"agent_id"`
+}
+
+// MarkAgentReady stamps last_ready_at and clears any RONA cooldown when an agent
+// becomes Ready. last_ready_at is the Ready-race fence MarkAgentMissed reads: a
+// stale missed-offer timeout that fires AFTER this Ready won't re-sideline the
+// agent (its offered_at is older than last_ready_at). Idempotent upsert.
+func (q *Queries) MarkAgentReady(ctx context.Context, arg MarkAgentReadyParams) error {
+	_, err := q.db.Exec(ctx, markAgentReady, arg.OrgID, arg.AgentID)
+	return err
+}
+
 const returnRouteToQueue = `-- name: ReturnRouteToQueue :execrows
 UPDATE route_requests
 SET status = 'waiting_match', next_match_at = now(),
