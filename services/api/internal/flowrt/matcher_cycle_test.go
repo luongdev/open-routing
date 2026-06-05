@@ -3,7 +3,6 @@ package flowrt
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -76,7 +75,7 @@ func TestMatcher_PullOffersToConnectedAgent(t *testing.T) {
 	// The agent connects → the matcher pulls the waiting route onto it.
 	agentID := lf.agentID(t, "agent_a")
 	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
-	n, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1", time.Now())
+	n, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1")
 	if err != nil {
 		t.Fatalf("match cycle: %v", err)
 	}
@@ -128,7 +127,7 @@ func TestMatcher_PullNoDoubleAssign(t *testing.T) {
 	_ = lf.mem.Renew(context.Background(), lf.orgID, lf.agentID(t, "agent_a"), "sa")
 	_ = lf.mem.Renew(context.Background(), lf.orgID, lf.agentID(t, "agent_b"), "sb")
 
-	n, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1", time.Now())
+	n, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1")
 	if err != nil {
 		t.Fatalf("match cycle: %v", err)
 	}
@@ -175,7 +174,7 @@ func TestMatcher_AgingOvertakesPriority(t *testing.T) {
 		t.Fatalf("age lo: %v", err)
 	}
 
-	if _, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1", time.Now()); err != nil {
+	if _, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1"); err != nil {
 		t.Fatalf("match cycle: %v", err)
 	}
 	if rs := lf.reservations(t, lo); len(rs) != 1 {

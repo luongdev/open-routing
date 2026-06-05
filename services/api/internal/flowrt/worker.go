@@ -127,7 +127,12 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
 
-	route, err := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: c.RouteRequestID, OrgID: c.OrgID})
+	// run_seq-fenced acquire: the offer that armed this timer pinned the route's
+	// run_seq (SuspendRoute on the inline path, CommitMatchOffer on the matcher
+	// path). If the route has since advanced (accepted/rejected → a newer suspend
+	// bumped run_seq, or it completed), AtSeq gets 0 rows and the stale timer is a
+	// no-op — it can't seize a later wait/offer (cross-AI review MED).
+	route, err := qtx.AcquireRouteForRunAtSeq(ctx, generated.AcquireRouteForRunAtSeqParams{ID: c.RouteRequestID, OrgID: c.OrgID, RunSeq: c.RunSeq})
 	if errors.Is(err, pgx.ErrNoRows) {
 		if rErr := e.resolveDone(ctx, qtx, c, workerID); rErr != nil {
 			return rErr

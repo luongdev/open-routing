@@ -37,8 +37,10 @@ const (
 // Returns the number of offers attached. Org-scoped — the caller (cmd/runtime)
 // drives it per org with a waiting_match queue. Presence (the connection lease)
 // is fail-closed: a presence error skips the cycle rather than offering to an
-// agent who may be gone.
-func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherInstance string, now time.Time) (int, error) {
+// agent who may be gone. No wall-clock param: ranking/claims use Postgres now(),
+// and each offer's hold expiry is stamped from time.Now() at the offer itself
+// (not cycle start) so a long batch can't backdate later holds (review HIGH).
+func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherInstance string) (int, error) {
 	ctx = orgkey.SetOrgID(ctx, orgID)
 	q := generated.New(e.deps.OrgDB)
 	agents, err := q.ListAvailableAgentsForMatch(ctx, generated.ListAvailableAgentsForMatchParams{
@@ -71,7 +73,7 @@ func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherI
 		if e.deps.Presence != nil && !connected[agentID] {
 			continue
 		}
-		ok, mErr := e.tryOfferToAgent(ctx, orgID, matcherInstance, agentID, a.AgentCode, a.Skills, now)
+		ok, mErr := e.tryOfferToAgent(ctx, orgID, matcherInstance, agentID, a.AgentCode, a.Skills)
 		if mErr != nil {
 			// One agent's offer failure (infra) must not abort the whole cycle — log
 			// and move on so other agents still get matched this tick.
@@ -91,7 +93,7 @@ func (e *Endpoints) RunMatchCycle(ctx context.Context, orgID uuid.UUID, matcherI
 // rr) first, then the capacity slot (SKIP LOCKED), then the reservation — the
 // same order the inline offer and accept paths use, so the matcher can't deadlock
 // against them (plan rev2 R-lockorder).
-func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matcherInstance string, agentID uuid.UUID, agentCode string, skills []string, now time.Time) (bool, error) {
+func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matcherInstance string, agentID uuid.UUID, agentCode string, skills []string) (bool, error) {
 	tx, err := e.deps.OrgDB.BeginTx(ctx)
 	if err != nil {
 		return false, err
@@ -113,9 +115,12 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 	token := claimed.MatchOfferToken
 
 	resID := uuid.Must(uuid.NewV7())
-	exp := now.Add(matcherOfferExpiry)
+	// Stamp the hold from NOW (this offer), not the cycle start — a batch that takes
+	// seconds must not backdate later agents' holds into the past (review HIGH).
+	exp := time.Now().Add(matcherOfferExpiry)
 	// Clamp the offer (and its timeout) to the queue SLA — an offer must never
 	// outlive the deadline at which the SLA sweep gives up to fallback (R-clamp).
+	// ClaimWaitingRoute already excluded routes past match_deadline, so exp > now.
 	if claimed.MatchDeadline.Valid && claimed.MatchDeadline.Time.Before(exp) {
 		exp = claimed.MatchDeadline.Time
 	}
@@ -139,7 +144,9 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 
 	if _, err := qtx.InsertReservationOffer(ctx, generated.InsertReservationOfferParams{
 		ID: pgUUID(resID), OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID),
-		AgentID: pgUUID(agentID), Attempt: claimed.MatchAttemptSeq,
+		// +1: the claim no longer bumps match_attempt_seq (CommitMatchOffer does, on
+		// success only), so this offer's attempt number is the next one.
+		AgentID: pgUUID(agentID), Attempt: claimed.MatchAttemptSeq + 1,
 		ExpiresAt: pgtype.Timestamptz{Time: exp, Valid: true},
 	}); err != nil {
 		return false, err

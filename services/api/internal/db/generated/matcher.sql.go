@@ -100,7 +100,6 @@ WITH picked AS (
 UPDATE route_requests rr
 SET status = 'offering',
     match_offer_token = gen_random_uuid(),
-    match_attempt_seq = rr.match_attempt_seq + 1,
     offering_started_at = now(),
     updated_at = now()
 FROM picked p
@@ -173,6 +172,7 @@ UPDATE route_requests
 SET status = 'waiting', active_reservation_id = $4,
     current_reservation_id = $4, resume_cursor = $5,
     run_seq = run_seq + 1,
+    match_attempt_seq = match_attempt_seq + 1,
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
@@ -191,6 +191,9 @@ type CommitMatchOfferParams struct {
 // back its offer + releases the slot. Bumps run_seq (a new suspension at this
 // offer) so a stale reservation_timeout from a prior attempt is fenced out by
 // AcquireRouteForRunAtSeq — same invariant SuspendRoute upholds on the inline path.
+// match_attempt_seq is incremented HERE (not at claim) so it counts ACTUAL offers
+// to distinct agents, not claims that lost the capacity/lease gate — otherwise a
+// few at-capacity agents would burn a route's attempt budget (cross-AI review BLOCK).
 func (q *Queries) CommitMatchOffer(ctx context.Context, arg CommitMatchOfferParams) (RouteRequest, error) {
 	row := q.db.QueryRow(ctx, commitMatchOffer,
 		arg.ID,
@@ -365,10 +368,10 @@ SELECT a.id AS agent_id,
        a.code AS agent_code,
        COALESCE(array_remove(array_agg(DISTINCT sk.code), NULL), '{}')::text[] AS skills
 FROM agents a
-JOIN agent_states ast ON ast.agent_id = a.id
-LEFT JOIN agent_routing_state ars ON ars.agent_id = a.id
-LEFT JOIN agent_skills ags ON ags.agent_id = a.id
-LEFT JOIN skills sk ON sk.id = ags.skill_id AND sk.enabled = TRUE
+JOIN agent_states ast ON ast.agent_id = a.id AND ast.org_id = a.org_id
+LEFT JOIN agent_routing_state ars ON ars.agent_id = a.id AND ars.org_id = a.org_id
+LEFT JOIN agent_skills ags ON ags.agent_id = a.id AND ags.org_id = a.org_id
+LEFT JOIN skills sk ON sk.id = ags.skill_id AND sk.org_id = a.org_id AND sk.enabled = TRUE
 WHERE a.org_id = $1
   AND ast.org_id = $1
   AND (ars.org_id = $1 OR ars.org_id IS NULL)
@@ -380,7 +383,7 @@ WHERE a.org_id = $1
        OR ars.routing_state = 'routable'
        OR (ars.state_expires_at IS NOT NULL AND ars.state_expires_at <= now()))
 GROUP BY a.id, a.code
-ORDER BY a.code
+ORDER BY random()
 LIMIT $2
 `
 
@@ -402,6 +405,13 @@ type ListAvailableAgentsForMatchRow struct {
 // Bounded batch. Org-scoped: every tenant alias carries org_id in the WHERE
 // (SQLChecker), and the LEFT-joined skill rows use `OR ... IS NULL` so a
 // skill-less agent is not dropped (it can still serve a no-skill route).
+// org_id is repeated in each LEFT JOIN ON (defense-in-depth, cross-AI review HIGH)
+// AND in the top-level WHERE: the ON keeps the join itself org-correct, the WHERE
+// ColumnRef satisfies SQLChecker (which ignores ON-clause org refs). agent_id /
+// skill_id are org-unique so this is belt-and-suspenders, not a behavior change.
+// random() (not a.code) so successive ticks SAMPLE different agents: a fixed
+// alphabetical LIMIT would let the first N at-capacity agents starve the N+1th who
+// actually has a free slot (capacity is gated in Go, not this query — review HIGH).
 func (q *Queries) ListAvailableAgentsForMatch(ctx context.Context, arg ListAvailableAgentsForMatchParams) ([]ListAvailableAgentsForMatchRow, error) {
 	rows, err := q.db.Query(ctx, listAvailableAgentsForMatch, arg.OrgID, arg.Limit)
 	if err != nil {
@@ -415,6 +425,37 @@ func (q *Queries) ListAvailableAgentsForMatch(ctx context.Context, arg ListAvail
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgsWithWaitingMatch = `-- name: ListOrgsWithWaitingMatch :many
+SELECT DISTINCT org_id FROM route_requests
+WHERE status = 'waiting_match' AND next_match_at <= now()
+LIMIT $1
+`
+
+// ListOrgsWithWaitingMatch returns the distinct orgs that currently have a route
+// parked in the queue, so the cross-org matcher driver (cmd/runtime) only spins a
+// per-org cycle for orgs with pending demand. Cross-org via the raw pool (no org
+// filter — like the sweeps). Bounded so a pathological org count can't unbound the
+// tick.
+func (q *Queries) ListOrgsWithWaitingMatch(ctx context.Context, limit int32) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listOrgsWithWaitingMatch, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var org_id pgtype.UUID
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
