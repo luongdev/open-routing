@@ -767,6 +767,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org_id}/route-requests/{id}/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tear down a route whose interaction ended (caller hung up)
+         * @description The caller abandoned the interaction: cancel any outstanding offered reservation (freeing the agent's capacity hold), then terminate the route as `cancelled`. A route already in a terminal state returns 409. Used by the channel adapter on a caller-disconnect signal.
+         */
+        post: operations["AbandonRouteRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/traces/{id}": {
         parameters: {
             query?: never;
@@ -4251,6 +4283,49 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             /** @description Route is not waiting for input (already resumed, completed, or raced). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    AbandonRouteRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Route torn down (cancelled); any outstanding offer released. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRequest"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Route is already terminal (completed/failed/cancelled). */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -267,6 +267,54 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	return resID.String(), true, nil
 }
 
+// AbandonRouteRequest tears down a route whose caller hung up: cancel the route
+// (any non-terminal state) + cancel its outstanding offered reservations, freeing
+// each agent's capacity hold. One tx so the route terminates and slots free
+// atomically. 409 if the route is already terminal.
+func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRouteRequestRequestObject) (api.AbandonRouteRequestResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	routeID := uuid.UUID(req.Id)
+	tx, err := e.deps.OrgDB.BeginTx(ctx)
+	if err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "tx_begin_failed"}}, nil
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := generated.New(tx)
+
+	row, err := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// 0 rows: not found vs already-terminal.
+		if _, gErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); errors.Is(gErr, pgx.ErrNoRows) {
+			return api.AbandonRouteRequest404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{Error: api.ErrorCodeNotFound, Reason: "route_request_not_found"}}, nil
+		}
+		return api.AbandonRouteRequest409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "route_already_terminal"}), nil
+	}
+	if err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "abandon_failed"}}, nil
+	}
+	// Cancel any outstanding offer and free the held slot (a live call's confirmed
+	// slot is also released — the caller is gone, so the assignment is void).
+	cancelled, err := qtx.CancelOfferedReservationsForRoute(ctx, generated.CancelOfferedReservationsForRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
+	if err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "cancel_offers_failed"}}, nil
+	}
+	if e.deps.Capacity != nil {
+		for _, r := range cancelled {
+			if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, apiUUID(r.ID)); rErr != nil {
+				return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_release_failed"}}, nil
+			}
+		}
+	}
+	e.appendEvent(ctx, qtx, orgID, routeID, "route.abandoned", map[string]any{"cancelled_offers": len(cancelled)})
+	if err := tx.Commit(ctx); err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
+	}
+	return api.AbandonRouteRequest200JSONResponse(mapRouteRequest(row)), nil
+}
+
 func (e *Endpoints) appendEvent(ctx context.Context, q *generated.Queries, orgID, routeID uuid.UUID, typ string, payload map[string]any) {
 	p := []byte("{}")
 	if payload != nil {

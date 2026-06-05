@@ -11,6 +11,59 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const abandonRoute = `-- name: AbandonRoute :one
+UPDATE route_requests
+SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
+    match_offer_token = NULL, offering_started_at = NULL, active_reservation_id = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND org_id = $2
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+`
+
+type AbandonRouteParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+// AbandonRoute terminates a route from ANY non-terminal state (the caller hung up
+// mid-IVR, mid-queue, or mid-offer) — broader than CancelRouteRequest, which only
+// covers idle pending/waiting. Clears all live/matcher context so no continuation
+// or sweep can resurrect it. 0 rows ⇒ already terminal (caller maps to 409).
+func (q *Queries) AbandonRoute(ctx context.Context, arg AbandonRouteParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, abandonRoute, arg.ID, arg.OrgID)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const acquireRouteForRun = `-- name: AcquireRouteForRun :one
 UPDATE route_requests
 SET status = 'running', updated_at = NOW()

@@ -48,6 +48,19 @@ SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
 WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
 RETURNING *;
 
+-- AbandonRoute terminates a route from ANY non-terminal state (the caller hung up
+-- mid-IVR, mid-queue, or mid-offer) — broader than CancelRouteRequest, which only
+-- covers idle pending/waiting. Clears all live/matcher context so no continuation
+-- or sweep can resurrect it. 0 rows ⇒ already terminal (caller maps to 409).
+-- name: AbandonRoute :one
+UPDATE route_requests
+SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
+    match_offer_token = NULL, offering_started_at = NULL, active_reservation_id = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND org_id = $2
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+RETURNING *;
+
 -- name: GetRouteRequest :one
 SELECT * FROM route_requests WHERE id = $1 AND org_id = $2;
 

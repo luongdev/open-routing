@@ -241,6 +241,43 @@ func TestLive_NoAgentParksWaitingMatch(t *testing.T) {
 	}
 }
 
+// TestLive_AbandonReleasesAndCancels: a caller hang-up tears the route down —
+// the outstanding offer is cancelled, its capacity slot freed, the route goes
+// cancelled, and a second abandon is a 409 (already terminal).
+func TestLive_AbandonReleasesAndCancels(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	lf.seedLiveFlow(t)
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+	routeID := lf.createRoute(t)
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("pre-abandon held=%d, want 1", held)
+	}
+
+	resp, err := lf.e.AbandonRouteRequest(lf.ctx, api.AbandonRouteRequestRequestObject{Id: api.EntityIdPath(routeID)})
+	if err != nil {
+		t.Fatalf("abandon: %v", err)
+	}
+	ok, is := resp.(api.AbandonRouteRequest200JSONResponse)
+	if !is || ok.Status != api.RouteRequestStatus("cancelled") {
+		t.Fatalf("abandon resp = %T status, want 200 cancelled", resp)
+	}
+	if held := lf.heldVoice(t, agentID); held != 0 {
+		t.Fatalf("post-abandon held=%d, want 0 (slot freed)", held)
+	}
+	if rs := lf.reservations(t, routeID); len(rs) != 1 || rs[0].State != api.ReservationStateCancelled {
+		t.Fatalf("reservation = %+v, want 1 cancelled", rs)
+	}
+	// Second abandon → 409 (terminal).
+	resp2, _ := lf.e.AbandonRouteRequest(lf.ctx, api.AbandonRouteRequestRequestObject{Id: api.EntityIdPath(routeID)})
+	if _, is := resp2.(api.AbandonRouteRequest409JSONResponse); !is {
+		t.Fatalf("second abandon = %T, want 409", resp2)
+	}
+}
+
 func (lf *liveFixture) heldVoice(t *testing.T, agentID uuid.UUID) int32 {
 	return lf.held(t, agentID, "voice")
 }

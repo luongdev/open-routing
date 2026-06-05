@@ -3800,6 +3800,39 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /v1/orgs/{org_id}/route-requests/{id}/abandon:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: AbandonRouteRequest
+      summary: Tear down a route whose interaction ended (caller hung up)
+      description: >
+        The caller abandoned the interaction: cancel any outstanding offered
+        reservation (freeing the agent's capacity hold), then terminate the route
+        as `cancelled`. A route already in a terminal state returns 409. Used by
+        the channel adapter on a caller-disconnect signal.
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Route torn down (cancelled); any outstanding offer released.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Route is already terminal (completed/failed/cancelled).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /v1/orgs/{org_id}/traces/{id}:
     parameters:
       - $ref: "#/components/parameters/OrgIdPath"
