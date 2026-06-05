@@ -184,6 +184,9 @@ type ServerInterface interface {
 	// Tear down a route whose interaction ended (caller hung up)
 	// (POST /v1/orgs/{org_id}/route-requests/{id}/abandon)
 	AbandonRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List a route request's runtime event log (oldest first)
+	// (GET /v1/orgs/{org_id}/route-requests/{id}/events)
+	ListRouteRequestEvents(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// Submit a captured value to a route waiting at an interactive-input node
 	// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
 	SubmitRouteInput(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
@@ -547,6 +550,12 @@ func (_ Unimplemented) GetRouteRequest(w http.ResponseWriter, r *http.Request, o
 // Tear down a route whose interaction ended (caller hung up)
 // (POST /v1/orgs/{org_id}/route-requests/{id}/abandon)
 func (_ Unimplemented) AbandonRouteRequest(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List a route request's runtime event log (oldest first)
+// (GET /v1/orgs/{org_id}/route-requests/{id}/events)
+func (_ Unimplemented) ListRouteRequestEvents(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3046,6 +3055,47 @@ func (siw *ServerInterfaceWrapper) AbandonRouteRequest(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListRouteRequestEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListRouteRequestEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRouteRequestEvents(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SubmitRouteInput operation middleware
 func (siw *ServerInterfaceWrapper) SubmitRouteInput(w http.ResponseWriter, r *http.Request) {
 
@@ -3761,6 +3811,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/abandon", wrapper.AbandonRouteRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/events", wrapper.ListRouteRequestEvents)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/orgs/{org_id}/route-requests/{id}/input", wrapper.SubmitRouteInput)
@@ -7386,6 +7439,45 @@ func (response AbandonRouteRequest500JSONResponse) VisitAbandonRouteRequestRespo
 	return err
 }
 
+type ListRouteRequestEventsRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type ListRouteRequestEventsResponseObject interface {
+	VisitListRouteRequestEventsResponse(w http.ResponseWriter) error
+}
+
+type ListRouteRequestEvents200JSONResponse RuntimeEventList
+
+func (response ListRouteRequestEvents200JSONResponse) VisitListRouteRequestEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRouteRequestEvents500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListRouteRequestEvents500JSONResponse) VisitListRouteRequestEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SubmitRouteInputRequestObject struct {
 	OrgId OrgIdPath    `json:"org_id"`
 	Id    EntityIdPath `json:"id"`
@@ -8171,6 +8263,9 @@ type StrictServerInterface interface {
 	// Tear down a route whose interaction ended (caller hung up)
 	// (POST /v1/orgs/{org_id}/route-requests/{id}/abandon)
 	AbandonRouteRequest(ctx context.Context, request AbandonRouteRequestRequestObject) (AbandonRouteRequestResponseObject, error)
+	// List a route request's runtime event log (oldest first)
+	// (GET /v1/orgs/{org_id}/route-requests/{id}/events)
+	ListRouteRequestEvents(ctx context.Context, request ListRouteRequestEventsRequestObject) (ListRouteRequestEventsResponseObject, error)
 	// Submit a captured value to a route waiting at an interactive-input node
 	// (POST /v1/orgs/{org_id}/route-requests/{id}/input)
 	SubmitRouteInput(ctx context.Context, request SubmitRouteInputRequestObject) (SubmitRouteInputResponseObject, error)
@@ -9820,6 +9915,33 @@ func (sh *strictHandler) AbandonRouteRequest(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AbandonRouteRequestResponseObject); ok {
 		if err := validResponse.VisitAbandonRouteRequestResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRouteRequestEvents operation middleware
+func (sh *strictHandler) ListRouteRequestEvents(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request ListRouteRequestEventsRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRouteRequestEvents(ctx, request.(ListRouteRequestEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRouteRequestEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRouteRequestEventsResponseObject); ok {
+		if err := validResponse.VisitListRouteRequestEventsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

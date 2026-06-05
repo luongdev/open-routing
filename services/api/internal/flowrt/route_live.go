@@ -136,6 +136,46 @@ func (e *Endpoints) ListRouteRequestReservations(ctx context.Context, req api.Li
 	return api.ListRouteRequestReservations200JSONResponse{Items: items}, nil
 }
 
+func mapRuntimeEvent(r generated.RuntimeEvent) api.RuntimeEvent {
+	out := api.RuntimeEvent{
+		Id:        api.UUIDv7(apiUUID(r.ID)),
+		Source:    r.Source,
+		Type:      r.Type,
+		CreatedAt: ptrTime(r.CreatedAt),
+	}
+	if r.RouteRequestID.Valid {
+		v := api.UUIDv7(apiUUID(r.RouteRequestID))
+		out.RouteRequestId = &v
+	}
+	if r.CorrelationID.Valid {
+		v := api.UUIDv7(apiUUID(r.CorrelationID))
+		out.CorrelationId = &v
+	}
+	if len(r.Payload) > 0 {
+		var p map[string]any
+		if json.Unmarshal(r.Payload, &p) == nil {
+			out.Payload = &p
+		}
+	}
+	return out
+}
+
+func (e *Endpoints) ListRouteRequestEvents(ctx context.Context, req api.ListRouteRequestEventsRequestObject) (api.ListRouteRequestEventsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.ListRouteRequestEvents500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	rows, err := generated.New(e.deps.OrgDB).ListRuntimeEventsByRoute(ctx, generated.ListRuntimeEventsByRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(uuid.UUID(req.Id))})
+	if err != nil {
+		return api.ListRouteRequestEvents500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_failed"}}, nil
+	}
+	items := make([]api.RuntimeEvent, len(rows))
+	for i, r := range rows {
+		items[i] = mapRuntimeEvent(r)
+	}
+	return api.ListRouteRequestEvents200JSONResponse{Items: items}, nil
+}
+
 func (e *Endpoints) GetRouteRequestTrace(ctx context.Context, req api.GetRouteRequestTraceRequestObject) (api.GetRouteRequestTraceResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {

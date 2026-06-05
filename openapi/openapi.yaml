@@ -1304,6 +1304,53 @@ components:
           format: date-time
           readOnly: true
 
+    RuntimeEvent:
+      type: object
+      description: >
+        One entry in a route request's runtime event log — the ordered record of
+        what the engine did (route.created, route.queued, reservation.offered,
+        reservation.accepted, agent.engaged, route.completed, …). Read-only;
+        appended by the runtime as a route progresses.
+      required:
+        - id
+        - source
+        - type
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        route_request_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          nullable: true
+        source:
+          type: string
+          description: Plane that emitted the event (e.g. "runtime", "matcher").
+        type:
+          type: string
+          description: Dotted event name (e.g. "reservation.offered").
+        correlation_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+          description: Event-specific detail (reservation_id, agent_id, …).
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    RuntimeEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeEvent"
+
     Queue:
       type: object
       description: >
@@ -3928,6 +3975,26 @@ paths:
                       $ref: "#/components/schemas/Reservation"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: ListRouteRequestEvents
+      summary: List a route request's runtime event log (oldest first)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Runtime events for the route request, in occurrence order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEventList"
         "500":
           $ref: "#/components/responses/InternalServerError"
 

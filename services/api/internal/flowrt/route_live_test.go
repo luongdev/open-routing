@@ -86,6 +86,61 @@ func TestRouteReads_GetListMapping(t *testing.T) {
 	}
 }
 
+func TestListRouteRequestEvents(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	routeID := uuid.Must(uuid.NewV7())
+	fvID := uuid.Must(uuid.NewV7())
+	flowCode := "flow_ev"
+	if _, err := f.q.InsertRouteRequest(f.ctx, generated.InsertRouteRequestParams{
+		ID: pgUUID(routeID), OrgID: pgUUID(f.orgID), Channel: "voice", EntryCode: "main",
+		FlowVersionID: pgUUID(fvID), FlowCode: &flowCode, InteractionInput: []byte(`{}`), Status: "waiting",
+	}); err != nil {
+		t.Fatalf("seed route: %v", err)
+	}
+	resID := uuid.Must(uuid.NewV7())
+	f.e.appendEvent(f.ctx, f.q, f.orgID, routeID, "route.created", nil)
+	f.e.appendEvent(f.ctx, f.q, f.orgID, routeID, "reservation.offered", map[string]any{"reservation_id": resID.String()})
+	// Event on a different route must not bleed into this route's log.
+	otherRoute := uuid.Must(uuid.NewV7())
+	if _, err := f.q.InsertRouteRequest(f.ctx, generated.InsertRouteRequestParams{
+		ID: pgUUID(otherRoute), OrgID: pgUUID(f.orgID), Channel: "voice", EntryCode: "main",
+		FlowVersionID: pgUUID(fvID), FlowCode: &flowCode, InteractionInput: []byte(`{}`), Status: "waiting",
+	}); err != nil {
+		t.Fatalf("seed other route: %v", err)
+	}
+	f.e.appendEvent(f.ctx, f.q, f.orgID, otherRoute, "route.created", nil)
+
+	resp, err := f.e.ListRouteRequestEvents(f.ctx, api.ListRouteRequestEventsRequestObject{Id: api.EntityIdPath(routeID)})
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	ok200, ok := resp.(api.ListRouteRequestEvents200JSONResponse)
+	if !ok {
+		t.Fatalf("want 200, got %T", resp)
+	}
+	if len(ok200.Items) != 2 {
+		t.Fatalf("events = %d, want 2 (org/route isolation)", len(ok200.Items))
+	}
+	if ok200.Items[0].Type != "route.created" || ok200.Items[1].Type != "reservation.offered" {
+		t.Fatalf("event order wrong: %q, %q", ok200.Items[0].Type, ok200.Items[1].Type)
+	}
+	if ok200.Items[0].Source != "runtime" {
+		t.Fatalf("source = %q, want runtime", ok200.Items[0].Source)
+	}
+	if ok200.Items[1].Payload == nil || (*ok200.Items[1].Payload)["reservation_id"] != resID.String() {
+		t.Fatalf("payload not decoded: %+v", ok200.Items[1].Payload)
+	}
+
+	// Unknown route → empty list (not an error).
+	empty, _ := f.e.ListRouteRequestEvents(f.ctx, api.ListRouteRequestEventsRequestObject{Id: api.EntityIdPath(uuid.Must(uuid.NewV7()))})
+	if e, ok := empty.(api.ListRouteRequestEvents200JSONResponse); !ok || len(e.Items) != 0 {
+		t.Fatalf("want empty list for unknown route, got %T %v", empty, empty)
+	}
+}
+
 // CreateRouteRequest on a published flow with a Ready agent OFFERS the top
 // candidate and parks the route (waiting + offered reservation + timeout
 // continuation + persisted runtime trace).

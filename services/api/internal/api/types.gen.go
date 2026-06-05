@@ -1562,6 +1562,32 @@ type RoutingStats struct {
 	WaitingOffer int `json:"waiting_offer"`
 }
 
+// RuntimeEvent One entry in a route request's runtime event log — the ordered record of what the engine did (route.created, route.queued, reservation.offered, reservation.accepted, agent.engaged, route.completed, …). Read-only; appended by the runtime as a route progresses.
+type RuntimeEvent struct {
+	CorrelationId *UUIDv7    `json:"correlation_id,omitempty"`
+	CreatedAt     *time.Time `json:"created_at,omitempty"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id UUIDv7 `json:"id"`
+
+	// Payload Event-specific detail (reservation_id, agent_id, …).
+	Payload        *map[string]interface{} `json:"payload,omitempty"`
+	RouteRequestId *UUIDv7                 `json:"route_request_id,omitempty"`
+
+	// Source Plane that emitted the event (e.g. "runtime", "matcher").
+	Source string `json:"source"`
+
+	// Type Dotted event name (e.g. "reservation.offered").
+	Type string `json:"type"`
+}
+
+// RuntimeEventList defines model for RuntimeEventList.
+type RuntimeEventList struct {
+	Items []RuntimeEvent `json:"items"`
+}
+
 // SimulateFlowRequest Deterministic simulation of the draft graph against synthetic input. Does not mutate live reservations or agent state.
 type SimulateFlowRequest struct {
 	Channel          *string                `json:"channel,omitempty"`

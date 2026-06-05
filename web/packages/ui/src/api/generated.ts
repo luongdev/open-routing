@@ -887,6 +887,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org_id}/route-requests/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List a route request's runtime event log (oldest first) */
+        get: operations["ListRouteRequestEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/reservations/{id}/complete": {
         parameters: {
             query?: never;
@@ -1990,6 +2019,25 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at?: string;
+        };
+        /** @description One entry in a route request's runtime event log — the ordered record of what the engine did (route.created, route.queued, reservation.offered, reservation.accepted, agent.engaged, route.completed, …). Read-only; appended by the runtime as a route progresses. */
+        RuntimeEvent: {
+            id: components["schemas"]["UUIDv7"];
+            route_request_id?: components["schemas"]["UUIDv7"] | null;
+            /** @description Plane that emitted the event (e.g. "runtime", "matcher"). */
+            source: string;
+            /** @description Dotted event name (e.g. "reservation.offered"). */
+            type: string;
+            correlation_id?: components["schemas"]["UUIDv7"] | null;
+            /** @description Event-specific detail (reservation_id, agent_id, …). */
+            payload?: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        RuntimeEventList: {
+            items: components["schemas"]["RuntimeEvent"][];
         };
         /** @description A queue in the catalog. Queues hold interactions waiting to be assigned to an agent. Queues have a channel type, priority, and an after-contact work (ACW) timer. */
         Queue: {
@@ -4478,6 +4526,39 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListRouteRequestEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runtime events for the route request, in occurrence order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeEventList"];
+                };
+            };
             500: components["responses"]["InternalServerError"];
         };
     };

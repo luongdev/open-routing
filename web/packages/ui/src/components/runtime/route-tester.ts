@@ -60,6 +60,15 @@ interface FlowEntryBinding {
   active: boolean;
 }
 
+interface RuntimeEvent {
+  id: string;
+  source: string;
+  type: string;
+  correlation_id?: string | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
+}
+
 const ROUTE_PILL: Record<RouteStatus, { bg: string; text: string }> = {
   pending: { bg: 'var(--muted)', text: 'var(--muted-foreground)' },
   running: { bg: 'color-mix(in oklch, oklch(0.55 0.2 250) 14%, transparent)', text: 'oklch(0.4 0.2 250)' },
@@ -91,6 +100,32 @@ const STEP_DOT: Record<TraceStep['status'], string> = {
 
 /** Terminal route statuses stop the poll loop. */
 const TERMINAL: ReadonlySet<RouteStatus> = new Set(['completed', 'failed', 'cancelled']);
+
+const EVENT_GREEN = new Set(['completed', 'accepted', 'engaged']);
+const EVENT_RED = new Set(['failed', 'rejected', 'timeout', 'expired', 'abandoned']);
+const EVENT_AMBER = new Set(['offered', 'queued', 'waiting']);
+
+// Classify on tokens of the dotted-type leaf (split on `_`) rather than a fixed
+// enum, so a new engine event type still gets a sensible colour without a
+// frontend change — and a namespace that merely ends in a keyword can't match.
+const EVENT_DOT = (type: string): string => {
+  const tokens = (type.split('.').pop() ?? '').split('_');
+  if (tokens.some((t) => EVENT_RED.has(t))) return 'var(--destructive)';
+  if (tokens.some((t) => EVENT_GREEN.has(t))) return 'oklch(0.65 0.18 145)';
+  if (tokens.some((t) => EVENT_AMBER.has(t))) return 'oklch(0.5 0.18 80)';
+  return 'oklch(0.55 0.2 250)';
+};
+
+// Shorten UUIDs so the timeline row stays scannable.
+const eventDetail = (payload?: Record<string, unknown> | null): string => {
+  if (!payload) return '';
+  return Object.entries(payload)
+    .map(([k, v]) => {
+      const s = typeof v === 'string' ? v : JSON.stringify(v);
+      return `${k}=${/^[0-9a-f]{8}-/i.test(s) ? s.slice(0, 8) : s}`;
+    })
+    .join(' · ');
+};
 
 /**
  * <or-route-tester> — drive a route request live and resolve its reservations.
@@ -192,6 +227,19 @@ export class OrRouteTester extends LitElement {
     }
     .step-error { color: var(--destructive); font-size: 11px; }
 
+    .event-row {
+      display: flex; align-items: baseline; gap: 10px;
+      padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px;
+    }
+    .event-row:last-child { border-bottom: none; }
+    .event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; }
+    .event-type { font-family: var(--uk-font-monospace, monospace); font-size: 12px; font-weight: 600; color: var(--foreground); }
+    .event-detail {
+      font-family: var(--uk-font-monospace, monospace); font-size: 11px; color: var(--muted-foreground);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .event-time { margin-left: auto; font-size: 11px; color: var(--muted-foreground); flex-shrink: 0; }
+
     .empty { color: var(--muted-foreground); font-size: 13px; padding: 16px 0; }
 
     .meta-grid {
@@ -227,6 +275,7 @@ export class OrRouteTester extends LitElement {
   @state() private accessor _route: RouteRequest | null = null;
   @state() private accessor _reservations: Reservation[] = [];
   @state() private accessor _trace: Trace | null = null;
+  @state() private accessor _events: RuntimeEvent[] = [];
   @state() private accessor _actionError: string | null = null;
   @state() private accessor _busyResId: string | null = null;
   @state() private accessor _inputValue = '';
@@ -304,6 +353,7 @@ export class OrRouteTester extends LitElement {
     this._stopPolling();
     this._reservations = [];
     this._trace = null;
+    this._events = [];
     try {
       const res = await this.client.POST('/v1/orgs/{org_id}/route-requests' as never, {
         params: { path: { org_id: this.orgId } },
@@ -338,11 +388,14 @@ export class OrRouteTester extends LitElement {
     if (!this._route || !this.orgId || !this.client) return;
     const id = this._route.id;
 
-    const [routeRes, resvRes] = await Promise.all([
+    const [routeRes, resvRes, eventsRes] = await Promise.all([
       this.client.GET('/v1/orgs/{org_id}/route-requests/{id}' as never, {
         params: { path: { org_id: this.orgId, id } },
       } as never),
       this.client.GET('/v1/orgs/{org_id}/route-requests/{id}/reservations' as never, {
+        params: { path: { org_id: this.orgId, id } },
+      } as never),
+      this.client.GET('/v1/orgs/{org_id}/route-requests/{id}/events' as never, {
         params: { path: { org_id: this.orgId, id } },
       } as never),
     ]);
@@ -351,6 +404,8 @@ export class OrRouteTester extends LitElement {
     if (route) this._route = route;
     const resv = (resvRes as { data: { items?: Reservation[] } | null }).data;
     this._reservations = resv?.items ?? [];
+    const events = (eventsRes as { data: { items?: RuntimeEvent[] } | null }).data;
+    if (events?.items) this._events = events.items;
 
     // Fetch the trace by ROUTE id — the API resolves it (route.trace_id is always
     // null in the DTO; the trace references the route, not vice-versa). Gating on
@@ -595,6 +650,30 @@ export class OrRouteTester extends LitElement {
     `;
   }
 
+  private _renderEventsCard() {
+    if (!this._route) return nothing;
+    return html`
+      <div class="card">
+        <h2 class="card-title"><uk-icon icon="activity" width="15" height="15"></uk-icon> Event timeline</h2>
+        ${this._events.length === 0
+          ? html`<div class="empty">No events yet.</div>`
+          : this._events.map((ev) => {
+              const detail = eventDetail(ev.payload);
+              const t = new Date(ev.created_at);
+              const ts = Number.isNaN(t.getTime()) ? '' : t.toLocaleTimeString();
+              return html`
+                <div class="event-row">
+                  <span class="event-dot" style=${`background:${EVENT_DOT(ev.type)}`}></span>
+                  <span class="event-type">${ev.type}</span>
+                  ${detail ? html`<span class="event-detail">${detail}</span>` : nothing}
+                  <span class="event-time">${ts}</span>
+                </div>
+              `;
+            })}
+      </div>
+    `;
+  }
+
   override render() {
     return html`
       <div class="page-header">
@@ -607,6 +686,7 @@ export class OrRouteTester extends LitElement {
           ${this._renderRouteCard()}
           ${this._renderInputCard()}
           ${this._renderReservationsCard()}
+          ${this._renderEventsCard()}
           ${this._renderTraceCard()}
         </div>
       </div>
