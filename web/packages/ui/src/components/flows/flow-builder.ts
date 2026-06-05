@@ -4383,23 +4383,21 @@ export class OrFlowBuilder extends LitElement {
               ` : ''}
             </div>
             <div class="node-card-label">${node.label}</div>
-            ${stepHit
-              ? html`<div class="node-card-timing">+${stepHit.started_at_ms.toFixed(1)}ms · ${stepHit.duration_ms.toFixed(1)}ms</div>`
-              : preview ? html`<div class="node-card-param" title=${preview}>${preview}</div>` : ''}
-            ${simInput ? html`
-              <div class="node-card-siminput" @pointerdown=${(e: PointerEvent) => e.stopPropagation()}>
+            ${simInput
+              ? html`
+              <div class="node-card-siminput" @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                   title=${(this._simNodeInputs[node.id] ?? '') !== '' ? 'Captured value — takes the captured branch' : 'Empty → timeout branch. Type a value for captured.'}>
                 <input class="node-card-siminput-field" type="text"
-                  placeholder=${OrFlowBuilder._simInputHint(node.kind)}
+                  placeholder=${OrFlowBuilder._simInputHint(node.kind) + ' — empty = timeout'}
                   .value=${this._simNodeInputs[node.id] ?? ''}
-                  title="Simulated captured value — drives the branch (empty ⇒ timeout)"
                   @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
                   @click=${(e: MouseEvent) => e.stopPropagation()}
                   @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                   @change=${(e: Event) => { e.stopPropagation(); void this._setNodeInput(node.id, (e.target as HTMLInputElement).value); }}>
-                <div class="node-card-siminput-branch">
-                  ${(this._simNodeInputs[node.id] ?? '') !== '' ? '→ captured' : '→ timeout (empty)'}
-                </div>
-              </div>` : ''}
+              </div>`
+              : stepHit
+              ? html`<div class="node-card-timing">+${stepHit.started_at_ms.toFixed(1)}ms · ${stepHit.duration_ms.toFixed(1)}ms</div>`
+              : preview ? html`<div class="node-card-param" title=${preview}>${preview}</div>` : ''}
             <div class=${'node-card-ports' + (pinnable ? ' node-card-ports--pick' : '')}
               title=${pinnable ? 'Click a port to force that branch in the simulation' : 'Output cases this node can produce'}>
               ${outs.map(o => {
