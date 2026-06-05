@@ -117,6 +117,28 @@ func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries
 	return qc, nil
 }
 
+// requiredSkillsFromGraph collects the skill codes every match_skill node in the
+// graph filters on — the route's skill requirements, denormalized onto
+// route_requests.required_skills at enqueue so the W4 matcher can find eligible
+// agents (required_skills <@ agent skills) without re-running the flow.
+func requiredSkillsFromGraph(graph *runtime.Graph) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, n := range graph.Nodes {
+		if n.Kind != runtime.NodeMatchSkill {
+			continue
+		}
+		var cfg struct {
+			Skill string `json:"skill"`
+		}
+		if json.Unmarshal(n.Config, &cfg) == nil && cfg.Skill != "" && !seen[cfg.Skill] {
+			seen[cfg.Skill] = true
+			out = append(out, cfg.Skill)
+		}
+	}
+	return out
+}
+
 // routingSnapshot picks the candidate source: LIVE (presence+capacity filtered)
 // when the gateway/presence deps are wired, else the simulation snapshot. There
 // is NO silent live→sim fallback (review BLOCK): a real binary always wires

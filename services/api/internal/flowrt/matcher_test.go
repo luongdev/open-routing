@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
+	"github.com/luongdev/open-routing/services/api/internal/runtime"
 )
 
 // seedRunningRoute inserts a minimal route_requests row in 'running' so the
@@ -151,5 +152,19 @@ func TestMatcher_ConcurrentClaimExactlyOne(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("%d agents claimed the route, want exactly 1 (fenced claim)", n)
+	}
+}
+
+func TestRequiredSkillsFromGraph(t *testing.T) {
+	g := &runtime.Graph{Nodes: []runtime.GraphNode{
+		{ID: "t", Kind: runtime.NodeTrigger},
+		{ID: "s1", Kind: runtime.NodeMatchSkill, Config: []byte(`{"skill":"skill_es","min_proficiency":3}`)},
+		{ID: "s2", Kind: runtime.NodeMatchSkill, Config: []byte(`{"skill":"skill_vip"}`)},
+		{ID: "s3", Kind: runtime.NodeMatchSkill, Config: []byte(`{"skill":"skill_es"}`)}, // dup
+		{ID: "r", Kind: runtime.NodeReservation},
+	}}
+	got := requiredSkillsFromGraph(g)
+	if len(got) != 2 || got[0] != "skill_es" || got[1] != "skill_vip" {
+		t.Fatalf("required skills = %v, want [skill_es skill_vip] (deduped, order-stable)", got)
 	}
 }
