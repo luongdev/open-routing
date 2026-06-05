@@ -13,7 +13,8 @@ import (
 
 const claimExpiredMatchRoutes = `-- name: ClaimExpiredMatchRoutes :many
 UPDATE route_requests
-SET status = 'running', updated_at = now()
+SET status = 'running',
+    match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id IN (
     SELECT id FROM route_requests
     WHERE status = 'waiting_match' AND match_deadline IS NOT NULL AND match_deadline <= now()
@@ -82,8 +83,14 @@ WITH picked AS (
     WHERE rr.org_id = $1
       AND rr.status = 'waiting_match'
       AND rr.next_match_at <= now()
+      -- Don't claim a route past its queue SLA — it belongs to the deadline sweep
+      -- (→ fallback), not to a new offer (cross-AI review HIGH: claim-vs-expire race).
+      AND (rr.match_deadline IS NULL OR rr.match_deadline > now())
       AND rr.required_skills <@ $2::text[]
       AND $3::uuid <> ALL(rr.excluded_agent_ids)
+      -- NOTE: queue/channel are NOT eligibility filters in v0.3 — there is no
+      -- agent↔queue membership yet, so the candidate pool is skill-based and all
+      -- queues share it. When membership lands, filter served queues here.
     ORDER BY (rr.priority * $4::float8
               + EXTRACT(EPOCH FROM now() - rr.waiting_since) * $5::float8) DESC,
              rr.id ASC
@@ -97,7 +104,7 @@ SET status = 'offering',
     offering_started_at = now(),
     updated_at = now()
 FROM picked p
-WHERE rr.id = p.id
+WHERE rr.id = p.id AND rr.org_id = $1
 RETURNING rr.id, rr.org_id, rr.channel, rr.entry_code, rr.flow_version_id, rr.flow_code, rr.interaction_input, rr.status, rr.failure_code, rr.read_set_snapshot, rr.queue_id, rr.priority, rr.required_skills, rr.waiting_since, rr.next_match_at, rr.match_deadline, rr.match_attempt_seq, rr.match_offer_token, rr.offering_started_at, rr.active_reservation_id, rr.excluded_agent_ids, rr.resume_cursor, rr.current_reservation_id, rr.run_seq, rr.created_at, rr.updated_at
 `
 
@@ -118,6 +125,9 @@ type ClaimWaitingRouteParams struct {
 // Ranking computed IN SQL so uncapped aging can cross a priority band (no
 // bounded-prefix starvation — plan rev2 BLOCK): effective = priority*$4 +
 // age_seconds*$5, deterministic id tie-break.
+// rr.org_id = $1 is redundant for correctness (the CTE already scoped org_id and
+// id is the PK) but REQUIRED: SQLChecker rejects an org-scoped UPDATE whose
+// top-level WHERE has no org_id ColumnRef (cross-AI review BLOCK).
 func (q *Queries) ClaimWaitingRoute(ctx context.Context, arg ClaimWaitingRouteParams) (RouteRequest, error) {
 	row := q.db.QueryRow(ctx, claimWaitingRoute,
 		arg.OrgID,
@@ -202,6 +212,12 @@ SET status = 'waiting_match',
     next_match_at = now(),
     match_deadline = $6,
     resume_cursor = $7,
+    -- Clear matcher-internal offer state from any prior cycle (hygiene; the
+    -- sweeps only read it for status='offering', and CommitMatchOffer already
+    -- nulls the token). excluded_agent_ids is INTENTIONALLY preserved — it is the
+    -- route's distinct-agent RONA history (don't re-ring a rejected agent).
+    match_offer_token = NULL,
+    offering_started_at = NULL,
     updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at

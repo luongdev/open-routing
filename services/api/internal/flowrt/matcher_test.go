@@ -66,6 +66,45 @@ func TestMatcher_EnqueueThenClaim(t *testing.T) {
 	}
 }
 
+// TestMatcher_SLAExpiredNotClaimable: a route past its match_deadline is NOT
+// claimable by the matcher (it belongs to the SLA sweep → fallback), but IS
+// reclaimed by ClaimExpiredMatchRoutes.
+func TestMatcher_SLAExpiredNotClaimable(t *testing.T) {
+	if sharedPool == nil {
+		t.Skip("no testcontainer pool")
+	}
+	ctx := context.Background()
+	q := generated.New(sharedPool)
+	org := uuid.Must(uuid.NewV7())
+	routeID := seedRunningRoute(ctx, t, org)
+	if _, err := q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
+		ID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
+		MatchDeadline: ts(time.Now().Add(-time.Minute)), // already past SLA
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	// The matcher must NOT claim it.
+	if _, err := q.ClaimWaitingRoute(ctx, generated.ClaimWaitingRouteParams{
+		OrgID: pgUUID(org), Column2: []string{}, Column3: pgUUID(uuid.Must(uuid.NewV7())), Column4: 100, Column5: 1,
+	}); err != pgx.ErrNoRows {
+		t.Fatalf("claim of SLA-expired route err=%v, want ErrNoRows", err)
+	}
+	// The deadline sweep reclaims it (→ running for the worker to fallback).
+	rows, err := q.ClaimExpiredMatchRoutes(ctx, 10)
+	if err != nil {
+		t.Fatalf("claim expired: %v", err)
+	}
+	found := false
+	for _, r := range rows {
+		if apiUUID(r.ID) == routeID && r.Status == "running" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("SLA-expired route not reclaimed by the deadline sweep")
+	}
+}
+
 // TestMatcher_ConcurrentClaimExactlyOne: many agents racing for ONE waiting route
 // → exactly one claims it (FOR UPDATE OF rr SKIP LOCKED + the status flip).
 func TestMatcher_ConcurrentClaimExactlyOne(t *testing.T) {

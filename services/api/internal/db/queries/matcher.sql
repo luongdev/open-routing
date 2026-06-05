@@ -16,6 +16,12 @@ SET status = 'waiting_match',
     next_match_at = now(),
     match_deadline = $6,
     resume_cursor = $7,
+    -- Clear matcher-internal offer state from any prior cycle (hygiene; the
+    -- sweeps only read it for status='offering', and CommitMatchOffer already
+    -- nulls the token). excluded_agent_ids is INTENTIONALLY preserved — it is the
+    -- route's distinct-agent RONA history (don't re-ring a rejected agent).
+    match_offer_token = NULL,
+    offering_started_at = NULL,
     updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
 RETURNING *;
@@ -36,8 +42,14 @@ WITH picked AS (
     WHERE rr.org_id = $1
       AND rr.status = 'waiting_match'
       AND rr.next_match_at <= now()
+      -- Don't claim a route past its queue SLA — it belongs to the deadline sweep
+      -- (→ fallback), not to a new offer (cross-AI review HIGH: claim-vs-expire race).
+      AND (rr.match_deadline IS NULL OR rr.match_deadline > now())
       AND rr.required_skills <@ $2::text[]
       AND $3::uuid <> ALL(rr.excluded_agent_ids)
+      -- NOTE: queue/channel are NOT eligibility filters in v0.3 — there is no
+      -- agent↔queue membership yet, so the candidate pool is skill-based and all
+      -- queues share it. When membership lands, filter served queues here.
     ORDER BY (rr.priority * $4::float8
               + EXTRACT(EPOCH FROM now() - rr.waiting_since) * $5::float8) DESC,
              rr.id ASC
@@ -51,7 +63,10 @@ SET status = 'offering',
     offering_started_at = now(),
     updated_at = now()
 FROM picked p
-WHERE rr.id = p.id
+-- rr.org_id = $1 is redundant for correctness (the CTE already scoped org_id and
+-- id is the PK) but REQUIRED: SQLChecker rejects an org-scoped UPDATE whose
+-- top-level WHERE has no org_id ColumnRef (cross-AI review BLOCK).
+WHERE rr.id = p.id AND rr.org_id = $1
 RETURNING rr.*;
 
 -- ReturnRouteToQueue requeues a route after a failed offer (slot/lease lost),
@@ -88,7 +103,8 @@ WHERE status = 'offering' AND offering_started_at < $1;
 -- wins — precedence). Cross-org via the raw pool, bounded batch.
 -- name: ClaimExpiredMatchRoutes :many
 UPDATE route_requests
-SET status = 'running', updated_at = now()
+SET status = 'running',
+    match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id IN (
     SELECT id FROM route_requests
     WHERE status = 'waiting_match' AND match_deadline IS NOT NULL AND match_deadline <= now()
