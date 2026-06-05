@@ -115,10 +115,11 @@ decision-trace requirements.
       EventSink maps adapter-originated terminals (caller_abandoned/disconnect/
       fail/reject) onto reservation+route teardown, engine-initiated ones are
       no-ops. Release on abandon. cmd/api wires MockVoice for "voice".
-- [~] Live ops view: backend snapshot endpoint shipped (GET /routing/stats —
-      queue depth, oldest-waiting SLA age, outstanding offers, held slots). Rich
-      rates (offers/sec, accept latency, reject reasons, p95) + the frontend view
-      remain.
+- [x] Live ops view: GET /routing/stats backend + an <or-ops-view> frontend
+      dashboard (Live Ops nav) — queue depth, offering, outstanding offers,
+      oldest-wait SLA age, held slots, and a recent-route-requests feed, polling
+      2s. Rich rates (offers/sec, accept latency, reject reasons, route-decision
+      p95) remain additive.
 - [ ] Protocol contract tests: golden WS schema + reconnect / duplicate-command /
       timeout / stale-offer fixtures.
 - [ ] OpenAPI/WS schema + migrations (fold into the single pre-release migration);

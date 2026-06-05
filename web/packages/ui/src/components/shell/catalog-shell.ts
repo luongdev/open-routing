@@ -60,13 +60,14 @@ const NAV_ENTRIES: readonly NavEntry[] = [
   { key: 'break-reasons', label: 'Break Reasons',  icon: 'pause-circle', path: '/orgs/{orgId}/break-reasons' },
   { key: 'flows',         label: 'Flows',          icon: 'git-branch',   path: '/orgs/{orgId}/flows' },
   { key: '__divider__',   label: '',               icon: '',             path: '' },
+  { key: 'ops',           label: 'Live Ops',       icon: 'gauge',        path: '/orgs/{orgId}/ops' },
   { key: 'route-tester',  label: 'Route Tester',   icon: 'play-circle',  path: '/orgs/{orgId}/route-tester' },
   { key: 'imports',       label: 'Bulk Import',    icon: 'upload',       path: '/orgs/{orgId}/imports/new' },
   { key: 'status',        label: 'Agent Status',   icon: 'activity',     path: '/orgs/{orgId}/agents/status' },
 ] as const;
 
 /** Entries that always show regardless of modules filter (divider, route-tester, imports, status). */
-const ALWAYS_VISIBLE_KEYS = new Set(['__divider__', 'route-tester', 'imports', 'status']);
+const ALWAYS_VISIBLE_KEYS = new Set(['__divider__', 'ops', 'route-tester', 'imports', 'status']);
 
 /** Theme token lookup table. */
 const _THEME_TOKENS: Record<ThemeName, Record<string, string>> = {
@@ -609,6 +610,14 @@ export class OrCatalogShell extends LitElement {
       enter: (params) => this._composedEnter(params, () => import('../runtime/route-tester.js')),
       render: ({ org_id }: Record<string, string | undefined>) =>
         html`<or-route-tester .orgId=${org_id ?? ''} .client=${this._client!}></or-route-tester>`,
+    },
+    {
+      // v0.3 W6: Live Ops — read-only routing-engine dashboard (queue depth,
+      // outstanding offers, oldest-wait SLA age, occupancy, recent route feed).
+      path: '/orgs/:org_id/ops',
+      enter: (params) => this._composedEnter(params, () => import('../runtime/ops-view.js')),
+      render: ({ org_id }: Record<string, string | undefined>) =>
+        html`<or-ops-view .orgId=${org_id ?? ''} .client=${this._client!}></or-ops-view>`,
     },
     {
       // W0.0-03: Dev-only UI playground — no org scope, no UUIDv7 guard.
