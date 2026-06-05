@@ -162,8 +162,7 @@ func TestMatcher_ConcurrentClaimExactlyOne(t *testing.T) {
 	ctx := context.Background()
 	org := uuid.Must(uuid.NewV7())
 	routeID := seedRunningRoute(ctx, t, org)
-	if _, err := generated.New(sharedPool).EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{RouteRequestID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
-	}); err != nil {
+	if _, err := generated.New(sharedPool).EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{RouteRequestID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}")}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 

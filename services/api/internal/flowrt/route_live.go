@@ -222,8 +222,8 @@ type liveOfferer struct {
 	tx       *db.OrgTx
 	orgID    uuid.UUID
 	routeID  uuid.UUID
-	channel  string           // for capacity (voice=1, chat=N)
-	cap      *CapacityService // nil ⇒ simulation mode (no capacity holds)
+	channel  string             // for capacity (voice=1, chat=N)
+	cap      *CapacityService   // nil ⇒ simulation mode (no capacity holds)
 	excluded map[uuid.UUID]bool // agents already offered on this route (resume re-offer)
 	attempt  int
 	lastRes  uuid.UUID

@@ -20,7 +20,9 @@ func (f *failingVoice) Deliver(context.Context, adapter.Assignment, adapter.Even
 	f.calls++
 	return "", errors.New("adapter down")
 }
-func (f *failingVoice) Release(context.Context, adapter.Handle, adapter.ReleaseCause) error { return nil }
+func (f *failingVoice) Release(context.Context, adapter.Handle, adapter.ReleaseCause) error {
+	return nil
+}
 
 // TestDrainDeliveries_RetryCap: a down adapter is retried (command stays pending,
 // route not torn down) up to maxDeliveryAttempts, then the delivery is marked
@@ -118,7 +120,7 @@ func TestAcceptEnqueuesDelivery_WhenOutboxOn(t *testing.T) {
 	oe := New(Deps{
 		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
 		Presence: lf.mem, Capacity: NewCapacityService(), MatcherEnabled: true,
-		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
+		Adapters:       map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
 		DeliveryOutbox: true,
 	})
 	_, resID, agentID, _ := driveToAcceptedCall(t, lf, oe)
