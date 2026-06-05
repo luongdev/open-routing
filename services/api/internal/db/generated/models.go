@@ -35,6 +35,46 @@ type Agent struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AgentCapacitySlot struct {
+	OrgID         pgtype.UUID        `json:"org_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	Channel       string             `json:"channel"`
+	SlotNo        int32              `json:"slot_no"`
+	ReservationID pgtype.UUID        `json:"reservation_id"`
+	HoldExpiresAt pgtype.Timestamptz `json:"hold_expires_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AgentOutbox struct {
+	OrgID         pgtype.UUID        `json:"org_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	ServerSeq     int64              `json:"server_seq"`
+	EventKey      string             `json:"event_key"`
+	Type          string             `json:"type"`
+	ReservationID pgtype.UUID        `json:"reservation_id"`
+	Payload       []byte             `json:"payload"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type AgentRoutingState struct {
+	OrgID          pgtype.UUID        `json:"org_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	RoutingState   string             `json:"routing_state"`
+	StateExpiresAt pgtype.Timestamptz `json:"state_expires_at"`
+	LastReadyAt    pgtype.Timestamptz `json:"last_ready_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AgentSession struct {
+	OrgID        pgtype.UUID        `json:"org_id"`
+	SessionID    pgtype.UUID        `json:"session_id"`
+	AgentID      pgtype.UUID        `json:"agent_id"`
+	GatewayID    string             `json:"gateway_id"`
+	ConnectedAt  pgtype.Timestamptz `json:"connected_at"`
+	LastSeenAt   pgtype.Timestamptz `json:"last_seen_at"`
+	TerminatedAt pgtype.Timestamptz `json:"terminated_at"`
+}
+
 type AgentSkill struct {
 	AgentID     pgtype.UUID        `json:"agent_id"`
 	SkillID     pgtype.UUID        `json:"skill_id"`
@@ -98,6 +138,7 @@ type Continuation struct {
 	ClaimExpiresAt pgtype.Timestamptz `json:"claim_expires_at"`
 	ClaimedBy      *string            `json:"claimed_by"`
 	AttemptCount   int32              `json:"attempt_count"`
+	RunSeq         int32              `json:"run_seq"`
 	LastError      *string            `json:"last_error"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
@@ -179,8 +220,27 @@ type Reservation struct {
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
 	Reason         *string            `json:"reason"`
+	LeaseToken     pgtype.UUID        `json:"lease_token"`
+	AgentSessionID pgtype.UUID        `json:"agent_session_id"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RouteDecision struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrgID           pgtype.UUID        `json:"org_id"`
+	RouteRequestID  pgtype.UUID        `json:"route_request_id"`
+	DecisionType    string             `json:"decision_type"`
+	DecisionVersion int32              `json:"decision_version"`
+	MatcherInstance string             `json:"matcher_instance"`
+	Channel         string             `json:"channel"`
+	QueueID         pgtype.UUID        `json:"queue_id"`
+	SelectedAgentID pgtype.UUID        `json:"selected_agent_id"`
+	SelectedSlotNo  *int32             `json:"selected_slot_no"`
+	Outcome         string             `json:"outcome"`
+	Reason          *string            `json:"reason"`
+	Detail          []byte             `json:"detail"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type RouteRequest struct {
@@ -194,6 +254,17 @@ type RouteRequest struct {
 	Status               string             `json:"status"`
 	FailureCode          *string            `json:"failure_code"`
 	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
+	QueueID              pgtype.UUID        `json:"queue_id"`
+	Priority             int32              `json:"priority"`
+	RequiredSkills       []string           `json:"required_skills"`
+	WaitingSince         pgtype.Timestamptz `json:"waiting_since"`
+	NextMatchAt          pgtype.Timestamptz `json:"next_match_at"`
+	MatchDeadline        pgtype.Timestamptz `json:"match_deadline"`
+	MatchAttemptSeq      int32              `json:"match_attempt_seq"`
+	MatchOfferToken      pgtype.UUID        `json:"match_offer_token"`
+	OfferingStartedAt    pgtype.Timestamptz `json:"offering_started_at"`
+	ActiveReservationID  pgtype.UUID        `json:"active_reservation_id"`
+	ExcludedAgentIds     []pgtype.UUID      `json:"excluded_agent_ids"`
 	ResumeCursor         []byte             `json:"resume_cursor"`
 	CurrentReservationID pgtype.UUID        `json:"current_reservation_id"`
 	RunSeq               int32              `json:"run_seq"`
@@ -241,4 +312,16 @@ type Trace struct {
 	SimulationInput      []byte             `json:"simulation_input"`
 	ReadSetSnapshot      []byte             `json:"read_set_snapshot"`
 	GraphHash            *string            `json:"graph_hash"`
+}
+
+type WsCommandDedupe struct {
+	OrgID       pgtype.UUID        `json:"org_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	ClientMsgID pgtype.UUID        `json:"client_msg_id"`
+	CommandType string             `json:"command_type"`
+	RequestHash string             `json:"request_hash"`
+	Status      string             `json:"status"`
+	Result      []byte             `json:"result"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }

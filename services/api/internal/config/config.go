@@ -26,6 +26,7 @@ type Config struct {
 	ListenAddr         string   // LISTEN_ADDR — default ":8080"
 	ValidationMode     string   // ORGDB_VALIDATION_MODE — default "panic"; accepts "error" (D-02)
 	CORSAllowedOrigins []string // CORS_ALLOWED_ORIGINS — comma-separated list of origins (D7-16)
+	MatcherEnabled     bool     // MATCHER_ENABLED — default false; v0.3 W4 queue+matcher (park on no agent → matcher pull) instead of offer-now-or-fallback
 }
 
 // Load reads every environment variable, validates defaults / enums, and
@@ -87,6 +88,7 @@ func Load() (*Config, error) {
 		ListenAddr:         listenAddr,
 		ValidationMode:     validationMode,
 		CORSAllowedOrigins: corsAllowedOrigins,
+		MatcherEnabled:     getEnvOrDefault("MATCHER_ENABLED", "false") == "true",
 	}, nil
 }
 

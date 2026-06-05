@@ -31,12 +31,25 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // read-only: always rollback to release the snapshot
 
-	rows, err := generated.New(tx).ListRoutableCandidates(ctx, orgID)
+	q := generated.New(tx)
+	rows, err := q.ListRoutableCandidates(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
+	pool, _ := poolFromRows(rows)
+	qc, err := e.mapQueueCandidates(ctx, q, orgID, graph, pool)
+	if err != nil {
+		return nil, err
+	}
+	return &runtime.Snapshot{QueueCandidates: qc}, nil
+}
 
+// poolFromRows folds the per-(agent,skill) rows into a ranked candidate pool and
+// returns the agent code→uuid map (the live snapshot needs the uuid for
+// presence/capacity lookups; the sim path ignores it).
+func poolFromRows(rows []generated.ListRoutableCandidatesRow) ([]runtime.Candidate, map[string]uuid.UUID) {
 	byAgent := map[string]*runtime.Candidate{}
+	idByCode := make(map[string]uuid.UUID, len(rows))
 	order := make([]string, 0, len(rows))
 	for _, r := range rows {
 		c, ok := byAgent[r.AgentCode]
@@ -46,6 +59,7 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 				c.AvailableSince = r.AvailableSince.Time
 			}
 			byAgent[r.AgentCode] = c
+			idByCode[r.AgentCode] = apiUUID(r.AgentID)
 			order = append(order, r.AgentCode)
 		}
 		if r.SkillCode != nil && r.Proficiency != nil {
@@ -56,8 +70,17 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 	for _, code := range order {
 		pool = append(pool, *byAgent[code])
 	}
+	// Rank by longest-available so a direct route_queue → reservation (no
+	// match_skill) still offers the longest-idle agent first (review M10).
+	return runtime.RankCandidates(pool, nil), idByCode
+}
 
-	qc := map[string][]runtime.Candidate{}
+// validQueueCodes returns the codes of every route_queue the graph references
+// that still EXISTS and is ENABLED. A missing/disabled queue is omitted so
+// route_queue yields missing_catalog_reference instead of routing to it (H7).
+func (e *Endpoints) validQueueCodes(ctx context.Context, q *generated.Queries, orgID pgtype.UUID, graph *runtime.Graph) ([]string, error) {
+	var codes []string
+	seen := map[string]bool{}
 	for _, n := range graph.Nodes {
 		if n.Kind != runtime.NodeRouteQueue {
 			continue
@@ -65,11 +88,146 @@ func (e *Endpoints) buildSnapshot(ctx context.Context, orgID pgtype.UUID, graph 
 		var cfg struct {
 			Queue string `json:"queue"`
 		}
-		if json.Unmarshal(n.Config, &cfg) == nil && cfg.Queue != "" {
-			qc[cfg.Queue] = pool
+		if json.Unmarshal(n.Config, &cfg) != nil || cfg.Queue == "" || seen[cfg.Queue] {
+			continue
+		}
+		qrow, qerr := q.GetQueueByCode(ctx, generated.GetQueueByCodeParams{OrgID: orgID, Code: cfg.Queue})
+		if errors.Is(qerr, pgx.ErrNoRows) || (qerr == nil && !qrow.Enabled) {
+			continue
+		}
+		if qerr != nil {
+			return nil, qerr // real DB error must not masquerade as a missing queue (re-review MED)
+		}
+		seen[cfg.Queue] = true
+		codes = append(codes, cfg.Queue)
+	}
+	return codes, nil
+}
+
+// mapQueueCandidates keys the pool by every valid queue the graph references.
+func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries, orgID pgtype.UUID, graph *runtime.Graph, pool []runtime.Candidate) (map[string][]runtime.Candidate, error) {
+	codes, err := e.validQueueCodes(ctx, q, orgID, graph)
+	if err != nil {
+		return nil, err
+	}
+	qc := make(map[string][]runtime.Candidate, len(codes))
+	for _, c := range codes {
+		qc[c] = pool
+	}
+	return qc, nil
+}
+
+// requiredSkillsFromTrace collects the skills the match_skill nodes that ACTUALLY
+// RAN on this route's path filtered on — denormalized onto
+// route_requests.required_skills so the W4 matcher finds eligible agents
+// (required_skills <@ agent skills) without re-running the flow. Reading the
+// executed trace (not the static graph) avoids over-constraining: a branching
+// flow whose VIP arm needs skill_es and standard arm needs skill_fr must NOT
+// demand both — only the branch the route took (cross-AI review HIGH).
+func requiredSkillsFromTrace(tr runtime.Trace) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range tr.Steps {
+		if s.Kind != runtime.NodeMatchSkill {
+			continue
+		}
+		if sk, ok := s.Output["skill"].(string); ok && sk != "" && !seen[sk] {
+			seen[sk] = true
+			out = append(out, sk)
 		}
 	}
+	return out
+}
+
+// routingSnapshot picks the candidate source: LIVE (presence+capacity filtered)
+// when the gateway/presence deps are wired, else the simulation snapshot. There
+// is NO silent live→sim fallback (review BLOCK): a real binary always wires
+// presence (cmd/api), so reaching buildSnapshot means a genuine sim/test run.
+func (e *Endpoints) routingSnapshot(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (*runtime.Snapshot, error) {
+	if e.deps.Presence != nil {
+		return e.buildLiveSnapshot(ctx, orgID, channel, graph)
+	}
+	return e.buildSnapshot(ctx, pgUUID(orgID), graph)
+}
+
+// buildLiveSnapshot is the LIVE candidate source: the Ready+eligible pool
+// post-filtered by a connection lease (presence) AND under-capacity
+// (held < channel capacity). A presence-store error is returned as an infra
+// error — the caller parks the route for retry — NEVER read as "disconnected"
+// and NEVER fallen back to a DB snapshot (review HIGH). under-capacity uses the
+// HELD count so it doesn't depend on slots being pre-provisioned; the offer tx
+// provisions+acquires authoritatively.
+func (e *Endpoints) buildLiveSnapshot(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (*runtime.Snapshot, error) {
+	// Phase 1 — all DB reads in ONE short read-only snapshot, then CLOSE it before
+	// any Redis I/O so a slow presence store can't pin a pg connection / hold the
+	// snapshot open (review HIGH). Bulk the held counts (one query, not N).
+	pool, idByCode, heldByAgent, queueCodes, err := e.liveSnapshotReads(ctx, orgID, channel, graph)
+	if err != nil {
+		return nil, err
+	}
+
+	// Phase 2 — batch the lease check OUTSIDE the tx. An error parks the route
+	// (infra), never read as "everyone disconnected" (review HIGH).
+	agentIDs := make([]uuid.UUID, 0, len(idByCode))
+	for _, id := range idByCode {
+		agentIDs = append(agentIDs, id)
+	}
+	connected, err := e.deps.Presence.ConnectedMany(ctx, orgID, agentIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Phase 3 — filter by lease + under-capacity (held < cap) and key by queue.
+	cap := channelCapacity(channel)
+	live := make([]runtime.Candidate, 0, len(pool))
+	for _, c := range pool {
+		id := idByCode[c.AgentID]
+		if !connected[id] || heldByAgent[id] >= cap {
+			continue
+		}
+		live = append(live, c)
+	}
+	qc := make(map[string][]runtime.Candidate, len(queueCodes))
+	for _, code := range queueCodes {
+		qc[code] = live
+	}
 	return &runtime.Snapshot{QueueCandidates: qc}, nil
+}
+
+// liveSnapshotReads does every DB read for the live snapshot in one short
+// read-only tx (candidate pool + bulk held counts + valid queue codes) and
+// returns them so the caller can close the tx before touching Redis.
+func (e *Endpoints) liveSnapshotReads(ctx context.Context, orgID uuid.UUID, channel string, graph *runtime.Graph) (pool []runtime.Candidate, idByCode map[string]uuid.UUID, heldByAgent map[uuid.UUID]int32, queueCodes []string, err error) {
+	tx, err := e.deps.OrgDB.BeginTxWith(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := generated.New(tx)
+	rows, err := q.ListRoutableCandidates(ctx, pgUUID(orgID))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	pool, idByCode = poolFromRows(rows)
+	agentIDs := make([]pgtype.UUID, 0, len(idByCode))
+	for _, id := range idByCode {
+		agentIDs = append(agentIDs, pgUUID(id))
+	}
+	heldByAgent = make(map[uuid.UUID]int32, len(agentIDs))
+	if len(agentIDs) > 0 {
+		heldRows, hErr := q.CountHeldCapacityByAgents(ctx, generated.CountHeldCapacityByAgentsParams{OrgID: pgUUID(orgID), Channel: channel, Column3: agentIDs})
+		if hErr != nil {
+			return nil, nil, nil, nil, hErr
+		}
+		for _, hr := range heldRows {
+			heldByAgent[apiUUID(hr.AgentID)] = hr.Held
+		}
+	}
+	queueCodes, err = e.validQueueCodes(ctx, q, pgUUID(orgID), graph)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return pool, idByCode, heldByAgent, queueCodes, nil
 }
 
 // mapTraceSteps converts the runtime trace's steps to the API shape, assigning

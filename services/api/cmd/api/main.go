@@ -50,9 +50,11 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
 	"github.com/luongdev/open-routing/services/api/internal/imports"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 	"github.com/luongdev/open-routing/services/api/internal/server"
 	"github.com/luongdev/open-routing/services/api/internal/state"
 	"github.com/luongdev/open-routing/services/api/internal/telemetry"
+	"github.com/luongdev/open-routing/services/api/internal/wsgateway"
 )
 
 func main() {
@@ -215,10 +217,18 @@ func run() int {
 	// All embed sets are disjoint — Go's method-set resolution merges them
 	// cleanly. Pitfall 1 is avoided by giving each type a distinct name
 	// (Handlers / Server / Importer / Endpoints; per RESEARCH §F3).
+	// v0.3 W3: one presence store + capacity service shared by the route engine
+	// (offerability + capacity holds) and the WS gateway (lease renew/drop) so a
+	// gateway heartbeat is visible to the matcher's Connected check.
+	presenceStore := presence.NewRedisStore(rdb, 0)
+	capacitySvc := flowrt.NewCapacityService()
 	flowrtEndpoints := flowrt.New(flowrt.Deps{
-		OrgDB:  orgDB,
-		Cache:  catalogCache,
-		Logger: slog.Default(),
+		OrgDB:          orgDB,
+		Cache:          catalogCache,
+		Presence:       presenceStore,
+		Capacity:       capacitySvc,
+		Logger:         slog.Default(),
+		MatcherEnabled: cfg.MatcherEnabled,
 	})
 	type ApiHandlers struct {
 		*catalog.Handlers
@@ -242,6 +252,15 @@ func run() int {
 		Endpoints: flowrtEndpoints,
 	}
 
+	// v0.3 W2/W3: agent WebSocket gateway (transport over the runtime command
+	// service) + W3 connection-lease presence (Redis-primary).
+	wsGateway := wsgateway.New(wsgateway.Deps{
+		OrgDB:    orgDB,
+		Cmd:      flowrtEndpoints,
+		Presence: presenceStore,
+		Logger:   slog.Default(),
+	})
+
 	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{
 		Pool:           pool,
@@ -250,6 +269,7 @@ func run() int {
 		Config:         cfg,
 		StrictHandlers: apiHandlers,
 		SpecBytes:      specBytes,
+		WSHandler:      wsGateway.Handler(),
 	})
 
 	// (10) OTel HTTP wrap AFTER NewMux returns (Pattern S6 — wrap is after

@@ -29,6 +29,7 @@ import (
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/db/orgkey"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 	"github.com/luongdev/open-routing/services/api/internal/runtime"
 )
 
@@ -37,9 +38,25 @@ const maxVersionsPerList = 100
 // Deps carries the handler dependencies. reg is the shared node registry,
 // constructed once in New and reused for validate/compile across requests.
 type Deps struct {
-	OrgDB  *db.OrgDB
-	Cache  *cache.Cache
-	Logger *slog.Logger
+	OrgDB *db.OrgDB
+	Cache *cache.Cache
+	// Presence + Capacity make routing LIVE (offerability from a connection lease
+	// + DB-solid capacity). When nil the route path runs in simulation mode
+	// (buildSnapshot, no capacity holds). A real binary (cmd/api) always wires
+	// both — see routingSnapshot (review BLOCK: no silent live→sim fallback).
+	Presence presence.Store
+	Capacity *CapacityService
+	// MatcherEnabled turns on the W4 queue model: a route with no available agent
+	// parks waiting_match for the matcher instead of falling through to fallback.
+	// Off until the matcher loop (cmd/runtime, W4 Stage 3) is wired, else parked
+	// routes would never be pulled.
+	MatcherEnabled bool
+	Logger         *slog.Logger
+}
+
+// matcherMode reports whether to run reservations in W4 queue mode.
+func (e *Endpoints) matcherMode() bool {
+	return e.deps.MatcherEnabled && e.deps.Capacity != nil && e.deps.Presence != nil
 }
 
 type Endpoints struct {

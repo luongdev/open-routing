@@ -212,3 +212,27 @@ func TestCatalog_StableAndComplete(t *testing.T) {
 		}
 	}
 }
+
+func TestParse_Budgets(t *testing.T) {
+	long := make([]byte, maxExprLen+1)
+	for i := range long {
+		long[i] = 'a'
+	}
+	if _, err := Parse(string(long)); err == nil {
+		t.Fatal("over-long expression should be rejected (M3)")
+	}
+	deep := ""
+	for i := 0; i < maxExprDepth+5; i++ {
+		deep += "("
+	}
+	deep += "1"
+	for i := 0; i < maxExprDepth+5; i++ {
+		deep += ")"
+	}
+	if _, err := Parse(deep); err == nil {
+		t.Fatal("over-deep expression should be rejected (M3)")
+	}
+	if _, err := Parse("a == 1 AND b > 2"); err != nil {
+		t.Fatalf("normal expression rejected: %v", err.Msg)
+	}
+}

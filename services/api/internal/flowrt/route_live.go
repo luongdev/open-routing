@@ -181,6 +181,8 @@ type liveOfferer struct {
 	tx       *db.OrgTx
 	orgID    uuid.UUID
 	routeID  uuid.UUID
+	channel  string           // for capacity (voice=1, chat=N)
+	cap      *CapacityService // nil ⇒ simulation mode (no capacity holds)
 	excluded map[uuid.UUID]bool // agents already offered on this route (resume re-offer)
 	attempt  int
 	lastRes  uuid.UUID
@@ -201,22 +203,56 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	}
 	resID := uuid.Must(uuid.NewV7())
 	exp := time.Now().Add(timeout)
+	// Provision the agent's slot rows outside the per-offer savepoint so they
+	// persist across a skipped candidate (idempotent). The authoritative capacity
+	// gate is the acquire below — the candidate-source hint may be stale.
+	if o.cap != nil {
+		if err := o.cap.ProvisionInTx(o.ctx, generated.New(o.tx), o.orgID, apiUUID(agent.ID), o.channel); err != nil {
+			return "", false, err
+		}
+	}
 	sp, err := o.tx.BeginSavepoint(o.ctx)
 	if err != nil {
 		return "", false, err
 	}
+	// Acquire a capacity slot for THIS reservation inside the offer savepoint so
+	// the hold and the offer commit/roll back together. At capacity ⇒ skip the
+	// candidate (same control flow as a busy unique-violation).
+	if o.cap != nil {
+		_, ok, aErr := o.cap.AcquireInTx(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), o.channel, resID, exp)
+		if aErr != nil {
+			_ = sp.Rollback(o.ctx)
+			return "", false, aErr
+		}
+		if !ok {
+			_ = sp.Rollback(o.ctx)
+			return "", false, nil
+		}
+	}
+	leaseToken, sessionID, lErr := bindOfferLease(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID))
+	if lErr != nil {
+		_ = sp.Rollback(o.ctx)
+		return "", false, lErr
+	}
 	_, err = generated.New(sp).InsertReservationOffer(o.ctx, generated.InsertReservationOfferParams{
 		ID: pgUUID(resID), OrgID: pgUUID(o.orgID), RouteRequestID: pgUUID(o.routeID),
 		AgentID: agent.ID, Attempt: int32(o.attempt + 1), //nolint:gosec // attempt is bounded (<=10) by max_attempts
-		ExpiresAt: pgtype.Timestamptz{Time: exp, Valid: true},
+		ExpiresAt:  pgtype.Timestamptz{Time: exp, Valid: true},
+		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
 	})
 	if isUniqueViolation(err) {
-		_ = sp.Rollback(o.ctx) // busy/ineligible → undo this offer, try next candidate
+		_ = sp.Rollback(o.ctx) // busy/ineligible → undo this offer (and its slot hold), try next candidate
 		return "", false, nil
 	}
 	if err != nil {
 		_ = sp.Rollback(o.ctx)
 		return "", false, err
+	}
+	// Deliver the durable offer frame (reservation id + lease_token to echo back)
+	// inside the same savepoint so a rolled-back offer doesn't leak an outbox row.
+	if fErr := enqueueOfferFrame(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), resID, leaseToken, exp); fErr != nil {
+		_ = sp.Rollback(o.ctx)
+		return "", false, fErr
 	}
 	if err := sp.Commit(o.ctx); err != nil {
 		return "", false, err
@@ -293,7 +329,7 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 	if cErr != nil {
 		return crErr("compile_failed"), nil
 	}
-	snapshot, sErr := e.buildSnapshot(ctx, pgUUID(orgID), graph)
+	snapshot, sErr := e.routingSnapshot(ctx, orgID, body.Channel, graph)
 	if sErr != nil {
 		return crErr("snapshot_failed"), nil
 	}
@@ -315,8 +351,12 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 		return crErr("insert_failed"), nil
 	}
 
-	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID}
-	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer))
+	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, channel: body.Channel, cap: e.deps.Capacity}
+	opts := []runtime.ExecutorOption{runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer)}
+	if e.matcherMode() {
+		opts = append(opts, runtime.WithMatcher())
+	}
+	ex := runtime.NewExecutor(e.reg, opts...)
 	decStart := time.Now()
 	res, rErr := ex.Run(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, input)
 	observeRouteDecision(e.deps.Logger, "create", time.Since(decStart))

@@ -201,6 +201,11 @@ type ExecCtx interface {
 	// LIVE routing (Wave 3 part 2). A live run carries an Offerer; reservation
 	// then OFFERS the top candidate and SUSPENDS (vs the sim's synchronous loop).
 	LiveRouting() bool
+	// MatcherMode reports whether the W4 queue+matcher is active. When true, a
+	// reservation with no available candidate PARKS for match (waiting_match)
+	// instead of taking the no_candidate port — the matcher offers later. Off for
+	// sim/replay and the W3 inline-offer path (unchanged no_candidate→fallback).
+	MatcherMode() bool
 	// Offer makes one live reservation offer; ok=false means the agent couldn't
 	// be offered (busy/ineligible) so the node tries the next candidate.
 	Offer(agentID string, timeout time.Duration) (reservationID string, ok bool, err error)
@@ -240,6 +245,10 @@ type RoutingFailure struct {
 type Suspension struct {
 	ResumeAt time.Time
 	Cursor   json.RawMessage
+	// WaitForMatch (v0.3 W4) parks the route in the matcher queue with no timer —
+	// the matcher offers when an agent frees and the SLA sweep bounds the wait.
+	// Set only by a reservation node in matcher mode (no candidate available).
+	WaitForMatch bool
 }
 
 // StepResult is what Execute returns. Exactly one outcome is expected: follow

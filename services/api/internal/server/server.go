@@ -68,6 +68,11 @@ type Deps struct {
 	Config         *config.Config
 	StrictHandlers api.StrictServerInterface // D-44, D-69 — production: catalog.Handlers.
 	SpecBytes      []byte                    // D-45: embedded openapi.yaml bytes for /openapi.yaml
+	// WSHandler is the v0.3 agent WebSocket gateway (cmd/api builds it with the
+	// runtime command service). Optional; nil in tests that don't need it. It is
+	// NOT a spec route (WS upgrade), so it is mounted as a bare chi route under
+	// OrgContext.
+	WSHandler http.Handler
 }
 
 // NewMux constructs the chi router with the LOCKED middleware chain order.
@@ -99,6 +104,12 @@ func NewMux(deps *Deps) http.Handler {
 	// (3) /metrics: Phase 1 stub — NOT in the generated spec; registered
 	//     separately as a bare chi route at root (D-21 bypass list).
 	r.Get("/metrics", MetricsHandler())
+
+	// v0.3 agent WS gateway — a bare chi route (not a spec op) under OrgContext so
+	// it resolves X-Org-Id; the gateway reads the agent from X-Agent-Id.
+	if deps.WSHandler != nil {
+		r.With(appmw.OrgContext).Get("/v1/agent/ws", deps.WSHandler.ServeHTTP)
+	}
 
 	// (4) Generated strict-server pipeline. All spec routes (bypass paths
 	//     AND /v1/* catalog routes) are registered by api.HandlerFromMux

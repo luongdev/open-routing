@@ -22,6 +22,10 @@ const wrapUpSeconds = 30
 // persistRunResult records the trace segment + events for one executor run and
 // either parks the route (offered → waiting + cursor + reservation_timeout
 // continuation) or finishes it (completed/failed). Runs inside the route tx.
+// matchDeadlineSeconds bounds how long a route waits in the matcher queue before
+// the SLA sweep gives up (→ no_candidate fallback). Configurable later.
+const matchDeadlineSeconds = 120
+
 func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, fv generated.FlowVersion, snapJSON []byte, offerer *liveOfferer, res runtime.RunResult) error {
 	steps := mapTraceSteps(res.Trace)
 	stepsJSON, _ := json.Marshal(steps)
@@ -35,6 +39,20 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 		return err
 	}
 	switch {
+	case res.Suspension != nil && res.Suspension.WaitForMatch:
+		// W4: no agent available now → park in the matcher queue (waiting_match).
+		// The matcher offers when an agent frees; the SLA deadline bounds the wait.
+		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
+		curJSON, _ := json.Marshal(cur)
+		skills := requiredSkillsFromTrace(res.Trace)
+		if _, err := qtx.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
+			RouteRequestID: pgUUID(routeID), OrgID: pgUUID(orgID), Priority: 0,
+			RequiredSkills: skills, ResumeCursor: curJSON,
+			MatchDeadline: pgtype.Timestamptz{Time: time.Now().Add(matchDeadlineSeconds * time.Second), Valid: true},
+		}); err != nil {
+			return err
+		}
+		e.appendEvent(ctx, qtx, orgID, routeID, "route.queued", map[string]any{"required_skills": skills})
 	case res.Suspension != nil:
 		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
 		curJSON, _ := json.Marshal(cur)
@@ -42,15 +60,16 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 		// at the offer expiry); a wait parks a wait continuation (no reservation,
 		// due at the wait's resume time). Mixing them up left a wait route stuck.
 		if offerer.offered {
-			if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+			susp, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
 				ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgUUID(offerer.lastRes),
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
 			if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
 				ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "reservation_timeout",
 				RouteRequestID: pgUUID(routeID), ReservationID: pgUUID(offerer.lastRes),
-				FlowVersionID: fv.ID, Cursor: []byte("{}"),
+				FlowVersionID: fv.ID, Cursor: []byte("{}"), RunSeq: susp.RunSeq,
 				DueAt: pgtype.Timestamptz{Time: offerer.lastExp, Valid: true},
 			}); err != nil {
 				return err
@@ -58,14 +77,17 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 			e.appendEvent(ctx, qtx, orgID, routeID, "reservation.offered", map[string]any{"reservation_id": offerer.lastRes.String()})
 		} else {
 			// wait suspension: no reservation, resume at the timer's due time.
-			if _, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
+			susp, err := qtx.SuspendRoute(ctx, generated.SuspendRouteParams{
 				ID: pgUUID(routeID), OrgID: pgUUID(orgID), ResumeCursor: curJSON, CurrentReservationID: pgtype.UUID{},
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
+			// RunSeq pins the route's seq at suspend so a stale timer that fires
+			// after a later suspend is no-op'd by the fenced acquire (review B1).
 			if _, err := qtx.InsertContinuation(ctx, generated.InsertContinuationParams{
 				ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), Kind: "wait",
-				RouteRequestID: pgUUID(routeID), FlowVersionID: fv.ID, Cursor: []byte("{}"),
+				RouteRequestID: pgUUID(routeID), FlowVersionID: fv.ID, Cursor: []byte("{}"), RunSeq: susp.RunSeq,
 				DueAt: pgtype.Timestamptz{Time: res.Suspension.ResumeAt, Valid: true},
 			}); err != nil {
 				return err
@@ -95,6 +117,10 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 // It re-reads the live candidate pool (route_queue/match_skill re-run) and the
 // offerer excludes agents already offered on this route, so a reject/timeout
 // re-offers a fresh agent.
+// errNotInputCursor: a live input submit targeted a route whose parked cursor is
+// not an interactive-input node (re-review H3) → the handler maps it to 409.
+var errNotInputCursor = errors.New("flowrt: route is not parked at an input node")
+
 func (e *Endpoints) resumeRoute(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID uuid.UUID, route generated.RouteRequest, signal string) error {
 	return e.resumeRouteWith(ctx, tx, qtx, orgID, route, signal, nil)
 }
@@ -116,7 +142,7 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 	if err != nil {
 		return err
 	}
-	snapshot, err := e.buildSnapshot(ctx, pgUUID(orgID), graph)
+	snapshot, err := e.routingSnapshot(ctx, orgID, route.Channel, graph)
 	if err != nil {
 		return err
 	}
@@ -124,6 +150,12 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 	var cur runtime.ResumeCursor
 	if len(route.ResumeCursor) > 0 {
 		_ = json.Unmarshal(route.ResumeCursor, &cur)
+	}
+	// A live input submit (scriptedInputs set) may only target an interactive-input
+	// cursor — never a parked wait/reservation node, which would otherwise resume
+	// early on the injected value (re-review H3).
+	if len(scriptedInputs) > 0 && !runtime.IsInteractiveInputKind(plan.StepKind(cur.NodeID)) {
+		return errNotInputCursor
 	}
 	// Replay from the route's ORIGINAL interaction_input (not the post-suspension
 	// vars) so re-running from entry is deterministic — set_var/compute before the
@@ -147,8 +179,12 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 			maxAttempt = int(r.Attempt)
 		}
 	}
-	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, excluded: excluded, attempt: maxAttempt}
-	ex := runtime.NewExecutor(e.reg, runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs))
+	offerer := &liveOfferer{ctx: ctx, tx: tx, orgID: orgID, routeID: routeID, channel: route.Channel, cap: e.deps.Capacity, excluded: excluded, attempt: maxAttempt}
+	opts := []runtime.ExecutorOption{runtime.WithRouting(snapshot, nil), runtime.WithOfferer(offerer), runtime.WithScriptedInputs(scriptedInputs)}
+	if e.matcherMode() {
+		opts = append(opts, runtime.WithMatcher())
+	}
+	ex := runtime.NewExecutor(e.reg, opts...)
 	decStart := time.Now()
 	res, err := ex.RunResume(ctx, runtime.NewVirtualClock(time.Now().UTC()), plan, cur.NodeID, signal, input)
 	observeRouteDecision(e.deps.Logger, "resume", time.Since(decStart))
@@ -194,23 +230,27 @@ func (e *Endpoints) SubmitRouteInput(ctx context.Context, req api.SubmitRouteInp
 		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "route_waiting_on_reservation"}), nil
 	}
 
-	target := ""
-	if req.Body.NodeId != nil {
-		target = *req.Body.NodeId
+	// The value is always applied to the node the route is parked at (the resume
+	// cursor). A body node_id, if present, MUST match it — a non-cursor node_id
+	// would otherwise be silently dropped on the entry-replay and let the actually
+	// parked input time out (review H4).
+	var cur runtime.ResumeCursor
+	if len(route.ResumeCursor) > 0 {
+		_ = json.Unmarshal(route.ResumeCursor, &cur)
 	}
-	if target == "" {
-		var cur runtime.ResumeCursor
-		if len(route.ResumeCursor) > 0 {
-			_ = json.Unmarshal(route.ResumeCursor, &cur)
-		}
-		target = cur.NodeID
-	}
+	target := cur.NodeID
 	if target == "" {
 		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "no_parked_input_node"}), nil
+	}
+	if req.Body.NodeId != nil && *req.Body.NodeId != target {
+		return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "node_id_not_parked"}), nil
 	}
 
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.input_submitted", map[string]any{"node_id": target})
 	if err := e.resumeRouteWith(ctx, tx, qtx, orgID, route, "", map[string]any{target: req.Body.Value}); err != nil {
+		if errors.Is(err, errNotInputCursor) {
+			return api.SubmitRouteInput409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "not_an_input_node"}), nil
+		}
 		return api.SubmitRouteInput500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "resume_failed"}}, nil
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -257,6 +297,11 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	if err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "route_lock_failed"}}, nil
 	}
+	// The route must still be parked on THIS reservation; a stale (older-attempt)
+	// accept whose route has moved to a newer offer/wait is a 409 (review H3).
+	if !route.CurrentReservationID.Valid || uuid.UUID(route.CurrentReservationID.Bytes) != resID {
+		return e.lifecycleConflict(), nil
+	}
 	acc, err := qtx.AcceptReservation(ctx, generated.AcceptReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return e.lifecycleConflict(), nil // already resolved (rejected/timeout/raced)
@@ -264,13 +309,28 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	if err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "accept_failed"}}, nil
 	}
+	// Confirm the capacity hold (this HTTP path must mirror the WS command path —
+	// review HIGH: an unconfirmed hold would be swept and the slot double-booked).
+	// A lost slot ⇒ 409; the deferred rollback undoes the accept.
+	if e.deps.Capacity != nil {
+		if okc, cErr := e.deps.Capacity.ConfirmInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_confirm_failed"}}, nil
+		} else if !okc {
+			return e.lifecycleConflict(), nil
+		}
+	}
 	// Agent Ready→Engaged (best-effort: a stale agent state must not roll back the
 	// accept — the reservation is the assignment's source of truth).
 	engaged := string(api.AgentStatusEngaged)
 	ch := route.Channel
-	_, _ = qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+	// Best-effort: a stale agent state (guard miss → ErrNoRows) must not roll back
+	// the accept, but a REAL DB error must surface — it has poisoned the tx, so
+	// swallowing it would only fail the next query opaquely (review M7).
+	if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
 		AgentID: resv.AgentID, OrgID: pgUUID(orgID), ToStatus: &engaged, ExpectedFrom: string(api.AgentStatusReady), EngagedChannel: &ch,
-	})
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_state_failed"}}, nil
+	}
 	routeID := apiUUID(route.ID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.accepted", map[string]any{"reservation_id": resID.String()})
 	e.appendEvent(ctx, qtx, orgID, routeID, "agent.engaged", map[string]any{"agent_id": apiUUID(resv.AgentID).String()})
@@ -311,11 +371,20 @@ func (e *Endpoints) RejectReservation(ctx context.Context, req api.RejectReserva
 	if err != nil {
 		return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "route_lock_failed"}}, nil
 	}
+	// Route must still be parked on THIS reservation (review H3).
+	if !route.CurrentReservationID.Valid || uuid.UUID(route.CurrentReservationID.Bytes) != resID {
+		return api.RejectReservation409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "reservation_transition_conflict"}), nil
+	}
 	reason := "rejected_by_agent"
 	if _, err := qtx.RejectReservation(ctx, generated.RejectReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID), Reason: &reason}); errors.Is(err, pgx.ErrNoRows) {
 		return api.RejectReservation409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "reservation_transition_conflict"}), nil
 	} else if err != nil {
 		return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "reject_failed"}}, nil
+	}
+	if e.deps.Capacity != nil { // free the slot (mirror the WS path — review HIGH)
+		if cErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return api.RejectReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_release_failed"}}, nil
+		}
 	}
 	routeID := apiUUID(route.ID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.rejected", map[string]any{"reservation_id": resID.String()})
@@ -358,9 +427,17 @@ func (e *Endpoints) CompleteReservation(ctx context.Context, req api.CompleteRes
 	}
 	wrapUp := string(api.AgentStatusWrapUp)
 	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
-	_, _ = qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+	// Best-effort, but surface a real DB error (review M7).
+	if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
 		AgentID: comp.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
-	})
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_state_failed"}}, nil
+	}
+	if e.deps.Capacity != nil { // free the slot held for the live interaction (review HIGH)
+		if cErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, resID); cErr != nil {
+			return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_release_failed"}}, nil
+		}
+	}
 	routeID := apiUUID(comp.RouteRequestID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.completed", map[string]any{"reservation_id": resID.String()})
 	e.appendEvent(ctx, qtx, orgID, routeID, "agent.wrapup", map[string]any{"agent_id": apiUUID(comp.AgentID).String()})

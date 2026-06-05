@@ -7,59 +7,80 @@ decision-trace requirements.
 
 ## Wave 0 — v0.2 hardening (prerequisite)
 
-- [ ] Land the FIX-NOW batch from the v0.2 review (`v0.2-review-findings.md`):
+- [x] Land the FIX-NOW batch from the v0.2 review (`v0.2-review-findings.md`):
       run_seq fence, Lua sandbox, region-suspension reject, branch-port validation,
       accept guards, worker poison-pill, snapshot enabled filter, etc. The live
       lifecycle builds on this base.
 
 ## Wave 1 — Channel-neutral assignment contract (review: before lifecycle)
 
-- [ ] Channel-neutral assignment-event contract: Deliver(interaction, agent) ->
+- [x] Channel-neutral assignment-event contract: Deliver(interaction, agent) ->
       opaque handle + events accepted -> connecting -> established ->
       (completed | failed | disconnected | caller_abandoned), idempotent with
       correlation. Handle opaque to the engine (chat/email fit later).
-- [ ] Mock voice adapter driving that lifecycle without media.
-- [ ] Tests: adapter event mapping incl. caller_abandoned + failed.
+- [x] Mock voice adapter driving that lifecycle without media.
+- [x] Tests: adapter event mapping incl. caller_abandoned + failed.
 
 ## Wave 2 — Realtime transport (WS gateway)
 
-- [ ] WS message envelope (reuse v0.2 canonical event shape) with per-message ids;
+- [x] WS message envelope (reuse v0.2 canonical event shape) with per-message ids;
       accept/reject/complete carry reservation version/lease token.
-- [ ] Gateway in cmd/api: scoped agent identity + org binding + session revocation;
+- [x] Gateway in cmd/api: scoped agent identity + org binding + session revocation;
       heartbeat/ping; graceful close. Gateway only transports; commands run through
       runtime-owned transactional handlers (review HIGH).
-- [ ] Outbound push from the durable reservation row; reconnect replays an
+- [x] Outbound push from the durable reservation row; reconnect replays an
       in-flight offer; ack + server-side dedupe so replay can't double-apply.
 - [ ] Backpressure + per-org connection caps; structured logs + metrics.
-- [ ] Tests: connect, offer push, accept upstream, reconnect-replays-offer,
+- [x] Tests: connect, offer push, accept upstream, reconnect-replays-offer,
       duplicate-command-deduped, queue/skill authz on command.
 
 ## Wave 3 — Lease presence & DB-solid capacity
 
-- [ ] Lease/TTL presence: gateway heartbeat renews a Redis-primary connection
-      lease; expiry = offline; DB stores last-known/audit, rebuilt on gateway start.
-- [ ] Capacity as per-(agent,channel) slot rows (voice=1, chat=N) held/released
-      transactionally — NOT the capacity=1-only partial-unique index (review BLOCK).
-- [ ] LiveCandidateSource (eligible AND Ready AND leased-connected AND
-      under-capacity) as a hint; keep buildSnapshot for simulation.
-- [ ] Tests: lease expiry removes offerability, capacity gating, chat=N concurrency.
+- [x] Lease/TTL presence: gateway heartbeat renews a Redis-primary connection
+      lease; expiry = offline; DB (agent_sessions) is the audit trail. (Redis
+      rebuild-on-gateway-start deferred per D2 — documented in internal/presence.)
+- [x] Capacity as per-(agent,channel) slot rows (voice=1, chat=N) held/released
+      transactionally (FOR UPDATE SKIP LOCKED) — NOT the capacity=1 partial-unique
+      index. Acquire (offer), confirm (accept), release (terminal), sweep (pending
+      expired), reconcile (terminal orphan). NOTE: relaxing the existing
+      ux_reservations_agent_active index to per-(agent,channel) for true chat=N
+      end-to-end is deferred to W4 — v0.3 live channel is voice (cap=1).
+- [x] LiveCandidateSource (eligible AND Ready AND leased-connected AND
+      under-capacity) as a hint; buildSnapshot kept for simulation; NO silent
+      live→sim fallback; presence error parks the route (review BLOCK/HIGH).
+- [x] Tests: disconnected removes offerability, capacity gating, concurrent
+      acquire = exactly N (chat), sweep/reconcile, accept-confirm/complete-release.
+- [ ] FOLLOW-UP (W5): confirmed-slot reclaim for an agent who crashed mid-call
+      (reservation stuck 'accepted') — presence-loss → RONA/abandonment, built on
+      the W3 lease. Not reclaimed by the W3 terminal-orphan reconcile by design.
 
 ## Wave 4 — The matcher (the engine)
 
-- [ ] Interaction-driven offer on the live pool; final offer tx re-checks
-      connected/Ready/skills/queue/capacity against authoritative leased state.
-- [ ] Availability-driven pull: on Ready / capacity-freed, pull the best-ranked
+- [x] Interaction-driven offer on the live pool; final offer tx re-checks
+      connected/capacity against authoritative leased state. (Stage 2; lease_token
+      echo-back fence deferred to W5 with the agent-WS offer frame.)
+- [x] Availability-driven pull: on Ready / capacity-freed, pull the best-ranked
       waiting route from a served queue; a failed insert returns it to the head.
-- [ ] Durable reconciliation sweep as the primary trigger (every few seconds);
-      LISTEN/NOTIFY or pub/sub is only a wake-up hint (review MED).
-- [ ] Concurrency: FOR UPDATE SKIP LOCKED + route run-lock CAS + capacity slot
-      lock; no double-assign across replicas.
-- [ ] Fair ranking: priority with aging, queue weight, bounded max-priority bypass,
-      deterministic tie-break.
-- [ ] route_decision trace: eligibility inputs, considered + excluded (with
-      reasons), ranking values, capacity snapshot, decision version.
-- [ ] Tests: no double-assign, capacity never exceeded, aging prevents starvation,
-      queue-pull priority correct.
+      (Stage 3: RunMatchCycle/tryOfferToAgent, token-fenced; capacity-at-cap →
+      ReturnRouteToQueue.)
+- [x] Durable reconciliation sweep as the primary trigger (every few seconds);
+      LISTEN/NOTIFY or pub/sub is only a wake-up hint (review MED). (Stage 5:
+      RunMatcher on the cmd/runtime tick — stale-offering + SLA-deadline sweeps +
+      per-org pull. NOTIFY wake-hint deferred.)
+- [x] Concurrency: FOR UPDATE SKIP LOCKED + route run-lock CAS + capacity slot
+      lock; no double-assign across replicas. (Stage 2a/3; cross-AI reviewed.)
+- [x] Fair ranking: priority with aging, deterministic tie-break. (Stage 3:
+      SQL-computed score, aging crosses bands — anti-starvation test. Queue weight
+      deferred until agent↔queue membership lands.)
+- [x] route_decision trace: selected/excluded agent, outcome, ranking weights,
+      decision version. (Stage 3: InsertRouteDecision on every offer + pre-offer
+      failure.)
+- [x] Tests: no double-assign, capacity never exceeded, aging prevents starvation,
+      queue-pull priority correct. (Stage 3/5: testcontainer + -race.)
+- [ ] Stage 4 — Lease fencing (lease_token + agent_session_id bound at offer,
+      checked on accept/reject/complete) + RONA agent_routing_state cooldown with
+      the last_ready_at Ready-race fence. Coupled to W5 (offer-frame token
+      delivery + the agent Ready transition writing last_ready_at).
 
 ## Wave 5 — Real reservation lifecycle (live signals)
 

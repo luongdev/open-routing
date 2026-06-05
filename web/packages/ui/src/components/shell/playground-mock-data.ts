@@ -527,9 +527,11 @@ export interface VarBagEntry {
 // Trace is parameterised so the success and failure scenarios produce
 // independent bags — passing MOCK_TRACE_STEPS unconditionally caused the
 // var bag to disagree with the canvas in the failure scenario.
-export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_STEPS): VarBagEntry[] {
+export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_STEPS, initVars: InitVar[] = MOCK_INIT_VARS): VarBagEntry[] {
   const bag = new Map<string, VarBagEntry>();
-  for (const v of MOCK_INIT_VARS) {
+  // Seed from the caller's LIVE init vars (what the run actually uses), not the
+  // hardcoded mock — otherwise editing customer.tier to "gold111" never shows.
+  for (const v of initVars) {
     bag.set(v.key, { key: v.key, value: v.value, set_at_step: 'init', set_at_node_label: 'Init vars' });
   }
   // Only set_var/compute actually write to the variable bag; every other node's
@@ -551,10 +553,13 @@ export function computeVarBag(stepIdx: number, trace: TraceStep[] = MOCK_TRACE_S
         bag.set(name, { key: name, value: o['result'], set_at_step: step.id, set_at_node_label: step.label });
       }
     } else if (typeof o['save_as'] === 'string' && o['save_as'] !== '') {
-      // Response-capture nodes (http_request) write their (mock) response into
-      // the named variable — surface it like set_var/compute, not as I/O metadata.
+      // Capture nodes write into the named variable: input nodes (prompt/DTMF/…)
+      // under `captured`, http_request under `response`. Surface that value, not
+      // the I/O metadata. (Bug: input nodes showed an EMPTY var because only
+      // `response` was read.)
       const name = o['save_as'];
-      bag.set(name, { key: name, value: o['response'], set_at_step: step.id, set_at_node_label: step.label });
+      const captured = 'captured' in o ? o['captured'] : o['response'];
+      bag.set(name, { key: name, value: captured, set_at_step: step.id, set_at_node_label: step.label });
     }
   }
   return Array.from(bag.values());

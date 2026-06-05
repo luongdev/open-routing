@@ -15,7 +15,7 @@ const acquireRouteForRun = `-- name: AcquireRouteForRun :one
 UPDATE route_requests
 SET status = 'running', updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
 type AcquireRouteForRunParams struct {
@@ -41,6 +41,68 @@ func (q *Queries) AcquireRouteForRun(ctx context.Context, arg AcquireRouteForRun
 		&i.Status,
 		&i.FailureCode,
 		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const acquireRouteForRunAtSeq = `-- name: AcquireRouteForRunAtSeq :one
+UPDATE route_requests
+SET status = 'running', updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting') AND run_seq = $3
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+`
+
+type AcquireRouteForRunAtSeqParams struct {
+	ID     pgtype.UUID `json:"id"`
+	OrgID  pgtype.UUID `json:"org_id"`
+	RunSeq int32       `json:"run_seq"`
+}
+
+// AcquireRouteForRunAtSeq is the run_seq-fenced acquire for a wait continuation:
+// it locks the route ONLY if its run_seq still matches the one captured when the
+// continuation was created. A stale timer (the route already advanced → run_seq
+// bumped, or it completed) gets 0 rows and is no-op'd (review B1).
+func (q *Queries) AcquireRouteForRunAtSeq(ctx context.Context, arg AcquireRouteForRunAtSeqParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, acquireRouteForRunAtSeq, arg.ID, arg.OrgID, arg.RunSeq)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
@@ -55,7 +117,7 @@ UPDATE route_requests
 SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
     updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
 type CancelRouteRequestParams struct {
@@ -77,6 +139,17 @@ func (q *Queries) CancelRouteRequest(ctx context.Context, arg CancelRouteRequest
 		&i.Status,
 		&i.FailureCode,
 		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
@@ -91,7 +164,7 @@ UPDATE route_requests
 SET status = $3, failure_code = $4, resume_cursor = NULL,
     current_reservation_id = NULL, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
 type FinishRouteParams struct {
@@ -121,6 +194,17 @@ func (q *Queries) FinishRoute(ctx context.Context, arg FinishRouteParams) (Route
 		&i.Status,
 		&i.FailureCode,
 		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
@@ -131,7 +215,7 @@ func (q *Queries) FinishRoute(ctx context.Context, arg FinishRouteParams) (Route
 }
 
 const getRouteRequest = `-- name: GetRouteRequest :one
-SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at FROM route_requests WHERE id = $1 AND org_id = $2
+SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at FROM route_requests WHERE id = $1 AND org_id = $2
 `
 
 type GetRouteRequestParams struct {
@@ -153,6 +237,17 @@ func (q *Queries) GetRouteRequest(ctx context.Context, arg GetRouteRequestParams
 		&i.Status,
 		&i.FailureCode,
 		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
@@ -167,7 +262,7 @@ INSERT INTO route_requests (
     id, org_id, channel, entry_code, flow_version_id, flow_code,
     interaction_input, status, failure_code, read_set_snapshot
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
 type InsertRouteRequestParams struct {
@@ -208,6 +303,17 @@ func (q *Queries) InsertRouteRequest(ctx context.Context, arg InsertRouteRequest
 		&i.Status,
 		&i.FailureCode,
 		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
@@ -218,7 +324,7 @@ func (q *Queries) InsertRouteRequest(ctx context.Context, arg InsertRouteRequest
 }
 
 const listRouteRequests = `-- name: ListRouteRequests :many
-SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at FROM route_requests
+SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at FROM route_requests
 WHERE org_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2
@@ -249,6 +355,17 @@ func (q *Queries) ListRouteRequests(ctx context.Context, arg ListRouteRequestsPa
 			&i.Status,
 			&i.FailureCode,
 			&i.ReadSetSnapshot,
+			&i.QueueID,
+			&i.Priority,
+			&i.RequiredSkills,
+			&i.WaitingSince,
+			&i.NextMatchAt,
+			&i.MatchDeadline,
+			&i.MatchAttemptSeq,
+			&i.MatchOfferToken,
+			&i.OfferingStartedAt,
+			&i.ActiveReservationID,
+			&i.ExcludedAgentIds,
 			&i.ResumeCursor,
 			&i.CurrentReservationID,
 			&i.RunSeq,
@@ -289,7 +406,7 @@ UPDATE route_requests
 SET status = 'waiting', resume_cursor = $3, current_reservation_id = $4,
     run_seq = run_seq + 1, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
 type SuspendRouteParams struct {
@@ -319,6 +436,17 @@ func (q *Queries) SuspendRoute(ctx context.Context, arg SuspendRouteParams) (Rou
 		&i.Status,
 		&i.FailureCode,
 		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,

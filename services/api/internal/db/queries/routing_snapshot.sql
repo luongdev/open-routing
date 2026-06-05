@@ -7,13 +7,16 @@
 -- a WHERE org_id ColumnRef per tenant alias, not a JOIN-ON one); the LEFT-joined
 -- tables use `OR ... IS NULL` so a skill-less agent is not dropped.
 SELECT a.code           AS agent_code,
+       a.id             AS agent_id,
        sk.code          AS skill_code,
        ags.proficiency  AS proficiency,
        ast.updated_at   AS available_since
 FROM agents a
 JOIN agent_states ast      ON ast.agent_id = a.id
 LEFT JOIN agent_skills ags ON ags.agent_id = a.id
-LEFT JOIN skills sk        ON sk.id = ags.skill_id
+-- enabled filter in the JOIN (not WHERE) so a DISABLED skill drops from the
+-- agent's skill set without dropping the Ready agent itself (review H7).
+LEFT JOIN skills sk        ON sk.id = ags.skill_id AND sk.enabled = TRUE
 WHERE a.org_id = $1
   AND ast.org_id = $1
   AND (ags.org_id = $1 OR ags.org_id IS NULL)

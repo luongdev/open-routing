@@ -1,0 +1,40 @@
+# One-shot: create the openrouting database (idempotent) as the postgres
+# superuser, then apply golang-migrate migrations. Re-run with:
+#   kubectl -n open-routing delete job open-routing-migrate --ignore-not-found
+#   kubectl apply -f deploy/k8s/migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: open-routing-migrate
+  namespace: open-routing
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: create-db
+          image: postgres:17
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-secret, key: POSTGRES_PASSWORD } }
+          command: ["sh", "-c"]
+          args:
+            - |
+              for i in $(seq 1 30); do
+                pg_isready -h postgres.infra.svc.cluster.local -p 5432 && break
+                echo "waiting for postgres ($i/30)..."; sleep 2
+              done
+              psql -h postgres.infra.svc.cluster.local -U opentts -d opentts -tc "SELECT 1 FROM pg_database WHERE datname='openrouting'" | grep -q 1 \
+                || psql -h postgres.infra.svc.cluster.local -U opentts -d opentts -c "CREATE DATABASE openrouting"
+      containers:
+        - name: migrate
+          image: open-routing/api:v0.2
+          imagePullPolicy: Never
+          command: ["/usr/local/bin/migrate"]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-secret, key: POSTGRES_PASSWORD } }
+            - name: DATABASE_URL
+              value: "host=postgres.infra.svc.cluster.local port=5432 user=opentts password=$(POSTGRES_PASSWORD) dbname=openrouting sslmode=disable"

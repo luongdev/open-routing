@@ -1640,13 +1640,16 @@ export class OrFlowBuilder extends LitElement {
       opacity: 0.4;
       cursor: not-allowed;
     }
+    /* A light primary-tinted button with a CORAL icon — a white icon on a solid
+       --primary background went invisible (uk-icon color issue). Coral-on-tint
+       both shows the icon and keeps the step-forward emphasis (user report). */
     .sim-pb-btn--primary {
-      background: var(--primary);
-      color: var(--primary-foreground);
+      background: color-mix(in oklch, var(--primary) 16%, var(--card));
+      color: var(--primary);
     }
     .sim-pb-btn--primary:hover:not(:disabled) {
-      background: var(--primary);
-      color: var(--primary-foreground);
+      background: color-mix(in oklch, var(--primary) 26%, var(--card));
+      color: var(--primary);
       filter: brightness(1.05);
     }
 
@@ -1718,6 +1721,7 @@ export class OrFlowBuilder extends LitElement {
       font-family: var(--uk-font-monospace, monospace);
       margin-top: 2px;
     }
+
 
     /* Output port chips at the bottom of the node card. Fixed-height strip
        (24px tall) anchored to the card bottom so edges drawn by portY() —
@@ -2223,6 +2227,63 @@ export class OrFlowBuilder extends LitElement {
       border: 1px solid color-mix(in oklch, var(--warning) 35%, var(--border));
       border-radius: 8px;
     }
+    /* The bottom step card's SINGLE input for a capture node (panel-down input —
+       user decision: keep the node clean, put the input here). */
+    .sim-input-control {
+      margin-top: 10px;
+      padding: 10px;
+      background: color-mix(in oklch, var(--primary) 5%, var(--card));
+      border: 1px solid color-mix(in oklch, var(--primary) 25%, var(--border));
+      border-radius: 8px;
+    }
+    .sim-input-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      margin-bottom: 5px;
+    }
+    .sim-input-field {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 13px;
+      font-family: var(--uk-font-monospace, monospace);
+      padding: 6px 8px;
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--foreground);
+    }
+    .sim-input-field:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 30%, transparent); }
+    .sim-input-row { display: flex; gap: 8px; align-items: stretch; }
+    .sim-input-row .sim-input-field { flex: 1; }
+    .sim-input-submit {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      padding: 0 12px;
+      border: none;
+      border-radius: 6px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .sim-input-submit:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 88%, black); }
+    .sim-input-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .sim-input-branch { margin-top: 6px; font-size: 12px; color: var(--muted-foreground); }
+    .branch-tag {
+      display: inline-block;
+      padding: 0 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-family: var(--uk-font-monospace, monospace);
+      font-size: 11px;
+    }
+    .branch-tag--captured { background: color-mix(in oklch, var(--success) 18%, transparent); color: var(--success); }
+    .branch-tag--timeout  { background: color-mix(in oklch, var(--warning) 22%, transparent); color: var(--warning); }
     .input-form-prompt {
       display: flex;
       align-items: flex-start;
@@ -2574,8 +2635,21 @@ export class OrFlowBuilder extends LitElement {
         if (RUNTIME_KINDS.has(n.kind)) n.outputs = outputsForNode(n);
       }
       const rawEdges = (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[];
+      // A graph authored via the API/elsewhere may carry edges with no (or
+      // duplicate) `id`. Without a stable unique id, selecting one edge sets
+      // _selectedEdgeId to undefined and the render's `e.id === _selectedEdgeId`
+      // is `undefined === undefined` → TRUE for every edge, so all edges paint
+      // selected (coral). Assign a unique id to any edge missing one.
+      const seenEdgeIds = new Set<string>();
       for (const e of rawEdges) {
         if (e.from_port === undefined && e.label !== undefined) e.from_port = e.label;
+        if (!e.id || seenEdgeIds.has(e.id)) {
+          let nid: string;
+          do { nid = 'e_' + Math.random().toString(36).slice(2, 8); }
+          while (seenEdgeIds.has(nid) || rawEdges.some(x => x.id === nid));
+          e.id = nid;
+        }
+        seenEdgeIds.add(e.id);
       }
       // Backend-authored graphs carry no x/y — lay them out so they don't
       // render at NaN coordinates (Playwright caught this on an API-made flow).
@@ -2881,9 +2955,10 @@ export class OrFlowBuilder extends LitElement {
   // Submit is the only way to advance — otherwise users can silently skip
   // the input by clicking the chevron, defeating the "engine paused
   // waiting for value" model.
+  // The on-node value field is the single input place now, so we never hard-pause
+  // the playback for a separate bottom submit (user report: one input, not two).
   private get _pausedForInput(): boolean {
-    const step = this._currentStep;
-    return !!step && WAIT_INPUT_KINDS.has(step.node_kind);
+    return false;
   }
 
   private get _hitNodeIds(): Set<string> {
@@ -2911,12 +2986,25 @@ export class OrFlowBuilder extends LitElement {
       this._inputDraft = '';
       return;
     }
-    // Try common output keys for captured value. Falls back to empty.
-    // String() also coerces numeric DTMF values cleanly.
+    // Prefill the bottom input with the value pinned for this node (so the field
+    // reflects what you submitted), falling back to the trace's captured value.
+    const pinned = this._simNodeInputs[step.node_id];
+    if (pinned !== undefined) {
+      this._inputDraft = pinned;
+      return;
+    }
     const out = step.outputs;
-    const v = out['menu_choice'] ?? out['text'] ?? out['signal_payload'] ??
+    const v = out['captured'] ?? out['menu_choice'] ?? out['text'] ?? out['signal_payload'] ??
       out['supervisor_choice'] ?? out['captured_value'] ?? '';
     this._inputDraft = String(v);
+  }
+
+  // Apply the bottom-panel input value for a capture node, re-run, then ADVANCE
+  // to the next step — Submit alone moves the sim forward, no separate Next click
+  // (user report).
+  private async _submitNodeInput(nodeId: string): Promise<void> {
+    await this._setNodeInput(nodeId, this._inputDraft); // re-run + land on this node
+    this._stepBy(1); // Submit advances past the input node
   }
 
   private _submitInput(): void {
@@ -3016,7 +3104,7 @@ export class OrFlowBuilder extends LitElement {
 
   // Save the draft, run a real deterministic simulation (POST /simulate), and
   // play its trace back over the canvas. 422 surfaces the validation issues.
-  private async _runSimulation(): Promise<void> {
+  private async _runSimulation(landAtEnd = false): Promise<void> {
     if (this._isCreate || !this._loaded) {
       this._flashAction('Save the draft first.', 'warn');
       return;
@@ -3051,7 +3139,17 @@ export class OrFlowBuilder extends LitElement {
       }
       this._liveTrace = this._mapApiTrace(res.data.trace.steps);
       this._simMode = 'sim';
-      this._restartSim();
+      if (landAtEnd) {
+        // Editing an input value re-runs the whole sim; don't yank the user back
+        // to "Ready to run" — land on the final step so they see the new result
+        // (which branch the value took) without re-stepping (user report).
+        this._selectedNodeId = null;
+        this._inputDraft = '';
+        this._capturedInputs = {};
+        this._simStep = Math.max(0, this._liveTrace.length - 1);
+      } else {
+        this._restartSim();
+      }
       const outcome = res.data.trace.outcome ?? 'completed';
       this._flashAction(`Simulation ${outcome} — ${this._liveTrace.length} step(s).`, outcome === 'failed' ? 'warn' : 'ok');
     } finally {
@@ -3066,7 +3164,7 @@ export class OrFlowBuilder extends LitElement {
     if (next[nodeId] === outcome) delete next[nodeId];
     else next[nodeId] = outcome as 'accepted' | 'timeout' | 'no_candidate';
     this._simNodeOutcomes = next;
-    await this._runSimulation();
+    await this._runSimulation(true); // land on the result, don't restart playback
     // _restartSim (inside _runSimulation) nulls the selection; restore it so the
     // sidebar keeps showing this reservation node's outcome status.
     this._selectedNodeId = nodeId;
@@ -3105,27 +3203,20 @@ export class OrFlowBuilder extends LitElement {
     'get_dtmf', 'prompt_text', 'wait_signal', 'manual_approval', 'detect_speech', 'csat_survey', 'nps_survey',
   ]);
 
-  private _renderSimInputPicker() {
-    const id = this._selectedNodeId;
-    const node = id ? this._nodes.find(n => n.id === id) : undefined;
-    if (!node || !OrFlowBuilder._INPUT_KINDS.has(node.kind)) return nothing;
-    const cur = this._simNodeInputs[node.id] ?? '';
-    const hint = node.kind === 'manual_approval' ? 'approved / rejected'
-      : node.kind === 'csat_survey' ? '1–5'
-      : node.kind === 'nps_survey' ? '0–10'
-      : node.kind === 'get_dtmf' ? 'e.g. 1234'
-      : 'captured value';
-    return html`
-      <div class="form-section sim-outcome">
-        <label><span>Simulated captured value</span></label>
-        <input class="form-input" type="text" placeholder=${hint} .value=${cur}
-          @change=${(e: Event) => void this._setNodeInput(node.id, (e.target as HTMLInputElement).value)}>
-        <p class="sim-outcome-hint">
-          ${cur !== ''
-            ? html`Pinning <strong>${cur}</strong> — the run takes the captured branch.`
-            : html`Empty → this node <strong>times out</strong> in the sim. Type a value and it re-runs.`}
-        </p>
-      </div>`;
+  // The placeholder for an input/capture node's simulated value — shown both in
+  // the sidebar picker and the on-node field. The VALUE drives the branch
+  // (captured/received/approved/recognized vs timeout); empty ⇒ the node times
+  // out. if_else/switch_case are deterministic and never appear here.
+  private static _simInputHint(kind: FlowNodeKind): string {
+    switch (kind) {
+      case 'manual_approval': return 'approved / rejected';
+      case 'csat_survey': return '1–5';
+      case 'nps_survey': return '0–10';
+      case 'get_dtmf': return 'e.g. 1234';
+      case 'detect_speech': return 'spoken text';
+      case 'wait_signal': return 'signal';
+      default: return 'captured value';
+    }
   }
 
   private async _setNodeInput(nodeId: string, value: string): Promise<void> {
@@ -3133,7 +3224,11 @@ export class OrFlowBuilder extends LitElement {
     if (value === '') delete next[nodeId];
     else next[nodeId] = value;
     this._simNodeInputs = next;
-    await this._runSimulation();
+    await this._runSimulation(true); // re-run without restarting to "Ready"
+    // Land back on THIS input node's step so its value control stays visible and
+    // you can see the branch it now takes (panel-down input — user decision).
+    const idx = this._activeTrace.findIndex(s => s.node_id === nodeId);
+    if (idx >= 0) this._simStep = idx;
     this._selectedNodeId = nodeId;
   }
 
@@ -3726,6 +3821,7 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private _selectEdge(id: string): void {
+    if (!id) return; // a missing id would select every edge (see _renderEdges)
     this._selectedEdgeId = id;
     this._selectedNodeId = null;
   }
@@ -4186,7 +4282,9 @@ export class OrFlowBuilder extends LitElement {
                        : 'default';
         const labelW = labelText ? Math.min(110, Math.max(24, labelText.length * 7 + 12)) : 0;
         const labelH = 16;
-        const selected = !isSim && e.id === this._selectedEdgeId;
+        // Require a truthy id so a stray undefined id can't make every edge
+        // match _selectedEdgeId (undefined === undefined) and paint all selected.
+        const selected = !isSim && !!e.id && e.id === this._selectedEdgeId;
         return svg`
           ${isSim ? nothing : svg`<path class="edge-hit" d=${d}
             @click=${(ev: Event) => { ev.stopPropagation(); this._selectEdge(e.id); }}></path>`}
@@ -4993,7 +5091,6 @@ export class OrFlowBuilder extends LitElement {
               </div>
               ${!isSim && this._validation ? this._renderValidationPanel() : nothing}
               ${isSim ? this._renderSimOutcomePicker() : nothing}
-              ${isSim ? this._renderSimInputPicker() : nothing}
               ${isSim && this._currentStep
                 ? this._renderSimInspector(this._currentStep)
                 : this._renderInspector(selected)}
@@ -5203,7 +5300,7 @@ export class OrFlowBuilder extends LitElement {
           ?disabled=${paused}
           @click=${() => { if (atEnd) this._restartSim(); else this._stepBy(1); }}
         >
-          <uk-icon icon=${atEnd ? 'rotate-ccw' : 'chevron-right'} height="14" width="14"></uk-icon>
+          <uk-icon icon=${atEnd ? 'rotate-ccw' : 'play'} height="14" width="14"></uk-icon>
         </button>
         <button class="sim-pb-btn" title="Run to end" ?disabled=${atEnd || paused} @click=${this._runAllSim}>
           <uk-icon icon="fast-forward" height="14" width="14"></uk-icon>
@@ -5231,7 +5328,7 @@ export class OrFlowBuilder extends LitElement {
 
   // ----- Sim run panel (bottom) -----
   private _renderSimRunPanel() {
-    const bag = computeVarBag(this._simStep, this._activeTrace);
+    const bag = computeVarBag(this._simStep, this._activeTrace, this._initVars);
     const currentStepId = this._currentStep?.id ?? 'init';
     return html`
       <section class="run-panel" aria-label="Simulator run panel">
@@ -5251,11 +5348,13 @@ export class OrFlowBuilder extends LitElement {
                 <input
                   class="initvar-input"
                   .value=${v.value}
-                  title="Edit, then Re-run (↺) to simulate with this value"
+                  title="Edit and press Enter (or click away) to re-simulate with this value"
                   @input=${(e: Event) => {
                     const val = (e.target as HTMLInputElement).value;
                     this._initVars = this._initVars.map((x, j) => (j === i ? { ...x, value: val } : x));
                   }}
+                  @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  @change=${() => void this._runSimulation(true)}
                 />
               </div>
             `)}
@@ -5408,15 +5507,16 @@ export class OrFlowBuilder extends LitElement {
     }
     const tone = this._toneFor(step.node_kind);
     const icon = this._iconFor(step.node_kind);
-    const isWaitInput = WAIT_INPUT_KINDS.has(step.node_kind);
+    // Capture nodes get their single value input here in the bottom step card.
+    const isInputNode = WAIT_INPUT_KINDS.has(step.node_kind);
     return html`
       <div class="run-panel-header">
-        <uk-icon icon=${isWaitInput ? 'pause-circle' : 'activity'} height="13" width="13"></uk-icon>
-        ${isWaitInput ? 'Paused — input required' : 'Now executing'}
+        <uk-icon icon="activity" height="13" width="13"></uk-icon>
+        Now executing
       </div>
       <div class=${step.status === 'fail' && step.caught ? 'sim-runcard sim-runcard--paused'
         : step.status === 'fail' ? 'sim-runcard sim-runcard--fail'
-        : isWaitInput ? 'sim-runcard sim-runcard--paused' : 'sim-runcard'}>
+        : 'sim-runcard'}>
         <div class="sim-runcard-head">
           <span class="icon-tile icon-tile--${tone}">
             <uk-icon icon=${icon} height="12" width="12"></uk-icon>
@@ -5433,7 +5533,26 @@ export class OrFlowBuilder extends LitElement {
             ${step.status}
           </span>
         </div>
-        ${isWaitInput ? this._renderInputForm(step) : nothing}
+        ${isInputNode ? html`
+          <div class="sim-input-control">
+            <label class="sim-input-label">Captured value</label>
+            <div class="sim-input-row">
+              <input class="sim-input-field" type="text"
+                placeholder=${OrFlowBuilder._simInputHint(step.node_kind as FlowNodeKind)}
+                .value=${this._inputDraft}
+                @input=${(e: Event) => { this._inputDraft = (e.target as HTMLInputElement).value; }}
+                @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') void this._submitNodeInput(step.node_id); }}>
+              <button class="sim-input-submit" ?disabled=${this._simRunning}
+                @click=${() => void this._submitNodeInput(step.node_id)}>
+                <uk-icon icon="corner-down-left" height="13" width="13"></uk-icon> Submit
+              </button>
+            </div>
+            <div class="sim-input-branch">
+              ${(this._simNodeInputs[step.node_id] ?? '') !== ''
+                ? html`Takes the <span class="branch-tag branch-tag--captured">captured</span> branch.`
+                : html`Empty → <span class="branch-tag branch-tag--timeout">timeout</span> branch. Type a value + Submit for <strong>captured</strong>.`}
+            </div>
+          </div>` : nothing}
         ${step.status === 'fail' && step.caught ? html`
           <div class="sim-runcard-error sim-runcard-error--caught">
             <div style="font-weight:600;font-size:12px;color:color-mix(in oklch, var(--warning) 85%, var(--foreground))">

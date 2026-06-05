@@ -14,6 +14,20 @@ function step(partial: Partial<TraceStep> & Pick<TraceStep, 'id' | 'node_kind' |
 }
 
 describe('computeVarBag', () => {
+  it('seeds the bag from the LIVE init vars passed in, not the hardcoded mock', () => {
+    const initVars = [
+      { key: 'customer.tier', value: 'gold111', type: 'string' as const, source: 'user' as const },
+    ];
+    const bag = computeVarBag(-1, [], initVars);
+    expect(bag.find(e => e.key === 'customer.tier')?.value).toBe('gold111');
+  });
+
+  it('a capture node writes its `captured` value into save_as (not an empty var)', () => {
+    const trace = [step({ id: 's2', node_kind: 'prompt_text', outputs: { captured: 'alo??', port: 'captured', save_as: 'answer' } })];
+    const bag = computeVarBag(0, trace);
+    expect(bag.find(e => e.key === 'answer')?.value).toBe('alo??');
+  });
+
   it('set_var contributes ONE entry (var=value), not name+value rows', () => {
     const trace = [step({ id: 's1', node_kind: 'set_var', outputs: { name: 'var_a', value: 1 } })];
     const bag = computeVarBag(0, trace);

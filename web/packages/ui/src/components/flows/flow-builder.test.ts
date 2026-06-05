@@ -511,6 +511,97 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._validation).toBeNull();
   });
 
+  it('assigns a unique id to loaded edges that have none (so select-one ≠ select-all)', async () => {
+    const nodes = [
+      { id: 'a', kind: 'trigger', label: 'A', description: '', x: 0, y: 0 },
+      { id: 'b', kind: 'send_message', label: 'B', description: '', x: 0, y: 200, params: { text: 'hi' } },
+      { id: 'c', kind: 'end', label: 'C', description: '', x: 0, y: 400 },
+    ];
+    // An API-authored graph: edges carry from/to but NO id.
+    const edges = [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges } }, error: null }) };
+    await settle();
+    const ids = (el as any)._edges.map((e: any) => e.id);
+    expect(ids).toHaveLength(2);
+    expect(ids.every((id: string) => typeof id === 'string' && id.length > 0)).toBe(true);
+    expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
+  });
+
+  it('a value-edit re-run lands on the final step, not back at "Ready" (no restart)', async () => {
+    const steps = [
+      { node_id: 'a', node_kind: 'trigger', label: 'A', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} },
+      { node_id: 'b', node_kind: 'send_message', label: 'B', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} },
+      { node_id: 'c', node_kind: 'end', label: 'C', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} },
+    ];
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps, outcome: 'completed' } }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: post };
+    await settle();
+    await (el as any)._runSimulation(true);
+    expect((el as any)._simStep).toBe(2);   // landed on the last step
+    await (el as any)._runSimulation(false);
+    expect((el as any)._simStep).toBe(-1);  // explicit re-run restarts to Ready
+  });
+
+  it('the capture-node input lives ONLY in the bottom step card (panel), not on the node', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
+    await settle();
+    // Enter sim mode and land on a wait_input step (get_dtmf).
+    (el as any)._simMode = 'sim';
+    (el as any)._liveTrace = [{ id: 'w1', node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }];
+    (el as any)._simStep = 0;
+    await (el as any).updateComplete;
+    // Never hard-pauses; the one input is in the bottom step card; nothing on the node.
+    expect((el as any)._pausedForInput).toBe(false);
+    expect(el.shadowRoot!.querySelector('.sim-input-control')).toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.input-form')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.node-card-siminput-field')).toBeNull();
+  });
+
+  it('editing an init var re-runs the simulation (so the trace is not stale)', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [] } }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: post };
+    await settle();
+    (el as any)._simMode = 'sim';
+    await (el as any).updateComplete;
+    const before = post.mock.calls.length;
+    const input = el.shadowRoot!.querySelector('.initvar-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = 'gold111';
+    input.dispatchEvent(new Event('input'));   // updates _initVars
+    input.dispatchEvent(new Event('change'));  // re-runs
+    await (el as any).updateComplete;
+    expect(post.mock.calls.length).toBeGreaterThan(before); // a fresh simulate fired
+  });
+
+  it('typing in the bottom step-card input pins the captured value for the run', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [{ node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }] } }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: post };
+    await settle();
+    (el as any)._simMode = 'sim';
+    (el as any)._liveTrace = [{ id: 'w1', node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }];
+    (el as any)._simStep = 0;
+    await (el as any).updateComplete;
+    const field = el.shadowRoot!.querySelector('.sim-input-field') as HTMLInputElement;
+    expect(field).toBeTruthy(); // the input lives in the bottom step card
+    field.value = '1234';
+    field.dispatchEvent(new Event('input'));
+    const submit = el.shadowRoot!.querySelector('.sim-input-submit') as HTMLButtonElement;
+    expect(submit).toBeTruthy(); // explicit Submit button in the panel
+    submit.click();
+    await (el as any).updateComplete;
+    expect((el as any)._simNodeInputs.d).toBe('1234'); // submitted value pinned for the run
+  });
+
   it('editing switch_case cases regenerates outputs and prunes stale edges', async () => {
     const nodes = [
       { id: 's', kind: 'switch_case', label: 'S', description: '', x: 0, y: 0, params: { cases: ['a', 'b'] }, outputs: [{ id: 'a', label: 'a', kind: 'branch' }, { id: 'b', label: 'b', kind: 'branch' }, { id: 'default', label: 'default', kind: 'default' }] },

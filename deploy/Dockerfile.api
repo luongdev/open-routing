@@ -1,0 +1,27 @@
+# Build context = repo root (needs services/api + migrations/).
+# One image carries all three binaries (api, migrate, runtime) + the migration
+# files, so the api Deployment, the migrate Job, and the runtime Deployment all
+# run from the same image (ENTRYPOINT overridden per workload).
+# syntax=docker/dockerfile:1
+# CGO is REQUIRED: internal/db/sqlcheck.go uses pganalyze/pg_query_go, a cgo
+# binding around the embedded libpg_query C parser. CGO_ENABLED=0 leaves
+# pg_query.Parse undefined. gcc ships in the golang image; the runtime base must
+# carry glibc (distroless/cc), not the static base.
+FROM golang:1.25 AS build
+WORKDIR /src
+COPY services/api/go.mod services/api/go.sum ./
+RUN go mod download
+COPY services/api/ ./
+ENV CGO_ENABLED=1 GOOS=linux
+RUN go build -trimpath -o /out/api      ./cmd/api \
+ && go build -trimpath -o /out/migrate  ./cmd/migrate \
+ && go build -trimpath -o /out/runtime  ./cmd/runtime
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+WORKDIR /app
+COPY --from=build /out/api /out/migrate /out/runtime /usr/local/bin/
+# migrate reads file://migrations relative to WORKDIR (/app).
+COPY migrations/ /app/migrations/
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/api"]

@@ -13,13 +13,14 @@ import (
 
 const listRoutableCandidates = `-- name: ListRoutableCandidates :many
 SELECT a.code           AS agent_code,
+       a.id             AS agent_id,
        sk.code          AS skill_code,
        ags.proficiency  AS proficiency,
        ast.updated_at   AS available_since
 FROM agents a
 JOIN agent_states ast      ON ast.agent_id = a.id
 LEFT JOIN agent_skills ags ON ags.agent_id = a.id
-LEFT JOIN skills sk        ON sk.id = ags.skill_id
+LEFT JOIN skills sk        ON sk.id = ags.skill_id AND sk.enabled = TRUE
 WHERE a.org_id = $1
   AND ast.org_id = $1
   AND (ags.org_id = $1 OR ags.org_id IS NULL)
@@ -31,6 +32,7 @@ ORDER BY a.code, sk.code
 
 type ListRoutableCandidatesRow struct {
 	AgentCode      string             `json:"agent_code"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
 	SkillCode      *string            `json:"skill_code"`
 	Proficiency    *int32             `json:"proficiency"`
 	AvailableSince pgtype.Timestamptz `json:"available_since"`
@@ -43,6 +45,8 @@ type ListRoutableCandidatesRow struct {
 // Every tenant table is org-filtered in the top-level WHERE (SQLChecker requires
 // a WHERE org_id ColumnRef per tenant alias, not a JOIN-ON one); the LEFT-joined
 // tables use `OR ... IS NULL` so a skill-less agent is not dropped.
+// enabled filter in the JOIN (not WHERE) so a DISABLED skill drops from the
+// agent's skill set without dropping the Ready agent itself (review H7).
 func (q *Queries) ListRoutableCandidates(ctx context.Context, orgID pgtype.UUID) ([]ListRoutableCandidatesRow, error) {
 	rows, err := q.db.Query(ctx, listRoutableCandidates, orgID)
 	if err != nil {
@@ -54,6 +58,7 @@ func (q *Queries) ListRoutableCandidates(ctx context.Context, orgID pgtype.UUID)
 		var i ListRoutableCandidatesRow
 		if err := rows.Scan(
 			&i.AgentCode,
+			&i.AgentID,
 			&i.SkillCode,
 			&i.Proficiency,
 			&i.AvailableSince,

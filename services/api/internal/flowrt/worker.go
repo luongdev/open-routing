@@ -26,25 +26,70 @@ func ptrStr(s string) *string           { return &s }
 // claim is intentionally NOT org-scoped (worker is cross-org); per-continuation
 // processing is org-scoped via the OrgDB. Returns the count handled. cmd/runtime
 // calls this on a tick.
+// maxContinuationAttempts bounds retries before a poison row is dead-lettered
+// (cancelled) instead of being reclaimed at the head of the queue forever
+// (review H6).
+const maxContinuationAttempts = 5
+
+// ronaCooldown is how long a non-answering agent is held out of the matcher after
+// a missed offer. Short + self-healing (ListAvailableAgentsForMatch treats an
+// expired cooldown as routable), so a wrongly-sidelined re-readied agent recovers
+// fast even before the state machine writes last_ready_at to activate the fence.
+const ronaCooldown = 10 * time.Second
+
 func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.Pool, workerID string, now time.Time, lease time.Duration, limit int) (int, error) {
 	rawq := generated.New(pool)
 	wid := workerID
+	// Dead-letter rows that exhausted their attempts but were never cleanly failed
+	// (e.g. a worker crashed mid-process), so a poison row can't sit unclaimable
+	// forever once its lease expires (re-review H5).
+	_, _ = rawq.CancelExhaustedContinuations(ctx, generated.CancelExhaustedContinuationsParams{UpdatedAt: ts(now), AttemptCount: maxContinuationAttempts})
 	claimed, err := rawq.ClaimDueContinuations(ctx, generated.ClaimDueContinuationsParams{
 		ClaimedAt: ts(now), ClaimedBy: &wid, ClaimExpiresAt: ts(now.Add(lease)), Limit: int32(limit), //nolint:gosec // worker batch limit is small + bounded
+		AttemptCount: maxContinuationAttempts,
 	})
 	if err != nil {
 		return 0, err
 	}
 	n := 0
 	for _, c := range claimed {
-		if perr := e.processContinuation(ctx, wid, c); perr != nil {
-			e.deps.Logger.ErrorContext(ctx, "continuation process failed", "id", apiUUID(c.ID), "kind", c.Kind, "err", perr)
-			_, _ = rawq.FailContinuation(ctx, generated.FailContinuationParams{ID: c.ID, OrgID: c.OrgID, ClaimedBy: &wid, LastError: ptrStr(perr.Error())})
+		perr := e.processContinuation(ctx, wid, c)
+		if perr == nil {
+			n++
 			continue
 		}
-		n++
+		// errLostLease means another worker reclaimed the row mid-flight — NOT a
+		// failure of this row; leave it for that worker.
+		if errors.Is(perr, errLostLease) {
+			continue
+		}
+		e.deps.Logger.ErrorContext(ctx, "continuation process failed", "org_id", apiUUID(c.OrgID), "id", apiUUID(c.ID), "kind", c.Kind, "attempt", c.AttemptCount, "err", perr)
+		// Dead-letter only once retries are exhausted; otherwise let the claim
+		// lease expire so the row is retried (a transient DB error must not strand
+		// the route forever — review H6).
+		if c.AttemptCount >= maxContinuationAttempts {
+			_, _ = rawq.FailContinuation(ctx, generated.FailContinuationParams{ID: c.ID, OrgID: c.OrgID, ClaimedBy: &wid, LastError: ptrStr(perr.Error())})
+		}
 	}
 	return n, nil
+}
+
+// SweepCapacity reclaims leaked capacity slots cross-org on the raw pool (like
+// the continuation worker): PENDING holds whose timer elapsed (RONA before
+// accept) and slots whose reservation already went terminal. Returns the rows
+// freed. A confirmed slot for an agent who crashed mid-call is NOT freed here —
+// that abandonment is presence-loss driven (W5).
+func (e *Endpoints) SweepCapacity(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	rawq := generated.New(pool)
+	swept, err := rawq.SweepExpiredCapacityHolds(ctx)
+	if err != nil {
+		return 0, err
+	}
+	reclaimed, err := rawq.ReconcileOrphanedSlotsAllOrgs(ctx)
+	if err != nil {
+		return swept, err
+	}
+	return swept + reclaimed, nil
 }
 
 func (e *Endpoints) processContinuation(ctx context.Context, workerID string, c generated.Continuation) error {
@@ -88,7 +133,12 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
 
-	route, err := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: c.RouteRequestID, OrgID: c.OrgID})
+	// run_seq-fenced acquire: the offer that armed this timer pinned the route's
+	// run_seq (SuspendRoute on the inline path, CommitMatchOffer on the matcher
+	// path). If the route has since advanced (accepted/rejected → a newer suspend
+	// bumped run_seq, or it completed), AtSeq gets 0 rows and the stale timer is a
+	// no-op — it can't seize a later wait/offer (cross-AI review MED).
+	route, err := qtx.AcquireRouteForRunAtSeq(ctx, generated.AcquireRouteForRunAtSeqParams{ID: c.RouteRequestID, OrgID: c.OrgID, RunSeq: c.RunSeq})
 	if errors.Is(err, pgx.ErrNoRows) {
 		if rErr := e.resolveDone(ctx, qtx, c, workerID); rErr != nil {
 			return rErr
@@ -98,7 +148,8 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 	if err != nil {
 		return err
 	}
-	if _, tErr := qtx.TimeoutReservation(ctx, generated.TimeoutReservationParams{ID: c.ReservationID, OrgID: c.OrgID}); errors.Is(tErr, pgx.ErrNoRows) {
+	timedOut, tErr := qtx.TimeoutReservation(ctx, generated.TimeoutReservationParams{ID: c.ReservationID, OrgID: c.OrgID})
+	if errors.Is(tErr, pgx.ErrNoRows) {
 		// reservation already accepted/rejected/cancelled → release the lock
 		if rErr := qtx.ReleaseRoute(ctx, generated.ReleaseRouteParams{ID: route.ID, OrgID: c.OrgID}); rErr != nil {
 			return rErr
@@ -109,6 +160,20 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 		return tx.Commit(ctx)
 	} else if tErr != nil {
 		return tErr
+	}
+	if e.deps.Capacity != nil { // free the slot (gated on the timeout transition above)
+		if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, apiUUID(c.ReservationID)); rErr != nil {
+			return rErr
+		}
+	}
+	// RONA cooldown: the offered agent didn't answer → keep the matcher from
+	// re-ringing them for another route briefly, fenced so a Ready after the offer
+	// isn't clobbered. excluded_agent_ids already fences the SAME route on re-queue.
+	if _, rErr := qtx.MarkAgentMissed(ctx, generated.MarkAgentMissedParams{
+		OrgID: c.OrgID, AgentID: timedOut.AgentID,
+		StateExpiresAt: ts(time.Now().Add(ronaCooldown)), LastReadyAt: timedOut.OfferedAt,
+	}); rErr != nil {
+		return rErr
 	}
 	e.appendEvent(ctx, qtx, orgID, apiUUID(route.ID), "reservation.timeout", map[string]any{"reservation_id": apiUUID(c.ReservationID).String()})
 	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "timeout"); err != nil {
@@ -128,7 +193,9 @@ func (e *Endpoints) fireWait(ctx context.Context, workerID string, c generated.C
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
-	route, err := qtx.AcquireRouteForRun(ctx, generated.AcquireRouteForRunParams{ID: c.RouteRequestID, OrgID: c.OrgID})
+	// run_seq-fenced acquire: a stale wait timer (the route advanced past this
+	// suspend, or completed) gets 0 rows and is resolved as a no-op (review B1).
+	route, err := qtx.AcquireRouteForRunAtSeq(ctx, generated.AcquireRouteForRunAtSeqParams{ID: c.RouteRequestID, OrgID: c.OrgID, RunSeq: c.RunSeq})
 	if errors.Is(err, pgx.ErrNoRows) {
 		if rErr := e.resolveDone(ctx, qtx, c, workerID); rErr != nil {
 			return rErr
@@ -154,7 +221,11 @@ func (e *Endpoints) fireWrapUpExpiry(ctx context.Context, workerID string, c gen
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
-	_, _ = qtx.ExpireWrapUp(ctx, generated.ExpireWrapUpParams{AgentID: c.AgentID, OrgID: c.OrgID}) // idempotent
+	// Idempotent, but a real DB error must surface for retry — only a guard-miss
+	// (ErrNoRows) is the benign no-op (review M6).
+	if _, err := qtx.ExpireWrapUp(ctx, generated.ExpireWrapUpParams{AgentID: c.AgentID, OrgID: c.OrgID}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	if err := e.resolveDone(ctx, qtx, c, workerID); err != nil {
 		return err
 	}

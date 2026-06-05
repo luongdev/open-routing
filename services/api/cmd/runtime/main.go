@@ -20,10 +20,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
+	"github.com/luongdev/open-routing/services/api/internal/presence"
 	"github.com/luongdev/open-routing/services/api/internal/runtime"
 	"github.com/luongdev/open-routing/services/api/internal/telemetry"
 )
@@ -80,9 +82,23 @@ func run() int {
 		validationMode = db.ValidationError
 	}
 	orgDB := db.NewOrgDB(pool, db.NewSQLChecker(), validationMode)
+
+	// v0.3 W3: the runtime resumes live routes (timeout → re-offer), so it needs
+	// the SAME live signals as the API — presence (so a re-offer filters by the
+	// connection lease) + capacity (release on timeout, acquire on re-offer).
+	redisOpts, rErr := redis.ParseURL(cfg.RedisURL)
+	if rErr != nil {
+		slog.ErrorContext(ctx, "redis url parse", "err", rErr)
+		return 1
+	}
+	rdb := redis.NewClient(redisOpts)
+	defer func() { _ = rdb.Close() }()
 	endpoints := flowrt.New(flowrt.Deps{
-		OrgDB:  orgDB,
-		Logger: slog.Default(),
+		OrgDB:          orgDB,
+		Presence:       presence.NewRedisStore(rdb, 0),
+		Capacity:       flowrt.NewCapacityService(),
+		Logger:         slog.Default(),
+		MatcherEnabled: cfg.MatcherEnabled,
 	})
 	workerID := "runtime-" + uuid.Must(uuid.NewV7()).String()
 	slog.InfoContext(ctx, "open-routing runtime starting (continuation worker)",
@@ -104,6 +120,23 @@ func run() int {
 				slog.ErrorContext(ctx, "continuation tick failed", "err", err)
 			} else if n > 0 {
 				slog.InfoContext(ctx, "processed continuations", "count", n)
+			}
+			// v0.3 W3: reclaim leaked capacity slots (expired pending holds +
+			// terminal-reservation orphans) cross-org on the same tick.
+			if freed, sErr := endpoints.SweepCapacity(ctx, pool); sErr != nil {
+				slog.ErrorContext(ctx, "capacity sweep failed", "err", sErr)
+			} else if freed > 0 {
+				slog.InfoContext(ctx, "reclaimed capacity slots", "count", freed)
+			}
+			// v0.3 W4: the matcher tick — stale-offering recovery, SLA-deadline
+			// fallback, and the availability-driven pull. Gated so the queue/matcher
+			// model can be rolled out independently of the offer-now path.
+			if cfg.MatcherEnabled {
+				if offered, mErr := endpoints.RunMatcher(ctx, pool, workerID, time.Now()); mErr != nil {
+					slog.ErrorContext(ctx, "matcher tick failed", "err", mErr)
+				} else if offered > 0 {
+					slog.InfoContext(ctx, "matcher offered routes", "count", offered)
+				}
 			}
 		}
 	}
