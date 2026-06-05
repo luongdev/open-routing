@@ -215,8 +215,10 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 	// (CommitMatchOffer does, on success only), so this is the next attempt number.
 	att, capOK, err := attachOffer(ctx, qtx, e.deps.Capacity, orgID, routeID, agentID, claimed.Channel, claimed.MatchAttemptSeq+1, exp)
 	if err != nil {
-		if errors.Is(err, errAgentVanished) {
-			return false, nil // agent gone since the claim → tx rolls back, route stays waiting_match
+		// Agent vanished or already reserved on this route → drop the offer; the
+		// deferred tx rollback undoes the claim so the route stays waiting_match.
+		if errors.Is(err, errAgentVanished) || errors.Is(err, errOfferBusy) {
+			return false, nil
 		}
 		return false, err
 	}

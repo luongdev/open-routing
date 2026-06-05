@@ -39,6 +39,12 @@ func bindOfferLease(ctx context.Context, qtx *generated.Queries, orgID, agentID 
 // that would silently sit until it times out (cross-AI review HIGH).
 var errAgentVanished = errors.New("flowrt: agent row gone — cannot deliver offer frame")
 
+// errOfferBusy signals the agent already holds an active reservation on this route
+// (the InsertReservationOffer unique violation) — a precise "skip this candidate"
+// signal. attachOffer returns ONLY this for that specific 23505, so the caller
+// can't mistake an unrelated unique violation for a benign busy-skip (strict review HIGH).
+var errOfferBusy = errors.New("flowrt: agent already has an active reservation on this route")
+
 // enqueueOfferFrame writes the durable 'reservation.offer' outbox frame the agent
 // WS relay delivers, carrying the reservation id + lease_token to echo back. The
 // per-agent seq lock (LockAgentOutboxSeq) makes server_seq race-free; a 0-row lock
@@ -109,7 +115,10 @@ func attachOffer(ctx context.Context, q *generated.Queries, cap *CapacityService
 		AgentID: pgUUID(agentID), Attempt: attempt, ExpiresAt: ts(exp),
 		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
 	}); err != nil {
-		return attachedOffer{}, false, err // includes unique-violation (busy) — caller classifies
+		if isUniqueViolation(err) {
+			return attachedOffer{}, false, errOfferBusy // ONLY this insert's 23505 ⇒ busy-skip
+		}
+		return attachedOffer{}, false, err
 	}
 	if err := enqueueOfferFrame(ctx, q, orgID, agentID, resID, leaseToken, exp); err != nil {
 		return attachedOffer{}, false, err // errAgentVanished — caller skips/aborts

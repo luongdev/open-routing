@@ -213,18 +213,20 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	att, capOK, aErr := attachOffer(o.ctx, spq, o.cap, o.orgID, o.routeID, apiUUID(agent.ID), o.channel, int32(o.attempt+1), exp) //nolint:gosec // attempt bounded by max_attempts
 	if aErr != nil {
 		_ = sp.Rollback(o.ctx)
-		// Busy (unique-violation) or a vanished agent → skip this candidate, not a
+		// Agent busy on this route, or a vanished agent → skip this candidate, not a
 		// route failure; any other error aborts.
-		if isUniqueViolation(aErr) || errors.Is(aErr, errAgentVanished) {
+		if errors.Is(aErr, errOfferBusy) || errors.Is(aErr, errAgentVanished) {
 			return "", false, nil
 		}
 		return "", false, aErr
 	}
 	if !capOK {
-		// Record the capacity miss on the PARENT tx (survives the rollback) so the
-		// interaction-offer path keeps the same decision audit the matcher writes.
-		recordInlineDecision(o.ctx, generated.New(o.tx), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "capacity_lost")
+		// Roll back the savepoint FIRST, THEN write the capacity_lost audit on the
+		// parent tx: sp and o.tx share one connection, so ROLLBACK TO SAVEPOINT would
+		// also revert a row inserted before it — recording after the rollback is what
+		// actually persists the decision (cross-AI strict review HIGH).
 		_ = sp.Rollback(o.ctx)
+		recordInlineDecision(o.ctx, generated.New(o.tx), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "capacity_lost")
 		return "", false, nil
 	}
 	recordInlineDecision(o.ctx, spq, o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "offered")

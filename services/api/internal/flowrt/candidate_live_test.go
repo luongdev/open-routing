@@ -359,6 +359,52 @@ func TestLive_AbandonEndsAcceptedCall(t *testing.T) {
 	}
 }
 
+// TestLive_InlineCapacityLostAuditPersists drives liveOfferer directly against an
+// at-capacity agent (the snapshot pre-filter normally hides them; this is the
+// TOCTOU-race branch) and asserts the capacity_lost decision SURVIVES the per-offer
+// savepoint rollback — the audit must be recorded on the parent tx AFTER the
+// rollback, not before (strict review HIGH: sp + parent share one connection).
+func TestLive_InlineCapacityLostAuditPersists(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	// Occupy agent_a's only voice slot (confirmed) → at capacity.
+	if _, err := sharedPool.Exec(lf.ctx,
+		"INSERT INTO agent_capacity_slots (org_id,agent_id,channel,slot_no,reservation_id,hold_expires_at) VALUES ($1,$2,'voice',1,$3,NULL)",
+		lf.orgID, agentID, uuid.Must(uuid.NewV7())); err != nil {
+		t.Fatalf("seed held slot: %v", err)
+	}
+	routeID := seedRunningRoute(lf.ctx, t, lf.orgID)
+
+	tx, err := lf.e.deps.OrgDB.BeginTx(lf.ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	off := &liveOfferer{ctx: lf.ctx, tx: tx, orgID: lf.orgID, routeID: routeID, channel: "voice", cap: NewCapacityService()}
+	resID, ok, oErr := off.Offer("agent_a", 30*time.Second)
+	if oErr != nil || ok || resID != "" {
+		_ = tx.Rollback(lf.ctx)
+		t.Fatalf("offer to at-capacity agent = (%q,%v,%v), want ('',false,nil)", resID, ok, oErr)
+	}
+	if err := tx.Commit(lf.ctx); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	var n int
+	if err := sharedPool.QueryRow(lf.ctx,
+		"SELECT count(*) FROM route_decisions WHERE org_id=$1 AND route_request_id=$2 AND decision_type='interaction_offer' AND outcome='capacity_lost'",
+		lf.orgID, routeID).Scan(&n); err != nil {
+		t.Fatalf("count decisions: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("capacity_lost decisions = %d, want 1 (must survive the savepoint rollback)", n)
+	}
+}
+
 func (lf *liveFixture) heldVoice(t *testing.T, agentID uuid.UUID) int32 {
 	return lf.held(t, agentID, "voice")
 }
