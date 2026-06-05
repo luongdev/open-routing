@@ -278,6 +278,65 @@ func TestLive_AbandonReleasesAndCancels(t *testing.T) {
 	}
 }
 
+// TestLive_AbandonEndsAcceptedCall: abandoning a route with an in-progress
+// ACCEPTED call cancels the reservation, releases its confirmed slot, and moves
+// the agent to WrapUp — no capacity leak, no stranded-Engaged agent.
+func TestLive_AbandonEndsAcceptedCall(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	ctx := lf.ctx
+	// Agent on a live call (Engaged); a 'waiting' route with an accepted reservation
+	// and a confirmed slot (reservation_id set, hold_expires_at NULL).
+	if _, err := sharedPool.Exec(ctx, "UPDATE agent_states SET status='Engaged' WHERE agent_id=$1 AND org_id=$2", agentID, lf.orgID); err != nil {
+		t.Fatalf("engage: %v", err)
+	}
+	routeID := uuid.Must(uuid.NewV7())
+	if _, err := sharedPool.Exec(ctx,
+		"INSERT INTO route_requests (id,org_id,channel,entry_code,status,flow_version_id,flow_code) VALUES ($1,$2,'voice','main','waiting',$3,'f')",
+		routeID, lf.orgID, uuid.Must(uuid.NewV7())); err != nil {
+		t.Fatalf("seed route: %v", err)
+	}
+	resID := uuid.Must(uuid.NewV7())
+	if _, err := sharedPool.Exec(ctx,
+		"INSERT INTO reservations (id,org_id,route_request_id,agent_id,state,expires_at) VALUES ($1,$2,$3,$4,'accepted',now()+interval '1 hour')",
+		resID, lf.orgID, routeID, agentID); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+	if _, err := sharedPool.Exec(ctx,
+		"INSERT INTO agent_capacity_slots (org_id,agent_id,channel,slot_no,reservation_id,hold_expires_at) VALUES ($1,$2,'voice',1,$3,NULL)",
+		lf.orgID, agentID, resID); err != nil {
+		t.Fatalf("seed slot: %v", err)
+	}
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("pre-abandon held=%d, want 1 (confirmed slot)", held)
+	}
+
+	resp, err := lf.e.AbandonRouteRequest(ctx, api.AbandonRouteRequestRequestObject{Id: api.EntityIdPath(routeID)})
+	if err != nil {
+		t.Fatalf("abandon: %v", err)
+	}
+	if _, is := resp.(api.AbandonRouteRequest200JSONResponse); !is {
+		t.Fatalf("abandon resp = %T, want 200", resp)
+	}
+	if held := lf.heldVoice(t, agentID); held != 0 {
+		t.Fatalf("post-abandon held=%d, want 0 (confirmed slot released)", held)
+	}
+	var resState, agentStatus string
+	_ = sharedPool.QueryRow(ctx, "SELECT state FROM reservations WHERE id=$1", resID).Scan(&resState)
+	_ = sharedPool.QueryRow(ctx, "SELECT status FROM agent_states WHERE agent_id=$1 AND org_id=$2", agentID, lf.orgID).Scan(&agentStatus)
+	if resState != "cancelled" {
+		t.Fatalf("reservation state=%q, want cancelled", resState)
+	}
+	if agentStatus != "WrapUp" {
+		t.Fatalf("agent status=%q, want WrapUp (after-call work, not stranded Engaged)", agentStatus)
+	}
+}
+
 func (lf *liveFixture) heldVoice(t *testing.T, agentID uuid.UUID) int32 {
 	return lf.held(t, agentID, "voice")
 }

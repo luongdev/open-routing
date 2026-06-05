@@ -319,9 +319,15 @@ func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRout
 	if err != nil {
 		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "abandon_failed"}}, nil
 	}
-	// Cancel any outstanding offer and free the held slot (a live call's confirmed
-	// slot is also released — the caller is gone, so the assignment is void).
-	cancelled, err := qtx.CancelOfferedReservationsForRoute(ctx, generated.CancelOfferedReservationsForRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
+	// Read live reservations BEFORE cancelling so we know which were 'accepted'
+	// (a live call → the agent must go to WrapUp, not be stranded Engaged).
+	live, err := qtx.ListReservationsByRoute(ctx, generated.ListReservationsByRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
+	if err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_reservations_failed"}}, nil
+	}
+	// Cancel BOTH the outstanding offer AND an in-progress accepted call so neither
+	// leaks its capacity slot.
+	cancelled, err := qtx.CancelLiveReservationsForRoute(ctx, generated.CancelLiveReservationsForRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
 	if err != nil {
 		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "cancel_offers_failed"}}, nil
 	}
@@ -332,7 +338,22 @@ func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRout
 			}
 		}
 	}
-	e.appendEvent(ctx, qtx, orgID, routeID, "route.abandoned", map[string]any{"cancelled_offers": len(cancelled)})
+	// A cancelled live call moves its agent Engaged→WrapUp (after-call work), so the
+	// abandon ends the call cleanly instead of stranding the agent or making them
+	// instantly offerable. Best-effort: a stale agent state must not fail the teardown.
+	wrapUp := string(api.AgentStatusWrapUp)
+	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
+	for _, r := range live {
+		if r.State != "accepted" {
+			continue
+		}
+		if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+			AgentID: r.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
+		}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_wrapup_failed"}}, nil
+		}
+	}
+	e.appendEvent(ctx, qtx, orgID, routeID, "route.abandoned", map[string]any{"cancelled_reservations": len(cancelled)})
 	if err := tx.Commit(ctx); err != nil {
 		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
 	}

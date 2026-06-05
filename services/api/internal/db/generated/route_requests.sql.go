@@ -168,8 +168,8 @@ func (q *Queries) AcquireRouteForRunAtSeq(ctx context.Context, arg AcquireRouteF
 const cancelRouteRequest = `-- name: CancelRouteRequest :one
 UPDATE route_requests
 SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
-    updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
+    match_offer_token = NULL, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting', 'waiting_match')
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
@@ -178,6 +178,9 @@ type CancelRouteRequestParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Cancels an idle route — pending/waiting plus waiting_match (a queued route is
+// idle: no active worker holds it, so a standard cancel must reach it too —
+// cross-AI review MED). 'offering' is excluded: the matcher transiently owns it.
 func (q *Queries) CancelRouteRequest(ctx context.Context, arg CancelRouteRequestParams) (RouteRequest, error) {
 	row := q.db.QueryRow(ctx, cancelRouteRequest, arg.ID, arg.OrgID)
 	var i RouteRequest

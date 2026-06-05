@@ -45,6 +45,17 @@ SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
 WHERE org_id = $1 AND route_request_id = $2 AND state = 'offered'
 RETURNING *;
 
+-- CancelLiveReservationsForRoute terminalizes BOTH an outstanding offer AND an
+-- in-progress accepted call on a caller-abandon teardown, so neither leaks its
+-- capacity slot. The handler reads prior states (ListReservationsByRoute) before
+-- calling this, to free each slot and move an accepted call's agent into WrapUp
+-- (cross-AI review HIGH).
+-- name: CancelLiveReservationsForRoute :many
+UPDATE reservations
+SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
+WHERE org_id = $1 AND route_request_id = $2 AND state IN ('offered', 'accepted')
+RETURNING *;
+
 -- name: GetReservation :one
 SELECT * FROM reservations WHERE id = $1 AND org_id = $2;
 

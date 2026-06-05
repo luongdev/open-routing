@@ -42,10 +42,13 @@ WHERE id = $1 AND org_id = $2 AND status = 'running'
 RETURNING *;
 
 -- name: CancelRouteRequest :one
+-- Cancels an idle route — pending/waiting plus waiting_match (a queued route is
+-- idle: no active worker holds it, so a standard cancel must reach it too —
+-- cross-AI review MED). 'offering' is excluded: the matcher transiently owns it.
 UPDATE route_requests
 SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
-    updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
+    match_offer_token = NULL, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting', 'waiting_match')
 RETURNING *;
 
 -- AbandonRoute terminates a route from ANY non-terminal state (the caller hung up

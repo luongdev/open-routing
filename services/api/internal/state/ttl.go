@@ -109,6 +109,18 @@ func (s *Server) expireWrapUp(ctx context.Context, agentID, orgID uuid.UUID) {
 		return
 	}
 
+	// v0.3 W5: WrapUp auto-expiring to Ready stamps last_ready_at + clears any RONA
+	// cooldown, so the matcher sees the freed agent and a stale missed-offer timeout
+	// can't re-sideline them (this is the LIVE WrapUp→Ready path; the flowrt
+	// continuation variant is dormant — no wrapup_expiry continuations are armed).
+	// Best-effort like the cache del below: a miss only leaves the fence inactive
+	// until the next Ready, never blocks the expiry.
+	if row.Status == "Ready" {
+		if rErr := q.MarkAgentReady(ctx, generated.MarkAgentReadyParams{OrgID: pgUUID(orgID), AgentID: pgUUID(agentID)}); rErr != nil {
+			s.deps.Logger.WarnContext(ctx, "state.ttl.mark_ready_failed", "agent_id", agentID, "org_id", orgID, "err", rErr)
+		}
+	}
+
 	// Cache invalidation. Failure logs WARN; cache heals via 60s TTL (D-86).
 	cacheKey := s.cacheKeyFor(orgID, agentID)
 	if delErr := s.deps.Cache.Del(ctx, cacheKey); delErr != nil {

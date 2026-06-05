@@ -183,7 +183,10 @@ SELECT
   count(*) FILTER (WHERE status = 'waiting_match')::int AS waiting_match,
   count(*) FILTER (WHERE status = 'offering')::int AS offering,
   count(*) FILTER (WHERE status = 'waiting' AND current_reservation_id IS NOT NULL)::int AS waiting_offer,
-  COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since) FILTER (WHERE status = 'waiting_match')), 0)::int AS oldest_waiting_seconds
+  -- min() across ALL live-queued rows (not just waiting_match): a route that began
+  -- offering still retains waiting_since, so the oldest-caller SLA age doesn't drop
+  -- to 0 the moment the head-of-queue starts being matched (cross-AI review MED).
+  COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since)), 0)::int AS oldest_waiting_seconds
 FROM route_requests
 WHERE org_id = $1 AND status IN ('waiting_match', 'offering', 'waiting');
 

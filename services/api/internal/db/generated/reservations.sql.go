@@ -51,6 +51,58 @@ func (q *Queries) AcceptReservation(ctx context.Context, arg AcceptReservationPa
 	return i, err
 }
 
+const cancelLiveReservationsForRoute = `-- name: CancelLiveReservationsForRoute :many
+UPDATE reservations
+SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
+WHERE org_id = $1 AND route_request_id = $2 AND state IN ('offered', 'accepted')
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+`
+
+type CancelLiveReservationsForRouteParams struct {
+	OrgID          pgtype.UUID `json:"org_id"`
+	RouteRequestID pgtype.UUID `json:"route_request_id"`
+}
+
+// CancelLiveReservationsForRoute terminalizes BOTH an outstanding offer AND an
+// in-progress accepted call on a caller-abandon teardown, so neither leaks its
+// capacity slot. The handler reads prior states (ListReservationsByRoute) before
+// calling this, to free each slot and move an accepted call's agent into WrapUp
+// (cross-AI review HIGH).
+func (q *Queries) CancelLiveReservationsForRoute(ctx context.Context, arg CancelLiveReservationsForRouteParams) ([]Reservation, error) {
+	rows, err := q.db.Query(ctx, cancelLiveReservationsForRoute, arg.OrgID, arg.RouteRequestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Reservation{}
+	for rows.Next() {
+		var i Reservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.RouteRequestID,
+			&i.AgentID,
+			&i.State,
+			&i.Attempt,
+			&i.OfferedAt,
+			&i.ExpiresAt,
+			&i.ResolvedAt,
+			&i.Reason,
+			&i.LeaseToken,
+			&i.AgentSessionID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const cancelOfferedReservationsForRoute = `-- name: CancelOfferedReservationsForRoute :many
 UPDATE reservations
 SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
