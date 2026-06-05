@@ -222,6 +222,7 @@ type Reservation struct {
 	Reason         *string            `json:"reason"`
 	LeaseToken     pgtype.UUID        `json:"lease_token"`
 	AgentSessionID pgtype.UUID        `json:"agent_session_id"`
+	AdapterHandle  *string            `json:"adapter_handle"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }

@@ -34,8 +34,17 @@ const (
 // AgentCommandResult is the canonical, idempotently-stored outcome of a command.
 // Status is a stable string the gateway maps to an ack frame.
 type AgentCommandResult struct {
-	Status        string `json:"status"` // accepted|rejected|completed|conflict|not_found|not_owner|session_revoked|reused_id
+	Status        string `json:"status"` // accepted|rejected|completed|conflict|not_found|not_owner|session_revoked|reused_id|lease_mismatch
 	ReservationID string `json:"reservation_id"`
+	// deliver carries the post-commit adapter handoff for a successful accept
+	// (unexported ⇒ not serialized; only the first, non-replayed execution sets it).
+	deliver *adapterDeliver
+}
+
+// adapterDeliver is the post-commit Deliver payload captured during an accept.
+type adapterDeliver struct {
+	orgID, resID, routeID, agentID uuid.UUID
+	channel                        string
 }
 
 // ExecuteAgentCommand runs one agent command at-most-once. A redelivered
@@ -96,6 +105,14 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return AgentCommandResult{}, err
+	}
+	// Post-commit (so the synchronous mock adapter's delivered→established sink
+	// callbacks each open their own tx, not nest in this one): hand the accepted
+	// assignment to the channel adapter. Only the first execution sets res.deliver
+	// — a cached replay returned earlier, so Deliver fires at most once.
+	if res.deliver != nil {
+		d := res.deliver
+		e.deliverAssignment(ctx, d.orgID, d.resID, d.routeID, d.agentID, d.channel)
 	}
 	return res, nil
 }
@@ -247,6 +264,7 @@ func (e *Endpoints) applyAccept(ctx context.Context, tx *db.OrgTx, qtx *generate
 		return out, err
 	}
 	out.Status = "accepted"
+	out.deliver = &adapterDeliver{orgID: orgID, resID: resID, routeID: routeID, agentID: agentID, channel: route.Channel}
 	return out, nil
 }
 

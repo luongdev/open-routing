@@ -15,7 +15,7 @@ const acceptReservation = `-- name: AcceptReservation :one
 UPDATE reservations
 SET state = 'accepted', resolved_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'offered' AND expires_at > clock_timestamp()
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type AcceptReservationParams struct {
@@ -45,6 +45,7 @@ func (q *Queries) AcceptReservation(ctx context.Context, arg AcceptReservationPa
 		&i.Reason,
 		&i.LeaseToken,
 		&i.AgentSessionID,
+		&i.AdapterHandle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -55,7 +56,7 @@ const cancelLiveReservationsForRoute = `-- name: CancelLiveReservationsForRoute 
 UPDATE reservations
 SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
 WHERE org_id = $1 AND route_request_id = $2 AND state IN ('offered', 'accepted')
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type CancelLiveReservationsForRouteParams struct {
@@ -90,6 +91,7 @@ func (q *Queries) CancelLiveReservationsForRoute(ctx context.Context, arg Cancel
 			&i.Reason,
 			&i.LeaseToken,
 			&i.AgentSessionID,
+			&i.AdapterHandle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -107,7 +109,7 @@ const cancelOfferedReservationsForRoute = `-- name: CancelOfferedReservationsFor
 UPDATE reservations
 SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
 WHERE org_id = $1 AND route_request_id = $2 AND state = 'offered'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type CancelOfferedReservationsForRouteParams struct {
@@ -137,6 +139,7 @@ func (q *Queries) CancelOfferedReservationsForRoute(ctx context.Context, arg Can
 			&i.Reason,
 			&i.LeaseToken,
 			&i.AgentSessionID,
+			&i.AdapterHandle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -154,7 +157,7 @@ const completeReservation = `-- name: CompleteReservation :one
 UPDATE reservations
 SET state = 'completed', resolved_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'accepted'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type CompleteReservationParams struct {
@@ -178,6 +181,7 @@ func (q *Queries) CompleteReservation(ctx context.Context, arg CompleteReservati
 		&i.Reason,
 		&i.LeaseToken,
 		&i.AgentSessionID,
+		&i.AdapterHandle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -185,7 +189,7 @@ func (q *Queries) CompleteReservation(ctx context.Context, arg CompleteReservati
 }
 
 const getReservation = `-- name: GetReservation :one
-SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at FROM reservations WHERE id = $1 AND org_id = $2
+SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at FROM reservations WHERE id = $1 AND org_id = $2
 `
 
 type GetReservationParams struct {
@@ -209,6 +213,37 @@ func (q *Queries) GetReservation(ctx context.Context, arg GetReservationParams) 
 		&i.Reason,
 		&i.LeaseToken,
 		&i.AgentSessionID,
+		&i.AdapterHandle,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getReservationByID = `-- name: GetReservationByID :one
+SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at FROM reservations WHERE id = $1
+`
+
+// GetReservationByID looks up a reservation by id ALONE (no org filter) — for the
+// channel-adapter event sink, whose AssignmentEvent carries only the reservation
+// id. Run cross-org via db.WithBypass (the row's org_id then scopes the teardown).
+func (q *Queries) GetReservationByID(ctx context.Context, id pgtype.UUID) (Reservation, error) {
+	row := q.db.QueryRow(ctx, getReservationByID, id)
+	var i Reservation
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.RouteRequestID,
+		&i.AgentID,
+		&i.State,
+		&i.Attempt,
+		&i.OfferedAt,
+		&i.ExpiresAt,
+		&i.ResolvedAt,
+		&i.Reason,
+		&i.LeaseToken,
+		&i.AgentSessionID,
+		&i.AdapterHandle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -220,7 +255,7 @@ INSERT INTO reservations (
     id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at,
     lease_token, agent_session_id
 ) VALUES ($1, $2, $3, $4, 'offered', $5, NOW(), $6, $7, $8)
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type InsertReservationOfferParams struct {
@@ -263,6 +298,7 @@ func (q *Queries) InsertReservationOffer(ctx context.Context, arg InsertReservat
 		&i.Reason,
 		&i.LeaseToken,
 		&i.AgentSessionID,
+		&i.AdapterHandle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -302,7 +338,7 @@ func (q *Queries) ListOfferedAgentsForRoute(ctx context.Context, arg ListOffered
 }
 
 const listReservationsByRoute = `-- name: ListReservationsByRoute :many
-SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at FROM reservations
+SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at FROM reservations
 WHERE org_id = $1 AND route_request_id = $2
 ORDER BY attempt ASC
 `
@@ -334,6 +370,7 @@ func (q *Queries) ListReservationsByRoute(ctx context.Context, arg ListReservati
 			&i.Reason,
 			&i.LeaseToken,
 			&i.AgentSessionID,
+			&i.AdapterHandle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -351,7 +388,7 @@ const rejectReservation = `-- name: RejectReservation :one
 UPDATE reservations
 SET state = 'rejected', resolved_at = NOW(), reason = $3, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'offered'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type RejectReservationParams struct {
@@ -376,17 +413,41 @@ func (q *Queries) RejectReservation(ctx context.Context, arg RejectReservationPa
 		&i.Reason,
 		&i.LeaseToken,
 		&i.AgentSessionID,
+		&i.AdapterHandle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const setReservationAdapterHandle = `-- name: SetReservationAdapterHandle :execrows
+UPDATE reservations
+SET adapter_handle = $3, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'accepted'
+`
+
+type SetReservationAdapterHandleParams struct {
+	ID            pgtype.UUID `json:"id"`
+	OrgID         pgtype.UUID `json:"org_id"`
+	AdapterHandle *string     `json:"adapter_handle"`
+}
+
+// SetReservationAdapterHandle binds the adapter's opaque delivery handle on an
+// accepted reservation (so Release/adapter-event mapping can find it). Guarded on
+// 'accepted' so it can't attach to a reservation that already went terminal.
+func (q *Queries) SetReservationAdapterHandle(ctx context.Context, arg SetReservationAdapterHandleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setReservationAdapterHandle, arg.ID, arg.OrgID, arg.AdapterHandle)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const timeoutReservation = `-- name: TimeoutReservation :one
 UPDATE reservations
 SET state = 'timeout', resolved_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND state = 'offered'
-RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, created_at, updated_at
+RETURNING id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at
 `
 
 type TimeoutReservationParams struct {
@@ -410,6 +471,7 @@ func (q *Queries) TimeoutReservation(ctx context.Context, arg TimeoutReservation
 		&i.Reason,
 		&i.LeaseToken,
 		&i.AgentSessionID,
+		&i.AdapterHandle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

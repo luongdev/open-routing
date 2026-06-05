@@ -43,6 +43,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
@@ -229,6 +230,9 @@ func run() int {
 		Capacity:       capacitySvc,
 		Logger:         slog.Default(),
 		MatcherEnabled: cfg.MatcherEnabled,
+		// v0.3 mock voice adapter (real LiveKit/SIP media = v0.4 behind this contract):
+		// accept hands the assignment here; adapter terminals drive reservation teardown.
+		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
 	})
 	type ApiHandlers struct {
 		*catalog.Handlers

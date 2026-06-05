@@ -110,6 +110,11 @@ decision-trace requirements.
       (cmd/refagent: dials the WS gateway, hello/heartbeat, auto-accepts offers
       echoing the lease_token, optional complete. Gateway test proves the
       offer-frame lease round-trips relay→client→command.)
+- [x] Mock voice adapter wired to the engine: accept hands the assignment to the
+      channel adapter (Deliver, handle bound on the reservation); the engine's
+      EventSink maps adapter-originated terminals (caller_abandoned/disconnect/
+      fail/reject) onto reservation+route teardown, engine-initiated ones are
+      no-ops. Release on abandon. cmd/api wires MockVoice for "voice".
 - [~] Live ops view: backend snapshot endpoint shipped (GET /routing/stats —
       queue depth, oldest-waiting SLA age, outstanding offers, held slots). Rich
       rates (offers/sec, accept latency, reject reasons, p95) + the frontend view

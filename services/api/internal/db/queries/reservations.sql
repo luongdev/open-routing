@@ -56,6 +56,20 @@ SET state = 'cancelled', resolved_at = NOW(), updated_at = NOW()
 WHERE org_id = $1 AND route_request_id = $2 AND state IN ('offered', 'accepted')
 RETURNING *;
 
+-- SetReservationAdapterHandle binds the adapter's opaque delivery handle on an
+-- accepted reservation (so Release/adapter-event mapping can find it). Guarded on
+-- 'accepted' so it can't attach to a reservation that already went terminal.
+-- name: SetReservationAdapterHandle :execrows
+UPDATE reservations
+SET adapter_handle = $3, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'accepted';
+
+-- GetReservationByID looks up a reservation by id ALONE (no org filter) — for the
+-- channel-adapter event sink, whose AssignmentEvent carries only the reservation
+-- id. Run cross-org via db.WithBypass (the row's org_id then scopes the teardown).
+-- name: GetReservationByID :one
+SELECT * FROM reservations WHERE id = $1;
+
 -- name: GetReservation :one
 SELECT * FROM reservations WHERE id = $1 AND org_id = $2;
 

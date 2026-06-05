@@ -332,6 +332,10 @@ CREATE TABLE reservations (
     -- (re-offered) reservation can't resolve it.
     lease_token       UUID,
     agent_session_id  UUID,
+    -- v0.3 W6: the channel adapter's opaque delivery handle, bound on accept when
+    -- the engine hands the assignment to the adapter (Deliver). Release on complete
+    -- + adapter-originated terminals (caller_abandoned, disconnect) key off it.
+    adapter_handle    TEXT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

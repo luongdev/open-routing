@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/db"
@@ -55,7 +56,12 @@ type Deps struct {
 	// processes. 0 ⇒ matcherBatchDefault. A full batch is logged (no silent caps);
 	// the remainder is picked up next tick.
 	MatcherBatch int
-	Logger       *slog.Logger
+	// Adapters is the channel→ChannelAdapter registry. On accept the engine hands
+	// the assignment to the matching adapter (Deliver) and maps its lifecycle events
+	// back onto the reservation; nil/absent ⇒ no media delivery (the WS/HTTP
+	// test-double path still drives accept/complete directly).
+	Adapters map[string]adapter.ChannelAdapter
+	Logger   *slog.Logger
 }
 
 // matcherMode reports whether to run reservations in W4 queue mode.

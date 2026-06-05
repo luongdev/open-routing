@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
@@ -279,7 +280,7 @@ func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRout
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := generated.New(tx)
 
-	row, err := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	row, handles, err := e.teardownRouteTx(ctx, qtx, orgID, routeID, "route.abandoned")
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 0 rows: not found vs already-terminal.
 		if _, gErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); errors.Is(gErr, pgx.ErrNoRows) {
@@ -290,45 +291,61 @@ func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRout
 	if err != nil {
 		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "abandon_failed"}}, nil
 	}
-	// Read live reservations BEFORE cancelling so we know which were 'accepted'
-	// (a live call → the agent must go to WrapUp, not be stranded Engaged).
+	if err := tx.Commit(ctx); err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
+	}
+	// Post-commit: tell the adapter to tear down each live delivery (idempotent —
+	// a no-op if the adapter already ended it, e.g. this abandon WAS adapter-driven).
+	e.releaseAssignments(ctx, row.Channel, handles, adapter.ReleaseCancelled)
+	return api.AbandonRouteRequest200JSONResponse(mapRouteRequest(row)), nil
+}
+
+// teardownRouteTx cancels a non-terminal route + its live (offered/accepted)
+// reservations, frees each capacity slot, moves accepted-call agents to WrapUp,
+// and emits eventType. Returns the cancelled route row and the adapter handles of
+// the cancelled deliveries (for the caller to Release post-commit). ErrNoRows ⇒
+// the route was already terminal (caller maps to 409/no-op) — naturally idempotent,
+// which is why an adapter terminal can re-drive it harmlessly.
+func (e *Endpoints) teardownRouteTx(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, eventType string) (generated.RouteRequest, []string, error) {
+	row, err := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if err != nil {
+		return generated.RouteRequest{}, nil, err
+	}
+	// Read live reservations BEFORE cancelling so we know which were 'accepted' (a
+	// live call → the agent goes to WrapUp) and capture their adapter handles.
 	live, err := qtx.ListReservationsByRoute(ctx, generated.ListReservationsByRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
 	if err != nil {
-		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_reservations_failed"}}, nil
+		return generated.RouteRequest{}, nil, err
 	}
-	// Cancel BOTH the outstanding offer AND an in-progress accepted call so neither
-	// leaks its capacity slot.
 	cancelled, err := qtx.CancelLiveReservationsForRoute(ctx, generated.CancelLiveReservationsForRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
 	if err != nil {
-		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "cancel_offers_failed"}}, nil
+		return generated.RouteRequest{}, nil, err
 	}
 	if e.deps.Capacity != nil {
 		for _, r := range cancelled {
 			if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, apiUUID(r.ID)); rErr != nil {
-				return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "capacity_release_failed"}}, nil
+				return generated.RouteRequest{}, nil, rErr
 			}
 		}
 	}
-	// A cancelled live call moves its agent Engaged→WrapUp (after-call work), so the
-	// abandon ends the call cleanly instead of stranding the agent or making them
-	// instantly offerable. Best-effort: a stale agent state must not fail the teardown.
 	wrapUp := string(api.AgentStatusWrapUp)
 	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
+	var handles []string
 	for _, r := range live {
+		if r.AdapterHandle != nil && *r.AdapterHandle != "" {
+			handles = append(handles, *r.AdapterHandle)
+		}
 		if r.State != "accepted" {
 			continue
 		}
 		if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
 			AgentID: r.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
 		}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "agent_wrapup_failed"}}, nil
+			return generated.RouteRequest{}, nil, err
 		}
 	}
-	e.appendEvent(ctx, qtx, orgID, routeID, "route.abandoned", map[string]any{"cancelled_reservations": len(cancelled)})
-	if err := tx.Commit(ctx); err != nil {
-		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
-	}
-	return api.AbandonRouteRequest200JSONResponse(mapRouteRequest(row)), nil
+	e.appendEvent(ctx, qtx, orgID, routeID, eventType, map[string]any{"cancelled_reservations": len(cancelled)})
+	return row, handles, nil
 }
 
 // recordInlineDecision writes an interaction_offer route_decisions row for the

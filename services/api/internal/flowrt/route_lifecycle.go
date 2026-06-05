@@ -341,6 +341,8 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	if err := tx.Commit(ctx); err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
 	}
+	// Post-commit: hand the assignment to the channel adapter (mirrors the WS path).
+	e.deliverAssignment(ctx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel)
 	return api.AcceptReservation200JSONResponse(mapReservation(acc)), nil
 }
 

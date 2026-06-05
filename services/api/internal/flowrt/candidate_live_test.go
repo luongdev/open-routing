@@ -7,10 +7,106 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/presence"
+	"github.com/luongdev/open-routing/services/api/internal/runtime"
 )
+
+// simGraphWithWait is simGraph with a wait node AFTER the accepted port, so the
+// route stays 'waiting' (non-terminal) post-accept — the window where an
+// adapter-driven mid-call teardown (caller hangup) is meaningful.
+func simGraphWithWait(t *testing.T) runtime.Graph {
+	return runtime.Graph{
+		Nodes: []runtime.GraphNode{
+			{ID: "t", Kind: runtime.NodeTrigger},
+			{ID: "q", Kind: runtime.NodeRouteQueue, Config: cfg(t, map[string]string{"queue": "queue_vip"})},
+			{ID: "s", Kind: runtime.NodeMatchSkill, Config: cfg(t, map[string]any{"skill": "skill_es", "min_proficiency": 1})},
+			{ID: "r", Kind: runtime.NodeReservation, Config: cfg(t, map[string]any{"timeout_sec": 5, "max_attempts": 2})},
+			{ID: "w", Kind: runtime.NodeWait, Config: cfg(t, map[string]any{"duration_ms": 60000})},
+			{ID: "fb", Kind: runtime.NodeFallback},
+			{ID: "end", Kind: runtime.NodeEnd},
+		},
+		Edges: []runtime.GraphEdge{
+			{ID: "e1", From: "t", To: "q"}, {ID: "e2", From: "q", To: "s"}, {ID: "e3", From: "s", To: "r"},
+			{ID: "e4", From: "r", To: "w", Label: "accepted"},
+			{ID: "e5", From: "r", To: "fb", Label: "timeout"},
+			{ID: "e6", From: "r", To: "fb", Label: "no_candidate"},
+			{ID: "e7", From: "w", To: "end"}, {ID: "e8", From: "fb", To: "end"},
+		},
+	}
+}
+
+// TestLive_AdapterCallerAbandonTearsDown: after an accept hands the assignment to
+// the channel adapter, an ADAPTER-ORIGINATED caller hangup (MockVoice.Abandon →
+// caller_abandoned event) drives the engine to tear the route down — cancel the
+// reservation, free the slot, move the agent to WrapUp. This is goal-5's "adapter
+// events drive the reservation lifecycle".
+func TestLive_AdapterCallerAbandonTearsDown(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	mv := adapter.NewMockVoice(nil)
+	me := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(),
+		Adapters: map[string]adapter.ChannelAdapter{"voice": mv},
+	})
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_wait", simGraphWithWait(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+
+	resp, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+	rs, _ := me.ListRouteRequestReservations(lf.ctx, api.ListRouteRequestReservationsRequestObject{Id: api.EntityIdPath(routeID)})
+	items := rs.(api.ListRouteRequestReservations200JSONResponse).Items
+	if len(items) != 1 {
+		t.Fatalf("reservations = %d, want 1 offered", len(items))
+	}
+	resID := uuid.UUID(items[0].Id)
+
+	if _, err := me.AcceptReservation(lf.ctx, api.AcceptReservationRequestObject{Id: api.EntityIdPath(resID)}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("after accept held=%d, want 1", held)
+	}
+	// The adapter handle was bound on accept (Deliver).
+	var handle string
+	if err := sharedPool.QueryRow(lf.ctx, "SELECT adapter_handle FROM reservations WHERE id=$1", resID).Scan(&handle); err != nil || handle == "" {
+		t.Fatalf("adapter_handle=%q err=%v, want a bound handle", handle, err)
+	}
+
+	// Caller hangs up — the adapter fires caller_abandoned into the engine sink.
+	mv.Abandon(context.Background(), adapter.Handle(handle))
+
+	st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID)
+	if st != "cancelled" {
+		t.Fatalf("route after caller_abandoned = %q, want cancelled", st)
+	}
+	if held := lf.heldVoice(t, agentID); held != 0 {
+		t.Fatalf("after caller_abandoned held=%d, want 0 (slot freed)", held)
+	}
+	var resState, agentStatus string
+	_ = sharedPool.QueryRow(lf.ctx, "SELECT state FROM reservations WHERE id=$1", resID).Scan(&resState)
+	_ = sharedPool.QueryRow(lf.ctx, "SELECT status FROM agent_states WHERE agent_id=$1 AND org_id=$2", agentID, lf.orgID).Scan(&agentStatus)
+	if resState != "cancelled" || agentStatus != "WrapUp" {
+		t.Fatalf("after teardown reservation=%q agent=%q, want cancelled + WrapUp", resState, agentStatus)
+	}
+}
 
 // liveFixture wraps the base fixture with a live Endpoints (presence + capacity)
 // sharing the same OrgDB/org so seeding via f.q is visible to the live path.
