@@ -179,6 +179,38 @@ export interface paths {
         patch: operations["UpdateAgent"];
         trace?: never;
     };
+    "/v1/orgs/{org_id}/agents/{id}/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List an agent's live reservations (ringing offers + the on-call one)
+         * @description Returns the agent's currently actionable reservations — `offered` (ringing) and `accepted` (on a call) — newest first. The REST/poll path a browser agent console uses to see its offers; the WS gateway is the real-time push path.
+         */
+        get: operations["ListAgentReservations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org_id}/agents/{id}/status": {
         parameters: {
             query?: never;
@@ -3242,6 +3274,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    ListAgentReservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Organization UUIDv7. Present in the path for REST semantics. The
+                 *     authoritative `org_id` used for DB scoping is always read from the
+                 *     `X-Org-Id` header by the `OrgContext` middleware — this path parameter
+                 *     is not used for data access (FOUND-08 leakage guard: a hostile client
+                 *     cannot drive cross-org behavior by editing the URL because the code
+                 *     never reads `{org_id}` from the path).
+                 */
+                org_id: components["parameters"]["OrgIdPath"];
+                /** @description Entity UUIDv7 primary key. Must be a valid UUIDv7; UUIDv4 or lower returns HTTP 400 `invalid_id`. */
+                id: components["parameters"]["EntityIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent's live reservations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Reservation"][];
+                    };
                 };
             };
             500: components["responses"]["InternalServerError"];

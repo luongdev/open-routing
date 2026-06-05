@@ -64,6 +64,9 @@ type ServerInterface interface {
 	// Update an agent
 	// (PATCH /v1/orgs/{org_id}/agents/{id})
 	UpdateAgent(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
+	// List an agent's live reservations (ringing offers + the on-call one)
+	// (GET /v1/orgs/{org_id}/agents/{id}/reservations)
+	ListAgentReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
 	// Get agent state
 	// (GET /v1/orgs/{org_id}/agents/{id}/status)
 	GetAgentStatus(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath)
@@ -310,6 +313,12 @@ func (_ Unimplemented) GetAgent(w http.ResponseWriter, r *http.Request, orgId Or
 // Update an agent
 // (PATCH /v1/orgs/{org_id}/agents/{id})
 func (_ Unimplemented) UpdateAgent(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List an agent's live reservations (ringing offers + the on-call one)
+// (GET /v1/orgs/{org_id}/agents/{id}/reservations)
+func (_ Unimplemented) ListAgentReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1173,6 +1182,47 @@ func (siw *ServerInterfaceWrapper) UpdateAgent(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateAgent(w, r, orgId, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAgentReservations operation middleware
+func (siw *ServerInterfaceWrapper) ListAgentReservations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "org_id" -------------
+	var orgId OrgIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "org_id", chi.URLParam(r, "org_id"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "org_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id EntityIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, OrgHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAgentReservations(w, r, orgId, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3693,6 +3743,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/v1/orgs/{org_id}/agents/{id}", wrapper.UpdateAgent)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/orgs/{org_id}/agents/{id}/reservations", wrapper.ListAgentReservations)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/orgs/{org_id}/agents/{id}/status", wrapper.GetAgentStatus)
 	})
 	r.Group(func(r chi.Router) {
@@ -4695,6 +4748,47 @@ type UpdateAgent500JSONResponse struct {
 }
 
 func (response UpdateAgent500JSONResponse) VisitUpdateAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAgentReservationsRequestObject struct {
+	OrgId OrgIdPath    `json:"org_id"`
+	Id    EntityIdPath `json:"id"`
+}
+
+type ListAgentReservationsResponseObject interface {
+	VisitListAgentReservationsResponse(w http.ResponseWriter) error
+}
+
+type ListAgentReservations200JSONResponse struct {
+	Items []Reservation `json:"items"`
+}
+
+func (response ListAgentReservations200JSONResponse) VisitListAgentReservationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAgentReservations500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListAgentReservations500JSONResponse) VisitListAgentReservationsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -8143,6 +8237,9 @@ type StrictServerInterface interface {
 	// Update an agent
 	// (PATCH /v1/orgs/{org_id}/agents/{id})
 	UpdateAgent(ctx context.Context, request UpdateAgentRequestObject) (UpdateAgentResponseObject, error)
+	// List an agent's live reservations (ringing offers + the on-call one)
+	// (GET /v1/orgs/{org_id}/agents/{id}/reservations)
+	ListAgentReservations(ctx context.Context, request ListAgentReservationsRequestObject) (ListAgentReservationsResponseObject, error)
 	// Get agent state
 	// (GET /v1/orgs/{org_id}/agents/{id}/status)
 	GetAgentStatus(ctx context.Context, request GetAgentStatusRequestObject) (GetAgentStatusResponseObject, error)
@@ -8736,6 +8833,33 @@ func (sh *strictHandler) UpdateAgent(w http.ResponseWriter, r *http.Request, org
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateAgentResponseObject); ok {
 		if err := validResponse.VisitUpdateAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAgentReservations operation middleware
+func (sh *strictHandler) ListAgentReservations(w http.ResponseWriter, r *http.Request, orgId OrgIdPath, id EntityIdPath) {
+	var request ListAgentReservationsRequestObject
+
+	request.OrgId = orgId
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAgentReservations(ctx, request.(ListAgentReservationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAgentReservations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAgentReservationsResponseObject); ok {
+		if err := validResponse.VisitListAgentReservationsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

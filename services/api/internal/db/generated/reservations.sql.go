@@ -305,6 +305,57 @@ func (q *Queries) InsertReservationOffer(ctx context.Context, arg InsertReservat
 	return i, err
 }
 
+const listAgentLiveReservations = `-- name: ListAgentLiveReservations :many
+SELECT id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at, resolved_at, reason, lease_token, agent_session_id, adapter_handle, created_at, updated_at FROM reservations
+WHERE org_id = $1 AND agent_id = $2 AND state IN ('offered', 'accepted')
+ORDER BY created_at DESC
+`
+
+type ListAgentLiveReservationsParams struct {
+	OrgID   pgtype.UUID `json:"org_id"`
+	AgentID pgtype.UUID `json:"agent_id"`
+}
+
+// ListAgentLiveReservations returns an agent's currently actionable reservations
+// (offered = ringing, accepted = on a call) for a polling agent console — newest
+// first. Org-scoped. The WS gateway is the real-time path; this is the browser
+// console's REST/poll fallback (no custom-header WS auth needed).
+func (q *Queries) ListAgentLiveReservations(ctx context.Context, arg ListAgentLiveReservationsParams) ([]Reservation, error) {
+	rows, err := q.db.Query(ctx, listAgentLiveReservations, arg.OrgID, arg.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Reservation{}
+	for rows.Next() {
+		var i Reservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.RouteRequestID,
+			&i.AgentID,
+			&i.State,
+			&i.Attempt,
+			&i.OfferedAt,
+			&i.ExpiresAt,
+			&i.ResolvedAt,
+			&i.Reason,
+			&i.LeaseToken,
+			&i.AgentSessionID,
+			&i.AdapterHandle,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOfferedAgentsForRoute = `-- name: ListOfferedAgentsForRoute :many
 SELECT DISTINCT agent_id FROM reservations
 WHERE org_id = $1 AND route_request_id = $2

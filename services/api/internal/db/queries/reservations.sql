@@ -119,3 +119,12 @@ ORDER BY attempt ASC;
 -- name: ListOfferedAgentsForRoute :many
 SELECT DISTINCT agent_id FROM reservations
 WHERE org_id = $1 AND route_request_id = $2;
+
+-- ListAgentLiveReservations returns an agent's currently actionable reservations
+-- (offered = ringing, accepted = on a call) for a polling agent console — newest
+-- first. Org-scoped. The WS gateway is the real-time path; this is the browser
+-- console's REST/poll fallback (no custom-header WS auth needed).
+-- name: ListAgentLiveReservations :many
+SELECT * FROM reservations
+WHERE org_id = $1 AND agent_id = $2 AND state IN ('offered', 'accepted')
+ORDER BY created_at DESC;

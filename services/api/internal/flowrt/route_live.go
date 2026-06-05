@@ -136,6 +136,22 @@ func (e *Endpoints) ListRouteRequestReservations(ctx context.Context, req api.Li
 	return api.ListRouteRequestReservations200JSONResponse{Items: items}, nil
 }
 
+func (e *Endpoints) ListAgentReservations(ctx context.Context, req api.ListAgentReservationsRequestObject) (api.ListAgentReservationsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.ListAgentReservations500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	rows, err := generated.New(e.deps.OrgDB).ListAgentLiveReservations(ctx, generated.ListAgentLiveReservationsParams{OrgID: pgUUID(orgID), AgentID: pgUUID(uuid.UUID(req.Id))})
+	if err != nil {
+		return api.ListAgentReservations500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_failed"}}, nil
+	}
+	items := make([]api.Reservation, len(rows))
+	for i, r := range rows {
+		items[i] = mapReservation(r)
+	}
+	return api.ListAgentReservations200JSONResponse{Items: items}, nil
+}
+
 func mapRuntimeEvent(r generated.RuntimeEvent) api.RuntimeEvent {
 	out := api.RuntimeEvent{
 		Id:        api.UUIDv7(apiUUID(r.ID)),

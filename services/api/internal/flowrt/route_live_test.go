@@ -141,6 +141,60 @@ func TestListRouteRequestEvents(t *testing.T) {
 	}
 }
 
+func TestListAgentReservations(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	fvID := uuid.Must(uuid.NewV7())
+	flowCode := "flow_ar"
+	exp := pgtype.Timestamptz{Time: time.Now().Add(30 * time.Second), Valid: true}
+	// ux_reservations_route_active allows only one live reservation per route
+	// (sequential offers), so each agent's offer is on its OWN route.
+	mk := func(agent uuid.UUID) uuid.UUID {
+		routeID := uuid.Must(uuid.NewV7())
+		if _, err := f.q.InsertRouteRequest(f.ctx, generated.InsertRouteRequestParams{
+			ID: pgUUID(routeID), OrgID: pgUUID(f.orgID), Channel: "voice", EntryCode: "main",
+			FlowVersionID: pgUUID(fvID), FlowCode: &flowCode, InteractionInput: []byte(`{}`), Status: "waiting",
+		}); err != nil {
+			t.Fatalf("seed route: %v", err)
+		}
+		id := uuid.Must(uuid.NewV7())
+		if _, err := f.q.InsertReservationOffer(f.ctx, generated.InsertReservationOfferParams{
+			ID: pgUUID(id), OrgID: pgUUID(f.orgID), RouteRequestID: pgUUID(routeID), AgentID: pgUUID(agent), Attempt: 1, ExpiresAt: exp,
+		}); err != nil {
+			t.Fatalf("seed reservation: %v", err)
+		}
+		return id
+	}
+	agentA := uuid.Must(uuid.NewV7())
+	agentB := uuid.Must(uuid.NewV7())
+	aRes := mk(agentA)
+	mk(agentB)
+
+	// agentA has one live (offered) reservation.
+	resp, _ := f.e.ListAgentReservations(f.ctx, api.ListAgentReservationsRequestObject{Id: api.EntityIdPath(agentA)})
+	ok, isOK := resp.(api.ListAgentReservations200JSONResponse)
+	if !isOK || len(ok.Items) != 1 || uuid.UUID(ok.Items[0].Id) != aRes {
+		t.Fatalf("agentA live = %+v, want 1 (the offered one)", resp)
+	}
+
+	// Reject agentA's offer → it's no longer live; the endpoint returns empty.
+	reason := "no"
+	if _, err := f.q.RejectReservation(f.ctx, generated.RejectReservationParams{ID: pgUUID(aRes), OrgID: pgUUID(f.orgID), Reason: &reason}); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	resp2, _ := f.e.ListAgentReservations(f.ctx, api.ListAgentReservationsRequestObject{Id: api.EntityIdPath(agentA)})
+	if r := resp2.(api.ListAgentReservations200JSONResponse); len(r.Items) != 0 {
+		t.Fatalf("agentA after reject = %d live, want 0", len(r.Items))
+	}
+	// agentB still has its offered one (org/agent isolation).
+	resp3, _ := f.e.ListAgentReservations(f.ctx, api.ListAgentReservationsRequestObject{Id: api.EntityIdPath(agentB)})
+	if r := resp3.(api.ListAgentReservations200JSONResponse); len(r.Items) != 1 {
+		t.Fatalf("agentB live = %d, want 1", len(r.Items))
+	}
+}
+
 // CreateRouteRequest on a published flow with a Ready agent OFFERS the top
 // candidate and parks the route (waiting + offered reservation + timeout
 // continuation + persisted runtime trace).

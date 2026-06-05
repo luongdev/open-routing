@@ -2999,6 +2999,37 @@ paths:
 
   # ── Agent State (STATE-01 through STATE-09) ──────────────────────────────────
 
+  /v1/orgs/{org_id}/agents/{id}/reservations:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: ListAgentReservations
+      summary: List an agent's live reservations (ringing offers + the on-call one)
+      description: >
+        Returns the agent's currently actionable reservations — `offered`
+        (ringing) and `accepted` (on a call) — newest first. The REST/poll path a
+        browser agent console uses to see its offers; the WS gateway is the
+        real-time push path.
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: The agent's live reservations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Reservation"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /v1/orgs/{org_id}/agents/{id}/status:
     parameters:
       - $ref: "#/components/parameters/OrgIdPath"
