@@ -243,8 +243,10 @@ func (g *Gateway) handleCommand(ctx context.Context, cancel context.CancelFunc, 
 		return
 	}
 	// request_hash binds the dedupe id to the payload so a reused id with a
-	// different command/reservation is rejected.
-	sum := sha256.Sum256([]byte(in.Type + "|" + in.Reservation))
+	// different command/reservation/lease is rejected — lease_token is part of the
+	// request identity, else a replay with a different token returns the cached
+	// result before the fence runs (cross-AI review HIGH).
+	sum := sha256.Sum256([]byte(in.Type + "|" + in.Reservation + "|" + in.LeaseToken))
 	res, err := g.d.Cmd.ExecuteAgentCommand(ctx, orgID, agentID, sessionID, cmdID, resID, in.LeaseToken, flowrt.AgentCommandKind(in.Type), hex.EncodeToString(sum[:]))
 	if err != nil {
 		ack.Type, ack.Reason = TypeError, "command failed"

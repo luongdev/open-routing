@@ -120,14 +120,14 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 	}
 	// Lease fence (D5): a command must echo the offer's lease_token. A stale command
 	// for a superseded offer — a reconnect replaying an old frame, or a different
-	// agent connection — fails closed. Skipped only when the offer bound no token
-	// (the HTTP test-double path, which never reaches this WS command handler).
-	if resv.LeaseToken.Valid {
-		lt, perr := uuid.Parse(leaseToken)
-		if perr != nil || lt != uuid.UUID(resv.LeaseToken.Bytes) {
-			out.Status = "lease_mismatch"
-			return out, nil
-		}
+	// agent connection — fails closed. Every real offer binds a token, so a
+	// token-less reservation reaching the WS command path is malformed → also fail
+	// closed (cross-AI review MED: don't fail open on NULL). The HTTP test-double
+	// path never reaches runTransition, so it is unaffected.
+	lt, perr := uuid.Parse(leaseToken)
+	if !resv.LeaseToken.Valid || perr != nil || lt != uuid.UUID(resv.LeaseToken.Bytes) {
+		out.Status = "lease_mismatch"
+		return out, nil
 	}
 
 	switch kind {

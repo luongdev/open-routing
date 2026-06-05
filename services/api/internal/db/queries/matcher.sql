@@ -170,8 +170,9 @@ INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_
 VALUES ($1, $2, 'missed', $3, NULL)
 ON CONFLICT (org_id, agent_id) DO UPDATE
 SET routing_state = 'missed', state_expires_at = $3, updated_at = now()
-WHERE agent_routing_state.last_ready_at IS NULL
-   OR agent_routing_state.last_ready_at <= $4;
+WHERE agent_routing_state.org_id = $1
+  AND (agent_routing_state.last_ready_at IS NULL
+       OR agent_routing_state.last_ready_at <= $4);
 
 -- InsertRouteDecision records one matcher decision (the D9 audit trail): who was
 -- selected/considered, the outcome, and a JSONB detail blob (ranking, excluded,

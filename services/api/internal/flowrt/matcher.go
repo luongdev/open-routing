@@ -260,6 +260,9 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 	}
 
 	if err := enqueueOfferFrame(ctx, qtx, orgID, agentID, resID, leaseToken, exp); err != nil {
+		if errors.Is(err, errAgentVanished) {
+			return false, nil // agent gone since the claim → drop the offer (tx rolls back → route stays waiting_match)
+		}
 		return false, err
 	}
 	if err := e.recordDecision(ctx, qtx, orgID, matcherInstance, claimed, agentID, "offered", agentCode, skills, slotNo); err != nil {

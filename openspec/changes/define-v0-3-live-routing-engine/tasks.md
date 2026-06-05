@@ -77,10 +77,12 @@ decision-trace requirements.
       failure.)
 - [x] Tests: no double-assign, capacity never exceeded, aging prevents starvation,
       queue-pull priority correct. (Stage 3/5: testcontainer + -race.)
-- [ ] Stage 4 — Lease fencing (lease_token + agent_session_id bound at offer,
-      checked on accept/reject/complete) + RONA agent_routing_state cooldown with
-      the last_ready_at Ready-race fence. Coupled to W5 (offer-frame token
-      delivery + the agent Ready transition writing last_ready_at).
+- [x] Stage 4 — Lease fencing (lease_token + agent_session_id bound at offer;
+      the WS command path fences on the echoed lease_token) + the durable
+      agent_outbox offer frame that delivers it + RONA agent_routing_state cooldown
+      on timeout (last_ready_at Ready-race fence baked into MarkAgentMissed). NOTE:
+      the fence is conservative until the agent Ready transition writes
+      last_ready_at (W5, additive); the short self-healing TTL covers it meanwhile.
 
 ## Wave 5 — Real reservation lifecycle (live signals)
 

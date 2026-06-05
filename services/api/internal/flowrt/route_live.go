@@ -250,8 +250,13 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	}
 	// Deliver the durable offer frame (reservation id + lease_token to echo back)
 	// inside the same savepoint so a rolled-back offer doesn't leak an outbox row.
+	// A vanished agent ⇒ undo this offer and skip to the next candidate, never
+	// commit an undeliverable offer (cross-AI review HIGH).
 	if fErr := enqueueOfferFrame(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), resID, leaseToken, exp); fErr != nil {
 		_ = sp.Rollback(o.ctx)
+		if errors.Is(fErr, errAgentVanished) {
+			return "", false, nil
+		}
 		return "", false, fErr
 	}
 	if err := sp.Commit(o.ctx); err != nil {
