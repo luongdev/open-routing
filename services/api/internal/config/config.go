@@ -19,17 +19,18 @@ import (
 // Config holds every environment variable the API reads at startup.
 // Field order matches the .env.example template for grep-ability.
 type Config struct {
-	DatabaseURL        string   // DATABASE_URL — required
-	RedisURL           string   // REDIS_URL — required
-	OTelExporter       string   // OTEL_EXPORTER — default "stdout"; accepts "otlp" (D-14)
-	OTLPEndpoint       string   // OTEL_EXPORTER_OTLP_ENDPOINT — required when OTelExporter=="otlp" (D-14)
-	OTLPProtocol       string   // OTEL_EXPORTER_OTLP_PROTOCOL — default "http/protobuf" (D-14)
-	ListenAddr         string   // LISTEN_ADDR — default ":8080"
-	ValidationMode     string   // ORGDB_VALIDATION_MODE — default "panic"; accepts "error" (D-02)
-	CORSAllowedOrigins []string // CORS_ALLOWED_ORIGINS — comma-separated list of origins (D7-16)
-	MatcherEnabled     bool     // MATCHER_ENABLED — default false; v0.3 W4 queue+matcher (park on no agent → matcher pull) instead of offer-now-or-fallback
-	WSMaxConnsPerOrg   int      // WS_MAX_CONNS_PER_ORG — default 500; per-org agent WS connection cap on one gateway instance (0 ⇒ unlimited)
-	DeliveryOutbox     bool     // DELIVERY_OUTBOX_ENABLED — default false; v0.4 W1 durable delivery (accept enqueues; runtime drains) instead of post-commit in-process Deliver
+	DatabaseURL          string   // DATABASE_URL — required
+	RedisURL             string   // REDIS_URL — required
+	OTelExporter         string   // OTEL_EXPORTER — default "stdout"; accepts "otlp" (D-14)
+	OTLPEndpoint         string   // OTEL_EXPORTER_OTLP_ENDPOINT — required when OTelExporter=="otlp" (D-14)
+	OTLPProtocol         string   // OTEL_EXPORTER_OTLP_PROTOCOL — default "http/protobuf" (D-14)
+	ListenAddr           string   // LISTEN_ADDR — default ":8080"
+	ValidationMode       string   // ORGDB_VALIDATION_MODE — default "panic"; accepts "error" (D-02)
+	CORSAllowedOrigins   []string // CORS_ALLOWED_ORIGINS — comma-separated list of origins (D7-16)
+	MatcherEnabled       bool     // MATCHER_ENABLED — default false; v0.3 W4 queue+matcher (park on no agent → matcher pull) instead of offer-now-or-fallback
+	WSMaxConnsPerOrg     int      // WS_MAX_CONNS_PER_ORG — default 500; per-org agent WS connection cap on one gateway instance (0 ⇒ unlimited)
+	DeliveryOutbox       bool     // DELIVERY_OUTBOX_ENABLED — default false; v0.4 W1 durable delivery (accept enqueues; runtime drains) instead of post-commit in-process Deliver
+	AdapterWebhookSecret string   // ADAPTER_WEBHOOK_SECRET — HMAC secret for the v0.4 inbound assignment-event webhook; empty ⇒ webhook route not mounted
 }
 
 // Load reads every environment variable, validates defaults / enums, and
@@ -88,17 +89,18 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:        databaseURL,
-		RedisURL:           redisURL,
-		OTelExporter:       otelExporter,
-		OTLPEndpoint:       otlpEndpoint,
-		OTLPProtocol:       otlpProtocol,
-		ListenAddr:         listenAddr,
-		ValidationMode:     validationMode,
-		CORSAllowedOrigins: corsAllowedOrigins,
-		MatcherEnabled:     getEnvOrDefault("MATCHER_ENABLED", "false") == "true",
-		WSMaxConnsPerOrg:   wsMaxConns,
-		DeliveryOutbox:     getEnvOrDefault("DELIVERY_OUTBOX_ENABLED", "false") == "true",
+		DatabaseURL:          databaseURL,
+		RedisURL:             redisURL,
+		OTelExporter:         otelExporter,
+		OTLPEndpoint:         otlpEndpoint,
+		OTLPProtocol:         otlpProtocol,
+		ListenAddr:           listenAddr,
+		ValidationMode:       validationMode,
+		CORSAllowedOrigins:   corsAllowedOrigins,
+		MatcherEnabled:       getEnvOrDefault("MATCHER_ENABLED", "false") == "true",
+		WSMaxConnsPerOrg:     wsMaxConns,
+		DeliveryOutbox:       getEnvOrDefault("DELIVERY_OUTBOX_ENABLED", "false") == "true",
+		AdapterWebhookSecret: os.Getenv("ADAPTER_WEBHOOK_SECRET"),
 	}, nil
 }
 

@@ -46,9 +46,10 @@ suite. See discussion.md.
 
 ## Wave 2 — Inbound assignment-event webhook
 
-- [ ] Authenticated, org-scoped HTTP endpoint the bridge calls to report lifecycle
-      events; maps to `EventSink.OnAssignmentEvent`, idempotent by CorrelationID,
-      terminal-final (later events for a terminal handle ignored).
+- [x] Inbound assignment-event webhook (`internal/adapterwebhook`, bare route
+      POST /v1/adapter/assignment-events) → `EventSink.OnAssignmentEvent`. The sink
+      already carries the ownership fence (handle-match + state) + terminal-final
+      idempotency from v0.3.
 - [ ] Webhook auth: HMAC-SHA256 signed payloads (per-env/org secret, timestamp +
       nonce replay window) PLUS an ownership fence — a terminal is applied only if
       `org + interaction/attempt + media_session/handle` matches current ownership

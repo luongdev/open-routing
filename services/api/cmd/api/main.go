@@ -44,6 +44,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/luongdev/open-routing/services/api/internal/adapter"
+	"github.com/luongdev/open-routing/services/api/internal/adapterwebhook"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
@@ -267,6 +268,13 @@ func run() int {
 		MaxConnsPerOrg: cfg.WSMaxConnsPerOrg,
 	})
 
+	// v0.4 inbound assignment-event webhook (HMAC-authed). Mounted only when the
+	// secret is configured; the engine (flowrtEndpoints) is the EventSink.
+	var adapterWebhook http.Handler
+	if cfg.AdapterWebhookSecret != "" {
+		adapterWebhook = adapterwebhook.Handler(flowrtEndpoints, cfg.AdapterWebhookSecret, slog.Default(), nil)
+	}
+
 	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{
 		Pool:           pool,
@@ -276,6 +284,7 @@ func run() int {
 		StrictHandlers: apiHandlers,
 		SpecBytes:      specBytes,
 		WSHandler:      wsGateway.Handler(),
+		AdapterWebhook: adapterWebhook,
 	})
 
 	// (10) OTel HTTP wrap AFTER NewMux returns (Pattern S6 — wrap is after
