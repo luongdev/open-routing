@@ -529,6 +529,26 @@ describe('OrFlowBuilder', () => {
     expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
   });
 
+  it('input nodes show an on-node value field in sim mode that pins the captured value', async () => {
+    const nodes = [
+      { id: 't', kind: 'trigger', label: 'T', description: '', x: 0, y: 0 },
+      { id: 'd', kind: 'get_dtmf', label: 'DTMF', description: '', x: 0, y: 200, params: { save_as: 'digits' }, outputs: [{ id: 'captured', label: 'captured', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }] },
+    ];
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [] } }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges: [] } }, error: null }), POST: post };
+    await settle();
+    (el as any)._simMode = 'sim';
+    await (el as any).updateComplete;
+    const field = el.shadowRoot!.querySelector('.node-card-siminput-field') as HTMLInputElement;
+    expect(field).toBeTruthy(); // the DTMF node carries an on-node value input in sim
+    field.value = '1234';
+    field.dispatchEvent(new Event('change'));
+    await (el as any).updateComplete;
+    expect((el as any)._simNodeInputs.d).toBe('1234'); // typed value pinned for the run
+  });
+
   it('editing switch_case cases regenerates outputs and prunes stale edges', async () => {
     const nodes = [
       { id: 's', kind: 'switch_case', label: 'S', description: '', x: 0, y: 0, params: { cases: ['a', 'b'] }, outputs: [{ id: 'a', label: 'a', kind: 'branch' }, { id: 'b', label: 'b', kind: 'branch' }, { id: 'default', label: 'default', kind: 'default' }] },
