@@ -88,19 +88,31 @@ func TestMatcher_SLAExpiredNotClaimable(t *testing.T) {
 	}); err != pgx.ErrNoRows {
 		t.Fatalf("claim of SLA-expired route err=%v, want ErrNoRows", err)
 	}
-	// The deadline sweep reclaims it (→ running for the worker to fallback).
-	rows, err := q.ClaimExpiredMatchRoutes(ctx, 10)
+	// The deadline sweep discovers it (cross-org list) and the fenced acquire flips
+	// it to 'running' for the no_candidate fallback — exactly once.
+	rows, err := q.ListExpiredMatchRoutes(ctx, 10)
 	if err != nil {
-		t.Fatalf("claim expired: %v", err)
+		t.Fatalf("list expired: %v", err)
 	}
 	found := false
 	for _, r := range rows {
-		if apiUUID(r.ID) == routeID && r.Status == "running" {
+		if apiUUID(r.ID) == routeID {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("SLA-expired route not reclaimed by the deadline sweep")
+		t.Fatalf("SLA-expired route not discovered by the deadline sweep")
+	}
+	got, err := q.AcquireExpiredMatchRouteForRun(ctx, generated.AcquireExpiredMatchRouteForRunParams{ID: pgUUID(routeID), OrgID: pgUUID(org)})
+	if err != nil {
+		t.Fatalf("acquire expired: %v", err)
+	}
+	if got.Status != "running" {
+		t.Fatalf("acquired SLA-expired route status=%q, want running", got.Status)
+	}
+	// Second acquire (a racing replica) gets nothing — the status guard fences it.
+	if _, err := q.AcquireExpiredMatchRouteForRun(ctx, generated.AcquireExpiredMatchRouteForRunParams{ID: pgUUID(routeID), OrgID: pgUUID(org)}); err != pgx.ErrNoRows {
+		t.Fatalf("second acquire err=%v, want ErrNoRows (fenced)", err)
 	}
 }
 

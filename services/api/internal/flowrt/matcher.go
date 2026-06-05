@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
@@ -26,11 +27,86 @@ import (
 // high-priority one (no bounded-prefix starvation, plan rev2 BLOCK). The weights:
 // effective = priority*W_p + age_seconds*W_age, deterministic id tie-break.
 const (
-	matcherAgentBatch  = 100
-	matcherWeightPrio  = 100.0
-	matcherWeightAge   = 1.0
-	matcherOfferExpiry = 20 * time.Second // RONA ring window before the timeout sweep re-queues
+	matcherAgentBatch    = 100
+	matcherOrgBatch      = 100
+	matcherExpiredBatch  = 100
+	matcherWeightPrio    = 100.0
+	matcherWeightAge     = 1.0
+	matcherOfferExpiry   = 20 * time.Second // RONA ring window before the timeout sweep re-queues
+	staleOfferingTimeout = 30 * time.Second // an 'offering' route older than this lost its worker → re-token
 )
+
+// RunMatcher is the cross-org matcher tick (cmd/runtime, alongside the
+// continuation worker): (1) re-token routes stuck 'offering' from a crashed
+// worker, (2) give up on SLA-expired waiting_match routes → no_candidate
+// fallback, (3) pull-offer per org with pending demand. The sweeps run on the raw
+// pool (cross-org); per-org/per-route work re-scopes through the OrgDB. Returns
+// offers attached this tick.
+func (e *Endpoints) RunMatcher(ctx context.Context, pool *pgxpool.Pool, matcherInstance string, now time.Time) (int, error) {
+	rawq := generated.New(pool)
+
+	// 1. Stale-offering recovery: re-token so the crashed worker's CommitMatchOffer
+	//    (fenced on the old token) can't land; the route returns to waiting_match.
+	if _, err := rawq.SweepStaleOffering(ctx, ts(now.Add(-staleOfferingTimeout))); err != nil {
+		return 0, err
+	}
+
+	// 2. SLA deadline: a route nobody could match before its match_deadline gives up
+	//    → resume the reservation node's no_candidate port (fallback). Per route in
+	//    its own org-scoped tx so the run-lock flip + resume are atomic.
+	expired, err := rawq.ListExpiredMatchRoutes(ctx, matcherExpiredBatch)
+	if err != nil {
+		return 0, err
+	}
+	for _, r := range expired {
+		if fErr := e.fallbackExpiredRoute(ctx, apiUUID(r.OrgID), apiUUID(r.ID)); fErr != nil {
+			e.deps.Logger.ErrorContext(ctx, "matcher SLA fallback failed", "org_id", apiUUID(r.OrgID), "route_id", apiUUID(r.ID), "err", fErr)
+		}
+	}
+
+	// 3. Availability-driven pull, per org with a waiting route.
+	orgs, err := rawq.ListOrgsWithWaitingMatch(ctx, matcherOrgBatch)
+	if err != nil {
+		return 0, err
+	}
+	offered := 0
+	for _, o := range orgs {
+		n, cErr := e.RunMatchCycle(ctx, apiUUID(o), matcherInstance)
+		if cErr != nil {
+			e.deps.Logger.ErrorContext(ctx, "match cycle failed", "org_id", apiUUID(o), "err", cErr)
+			continue
+		}
+		offered += n
+	}
+	return offered, nil
+}
+
+// fallbackExpiredRoute flips ONE SLA-expired route to running (fenced) and resumes
+// it with no_candidate, atomically. A losing race / already-handled route is a
+// benign no-op (ErrNoRows).
+func (e *Endpoints) fallbackExpiredRoute(ctx context.Context, orgID, routeID uuid.UUID) error {
+	ctx = orgkey.SetOrgID(ctx, orgID)
+	tx, err := e.deps.OrgDB.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := generated.New(tx)
+	route, err := qtx.AcquireExpiredMatchRouteForRun(ctx, generated.AcquireExpiredMatchRouteForRunParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	e.appendEvent(ctx, qtx, orgID, routeID, "route.match_deadline_expired", nil)
+	// no_candidate is consumed by liveReservation BEFORE its matcher-mode park, so
+	// the route takes the reservation node's no_candidate port → fallback → terminal.
+	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "no_candidate"); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 
 // RunMatchCycle runs one availability-driven pass for a single org: list the
 // available agents, then claim+offer the best eligible waiting route to each.

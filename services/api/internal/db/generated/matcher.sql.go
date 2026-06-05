@@ -11,69 +11,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const claimExpiredMatchRoutes = `-- name: ClaimExpiredMatchRoutes :many
+const acquireExpiredMatchRouteForRun = `-- name: AcquireExpiredMatchRouteForRun :one
 UPDATE route_requests
 SET status = 'running',
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
-WHERE id IN (
-    SELECT id FROM route_requests
-    WHERE status = 'waiting_match' AND match_deadline IS NOT NULL AND match_deadline <= now()
-    ORDER BY match_deadline
-    FOR UPDATE SKIP LOCKED
-    LIMIT $1
-)
+WHERE id = $1 AND org_id = $2 AND status = 'waiting_match'
+  AND match_deadline IS NOT NULL AND match_deadline <= now()
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
 `
 
-// ClaimExpiredMatchRoutes flips queue-SLA-expired routes to 'running' (the route
-// run-lock) so the continuation worker can resume them with the no_candidate
-// fallback. Targets ONLY waiting_match (an offering route's reservation_timeout
-// wins — precedence). Cross-org via the raw pool, bounded batch.
-func (q *Queries) ClaimExpiredMatchRoutes(ctx context.Context, limit int32) ([]RouteRequest, error) {
-	rows, err := q.db.Query(ctx, claimExpiredMatchRoutes, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RouteRequest{}
-	for rows.Next() {
-		var i RouteRequest
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrgID,
-			&i.Channel,
-			&i.EntryCode,
-			&i.FlowVersionID,
-			&i.FlowCode,
-			&i.InteractionInput,
-			&i.Status,
-			&i.FailureCode,
-			&i.ReadSetSnapshot,
-			&i.QueueID,
-			&i.Priority,
-			&i.RequiredSkills,
-			&i.WaitingSince,
-			&i.NextMatchAt,
-			&i.MatchDeadline,
-			&i.MatchAttemptSeq,
-			&i.MatchOfferToken,
-			&i.OfferingStartedAt,
-			&i.ActiveReservationID,
-			&i.ExcludedAgentIds,
-			&i.ResumeCursor,
-			&i.CurrentReservationID,
-			&i.RunSeq,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type AcquireExpiredMatchRouteForRunParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+// AcquireExpiredMatchRouteForRun is the org-scoped, fenced flip the SLA fallback
+// runs INSIDE its resume tx: waiting_match-past-deadline → running, atomically with
+// the no_candidate resume + persist (so a crash rolls back to waiting_match, never
+// a stuck 'running'). ErrNoRows ⇒ another worker/tick already took it (the status
+// guard gives exactly-once across replicas — no SKIP LOCKED needed).
+func (q *Queries) AcquireExpiredMatchRouteForRun(ctx context.Context, arg AcquireExpiredMatchRouteForRunParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, acquireExpiredMatchRouteForRun, arg.ID, arg.OrgID)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const claimWaitingRoute = `-- name: ClaimWaitingRoute :one
@@ -422,6 +410,44 @@ func (q *Queries) ListAvailableAgentsForMatch(ctx context.Context, arg ListAvail
 	for rows.Next() {
 		var i ListAvailableAgentsForMatchRow
 		if err := rows.Scan(&i.AgentID, &i.AgentCode, &i.Skills); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExpiredMatchRoutes = `-- name: ListExpiredMatchRoutes :many
+SELECT id, org_id FROM route_requests
+WHERE status = 'waiting_match' AND match_deadline IS NOT NULL AND match_deadline <= now()
+ORDER BY match_deadline
+LIMIT $1
+`
+
+type ListExpiredMatchRoutesRow struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+// ListExpiredMatchRoutes finds queue-SLA-expired routes (waiting_match past their
+// match_deadline) the matcher must give up on → no_candidate fallback. Read-only
+// discovery; the per-route fenced AcquireExpiredMatchRouteForRun does the
+// exactly-once flip+resume so 'running' is never committed without a driver. Only
+// waiting_match (an offering route's reservation_timeout wins — precedence).
+// Cross-org via the raw pool, bounded batch.
+func (q *Queries) ListExpiredMatchRoutes(ctx context.Context, limit int32) ([]ListExpiredMatchRoutesRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredMatchRoutes, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredMatchRoutesRow{}
+	for rows.Next() {
+		var i ListExpiredMatchRoutesRow
+		if err := rows.Scan(&i.ID, &i.OrgID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

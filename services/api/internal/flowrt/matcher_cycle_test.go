@@ -3,6 +3,7 @@ package flowrt
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -182,5 +183,86 @@ func TestMatcher_AgingOvertakesPriority(t *testing.T) {
 	}
 	if rs := lf.reservations(t, hi); len(rs) != 0 {
 		t.Fatalf("fresh high-priority route got %d offers, want 0 (lost to the aged route)", len(rs))
+	}
+}
+
+// TestMatcher_RunMatcherPullsPerOrg drives the full cmd/runtime tick (RunMatcher):
+// a parked route + a connected Ready agent → the per-org pull offers it.
+func TestMatcher_RunMatcherPullsPerOrg(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	me := newMatcherEndpoints(lf)
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_q", simGraph(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	resp, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"},
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+	_ = lf.mem.Renew(context.Background(), lf.orgID, lf.agentID(t, "agent_a"), "sess-1")
+
+	if _, err := me.RunMatcher(lf.ctx, sharedPool, "runtime-1", time.Now()); err != nil {
+		t.Fatalf("run matcher: %v", err)
+	}
+	if rs := lf.reservations(t, routeID); len(rs) != 1 {
+		t.Fatalf("after RunMatcher route got %d reservations, want 1 (per-org pull)", len(rs))
+	}
+}
+
+// TestMatcher_RunMatcherSLAFallback: a route whose match_deadline has passed is
+// given up by the SLA sweep → resumed with no_candidate → takes the reservation
+// node's fallback port to a terminal end (no offer).
+func TestMatcher_RunMatcherSLAFallback(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	me := newMatcherEndpoints(lf)
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3) // exists but never connects → stays parked
+	flowID := lf.seedFlow(t, "flow_q", simGraph(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	resp, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"},
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+	if st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID); st != "waiting_match" {
+		t.Fatalf("route parked as %q, want waiting_match", st)
+	}
+	// Force the SLA deadline into the past.
+	if _, err := sharedPool.Exec(lf.ctx,
+		"UPDATE route_requests SET match_deadline = now() - interval '1 second' WHERE id=$1 AND org_id=$2", routeID, lf.orgID); err != nil {
+		t.Fatalf("expire deadline: %v", err)
+	}
+
+	if _, err := me.RunMatcher(lf.ctx, sharedPool, "runtime-1", time.Now()); err != nil {
+		t.Fatalf("run matcher: %v", err)
+	}
+	// The route ran the no_candidate fallback to its terminal end; no offer made.
+	st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID)
+	if st != "completed" {
+		t.Fatalf("SLA-expired route status = %q, want completed (no_candidate → fallback → end)", st)
+	}
+	if rs := lf.reservations(t, routeID); len(rs) != 0 {
+		t.Fatalf("SLA-expired route got %d reservations, want 0 (gave up, no offer)", len(rs))
 	}
 }

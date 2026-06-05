@@ -94,10 +94,11 @@ func run() int {
 	rdb := redis.NewClient(redisOpts)
 	defer func() { _ = rdb.Close() }()
 	endpoints := flowrt.New(flowrt.Deps{
-		OrgDB:    orgDB,
-		Presence: presence.NewRedisStore(rdb, 0),
-		Capacity: flowrt.NewCapacityService(),
-		Logger:   slog.Default(),
+		OrgDB:          orgDB,
+		Presence:       presence.NewRedisStore(rdb, 0),
+		Capacity:       flowrt.NewCapacityService(),
+		Logger:         slog.Default(),
+		MatcherEnabled: cfg.MatcherEnabled,
 	})
 	workerID := "runtime-" + uuid.Must(uuid.NewV7()).String()
 	slog.InfoContext(ctx, "open-routing runtime starting (continuation worker)",
@@ -126,6 +127,16 @@ func run() int {
 				slog.ErrorContext(ctx, "capacity sweep failed", "err", sErr)
 			} else if freed > 0 {
 				slog.InfoContext(ctx, "reclaimed capacity slots", "count", freed)
+			}
+			// v0.3 W4: the matcher tick — stale-offering recovery, SLA-deadline
+			// fallback, and the availability-driven pull. Gated so the queue/matcher
+			// model can be rolled out independently of the offer-now path.
+			if cfg.MatcherEnabled {
+				if offered, mErr := endpoints.RunMatcher(ctx, pool, workerID, time.Now()); mErr != nil {
+					slog.ErrorContext(ctx, "matcher tick failed", "err", mErr)
+				} else if offered > 0 {
+					slog.InfoContext(ctx, "matcher offered routes", "count", offered)
+				}
 			}
 		}
 	}

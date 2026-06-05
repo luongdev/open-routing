@@ -223,11 +223,12 @@ func run() int {
 	presenceStore := presence.NewRedisStore(rdb, 0)
 	capacitySvc := flowrt.NewCapacityService()
 	flowrtEndpoints := flowrt.New(flowrt.Deps{
-		OrgDB:    orgDB,
-		Cache:    catalogCache,
-		Presence: presenceStore,
-		Capacity: capacitySvc,
-		Logger:   slog.Default(),
+		OrgDB:          orgDB,
+		Cache:          catalogCache,
+		Presence:       presenceStore,
+		Capacity:       capacitySvc,
+		Logger:         slog.Default(),
+		MatcherEnabled: cfg.MatcherEnabled,
 	})
 	type ApiHandlers struct {
 		*catalog.Handlers
