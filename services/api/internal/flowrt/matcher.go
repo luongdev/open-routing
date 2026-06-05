@@ -277,25 +277,30 @@ func (e *Endpoints) reassignRoute(ctx context.Context, orgID, routeID, resID uui
 	if err != nil {
 		return err
 	}
-	// A route can only be re-queued if it is a LIVE (non-terminal) call that carries
-	// matcher metadata — required_skills set, i.e. it was matched through the queue
-	// (cross-AI BLOCK). An interaction whose flow already completed must NOT be
-	// resurrected, and an inline-offered route (no required_skills) can't be safely
-	// re-matched (it would ring unqualified agents / collide attempt seq) — that path
-	// lands with the W3 real-media flow (reservation-node cursor reset + skill
-	// re-derivation). Either non-reassignable case just keeps the slot freed above;
-	// a still-live route is abandoned so it doesn't hang.
+	// A route can only be re-queued if it is a LIVE (non-terminal) call that came
+	// through the MATCHER — match_attempt_seq>0 (the matcher's CommitMatchOffer bumps
+	// it; an inline offer never does, and empty required_skills is a VALID matcher
+	// state so skill-count is the wrong gate — cross-AI HIGH). A completed flow must
+	// not be resurrected (BLOCK); an inline route can't be safely re-matched (it lacks
+	// the queue/skill context + would collide the reservation attempt seq) → abandon.
+	// NOTE: the re-matched agent currently resumes the route's post-accept cursor (the
+	// call/wait node), not the reservation node, so it does not re-consume "accepted"
+	// — correct re-entry needs a reservation-node cursor reset, which lands with the
+	// W3 real-media bridge flow (cross-AI BLOCK; documented in design.md).
 	terminal := route.Status == "completed" || route.Status == "failed" || route.Status == "cancelled"
-	reassignable := !terminal && len(route.RequiredSkills) > 0 && int(route.ReassignCount) < maxReassignHops
+	reassignable := !terminal && route.MatchAttemptSeq > 0 && int(route.ReassignCount) < maxReassignHops
 	reassigned := false
 	switch {
 	case reassignable:
 		if _, rErr := qtx.ReassignRouteForMatch(octx, generated.ReassignRouteForMatchParams{
 			RouteRequestID: pgUUID(routeID), OrgID: pgUUID(orgID), MatchDeadline: ts(time.Now().Add(reassignMatchTimeout)),
-		}); rErr != nil && !errors.Is(rErr, pgx.ErrNoRows) {
+		}); errors.Is(rErr, pgx.ErrNoRows) {
+			reassigned = false // route changed under us (defensive; the route lock makes this unreachable)
+		} else if rErr != nil {
 			return rErr
+		} else {
+			reassigned = true
 		}
-		reassigned = true
 	case !terminal:
 		// Hop cap reached, or no matcher metadata to re-match on → give up: abandon the
 		// still-live route (the dropped reservation + slot are already cleaned up).

@@ -157,3 +157,27 @@ Deferred to Wave 3 (real-media flow), documented:
   ReassignStaleReservation's state fence — minor; the real fix is the cursor/
   bridge rework above.
 - Inline-route reassignment (skill re-derivation from the graph) → W3.
+
+## W4-delta + W5-backend cross-review (round 2) — outcome
+
+gemini: clean. codex (stricter):
+- HIGH (fixed): the reassign gate used `len(required_skills)>0`, but empty
+  required_skills is a VALID matcher state (skill-less queue) — it would wrongly
+  abandon a skill-less queued route. Re-gated on `match_attempt_seq > 0` (the
+  matcher's CommitMatchOffer bumps it; an inline offer never does) — the precise
+  "came through the matcher" signal.
+- LOW (fixed): ReassignRouteForMatch SQL now also excludes 'completed' (matches the
+  Go gate / terminal set); the ReassignRouteForMatch ErrNoRows path no longer
+  claims `reassigned`.
+- BLOCK (acknowledged, W3): the re-matched agent resumes the route's post-accept
+  cursor (the wait/call node), not the reservation node, so it doesn't re-consume
+  "accepted" — correct re-entry needs a reservation-node cursor reset, which lands
+  with the W3 real-media bridge flow. Pinned by TestReassign_RematchesToAnotherAgent
+  (proves the re-queue → re-offer-to-a-new-agent works; the full replacement-accept-
+  through-the-call is the W3 piece). Until then, reassignment frees the slot +
+  re-queues + re-offers (correct routing/accounting); the mock has no media to
+  re-bridge.
+- MED (acknowledged): GET agents/{id}/reservations is org-scoped (consistent with
+  the trusted-host X-Org-Id model) but not self-agent-scoped — any org caller can
+  read any agent's offers. Per-agent identity enforcement is the same browser-auth
+  decision deferred with the WS browser path.

@@ -267,7 +267,7 @@ SET status = 'waiting_match',
          WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
         '{}'),
     updated_at = now()
-WHERE id = $1 AND org_id = $2 AND status NOT IN ('cancelled', 'failed')
+WHERE id = $1 AND org_id = $2 AND status NOT IN ('completed', 'cancelled', 'failed')
 RETURNING *;
 
 -- ReassignStaleReservation cancels the dropped accepted reservation (reason

@@ -622,7 +622,7 @@ SET status = 'waiting_match',
          WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
         '{}'),
     updated_at = now()
-WHERE id = $1 AND org_id = $2 AND status NOT IN ('cancelled', 'failed')
+WHERE id = $1 AND org_id = $2 AND status NOT IN ('completed', 'cancelled', 'failed')
 RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
