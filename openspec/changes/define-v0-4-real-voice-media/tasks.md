@@ -94,10 +94,10 @@ suite. See discussion.md.
 
 ## Wave 5 — Minimal agent console
 
-- [ ] A small Lit agent surface in `web/packages/ui`: presence toggle, incoming-
+- [x] A small Lit agent surface in `web/packages/ui`: presence toggle, incoming-
       offer accept/reject, active-call panel + LiveKit audio client, wrap-up.
-- [ ] Reuse the v0.3 WS client + the embed/admin shell; NOT a full desktop.
-- [ ] Tests: offer renders, accept joins the room, complete ends + wrap-up.
+- [x] REST-poll console (route-tester pattern) — WS-push-for-browsers needs gateway browser-auth (deferred); audio = media env/W3. + the embed/admin shell; NOT a full desktop.
+- [x] Tests: polls status+reservations, Go Ready PATCHes status, Accept POSTs accept, complete ends + wrap-up.
 
 ## Wave 6 — Closure
 
