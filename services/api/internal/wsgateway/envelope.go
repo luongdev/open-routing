@@ -33,6 +33,7 @@ type Inbound struct {
 	Type        string `json:"type"`
 	LastSeq     int64  `json:"last_server_seq,omitempty"`
 	Reservation string `json:"reservation_id,omitempty"`
+	LeaseToken  string `json:"lease_token,omitempty"` // echoed from the offer frame; fences a stale command (D5)
 }
 
 // Outbound is a server frame. Relayed outbox frames set Seq + Payload; acks set

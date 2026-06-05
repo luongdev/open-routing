@@ -186,6 +186,58 @@ func TestMatcher_AgingOvertakesPriority(t *testing.T) {
 	}
 }
 
+// TestMatcher_RONAMissedAgentExcluded: an agent in a RONA cooldown (missed, not
+// yet expired) is omitted from the matcher's available pool; once the cooldown
+// expires they are routable again — the matcher's READ side of RONA.
+func TestMatcher_RONAMissedAgentExcluded(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	q := generated.New(sharedPool)
+	params := generated.ListAvailableAgentsForMatchParams{OrgID: pgUUID(lf.orgID), Limit: 10}
+
+	has := func() bool {
+		rows, err := q.ListAvailableAgentsForMatch(lf.ctx, params)
+		if err != nil {
+			t.Fatalf("list available: %v", err)
+		}
+		for _, r := range rows {
+			if apiUUID(r.AgentID) == agentID {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !has() {
+		t.Fatalf("Ready agent should be available before any RONA")
+	}
+	// Cooldown in the future → excluded.
+	if _, err := q.MarkAgentMissed(lf.ctx, generated.MarkAgentMissedParams{
+		OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID),
+		StateExpiresAt: ts(time.Now().Add(time.Minute)), LastReadyAt: ts(time.Now().Add(-time.Minute)),
+	}); err != nil {
+		t.Fatalf("mark missed: %v", err)
+	}
+	if has() {
+		t.Fatalf("missed agent (cooldown active) must be excluded from the pool")
+	}
+	// Cooldown elapsed → routable again.
+	if _, err := q.MarkAgentMissed(lf.ctx, generated.MarkAgentMissedParams{
+		OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID),
+		StateExpiresAt: ts(time.Now().Add(-time.Second)), LastReadyAt: ts(time.Now().Add(-time.Minute)),
+	}); err != nil {
+		t.Fatalf("expire cooldown: %v", err)
+	}
+	if !has() {
+		t.Fatalf("agent with an expired cooldown should be routable again")
+	}
+}
+
 // TestMatcher_RunMatcherPullsPerOrg drives the full cmd/runtime tick (RunMatcher):
 // a parked route + a connected Ready agent → the per-org pull offers it.
 func TestMatcher_RunMatcherPullsPerOrg(t *testing.T) {

@@ -75,3 +75,13 @@ WHERE org_id = $1 AND session_id = $2 AND terminated_at IS NULL;
 -- name: IsAgentSessionLive :one
 SELECT 1::int AS live FROM agent_sessions
 WHERE org_id = $1 AND session_id = $2 AND terminated_at IS NULL;
+
+-- GetLiveAgentSession returns the agent's most-recent live session id — bound on a
+-- reservation at offer time so the offer frame is delivered to (and the lease
+-- audited against) the right connection. ErrNoRows ⇒ no live PG session (the
+-- offer still carries a lease_token; agent_session_id is left NULL).
+-- name: GetLiveAgentSession :one
+SELECT session_id FROM agent_sessions
+WHERE org_id = $1 AND agent_id = $2 AND terminated_at IS NULL
+ORDER BY connected_at DESC, session_id DESC
+LIMIT 1;

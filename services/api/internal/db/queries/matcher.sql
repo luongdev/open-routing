@@ -156,6 +156,23 @@ GROUP BY a.id, a.code
 ORDER BY random()
 LIMIT $2;
 
+-- MarkAgentMissed puts an agent into a short RONA cooldown after an offer to them
+-- timed out (didn't answer) so the matcher doesn't immediately re-ring them for a
+-- DIFFERENT route. The Ready-race fence ($4 = the missed offer's offered_at): a
+-- conflicting row is only downgraded to 'missed' when the agent has NOT gone Ready
+-- since that offer (last_ready_at NULL or older than the offer) — so a Ready that
+-- arrived after the ring is not clobbered (cross-AI review HIGH R-readyfence). The
+-- READ side (ListAvailableAgentsForMatch) treats an expired cooldown as routable,
+-- so recovery is automatic; an explicit Ready clears it once the state machine
+-- writes last_ready_at. 0 rows ⇒ the fence held (the agent re-readied) — benign.
+-- name: MarkAgentMissed :execrows
+INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_at, last_ready_at)
+VALUES ($1, $2, 'missed', $3, NULL)
+ON CONFLICT (org_id, agent_id) DO UPDATE
+SET routing_state = 'missed', state_expires_at = $3, updated_at = now()
+WHERE agent_routing_state.last_ready_at IS NULL
+   OR agent_routing_state.last_ready_at <= $4;
+
 -- InsertRouteDecision records one matcher decision (the D9 audit trail): who was
 -- selected/considered, the outcome, and a JSONB detail blob (ranking, excluded,
 -- eligibility). Written on every offer and every pre-offer failure.

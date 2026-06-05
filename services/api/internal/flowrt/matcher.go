@@ -218,12 +218,17 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 		slotNo = &slot
 	}
 
+	leaseToken, sessionID, err := bindOfferLease(ctx, qtx, orgID, agentID)
+	if err != nil {
+		return false, err
+	}
 	if _, err := qtx.InsertReservationOffer(ctx, generated.InsertReservationOfferParams{
 		ID: pgUUID(resID), OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID),
 		// +1: the claim no longer bumps match_attempt_seq (CommitMatchOffer does, on
 		// success only), so this offer's attempt number is the next one.
 		AgentID: pgUUID(agentID), Attempt: claimed.MatchAttemptSeq + 1,
-		ExpiresAt: pgtype.Timestamptz{Time: exp, Valid: true},
+		ExpiresAt:  pgtype.Timestamptz{Time: exp, Valid: true},
+		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
 	}); err != nil {
 		return false, err
 	}
@@ -254,6 +259,9 @@ func (e *Endpoints) tryOfferToAgent(ctx context.Context, orgID uuid.UUID, matche
 		return false, err
 	}
 
+	if err := enqueueOfferFrame(ctx, qtx, orgID, agentID, resID, leaseToken, exp); err != nil {
+		return false, err
+	}
 	if err := e.recordDecision(ctx, qtx, orgID, matcherInstance, claimed, agentID, "offered", agentCode, skills, slotNo); err != nil {
 		return false, err
 	}

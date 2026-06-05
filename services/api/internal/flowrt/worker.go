@@ -31,6 +31,12 @@ func ptrStr(s string) *string           { return &s }
 // (review H6).
 const maxContinuationAttempts = 5
 
+// ronaCooldown is how long a non-answering agent is held out of the matcher after
+// a missed offer. Short + self-healing (ListAvailableAgentsForMatch treats an
+// expired cooldown as routable), so a wrongly-sidelined re-readied agent recovers
+// fast even before the state machine writes last_ready_at to activate the fence.
+const ronaCooldown = 10 * time.Second
+
 func (e *Endpoints) ProcessDueContinuations(ctx context.Context, pool *pgxpool.Pool, workerID string, now time.Time, lease time.Duration, limit int) (int, error) {
 	rawq := generated.New(pool)
 	wid := workerID
@@ -142,7 +148,8 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 	if err != nil {
 		return err
 	}
-	if _, tErr := qtx.TimeoutReservation(ctx, generated.TimeoutReservationParams{ID: c.ReservationID, OrgID: c.OrgID}); errors.Is(tErr, pgx.ErrNoRows) {
+	timedOut, tErr := qtx.TimeoutReservation(ctx, generated.TimeoutReservationParams{ID: c.ReservationID, OrgID: c.OrgID})
+	if errors.Is(tErr, pgx.ErrNoRows) {
 		// reservation already accepted/rejected/cancelled → release the lock
 		if rErr := qtx.ReleaseRoute(ctx, generated.ReleaseRouteParams{ID: route.ID, OrgID: c.OrgID}); rErr != nil {
 			return rErr
@@ -158,6 +165,15 @@ func (e *Endpoints) fireReservationTimeout(ctx context.Context, workerID string,
 		if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, apiUUID(c.ReservationID)); rErr != nil {
 			return rErr
 		}
+	}
+	// RONA cooldown: the offered agent didn't answer → keep the matcher from
+	// re-ringing them for another route briefly, fenced so a Ready after the offer
+	// isn't clobbered. excluded_agent_ids already fences the SAME route on re-queue.
+	if _, rErr := qtx.MarkAgentMissed(ctx, generated.MarkAgentMissedParams{
+		OrgID: c.OrgID, AgentID: timedOut.AgentID,
+		StateExpiresAt: ts(time.Now().Add(ronaCooldown)), LastReadyAt: timedOut.OfferedAt,
+	}); rErr != nil {
+		return rErr
 	}
 	e.appendEvent(ctx, qtx, orgID, apiUUID(route.ID), "reservation.timeout", map[string]any{"reservation_id": apiUUID(c.ReservationID).String()})
 	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "timeout"); err != nil {

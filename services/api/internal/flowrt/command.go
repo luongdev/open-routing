@@ -43,7 +43,7 @@ type AgentCommandResult struct {
 // with a different payload hash is rejected. A "conflict"/"not_owner" outcome is a
 // committed result (so retries are stable), not a rolled-back error; only real
 // infra failures return a non-nil error.
-func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, sessionID, clientMsgID, resID uuid.UUID, kind AgentCommandKind, reqHash string) (AgentCommandResult, error) {
+func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, sessionID, clientMsgID, resID uuid.UUID, leaseToken string, kind AgentCommandKind, reqHash string) (AgentCommandResult, error) {
 	tx, err := e.deps.OrgDB.BeginTx(ctx)
 	if err != nil {
 		return AgentCommandResult{}, err
@@ -85,7 +85,7 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 		return AgentCommandResult{}, err
 	}
 
-	res, runErr := e.runTransition(ctx, tx, qtx, orgID, agentID, resID, kind)
+	res, runErr := e.runTransition(ctx, tx, qtx, orgID, agentID, resID, leaseToken, kind)
 	if runErr != nil {
 		return AgentCommandResult{}, runErr // infra error → rollback (dedupe row gone)
 	}
@@ -103,7 +103,7 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 // runTransition applies the reservation state change within the command tx. A
 // domain conflict (lost race, wrong owner, wrong state) is a committed result
 // (returned status), not an error; only infra failures return an error.
-func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID, agentID, resID uuid.UUID, kind AgentCommandKind) (AgentCommandResult, error) {
+func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *generated.Queries, orgID, agentID, resID uuid.UUID, leaseToken string, kind AgentCommandKind) (AgentCommandResult, error) {
 	out := AgentCommandResult{ReservationID: resID.String()}
 	resv, err := qtx.GetReservation(ctx, generated.GetReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID)})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -117,6 +117,17 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 	if uuid.UUID(resv.AgentID.Bytes) != agentID {
 		out.Status = "not_owner"
 		return out, nil
+	}
+	// Lease fence (D5): a command must echo the offer's lease_token. A stale command
+	// for a superseded offer — a reconnect replaying an old frame, or a different
+	// agent connection — fails closed. Skipped only when the offer bound no token
+	// (the HTTP test-double path, which never reaches this WS command handler).
+	if resv.LeaseToken.Valid {
+		lt, perr := uuid.Parse(leaseToken)
+		if perr != nil || lt != uuid.UUID(resv.LeaseToken.Bytes) {
+			out.Status = "lease_mismatch"
+			return out, nil
+		}
 	}
 
 	switch kind {

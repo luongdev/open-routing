@@ -182,14 +182,15 @@ func TestLive_AcceptConfirmsAndCompleteReleases(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+	lt := reservationLeaseToken(lf.ctx, t, lf.orgID, resID)
 
-	if r, err := lf.e.ExecuteAgentCommand(lf.ctx, lf.orgID, agentID, sess, uuid.Must(uuid.NewV7()), resID, CmdAccept, "h1"); err != nil || r.Status != "accepted" {
+	if r, err := lf.e.ExecuteAgentCommand(lf.ctx, lf.orgID, agentID, sess, uuid.Must(uuid.NewV7()), resID, lt, CmdAccept, "h1"); err != nil || r.Status != "accepted" {
 		t.Fatalf("accept = %q (err %v), want accepted", r.Status, err)
 	}
 	if held := lf.heldVoice(t, agentID); held != 1 {
 		t.Fatalf("after accept held=%d, want 1 (slot held for the call)", held)
 	}
-	if r, err := lf.e.ExecuteAgentCommand(lf.ctx, lf.orgID, agentID, sess, uuid.Must(uuid.NewV7()), resID, CmdComplete, "h2"); err != nil || r.Status != "completed" {
+	if r, err := lf.e.ExecuteAgentCommand(lf.ctx, lf.orgID, agentID, sess, uuid.Must(uuid.NewV7()), resID, lt, CmdComplete, "h2"); err != nil || r.Status != "completed" {
 		t.Fatalf("complete = %q (err %v), want completed", r.Status, err)
 	}
 	if held := lf.heldVoice(t, agentID); held != 0 {

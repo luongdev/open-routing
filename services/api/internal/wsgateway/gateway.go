@@ -24,7 +24,7 @@ import (
 // only transports; transitions run in the executor's own tx (review: gateway must
 // not own reservation logic).
 type CommandExecutor interface {
-	ExecuteAgentCommand(ctx context.Context, orgID, agentID, sessionID, clientMsgID, resID uuid.UUID, kind flowrt.AgentCommandKind, reqHash string) (flowrt.AgentCommandResult, error)
+	ExecuteAgentCommand(ctx context.Context, orgID, agentID, sessionID, clientMsgID, resID uuid.UUID, leaseToken string, kind flowrt.AgentCommandKind, reqHash string) (flowrt.AgentCommandResult, error)
 }
 
 type Deps struct {
@@ -245,7 +245,7 @@ func (g *Gateway) handleCommand(ctx context.Context, cancel context.CancelFunc, 
 	// request_hash binds the dedupe id to the payload so a reused id with a
 	// different command/reservation is rejected.
 	sum := sha256.Sum256([]byte(in.Type + "|" + in.Reservation))
-	res, err := g.d.Cmd.ExecuteAgentCommand(ctx, orgID, agentID, sessionID, cmdID, resID, flowrt.AgentCommandKind(in.Type), hex.EncodeToString(sum[:]))
+	res, err := g.d.Cmd.ExecuteAgentCommand(ctx, orgID, agentID, sessionID, cmdID, resID, in.LeaseToken, flowrt.AgentCommandKind(in.Type), hex.EncodeToString(sum[:]))
 	if err != nil {
 		ack.Type, ack.Reason = TypeError, "command failed"
 		g.enqueue(ctx, cancel, send, ack)

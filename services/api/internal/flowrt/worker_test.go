@@ -38,6 +38,15 @@ func TestWorker_ReservationTimeoutFiresAndResumes(t *testing.T) {
 	if gr.(api.GetRouteRequest200JSONResponse).Status != api.RouteRequestStatus("completed") {
 		t.Fatalf("route status = %q, want completed (no_candidate fallback after timeout)", gr.(api.GetRouteRequest200JSONResponse).Status)
 	}
+	// RONA: the agent who didn't answer is parked in a cooldown (missed).
+	var missed int
+	if err := sharedPool.QueryRow(f.ctx,
+		"SELECT count(*) FROM agent_routing_state WHERE org_id=$1 AND routing_state='missed' AND state_expires_at > now()", f.orgID).Scan(&missed); err != nil {
+		t.Fatalf("read routing state: %v", err)
+	}
+	if missed != 1 {
+		t.Fatalf("missed agents = %d, want 1 (RONA cooldown after timeout)", missed)
+	}
 }
 
 // After an agent accepts, the timeout continuation is a no-op (the reservation

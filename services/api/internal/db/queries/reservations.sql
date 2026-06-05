@@ -1,7 +1,12 @@
+-- InsertReservationOffer binds the lease at offer time: lease_token (a fresh
+-- per-offer secret echoed by the agent on accept/reject — survives reconnect) and
+-- agent_session_id (the session the offer was delivered to, best-effort/NULLable).
+-- A stale command for a superseded offer fails the lease fence (D5 R-fence).
 -- name: InsertReservationOffer :one
 INSERT INTO reservations (
-    id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at
-) VALUES ($1, $2, $3, $4, 'offered', $5, NOW(), $6)
+    id, org_id, route_request_id, agent_id, state, attempt, offered_at, expires_at,
+    lease_token, agent_session_id
+) VALUES ($1, $2, $3, $4, 'offered', $5, NOW(), $6, $7, $8)
 RETURNING *;
 
 -- Guarded transitions: the WHERE state clause is the concurrency authority. 0

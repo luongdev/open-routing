@@ -229,10 +229,16 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 			return "", false, nil
 		}
 	}
+	leaseToken, sessionID, lErr := bindOfferLease(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID))
+	if lErr != nil {
+		_ = sp.Rollback(o.ctx)
+		return "", false, lErr
+	}
 	_, err = generated.New(sp).InsertReservationOffer(o.ctx, generated.InsertReservationOfferParams{
 		ID: pgUUID(resID), OrgID: pgUUID(o.orgID), RouteRequestID: pgUUID(o.routeID),
 		AgentID: agent.ID, Attempt: int32(o.attempt + 1), //nolint:gosec // attempt is bounded (<=10) by max_attempts
-		ExpiresAt: pgtype.Timestamptz{Time: exp, Valid: true},
+		ExpiresAt:  pgtype.Timestamptz{Time: exp, Valid: true},
+		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
 	})
 	if isUniqueViolation(err) {
 		_ = sp.Rollback(o.ctx) // busy/ineligible → undo this offer (and its slot hold), try next candidate
@@ -241,6 +247,12 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	if err != nil {
 		_ = sp.Rollback(o.ctx)
 		return "", false, err
+	}
+	// Deliver the durable offer frame (reservation id + lease_token to echo back)
+	// inside the same savepoint so a rolled-back offer doesn't leak an outbox row.
+	if fErr := enqueueOfferFrame(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), resID, leaseToken, exp); fErr != nil {
+		_ = sp.Rollback(o.ctx)
+		return "", false, fErr
 	}
 	if err := sp.Commit(o.ctx); err != nil {
 		return "", false, err

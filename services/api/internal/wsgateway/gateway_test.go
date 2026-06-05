@@ -24,7 +24,7 @@ import (
 // dedupe/transition is covered by flowrt's command_test).
 type fakeCmd struct{ last string }
 
-func (f *fakeCmd) ExecuteAgentCommand(_ context.Context, _, _, _, _, resID uuid.UUID, kind flowrt.AgentCommandKind, _ string) (flowrt.AgentCommandResult, error) {
+func (f *fakeCmd) ExecuteAgentCommand(_ context.Context, _, _, _, _, resID uuid.UUID, _ string, kind flowrt.AgentCommandKind, _ string) (flowrt.AgentCommandResult, error) {
 	f.last = string(kind)
 	return flowrt.AgentCommandResult{Status: "accepted", ReservationID: resID.String()}, nil
 }
