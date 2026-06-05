@@ -23,6 +23,13 @@ import (
 
 const deliveryClaimLease = 30 * time.Second
 
+// maxDeliveryAttempts bounds Deliver retries: a transient adapter outage (adapter
+// down) should NOT tear the route down on the first failure — the command is left
+// for the claim lease to expire and retry. Only after this many attempts is the
+// delivery declared failed and the route torn down (cross-AI review: don't
+// endlessly claim+fail, but don't abandon a call over a blip either).
+const maxDeliveryAttempts = 5
+
 func (e *Endpoints) deliveryBatch() int32 {
 	if e.deps.MatcherBatch > 0 {
 		return int32(e.deps.MatcherBatch) //nolint:gosec // operator-configured, small
@@ -78,9 +85,17 @@ func (e *Endpoints) dispatchDelivery(ctx context.Context, cmd generated.ClaimDue
 	}, e)
 	octx := orgkey.SetOrgID(dctx, orgID)
 	if err != nil {
+		// Retry-with-cap: a transient adapter outage shouldn't tear the route down on
+		// the first failure. Leave the row claimed so the lease expires and a later
+		// tick retries; only after maxDeliveryAttempts give up + tear down. (Deliver is
+		// idempotent by the command id, so a retry maps to the same room.)
+		if cmd.AttemptCount < maxDeliveryAttempts {
+			e.deps.Logger.WarnContext(octx, "delivery deliver failed → will retry", "reservation_id", resID, "channel", cmd.Channel, "attempt", cmd.AttemptCount, "err", err)
+			return false
+		}
 		errMsg := err.Error()
 		_, _ = generated.New(e.deps.OrgDB).MarkDeliveryFailed(octx, generated.MarkDeliveryFailedParams{ID: cmd.ID, OrgID: cmd.OrgID, LastError: &errMsg})
-		e.deps.Logger.ErrorContext(octx, "delivery deliver failed → tearing down route", "reservation_id", resID, "channel", cmd.Channel, "err", err)
+		e.deps.Logger.ErrorContext(octx, "delivery deliver failed past retry cap → tearing down route", "reservation_id", resID, "channel", cmd.Channel, "attempts", cmd.AttemptCount, "err", err)
 		e.failDelivery(octx, orgID, routeID)
 		return false
 	}

@@ -2,6 +2,7 @@ package flowrt
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,6 +10,55 @@ import (
 
 	"github.com/luongdev/open-routing/services/api/internal/adapter"
 )
+
+// failingVoice is a voice adapter whose Deliver always errors — to exercise the
+// drain worker's retry-with-cap (an adapter that's "down").
+type failingVoice struct{ calls int }
+
+func (f *failingVoice) Channel() string { return "voice" }
+func (f *failingVoice) Deliver(context.Context, adapter.Assignment, adapter.EventSink) (adapter.Handle, error) {
+	f.calls++
+	return "", errors.New("adapter down")
+}
+func (f *failingVoice) Release(context.Context, adapter.Handle, adapter.ReleaseCause) error { return nil }
+
+// TestDrainDeliveries_RetryCap: a down adapter is retried (command stays pending,
+// route not torn down) up to maxDeliveryAttempts, then the delivery is marked
+// failed — bounded, not endless, and not abandoning the call on a blip.
+func TestDrainDeliveries_RetryCap(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	fail := &failingVoice{}
+	oe := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(), MatcherEnabled: true,
+		Adapters: map[string]adapter.ChannelAdapter{"voice": fail}, DeliveryOutbox: true,
+	})
+	_, resID, _, _ := driveToAcceptedCall(t, lf, oe)
+
+	// Drain with an advancing clock so each tick's claim lease has expired → re-claim.
+	base := time.Now()
+	for i := 0; i < maxDeliveryAttempts-1; i++ {
+		if _, err := oe.DrainDeliveries(lf.ctx, sharedPool, "w1", base.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("drain %d: %v", i, err)
+		}
+		if st := deliveryStatus(t, lf.orgID, resID); st != "pending" {
+			t.Fatalf("after attempt %d status=%q, want pending (still retrying)", i+1, st)
+		}
+	}
+	// The capped attempt declares it failed.
+	if _, err := oe.DrainDeliveries(lf.ctx, sharedPool, "w1", base.Add(time.Duration(maxDeliveryAttempts)*time.Minute)); err != nil {
+		t.Fatalf("final drain: %v", err)
+	}
+	if st := deliveryStatus(t, lf.orgID, resID); st != "failed" {
+		t.Fatalf("after %d attempts status=%q, want failed", maxDeliveryAttempts, st)
+	}
+	if fail.calls < maxDeliveryAttempts {
+		t.Fatalf("Deliver called %d times, want >= %d", fail.calls, maxDeliveryAttempts)
+	}
+}
 
 // TestDrainDeliveries_BindsHandle: an accepted reservation with a durable
 // delivery_command is delivered by the drain worker — the adapter handle is bound

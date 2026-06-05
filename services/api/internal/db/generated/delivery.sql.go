@@ -61,7 +61,7 @@ WHERE id IN (
     LIMIT $4
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, org_id, reservation_id, route_request_id, agent_id, channel, interaction
+RETURNING id, org_id, reservation_id, route_request_id, agent_id, channel, interaction, attempt_count
 `
 
 type ClaimDueDeliveryCommandsParams struct {
@@ -79,6 +79,7 @@ type ClaimDueDeliveryCommandsRow struct {
 	AgentID        pgtype.UUID `json:"agent_id"`
 	Channel        string      `json:"channel"`
 	Interaction    []byte      `json:"interaction"`
+	AttemptCount   int32       `json:"attempt_count"`
 }
 
 // ClaimDueDeliveryCommands leases a batch of pending (or crashed-claim-expired)
@@ -107,6 +108,7 @@ func (q *Queries) ClaimDueDeliveryCommands(ctx context.Context, arg ClaimDueDeli
 			&i.AgentID,
 			&i.Channel,
 			&i.Interaction,
+			&i.AttemptCount,
 		); err != nil {
 			return nil, err
 		}

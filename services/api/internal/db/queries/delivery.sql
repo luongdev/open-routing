@@ -25,7 +25,7 @@ WHERE id IN (
     LIMIT $4
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, org_id, reservation_id, route_request_id, agent_id, channel, interaction;
+RETURNING id, org_id, reservation_id, route_request_id, agent_id, channel, interaction, attempt_count;
 
 -- MarkDeliveryDelivered records the adapter handle + terminal-delivered state.
 -- name: MarkDeliveryDelivered :execrows

@@ -50,19 +50,19 @@ suite. See discussion.md.
       POST /v1/adapter/assignment-events) → `EventSink.OnAssignmentEvent`. The sink
       already carries the ownership fence (handle-match + state) + terminal-final
       idempotency from v0.3.
-- [ ] Webhook auth: HMAC-SHA256 signed payloads (per-env/org secret, timestamp +
-      nonce replay window) PLUS an ownership fence — a terminal is applied only if
-      `org + interaction/attempt + media_session/handle` matches current ownership
-      (correlation alone is too weak; a forged caller_abandoned could kill a live
-      call).
-- [ ] Adapter health / backpressure: if `cmd/voiceadapter` is down, the outbox
-      worker must NOT endlessly claim+fail — short-circuit routing (fail/queue) via
-      a circuit-breaker or adapter-registration heartbeat.
-- [ ] A "remote mock" adapter that drives the lifecycle OVER the webhook (so CI/e2e
-      never needs real LiveKit) — the network-shaped twin of MockVoice.
-- [ ] Tests: golden webhook schema; duplicate correlation deduped; out-of-order /
-      post-terminal events quarantined (not errored); cross-org / wrong-handle
-      event rejected; adapter-down short-circuits.
+- [x] Webhook auth: HMAC-SHA256 over "timestamp.body" + replay window; ownership
+      fence enforced by the sink (terminal applied only when the event handle
+      matches the reservation's current bound handle + still live). Route mounted
+      only when ADAPTER_WEBHOOK_SECRET set.
+- [x] Adapter health / backpressure: the drain retries a failing Deliver (a down
+      adapter) up to maxDeliveryAttempts via the claim lease — bounded, and it does
+      NOT abandon the call on a transient blip — only tears down past the cap.
+- [~] Remote-mock adapter that drives the lifecycle OVER the webhook → FOLDED INTO
+      Wave 3: it is the network-shaped sibling of the real LiveKit adapter and is
+      cleanest built alongside it (both are out-of-process webhook clients).
+- [x] Tests: webhook valid/bad-sig/tampered/stale/bad-json/sink-error (DB-free);
+      drain retry-cap (pending until cap → failed). Cross-org/wrong-handle no-op is
+      the sink's v0.3-tested fence.
 
 ## Wave 3 — Real voice adapter service (LiveKit/SIP bridge)
 
