@@ -56,20 +56,31 @@ decision-trace requirements.
 
 ## Wave 4 — The matcher (the engine)
 
-- [ ] Interaction-driven offer on the live pool; final offer tx re-checks
-      connected/Ready/skills/queue/capacity against authoritative leased state.
-- [ ] Availability-driven pull: on Ready / capacity-freed, pull the best-ranked
+- [x] Interaction-driven offer on the live pool; final offer tx re-checks
+      connected/capacity against authoritative leased state. (Stage 2; lease_token
+      echo-back fence deferred to W5 with the agent-WS offer frame.)
+- [x] Availability-driven pull: on Ready / capacity-freed, pull the best-ranked
       waiting route from a served queue; a failed insert returns it to the head.
-- [ ] Durable reconciliation sweep as the primary trigger (every few seconds);
-      LISTEN/NOTIFY or pub/sub is only a wake-up hint (review MED).
-- [ ] Concurrency: FOR UPDATE SKIP LOCKED + route run-lock CAS + capacity slot
-      lock; no double-assign across replicas.
-- [ ] Fair ranking: priority with aging, queue weight, bounded max-priority bypass,
-      deterministic tie-break.
-- [ ] route_decision trace: eligibility inputs, considered + excluded (with
-      reasons), ranking values, capacity snapshot, decision version.
-- [ ] Tests: no double-assign, capacity never exceeded, aging prevents starvation,
-      queue-pull priority correct.
+      (Stage 3: RunMatchCycle/tryOfferToAgent, token-fenced; capacity-at-cap →
+      ReturnRouteToQueue.)
+- [x] Durable reconciliation sweep as the primary trigger (every few seconds);
+      LISTEN/NOTIFY or pub/sub is only a wake-up hint (review MED). (Stage 5:
+      RunMatcher on the cmd/runtime tick — stale-offering + SLA-deadline sweeps +
+      per-org pull. NOTIFY wake-hint deferred.)
+- [x] Concurrency: FOR UPDATE SKIP LOCKED + route run-lock CAS + capacity slot
+      lock; no double-assign across replicas. (Stage 2a/3; cross-AI reviewed.)
+- [x] Fair ranking: priority with aging, deterministic tie-break. (Stage 3:
+      SQL-computed score, aging crosses bands — anti-starvation test. Queue weight
+      deferred until agent↔queue membership lands.)
+- [x] route_decision trace: selected/excluded agent, outcome, ranking weights,
+      decision version. (Stage 3: InsertRouteDecision on every offer + pre-offer
+      failure.)
+- [x] Tests: no double-assign, capacity never exceeded, aging prevents starvation,
+      queue-pull priority correct. (Stage 3/5: testcontainer + -race.)
+- [ ] Stage 4 — Lease fencing (lease_token + agent_session_id bound at offer,
+      checked on accept/reject/complete) + RONA agent_routing_state cooldown with
+      the last_ready_at Ready-race fence. Coupled to W5 (offer-frame token
+      delivery + the agent Ready transition writing last_ready_at).
 
 ## Wave 5 — Real reservation lifecycle (live signals)
 
