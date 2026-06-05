@@ -546,7 +546,7 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._simStep).toBe(-1);  // explicit re-run restarts to Ready
   });
 
-  it('input nodes have ONE input place: on-node field + a branch note, no bottom submit form', async () => {
+  it('the capture-node input lives ONLY in the bottom step card (panel), not on the node', async () => {
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
     (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }) };
@@ -556,11 +556,11 @@ describe('OrFlowBuilder', () => {
     (el as any)._liveTrace = [{ id: 'w1', node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }];
     (el as any)._simStep = 0;
     await (el as any).updateComplete;
-    // Never hard-pauses for a separate submit, and the bottom shows a branch note,
-    // NOT a duplicate input/submit form.
+    // Never hard-pauses; the one input is in the bottom step card; nothing on the node.
     expect((el as any)._pausedForInput).toBe(false);
-    expect(el.shadowRoot!.querySelector('.input-branch-note')).toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.sim-input-control')).toBeTruthy();
     expect(el.shadowRoot!.querySelector('.input-form')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.node-card-siminput-field')).toBeNull();
   });
 
   it('editing an init var re-runs the simulation (so the trace is not stale)', async () => {
@@ -581,20 +581,18 @@ describe('OrFlowBuilder', () => {
     expect(post.mock.calls.length).toBeGreaterThan(before); // a fresh simulate fired
   });
 
-  it('input nodes show an on-node value field in sim mode that pins the captured value', async () => {
-    const nodes = [
-      { id: 't', kind: 'trigger', label: 'T', description: '', x: 0, y: 0 },
-      { id: 'd', kind: 'get_dtmf', label: 'DTMF', description: '', x: 0, y: 200, params: { save_as: 'digits' }, outputs: [{ id: 'captured', label: 'captured', kind: 'success' }, { id: 'timeout', label: 'timeout', kind: 'timeout' }] },
-    ];
-    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [] } }, error: null, response: { status: 200 } });
+  it('typing in the bottom step-card input pins the captured value for the run', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [{ node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }] } }, error: null, response: { status: 200 } });
     (el as any).orgId = 'test-org';
     (el as any).flowId = MOCK_FLOW.id;
-    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges: [] } }, error: null }), POST: post };
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: post };
     await settle();
     (el as any)._simMode = 'sim';
+    (el as any)._liveTrace = [{ id: 'w1', node_id: 'd', node_kind: 'get_dtmf', label: 'DTMF', started_at_ms: 0, duration_ms: 0, status: 'ok', inputs: {}, outputs: {} }];
+    (el as any)._simStep = 0;
     await (el as any).updateComplete;
-    const field = el.shadowRoot!.querySelector('.node-card-siminput-field') as HTMLInputElement;
-    expect(field).toBeTruthy(); // the DTMF node carries an on-node value input in sim
+    const field = el.shadowRoot!.querySelector('.sim-input-field') as HTMLInputElement;
+    expect(field).toBeTruthy(); // the input lives in the bottom step card
     field.value = '1234';
     field.dispatchEvent(new Event('change'));
     await (el as any).updateComplete;

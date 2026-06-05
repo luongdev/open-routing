@@ -1719,27 +1719,6 @@ export class OrFlowBuilder extends LitElement {
       margin-top: 2px;
     }
 
-    /* On-node simulated-value field for input/capture nodes (sim mode). Type a
-       captured value (DTMF digits, prompt text, …) right on the node; the run
-       branches on it. */
-    .node-card-siminput { margin-top: 6px; }
-    .node-card-siminput-field {
-      width: 100%;
-      box-sizing: border-box;
-      font-size: 11px;
-      font-family: var(--uk-font-monospace, monospace);
-      padding: 3px 6px;
-      border: 1px solid var(--primary);
-      border-radius: 5px;
-      background: color-mix(in oklch, var(--primary) 6%, var(--card));
-      color: var(--foreground);
-      cursor: text;
-    }
-    .node-card-siminput-field::placeholder { color: var(--muted-foreground); }
-    .node-card-siminput-field:focus {
-      outline: none;
-      box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 30%, transparent);
-    }
 
     /* Output port chips at the bottom of the node card. Fixed-height strip
        (24px tall) anchored to the card bottom so edges drawn by portY() —
@@ -2245,21 +2224,35 @@ export class OrFlowBuilder extends LitElement {
       border: 1px solid color-mix(in oklch, var(--warning) 35%, var(--border));
       border-radius: 8px;
     }
-    /* The bottom card's hint for an input node — points to the single on-node
-       input field and shows the branch the current value takes. NOT an input. */
-    .input-branch-note {
-      display: flex;
-      gap: 6px;
-      align-items: flex-start;
+    /* The bottom step card's SINGLE input for a capture node (panel-down input —
+       user decision: keep the node clean, put the input here). */
+    .sim-input-control {
       margin-top: 10px;
-      padding: 8px 10px;
-      font-size: 12px;
-      line-height: 1.5;
-      color: var(--muted-foreground);
-      background: color-mix(in oklch, var(--muted) 40%, var(--card));
+      padding: 10px;
+      background: color-mix(in oklch, var(--primary) 5%, var(--card));
+      border: 1px solid color-mix(in oklch, var(--primary) 25%, var(--border));
       border-radius: 8px;
     }
-    .input-branch-note uk-icon { flex: 0 0 auto; margin-top: 1px; }
+    .sim-input-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      margin-bottom: 5px;
+    }
+    .sim-input-field {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 13px;
+      font-family: var(--uk-font-monospace, monospace);
+      padding: 6px 8px;
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--foreground);
+    }
+    .sim-input-field:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 30%, transparent); }
+    .sim-input-branch { margin-top: 6px; font-size: 12px; color: var(--muted-foreground); }
     .branch-tag {
       display: inline-block;
       padding: 0 6px;
@@ -2270,8 +2263,6 @@ export class OrFlowBuilder extends LitElement {
     }
     .branch-tag--captured { background: color-mix(in oklch, var(--success) 18%, transparent); color: var(--success); }
     .branch-tag--timeout  { background: color-mix(in oklch, var(--warning) 22%, transparent); color: var(--warning); }
-    /* On-node: which branch the current value takes (empty → timeout). */
-    .node-card-siminput-branch { font-size: 9px; margin-top: 3px; text-align: center; color: var(--muted-foreground); }
     .input-form-prompt {
       display: flex;
       align-items: flex-start;
@@ -3194,31 +3185,16 @@ export class OrFlowBuilder extends LitElement {
     }
   }
 
-  private _renderSimInputPicker() {
-    const id = this._selectedNodeId;
-    const node = id ? this._nodes.find(n => n.id === id) : undefined;
-    if (!node || !OrFlowBuilder._INPUT_KINDS.has(node.kind)) return nothing;
-    const cur = this._simNodeInputs[node.id] ?? '';
-    const hint = OrFlowBuilder._simInputHint(node.kind);
-    return html`
-      <div class="form-section sim-outcome">
-        <label><span>Simulated captured value</span></label>
-        <input class="form-input" type="text" placeholder=${hint} .value=${cur}
-          @change=${(e: Event) => void this._setNodeInput(node.id, (e.target as HTMLInputElement).value)}>
-        <p class="sim-outcome-hint">
-          ${cur !== ''
-            ? html`Pinning <strong>${cur}</strong> — the run takes the captured branch.`
-            : html`Empty → this node <strong>times out</strong> in the sim. Type a value and it re-runs.`}
-        </p>
-      </div>`;
-  }
-
   private async _setNodeInput(nodeId: string, value: string): Promise<void> {
     const next = { ...this._simNodeInputs };
     if (value === '') delete next[nodeId];
     else next[nodeId] = value;
     this._simNodeInputs = next;
-    await this._runSimulation(true); // land on the result, don't restart playback
+    await this._runSimulation(true); // re-run without restarting to "Ready"
+    // Land back on THIS input node's step so its value control stays visible and
+    // you can see the branch it now takes (panel-down input — user decision).
+    const idx = this._activeTrace.findIndex(s => s.node_id === nodeId);
+    if (idx >= 0) this._simStep = idx;
     this._selectedNodeId = nodeId;
   }
 
@@ -4355,10 +4331,6 @@ export class OrFlowBuilder extends LitElement {
       // In sim, a reservation node's port chips become clickable to force that
       // branch (the per-node outcome control — replaces the sidebar select).
       const pinnable = isSim && node.kind === 'reservation';
-      // Input/capture nodes (DTMF, prompt, …) get an on-node value field in sim:
-      // type the captured value right here and the run branches on it (captured
-      // vs timeout). Deterministic nodes (if_else/switch_case) are NOT here.
-      const simInput = isSim && OrFlowBuilder._INPUT_KINDS.has(node.kind);
 
       // Input anchor (top-centre): the link target. Hidden for the trigger
       // (no inbound) and in sim. Highlights while a connection is dragged over.
@@ -4393,19 +4365,7 @@ export class OrFlowBuilder extends LitElement {
               ` : ''}
             </div>
             <div class="node-card-label">${node.label}</div>
-            ${simInput
-              ? html`
-              <div class="node-card-siminput" @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                   title=${(this._simNodeInputs[node.id] ?? '') !== '' ? 'Captured value — takes the captured branch' : 'Empty → timeout branch. Type a value for captured.'}>
-                <input class="node-card-siminput-field" type="text"
-                  placeholder=${OrFlowBuilder._simInputHint(node.kind) + ' — empty = timeout'}
-                  .value=${this._simNodeInputs[node.id] ?? ''}
-                  @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                  @click=${(e: MouseEvent) => e.stopPropagation()}
-                  @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  @change=${(e: Event) => { e.stopPropagation(); void this._setNodeInput(node.id, (e.target as HTMLInputElement).value); }}>
-              </div>`
-              : stepHit
+            ${stepHit
               ? html`<div class="node-card-timing">+${stepHit.started_at_ms.toFixed(1)}ms · ${stepHit.duration_ms.toFixed(1)}ms</div>`
               : preview ? html`<div class="node-card-param" title=${preview}>${preview}</div>` : ''}
             <div class=${'node-card-ports' + (pinnable ? ' node-card-ports--pick' : '')}
@@ -5097,7 +5057,6 @@ export class OrFlowBuilder extends LitElement {
               </div>
               ${!isSim && this._validation ? this._renderValidationPanel() : nothing}
               ${isSim ? this._renderSimOutcomePicker() : nothing}
-              ${isSim ? this._renderSimInputPicker() : nothing}
               ${isSim && this._currentStep
                 ? this._renderSimInspector(this._currentStep)
                 : this._renderInspector(selected)}
@@ -5544,13 +5503,18 @@ export class OrFlowBuilder extends LitElement {
           </span>
         </div>
         ${isInputNode ? html`
-          <div class="input-branch-note">
-            <uk-icon icon="corner-left-up" height="13" width="13"></uk-icon>
-            <span>Type the captured value on the <strong>node card</strong>.
+          <div class="sim-input-control">
+            <label class="sim-input-label">Captured value</label>
+            <input class="sim-input-field" type="text"
+              placeholder=${OrFlowBuilder._simInputHint(step.node_kind as FlowNodeKind)}
+              .value=${this._simNodeInputs[step.node_id] ?? ''}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              @change=${(e: Event) => void this._setNodeInput(step.node_id, (e.target as HTMLInputElement).value)}>
+            <div class="sim-input-branch">
               ${hasValue
-                ? html`Now: <span class="branch-tag branch-tag--captured">captured</span> branch.`
+                ? html`Takes the <span class="branch-tag branch-tag--captured">captured</span> branch.`
                 : html`Empty → <span class="branch-tag branch-tag--timeout">timeout</span> branch. Type a value for <strong>captured</strong>.`}
-            </span>
+            </div>
           </div>` : nothing}
         ${step.status === 'fail' && step.caught ? html`
           <div class="sim-runcard-error sim-runcard-error--caught">
