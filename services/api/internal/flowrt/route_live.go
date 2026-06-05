@@ -352,7 +352,7 @@ func (e *Endpoints) CreateRouteRequest(ctx context.Context, req api.CreateRouteR
 		return crErr("execute_failed"), nil
 	}
 	e.appendEvent(ctx, qtx, orgID, routeID, "route.created", nil)
-	if err := e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, graph, offerer, res); err != nil {
+	if err := e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, offerer, res); err != nil {
 		return crErr("persist_failed"), nil
 	}
 

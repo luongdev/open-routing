@@ -37,8 +37,7 @@ func TestMatcher_EnqueueThenClaim(t *testing.T) {
 	routeID := seedRunningRoute(ctx, t, org)
 
 	// running → waiting_match with the queue/skills context.
-	if _, err := q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
-		ID: pgUUID(routeID), OrgID: pgUUID(org), Priority: 5,
+	if _, err := q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{RouteRequestID: pgUUID(routeID), OrgID: pgUUID(org), Priority: 5,
 		RequiredSkills: []string{"skill_es"}, ResumeCursor: []byte("{}"),
 		MatchDeadline: ts(time.Now().Add(2 * time.Minute)),
 	}); err != nil {
@@ -59,7 +58,7 @@ func TestMatcher_EnqueueThenClaim(t *testing.T) {
 
 	// An agent WITHOUT the skill cannot claim a fresh route.
 	other := seedRunningRoute(ctx, t, org)
-	_, _ = q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{ID: pgUUID(other), OrgID: pgUUID(org), RequiredSkills: []string{"skill_es"}, ResumeCursor: []byte("{}")})
+	_, _ = q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{RouteRequestID: pgUUID(other), OrgID: pgUUID(org), RequiredSkills: []string{"skill_es"}, ResumeCursor: []byte("{}")})
 	if _, err := q.ClaimWaitingRoute(ctx, generated.ClaimWaitingRouteParams{
 		OrgID: pgUUID(org), Column2: []string{"skill_fr"}, Column3: pgUUID(uuid.Must(uuid.NewV7())), Column4: 100, Column5: 1,
 	}); err != pgx.ErrNoRows {
@@ -78,8 +77,7 @@ func TestMatcher_SLAExpiredNotClaimable(t *testing.T) {
 	q := generated.New(sharedPool)
 	org := uuid.Must(uuid.NewV7())
 	routeID := seedRunningRoute(ctx, t, org)
-	if _, err := q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
-		ID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
+	if _, err := q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{RouteRequestID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
 		MatchDeadline: ts(time.Now().Add(-time.Minute)), // already past SLA
 	}); err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -106,6 +104,43 @@ func TestMatcher_SLAExpiredNotClaimable(t *testing.T) {
 	}
 }
 
+// TestMatcher_EnqueueExcludesRejectedAgents: a route re-enqueued after an agent
+// rejected/timed-out won't be re-offered to that agent by the matcher (RONA
+// distinct-agent — excluded_agent_ids synced from reservations on enqueue).
+func TestMatcher_EnqueueExcludesRejectedAgents(t *testing.T) {
+	if sharedPool == nil {
+		t.Skip("no testcontainer pool")
+	}
+	ctx := context.Background()
+	q := generated.New(sharedPool)
+	org := uuid.Must(uuid.NewV7())
+	routeID := seedRunningRoute(ctx, t, org)
+	missed := uuid.Must(uuid.NewV7())
+	// A prior offer to `missed` that timed out.
+	if _, err := sharedPool.Exec(ctx,
+		`INSERT INTO reservations (id, org_id, route_request_id, agent_id, state, expires_at)
+		 VALUES ($1,$2,$3,$4,'timeout', now())`, uuid.Must(uuid.NewV7()), org, routeID, missed); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+	if _, err := q.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
+		RouteRequestID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	// The missed agent must NOT be able to claim it.
+	if _, err := q.ClaimWaitingRoute(ctx, generated.ClaimWaitingRouteParams{
+		OrgID: pgUUID(org), Column2: []string{}, Column3: pgUUID(missed), Column4: 100, Column5: 1,
+	}); err != pgx.ErrNoRows {
+		t.Fatalf("excluded (timed-out) agent claim err=%v, want ErrNoRows", err)
+	}
+	// A different agent CAN.
+	if _, err := q.ClaimWaitingRoute(ctx, generated.ClaimWaitingRouteParams{
+		OrgID: pgUUID(org), Column2: []string{}, Column3: pgUUID(uuid.Must(uuid.NewV7())), Column4: 100, Column5: 1,
+	}); err != nil {
+		t.Fatalf("fresh agent claim: %v", err)
+	}
+}
+
 // TestMatcher_ConcurrentClaimExactlyOne: many agents racing for ONE waiting route
 // → exactly one claims it (FOR UPDATE OF rr SKIP LOCKED + the status flip).
 func TestMatcher_ConcurrentClaimExactlyOne(t *testing.T) {
@@ -115,8 +150,7 @@ func TestMatcher_ConcurrentClaimExactlyOne(t *testing.T) {
 	ctx := context.Background()
 	org := uuid.Must(uuid.NewV7())
 	routeID := seedRunningRoute(ctx, t, org)
-	if _, err := generated.New(sharedPool).EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
-		ID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
+	if _, err := generated.New(sharedPool).EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{RouteRequestID: pgUUID(routeID), OrgID: pgUUID(org), RequiredSkills: []string{}, ResumeCursor: []byte("{}"),
 	}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -155,16 +189,17 @@ func TestMatcher_ConcurrentClaimExactlyOne(t *testing.T) {
 	}
 }
 
-func TestRequiredSkillsFromGraph(t *testing.T) {
-	g := &runtime.Graph{Nodes: []runtime.GraphNode{
-		{ID: "t", Kind: runtime.NodeTrigger},
-		{ID: "s1", Kind: runtime.NodeMatchSkill, Config: []byte(`{"skill":"skill_es","min_proficiency":3}`)},
-		{ID: "s2", Kind: runtime.NodeMatchSkill, Config: []byte(`{"skill":"skill_vip"}`)},
-		{ID: "s3", Kind: runtime.NodeMatchSkill, Config: []byte(`{"skill":"skill_es"}`)}, // dup
-		{ID: "r", Kind: runtime.NodeReservation},
+func TestRequiredSkillsFromTrace(t *testing.T) {
+	// Only the match_skill steps that ACTUALLY ran contribute (path-accurate) —
+	// a skill on a NOT-taken branch must not over-constrain the matcher.
+	tr := runtime.Trace{Steps: []runtime.TraceStep{
+		{NodeID: "t", Kind: runtime.NodeTrigger},
+		{NodeID: "s1", Kind: runtime.NodeMatchSkill, Output: map[string]any{"skill": "skill_es"}},
+		{NodeID: "s1b", Kind: runtime.NodeMatchSkill, Output: map[string]any{"skill": "skill_es"}}, // dup
+		{NodeID: "r", Kind: runtime.NodeReservation},
 	}}
-	got := requiredSkillsFromGraph(g)
-	if len(got) != 2 || got[0] != "skill_es" || got[1] != "skill_vip" {
-		t.Fatalf("required skills = %v, want [skill_es skill_vip] (deduped, order-stable)", got)
+	got := requiredSkillsFromTrace(tr)
+	if len(got) != 1 || got[0] != "skill_es" {
+		t.Fatalf("required skills = %v, want [skill_es] (deduped, path-only)", got)
 	}
 }

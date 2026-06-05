@@ -26,7 +26,7 @@ const wrapUpSeconds = 30
 // the SLA sweep gives up (→ no_candidate fallback). Configurable later.
 const matchDeadlineSeconds = 120
 
-func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, fv generated.FlowVersion, snapJSON []byte, graph *runtime.Graph, offerer *liveOfferer, res runtime.RunResult) error {
+func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, fv generated.FlowVersion, snapJSON []byte, offerer *liveOfferer, res runtime.RunResult) error {
 	steps := mapTraceSteps(res.Trace)
 	stepsJSON, _ := json.Marshal(steps)
 	outcome := res.Trace.Outcome
@@ -44,9 +44,9 @@ func (e *Endpoints) persistRunResult(ctx context.Context, qtx *generated.Queries
 		// The matcher offers when an agent frees; the SLA deadline bounds the wait.
 		cur := runtime.ResumeCursor{Version: 1, NodeID: res.SuspendedNodeID, Vars: res.Vars}
 		curJSON, _ := json.Marshal(cur)
-		skills := requiredSkillsFromGraph(graph)
+		skills := requiredSkillsFromTrace(res.Trace)
 		if _, err := qtx.EnqueueRouteForMatch(ctx, generated.EnqueueRouteForMatchParams{
-			ID: pgUUID(routeID), OrgID: pgUUID(orgID), Priority: 0,
+			RouteRequestID: pgUUID(routeID), OrgID: pgUUID(orgID), Priority: 0,
 			RequiredSkills: skills, ResumeCursor: curJSON,
 			MatchDeadline: pgtype.Timestamptz{Time: time.Now().Add(matchDeadlineSeconds * time.Second), Valid: true},
 		}); err != nil {
@@ -191,7 +191,7 @@ func (e *Endpoints) resumeRouteWith(ctx context.Context, tx *db.OrgTx, qtx *gene
 	if err != nil {
 		return err
 	}
-	return e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, graph, offerer, res)
+	return e.persistRunResult(ctx, qtx, orgID, routeID, fv, snapJSON, offerer, res)
 }
 
 // SubmitRouteInput answers a route parked at an interactive-input node: it locks

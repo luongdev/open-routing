@@ -265,7 +265,7 @@ func (ex *Executor) RunResume(ctx context.Context, clock Clock, plan CompiledPla
 	for k, val := range vars {
 		v[k] = val
 	}
-	state := &execState{Context: ctx, clock: clock, vars: v, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, resumeAt: resumeNodeID, resumeSignal: signal}
+	state := &execState{Context: ctx, clock: clock, vars: v, snapshot: ex.snapshot, driver: ex.driver, nodeOutcomes: ex.nodeOutcomes, scriptedInputs: ex.scriptedInputs, offerer: ex.offerer, matcher: ex.matcher, resumeAt: resumeNodeID, resumeSignal: signal}
 	return ex.drive(state, clock, plan, plan.Entry)
 }
 

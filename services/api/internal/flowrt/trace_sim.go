@@ -117,23 +117,23 @@ func (e *Endpoints) mapQueueCandidates(ctx context.Context, q *generated.Queries
 	return qc, nil
 }
 
-// requiredSkillsFromGraph collects the skill codes every match_skill node in the
-// graph filters on — the route's skill requirements, denormalized onto
-// route_requests.required_skills at enqueue so the W4 matcher can find eligible
-// agents (required_skills <@ agent skills) without re-running the flow.
-func requiredSkillsFromGraph(graph *runtime.Graph) []string {
+// requiredSkillsFromTrace collects the skills the match_skill nodes that ACTUALLY
+// RAN on this route's path filtered on — denormalized onto
+// route_requests.required_skills so the W4 matcher finds eligible agents
+// (required_skills <@ agent skills) without re-running the flow. Reading the
+// executed trace (not the static graph) avoids over-constraining: a branching
+// flow whose VIP arm needs skill_es and standard arm needs skill_fr must NOT
+// demand both — only the branch the route took (cross-AI review HIGH).
+func requiredSkillsFromTrace(tr runtime.Trace) []string {
 	seen := map[string]bool{}
 	out := []string{}
-	for _, n := range graph.Nodes {
-		if n.Kind != runtime.NodeMatchSkill {
+	for _, s := range tr.Steps {
+		if s.Kind != runtime.NodeMatchSkill {
 			continue
 		}
-		var cfg struct {
-			Skill string `json:"skill"`
-		}
-		if json.Unmarshal(n.Config, &cfg) == nil && cfg.Skill != "" && !seen[cfg.Skill] {
-			seen[cfg.Skill] = true
-			out = append(out, cfg.Skill)
+		if sk, ok := s.Output["skill"].(string); ok && sk != "" && !seen[sk] {
+			seen[sk] = true
+			out = append(out, sk)
 		}
 	}
 	return out

@@ -16,10 +16,15 @@ SET status = 'waiting_match',
     next_match_at = now(),
     match_deadline = $6,
     resume_cursor = $7,
-    -- Clear matcher-internal offer state from any prior cycle (hygiene; the
-    -- sweeps only read it for status='offering', and CommitMatchOffer already
-    -- nulls the token). excluded_agent_ids is INTENTIONALLY preserved — it is the
-    -- route's distinct-agent RONA history (don't re-ring a rejected agent).
+    -- Sync the distinct-agent RONA history from THIS route's resolved offers so
+    -- the matcher (ClaimWaitingRoute: $agent <> ALL(excluded_agent_ids)) won't
+    -- re-ring an agent who already rejected/timed out — the in-run `excluded` map
+    -- only fences the inline re-run, not the later SQL claim (cross-AI review
+    -- HIGH). Authoritative recompute (empty on the first enqueue).
+    excluded_agent_ids = COALESCE(
+        (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout')),
+        '{}'),
     match_offer_token = NULL,
     offering_started_at = NULL,
     updated_at = now()

@@ -201,7 +201,12 @@ func liveReservation(ctx ExecCtx, step PlanStep, timeout time.Duration) (StepRes
 	}
 	// No candidate available now. In MATCHER mode the route waits in the queue —
 	// the matcher offers when an agent frees, the SLA sweep bounds the wait — so
-	// park (waiting_match) instead of taking the no_candidate/timeout port.
+	// park (waiting_match). A `timeout` resume (RONA: the offered agent didn't
+	// answer) ALSO re-queues here: the offerer excludes that agent so the re-run
+	// finds no candidate and parks for a DIFFERENT agent. So in matcher mode the
+	// explicit timeout/no_candidate PORTS fire only on SLA exhaustion (the sweep
+	// resumes with a no_candidate signal — handled above), NOT on a single RONA.
+	// Full RONA/abandonment policy (max_attempts, agent cooldown) is W5.
 	if ctx.MatcherMode() {
 		return StepResult{
 			Suspension: &Suspension{WaitForMatch: true},

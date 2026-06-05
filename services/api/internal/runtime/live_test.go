@@ -29,6 +29,11 @@ func liveExec(t *testing.T, off Offerer) *Executor {
 	return NewExecutor(DefaultRegistry(), WithRouting(simSnapshot(), nil), WithOfferer(off))
 }
 
+func matcherExec(t *testing.T, off Offerer) *Executor {
+	t.Helper()
+	return NewExecutor(DefaultRegistry(), WithRouting(simSnapshot(), nil), WithOfferer(off), WithMatcher())
+}
+
 var liveT0 = time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 // A fresh live run offers the top-ranked candidate and SUSPENDS at the
@@ -115,6 +120,51 @@ func TestLive_ResumeTimeoutExhaustedToTimeoutPort(t *testing.T) {
 	}
 	if !took {
 		t.Fatalf("expected fallback after timeout: %v", stepIDs(res.Trace))
+	}
+}
+
+// In MATCHER mode, a run with no offerable candidate parks WaitForMatch (queue)
+// instead of taking the no_candidate fallback port — the matcher rings later.
+func TestLive_MatcherModeParksOnEmptyPool(t *testing.T) {
+	// All candidates busy → no offer lands → park.
+	off := &fakeOfferer{busy: map[string]bool{"a": true, "b": true}}
+	res, err := matcherExec(t, off).Run(context.Background(), NewVirtualClock(liveT0), routingPlan(t), nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Suspension == nil || !res.Suspension.WaitForMatch {
+		t.Fatalf("expected WaitForMatch suspension, got susp=%+v", res.Suspension)
+	}
+	for _, s := range res.Trace.Steps {
+		if s.NodeID == "fb" {
+			t.Fatalf("matcher-mode empty pool took fallback instead of parking: %v", stepIDs(res.Trace))
+		}
+	}
+}
+
+// RunResume in MATCHER mode with a `timeout` signal (RONA) and an exhausted pool
+// re-parks WaitForMatch rather than firing the timeout port — guards the
+// execState `matcher: ex.matcher` wiring on the RunResume path (codex BLOCK).
+func TestLive_MatcherModeResumeTimeoutReparks(t *testing.T) {
+	// First run offers "a"; by resume time every candidate is busy (RONA: the
+	// offerer excludes the agent that didn't answer + the rest are taken), so the
+	// rebuilt pool yields no offer.
+	off := &fakeOfferer{}
+	ex := matcherExec(t, off)
+	first, err := ex.Run(context.Background(), NewVirtualClock(liveT0), routingPlan(t), nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	off.busy = map[string]bool{"a": true, "b": true}
+	res, err := ex.RunResume(context.Background(), NewVirtualClock(liveT0), routingPlan(t), first.SuspendedNodeID, "timeout", first.Vars)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if res.Suspension == nil || !res.Suspension.WaitForMatch {
+		t.Fatalf("expected re-park WaitForMatch on matcher-mode timeout, got susp=%+v outcome=%q", res.Suspension, res.Trace.Outcome)
+	}
+	if portOf(res.Trace, "rsv") == "timeout" {
+		t.Fatalf("matcher-mode resume fired the timeout port (RunResume dropped matcher flag): %v", stepIDs(res.Trace))
 	}
 }
 
