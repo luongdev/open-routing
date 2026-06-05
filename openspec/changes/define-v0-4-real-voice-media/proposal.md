@@ -47,11 +47,11 @@ separate process/service, which breaks three assumptions the mock hid:
 - **Voice first, contract unchanged.** The `internal/adapter.ChannelAdapter`
   contract from v0.3 does not change shape; v0.4 implements it for real and adds
   the durable-delivery + webhook plumbing AROUND it. Chat/email still fit later.
-- **Agent desktop: minimal, not a product.** The agent needs a real surface to be
-  rung, answer, and see the active call. PROPOSED: a minimal agent console in
-  `web/packages/ui` (presence toggle, incoming-offer accept/reject, active-call
-  panel, wrap-up) reusing the WS client — NOT a full agent-desktop product. (Open
-  question: is the desktop in v0.4 or its own v0.5? See design.md.)
+- **Agent desktop: minimal, not a product (in v0.4).** Decided: v0.4 includes a
+  minimal agent console in `web/packages/ui` (presence toggle, incoming-offer
+  accept/reject, active-call panel + LiveKit audio client, wrap-up) reusing the WS
+  client — so a real human can actually answer a routed call. It is explicitly NOT
+  a full agent-desktop product (no CRM/dispositions/supervisor — those are v0.5+).
 
 ## What ships in v0.4
 

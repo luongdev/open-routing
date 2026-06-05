@@ -66,7 +66,9 @@ duplicate events without leaking capacity or deadlocking.
   headless/auto-answer client first; keep v0.4 backend-pure.
 
 This is a product-scope judgment (demoable-end-to-end vs backend-pure), not a
-technical deadlock — **escalated to the user**.
+technical deadlock — escalated to the user. **DECIDED: codex's Option A — the
+minimal console ships in v0.4** so a human can answer a real routed call end to
+end; the full desktop stays v0.5+.
 
 ## Resulting plan changes (folded in)
 
@@ -81,4 +83,4 @@ technical deadlock — **escalated to the user**.
 4. Wave 4: new reservation per hop; interaction-carried context; bounded hops.
 5. Wave 6 (or new Wave): explicit **chaos/edge** suite (worker crash, out-of-order
    webhooks, adapter-killed-post-Deliver, late room_finished vs reassignment).
-6. Q1 (console scope) pending user decision.
+6. Q1 (console scope) DECIDED: minimal console ships in v0.4 (Wave 5 stays).

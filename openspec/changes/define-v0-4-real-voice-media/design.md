@@ -19,7 +19,8 @@ Reference patterns to reuse (do NOT reinvent):
 - **NEW Wave 0** → formalize identities + state-transition table + late-event
   quarantine BEFORE the outbox (both flagged identity confusion as the #1 risk).
 - **NEW** adapter health/backpressure + a chaos wave.
-- **Q1 (console scope)** → still OPEN; product decision escalated to the user.
+- **Q1 (console scope)** → DECIDED by user: minimal console IS in v0.4 (codex's
+  position) so a human can answer a real call end-to-end; full desktop is v0.5+.
 
 ## Open questions (original seed; Q1 still open)
 
