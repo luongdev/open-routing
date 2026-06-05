@@ -1,128 +1,156 @@
-# Wave 4 — The matcher (the engine) — implementation plan
+# Wave 4 — The matcher (the engine) — implementation plan, rev 2
 
-Goal (tasks.md W4 + design D4/D8/D9): turn the route engine from
-**offer-now-or-fail** into a **queue + bidirectional matcher**. A route that has
-no available agent at decision time now **waits in a queue** instead of falling
-through to fallback; a continuously-running matcher pulls the best-ranked waiting
-route onto an agent the moment that agent becomes Ready / frees capacity. Builds
-directly on the W3 substrate (presence lease, capacity slots, route run-lock CAS,
-durable continuation worker).
+> rev 2 folds the codex + gemini plan review (3 BLOCK, 7 HIGH, 6 MED). The plan
+> had real stuck-route + stale-worker-overwrite holes; the fix is a **match-offer
+> token** fencing model + an explicit state machine + three sweeps + SQL-computed
+> ranking. Deltas from rev1 marked **[Rxx]**.
 
-## What already exists (do NOT rebuild)
-- Interaction-driven offer at route creation: `liveOfferer` acquires a capacity
-  slot + inserts an `offered` reservation inside the route tx; the route suspends
-  at the reservation with a `reservation_timeout` continuation.
-- Capacity slots (acquire/confirm/release/sweep/reconcile), presence lease
-  (Connected/ConnectedMany), route run-lock (`AcquireRouteForRun`), worker tick.
-- `command.go` / HTTP handlers resolve accept/reject/complete + release capacity.
+Goal: turn the engine from **offer-now-or-fail** into a **queue + bidirectional
+matcher**, on the W3 substrate (capacity slots, presence lease, route run-lock,
+durable continuation worker). A route with no available agent **waits in a queue**
+and is pulled onto an agent the moment one becomes Ready / frees capacity.
 
-## The core change: wait-for-match instead of fallback
-Today `liveReservation` (node_execute.go) loops candidates; if none can be offered
-it returns the `no_candidate` port → fallback. W4: when the live pool is empty
-(or all at capacity) the route **parks as `waiting_match`** and is owned by the
-matcher. Fallback becomes the *exhaustion/SLA* path, not the *nobody-free-right-now*
-path.
+## State machine (live routes) — explicit, token-fenced
 
-Open decision for review: reservation-node `timeout_sec`/`max_attempts` semantics.
-Proposal: `max_attempts` bounds RONA re-offers to DISTINCT agents; an empty pool
-parks `waiting_match` (does not consume an attempt); an overall
-`route_requests.match_deadline` (queue SLA, configurable, default e.g. 120s) bounds
-total wait → on expiry the route resumes with the `no_candidate`/`timeout` port to
-fallback. This keeps the node contract while adding true queueing.
+Statuses: `pending`→`running` (executor active, run-lock) →`waiting` (suspended at
+a reservation, offer outstanding, or a wait node) → terminal. **NEW**:
+`waiting_match` (queued, no outstanding offer, matcher-owned) and `offering`
+(matcher claimed it, building an offer — transient).
+
+Fencing columns on `route_requests` **[R-token]** (codex BLOCK ×3): `match_offer_token
+uuid NULL`, `match_attempt_seq int NOT NULL DEFAULT 0`, `offering_started_at
+timestamptz NULL`. EVERY claim/offer-commit/requeue/recover is guarded
+`WHERE ... AND match_offer_token = $token` so a stalled worker that wakes after a
+sweeper requeued + another worker re-offered finds its token superseded → 0 rows →
+it rolls back and does nothing. Transitions (all token-fenced except enqueue):
+
+- **enqueue** (interaction side, Stage 2): `running → waiting_match`, set queue_id,
+  priority, waiting_since=now(), next_match_at=now() **[R-nextmatch NOT NULL]**,
+  required_skills, match_deadline, keep excluded_agent_ids.
+- **claim** (matcher): one statement
+  `UPDATE route_requests SET status='offering', match_offer_token=gen_random_uuid(),
+   match_attempt_seq=match_attempt_seq+1, offering_started_at=now()
+   FROM (SELECT id FROM route_requests WHERE ... ORDER BY <score> FOR UPDATE OF
+   route_requests SKIP LOCKED LIMIT 1) c WHERE route_requests.id=c.id RETURNING *`
+   (single claiming statement — codex LOW; lock ONLY rr — agy).
+- **offer-commit** (separate SHORT tx): acquire slot (SKIP LOCKED) + insert
+  reservation(lease_token, agent_session_id) + `UPDATE route SET status='waiting',
+  active_reservation_id=$res WHERE id=$ AND match_offer_token=$token AND
+  status='offering'` (0 rows → token superseded → roll back, release slot) + arm
+  reservation_timeout continuation clamped to `match_deadline` **[R-clamp]** + a
+  route_decisions row + agent_outbox offer frame.
+- **offer-failure** (slot/lease/route lost): guarded recovery in its OWN tx (NOT
+  the rolled-back one — codex MED) `UPDATE route SET status='waiting_match',
+  next_match_at=now() WHERE id=$ AND match_offer_token=$token AND status='offering'`
+  + a route_decisions row recording the outcome.
+- **stale-offering sweep**: `status='offering' AND offering_started_at < now()-Δ`
+  → requeue with a NEW token (so the original worker can't later commit) →
+  waiting_match, next_match_at=now() **[R-stale]** (codex BLOCK).
+- **deadline sweep (SLA)**: `status='waiting_match' AND match_deadline <= now()`
+  → CAS-acquire the run-lock + resume the route with the `no_candidate` port to
+  fallback **[R-deadline]** (codex BLOCK: waiting_match must not wait forever). It
+  targets ONLY waiting_match; an `offering`/`waiting`(offered) route's
+  reservation_timeout wins (precedence — codex/agy HIGH).
+- **accept/reject/complete**: existing run-lock CAS + lease fencing below.
+
+`AcquireRouteForRun` legal source statuses become `pending|waiting|waiting_match`
+→`running` is wrong for the matcher — the matcher does NOT call resumeRoute inside
+its claim/offer tx (that would self-block on the run-lock — agy BLOCK). Instead the
+route is already suspended AT the reservation cursor (set when it parked
+waiting_match); offer-commit just attaches the offer + flips to `waiting`. The
+existing accept/timeout resume (run-lock) drives the flow from the cursor. So the
+matcher never holds the route lock across a resume **[R-noresume]**.
 
 ## Stage 1 — Data model (fold into 000001)
-`route_requests` add: `queue_id uuid NULL`, `priority int NOT NULL DEFAULT 0`,
-`waiting_since timestamptz NULL`, `next_match_at timestamptz NULL`,
-`required_skills text[] NOT NULL DEFAULT '{}'`, `match_deadline timestamptz NULL`,
-`match_attempt_seq int NOT NULL DEFAULT 0`. New status value `waiting_match`.
-Indexes: `(org_id, status, next_match_at)` partial WHERE status='waiting_match';
+
+`route_requests` +: `queue_id uuid`, `priority int NOT NULL DEFAULT 0`,
+`waiting_since timestamptz`, `next_match_at timestamptz`, `required_skills text[]
+NOT NULL DEFAULT '{}'`, `match_deadline timestamptz`, `match_attempt_seq int NOT
+NULL DEFAULT 0`, `match_offer_token uuid`, `offering_started_at timestamptz`,
+`active_reservation_id uuid`, `excluded_agent_ids uuid[] NOT NULL DEFAULT '{}'`
+**[R-excluded]** (codex/agy HIGH: distinct-agent RONA). Status gains
+`waiting_match`,`offering`.
+
+Indexes **[R-index]** (codex MED): partial pull index
+`(org_id, queue_id, next_match_at, priority DESC, waiting_since ASC) WHERE
+status='waiting_match'`; `(org_id, match_deadline) WHERE status='waiting_match'`
+(SLA sweep); `(org_id, offering_started_at) WHERE status='offering'` (stale sweep);
 GIN on `required_skills`.
 
-`reservations` add: `lease_token uuid NULL`, `agent_session_id uuid NULL` (D5
-fencing — bound at offer, checked on every accept/reject/complete so a stale
-replica can't resolve a re-offered reservation).
+`reservations` +: `lease_token uuid`, `agent_session_id uuid` (D5 fencing).
 
-`route_decisions` (audit, D9): `id, org_id, route_request_id, decision_type
-(interaction_offer|availability_pull|retry|sweep), decision_version, matcher_instance,
-channel, queue_id, selected_agent_id, selected_slot_no, outcome
-(offered|no_candidate|capacity_lost|lease_lost|route_lost), reason, created_at`,
-plus JSONB `eligibility/candidates/excluded/ranking/capacity_snapshot`. Index
-`(org_id, route_request_id, created_at DESC)`.
+`route_decisions` (audit D9): id, org_id, route_request_id, decision_type
+(interaction_offer|availability_pull|retry|sweep), decision_version,
+matcher_instance, channel, queue_id, selected_agent_id, selected_slot_no, outcome
+(offered|no_candidate|capacity_lost|lease_lost|route_lost), reason, created_at +
+JSONB eligibility/candidates/excluded/ranking. Index (org_id, route_request_id,
+created_at DESC). Add to SQLChecker tenantTables.
 
-`agents` add: `routing_state text NOT NULL DEFAULT 'routable'`,
-`routing_state_expires_at timestamptz NULL` (RONA cooldown — Missed agent is
-non-routable until the TTL or an explicit Ready clears it).
-
-SQLChecker: add `route_decisions` to tenantTables.
+`agents` +: `routing_state text NOT NULL DEFAULT 'routable'`,
+`routing_state_expires_at timestamptz`, `last_ready_at timestamptz` (RONA fence).
 
 ## Stage 2 — Enqueue (interaction-driven side)
-`liveReservation` / `liveOfferer` flow: try the live pool first (existing
-offer-now). If no candidate is offerable, park the route `waiting_match` with
-`queue_id`, `priority`, `waiting_since=now()`, `required_skills` (denormalized from
-the match_skill node config + queue), `match_deadline`. The reservation node emits
-a new suspension kind `match` (no per-offer timeout; the matcher owns it).
-`required_skills` come from the compiled plan (the match_skill node feeding the
-reservation) — captured at enqueue.
 
-## Stage 3 — The matcher (availability-driven pull) — cmd/runtime tick
-Primary trigger = a durable sweep every ~2s (design D8: LISTEN/NOTIFY is only a
-wake hint, NOT the trigger). Per org, bounded batch (≤100 agents / ≤100 routes):
+`liveReservation` tries the live pool (existing offer-now). On empty/at-capacity,
+park `waiting_match` (NOT fallback) capturing queue_id, priority, required_skills
+(from the compiled match_skill node feeding the reservation), waiting_since,
+next_match_at=now(), match_deadline. Gate to LIVE mode only — sim/replay keeps the
+deterministic fallback **[R-determinism]** (codex MED). Stable tie-break `id ASC`.
 
-For each **available agent** (Ready + connected lease + under-capacity + routable):
-1. Pull the best-ranked waiting route this agent can serve:
-   `SELECT ... FROM route_requests rr WHERE org_id=$ AND status='waiting_match'
-    AND next_match_at<=now() AND required_skills <@ $agentSkills AND
-    (queue served by agent) ORDER BY <effective score> FOR UPDATE OF rr
-    SKIP LOCKED LIMIT 1` — lock ONLY rr (agy HIGH: bare FOR UPDATE locks joined
-    rows → cross-agent deadlock). The same statement flips `status='offering'` /
-    bumps `next_match_at` so a second puller can't grab it (pull-to-offer race).
-2. In the offer tx: re-confirm the lease (`presence.Connected` + token), acquire a
-   capacity slot (`AcquireCapacitySlot` FOR UPDATE SKIP LOCKED), insert the
-   `offered` reservation with `lease_token`+`agent_session_id`, set
-   `active_reservation_id`, then resume the route to suspend AT the reservation
-   (reuse `resumeRoute`). Any failure (slot lost / lease lost / route moved) →
-   roll back, return the route to `waiting_match` at the queue head
-   (`next_match_at=now()`), record the outcome in `route_decisions`.
-3. On success: `route_decisions` row (outcome=offered, selected agent/slot,
-   ranking snapshot), `agent_outbox` offer frame (gateway relays it).
+## Stage 3 — The matcher (availability-driven pull), cmd/runtime ~2s tick
 
-Fair ranking (design D4/agy HIGH): `effective = priority*W_p + queue_weight*10 +
-aging + sla_boost` where aging grows with `now()-waiting_since` UNCAPPED (or
-`W_p < max_aging`) so a sufficiently-aged lower band overtakes — NO priority
-inversion that starves. Avoid sorting the whole backlog on a `now()` expression:
-order by the indexable `priority DESC, waiting_since ASC` to get a bounded
-candidate set, then refine the effective score in app (bounded N).
+Primary trigger = the durable sweep (NOTIFY is only a wake hint — D8). Per org,
+bounded batch (≤100 agents/≤100 routes). For each **available agent** (Ready +
+leased-connected + under-capacity + routable: `routing_state='routable' OR
+routing_state_expires_at <= now()` **[R-ronaexpiry]** codex MED):
 
-Concurrency invariant: per-route run-lock CAS (proven v2) + `FOR UPDATE OF rr SKIP
-LOCKED` + capacity slot lock ⇒ no double-assign across replicas; the durable sweep
-is the backstop if a NOTIFY is lost.
+1. **claim** the best eligible waiting route (single fenced UPDATE above). Eligible:
+   `status='waiting_match' AND next_match_at<=now() AND required_skills <@
+   $agentSkills AND $agentId <> ALL(excluded_agent_ids) AND queue served`.
+   **Ranking computed in SQL** **[R-score]** (codex/agy BLOCK — bounded prefix
+   breaks cross-band aging): `ORDER BY (priority*W_p + queue_weight*10 +
+   EXTRACT(EPOCH FROM now()-waiting_since)*W_age) DESC, id ASC LIMIT 1` over the
+   agent's eligible subset (narrowed by skills/queue, bounded). W_age chosen so a
+   sufficiently-aged low band overtakes (no starvation).
+2. **offer-commit** (short tx): re-confirm lease (Connected + token) → acquire slot
+   → insert reservation(lease_token, agent_session_id) → guarded route flip →
+   continuation (clamped) → route_decisions(offered) → agent_outbox. Lock order
+   GLOBAL **[R-lockorder]**: route-claim-token first, then slot (SKIP LOCKED), then
+   reservation — same order as the inline + accept paths (agy BLOCK / codex MED).
+3. On any pre-offer failure: guarded requeue (own tx) + route_decisions(outcome).
 
-## Stage 4 — RONA + lease fencing
-- RONA: an offer that times out (continuation worker) sets the agent
-  `routing_state='missed'`, `routing_state_expires_at=now()+cooldown`; the matcher
-  filters out non-routable agents; the next explicit Ready (or the TTL) clears it.
-  Never an immediate re-offer to the same agent (design HIGH).
-- Lease fencing: accept/reject/complete (command.go + HTTP) must match the
-  reservation `lease_token`; a mismatch ⇒ conflict (a stale command for a
-  re-offered reservation can't resolve it).
+`max_attempts` = count of ACTUAL offered reservations to DISTINCT agents (derive
+from reservations / excluded_agent_ids), NOT match_attempt_seq **[R-attempts]**
+(codex HIGH). Exhaustion → fallback.
 
-## Stage 5 — Tests
-- Enqueue: a route with an empty live pool parks `waiting_match` (not fallback).
-- Availability pull: agent becomes Ready → matcher offers the waiting route;
-  reservation appears + slot held + route suspended at reservation.
-- Fairness: a higher-priority newer route beats a lower-priority older one, BUT a
-  sufficiently-aged lower-priority route overtakes (no starvation).
-- Concurrency: two matcher instances, one waiting route + one agent → exactly one
-  offer (SKIP LOCKED + run-lock); N agents + M routes no double-assign (`-race`,
-  concurrent goroutines).
-- RONA: offer timeout → agent non-routable → not re-offered until cooldown.
-- Lease fencing: a stale-token accept ⇒ conflict.
-- route_decisions: one row per decision with outcome + ranking.
-- Determinism: sim/replay unaffected (matcher is live-only).
+## Stage 4 — Lease fencing + RONA
 
-## Sequencing & guardrails
-1. Migration + sqlc + SQLChecker. 2. Enqueue (node + route model) + tests.
-3. Matcher pull loop + ranking + route_decisions + tests. 4. RONA + lease fencing.
-5. Wire the matcher tick into cmd/runtime; bounded batch + Postgres `now()` only
-   (never gateway clocks). Cross-AI review of THIS plan before building, then of
-   the implementation. Keep each stage build+test+lint green and committed.
+- **Lease fencing** (codex HIGH): accept/reject/complete (command.go + HTTP) match
+  reservation id + `lease_token` + `agent_session_id` + reservation state + `route.
+  active_reservation_id = reservation.id`, all in one tx — a stale command for a
+  superseded reservation fails closed **[R-fence]**.
+- **RONA** (codex HIGH): offer timeout appends the agent to the route's
+  `excluded_agent_ids` (the distinct-agent guarantee) AND sets the agent
+  `routing_state='missed'`/expiry — but ONLY if `last_ready_at` has NOT advanced
+  past the offer time (so a Ready that arrived after the ring isn't clobbered)
+  **[R-readyfence]**. Expired `missed` is treated routable (no stuck filter).
+
+## Stage 5 — Wire + tests
+
+cmd/runtime tick runs: claim+offer per available agent, the deadline sweep, the
+stale-offering sweep (alongside the existing continuation worker + capacity sweep).
+Postgres `now()` only (never gateway clocks). Tests (testcontainer, `-race`):
+enqueue parks waiting_match; availability pull offers + holds slot + suspends;
+fairness incl. **a winner OUTSIDE the priority prefix** (aged low-priority
+overtakes — codex HIGH test); 2 matchers + 1 route + 1 agent → exactly one offer;
+N agents × M routes no double-assign; stale-offering recovery requeues a crashed
+claim WITHOUT clobbering a fresh offer (token fence); SLA deadline → fallback;
+RONA distinct-agent (same route never re-offered to a missed agent) + Ready-race
+fence; lease-token mismatch ⇒ conflict; route_decisions row per decision;
+sim/replay determinism unchanged.
+
+## Sequencing
+1. Migration + sqlc + SQLChecker. 2. Enqueue + state machine + tests. 3. Matcher
+claim/offer/ranking + route_decisions + tests. 4. Lease fencing + RONA + tests.
+5. cmd/runtime wiring + the two new sweeps. Cross-AI review of the implementation
+before declaring W4 done. Each stage build+test+lint green and committed.
