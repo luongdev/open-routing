@@ -5316,11 +5316,13 @@ export class OrFlowBuilder extends LitElement {
                 <input
                   class="initvar-input"
                   .value=${v.value}
-                  title="Edit, then Re-run (↺) to simulate with this value"
+                  title="Edit and press Enter (or click away) to re-simulate with this value"
                   @input=${(e: Event) => {
                     const val = (e.target as HTMLInputElement).value;
                     this._initVars = this._initVars.map((x, j) => (j === i ? { ...x, value: val } : x));
                   }}
+                  @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  @change=${() => void this._runSimulation()}
                 />
               </div>
             `)}

@@ -529,6 +529,24 @@ describe('OrFlowBuilder', () => {
     expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
   });
 
+  it('editing an init var re-runs the simulation (so the trace is not stale)', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { virtual_clock_start: '2026-06-03T12:00:00Z', trace: { steps: [] } }, error: null, response: { status: 200 } });
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: MOCK_FLOW, error: null }), POST: post };
+    await settle();
+    (el as any)._simMode = 'sim';
+    await (el as any).updateComplete;
+    const before = post.mock.calls.length;
+    const input = el.shadowRoot!.querySelector('.initvar-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = 'gold111';
+    input.dispatchEvent(new Event('input'));   // updates _initVars
+    input.dispatchEvent(new Event('change'));  // re-runs
+    await (el as any).updateComplete;
+    expect(post.mock.calls.length).toBeGreaterThan(before); // a fresh simulate fired
+  });
+
   it('input nodes show an on-node value field in sim mode that pins the captured value', async () => {
     const nodes = [
       { id: 't', kind: 'trigger', label: 'T', description: '', x: 0, y: 0 },
