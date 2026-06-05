@@ -55,7 +55,10 @@ func (e *Endpoints) deliverAssignment(ctx context.Context, orgID, resID, routeID
 		// dead call. Tear the route down (cancel reservation, free slot, agent WrapUp)
 		// rather than leave an accepted reservation with no live media (review HIGH).
 		e.deps.Logger.ErrorContext(ctx, "adapter deliver failed → tearing down route", "reservation_id", resID, "channel", channel, "err", err)
-		e.failDelivery(ctx, orgID, routeID)
+		// Inline v3 path: the accept already committed, so there's no retry here —
+		// best-effort teardown (failDelivery logs its own error). The durable-outbox
+		// path checks this return; this caller intentionally does not.
+		_ = e.failDelivery(ctx, orgID, routeID)
 		return
 	}
 	octx := orgkey.SetOrgID(ctx, orgID)
