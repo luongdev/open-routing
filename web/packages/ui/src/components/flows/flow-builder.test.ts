@@ -511,6 +511,24 @@ describe('OrFlowBuilder', () => {
     expect((el as any)._validation).toBeNull();
   });
 
+  it('assigns a unique id to loaded edges that have none (so select-one ≠ select-all)', async () => {
+    const nodes = [
+      { id: 'a', kind: 'trigger', label: 'A', description: '', x: 0, y: 0 },
+      { id: 'b', kind: 'send_message', label: 'B', description: '', x: 0, y: 200, params: { text: 'hi' } },
+      { id: 'c', kind: 'end', label: 'C', description: '', x: 0, y: 400 },
+    ];
+    // An API-authored graph: edges carry from/to but NO id.
+    const edges = [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }];
+    (el as any).orgId = 'test-org';
+    (el as any).flowId = MOCK_FLOW.id;
+    (el as any).client = { GET: vi.fn().mockResolvedValue({ data: { ...MOCK_FLOW, graph: { nodes, edges } }, error: null }) };
+    await settle();
+    const ids = (el as any)._edges.map((e: any) => e.id);
+    expect(ids).toHaveLength(2);
+    expect(ids.every((id: string) => typeof id === 'string' && id.length > 0)).toBe(true);
+    expect(new Set(ids).size).toBe(2); // unique → selecting one selects exactly one
+  });
+
   it('editing switch_case cases regenerates outputs and prunes stale edges', async () => {
     const nodes = [
       { id: 's', kind: 'switch_case', label: 'S', description: '', x: 0, y: 0, params: { cases: ['a', 'b'] }, outputs: [{ id: 'a', label: 'a', kind: 'branch' }, { id: 'b', label: 'b', kind: 'branch' }, { id: 'default', label: 'default', kind: 'default' }] },

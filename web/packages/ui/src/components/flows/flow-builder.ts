@@ -2574,8 +2574,21 @@ export class OrFlowBuilder extends LitElement {
         if (RUNTIME_KINDS.has(n.kind)) n.outputs = outputsForNode(n);
       }
       const rawEdges = (Array.isArray(graph.edges) ? structuredClone(graph.edges) : []) as FlowEdge[];
+      // A graph authored via the API/elsewhere may carry edges with no (or
+      // duplicate) `id`. Without a stable unique id, selecting one edge sets
+      // _selectedEdgeId to undefined and the render's `e.id === _selectedEdgeId`
+      // is `undefined === undefined` → TRUE for every edge, so all edges paint
+      // selected (coral). Assign a unique id to any edge missing one.
+      const seenEdgeIds = new Set<string>();
       for (const e of rawEdges) {
         if (e.from_port === undefined && e.label !== undefined) e.from_port = e.label;
+        if (!e.id || seenEdgeIds.has(e.id)) {
+          let nid: string;
+          do { nid = 'e_' + Math.random().toString(36).slice(2, 8); }
+          while (seenEdgeIds.has(nid) || rawEdges.some(x => x.id === nid));
+          e.id = nid;
+        }
+        seenEdgeIds.add(e.id);
       }
       // Backend-authored graphs carry no x/y — lay them out so they don't
       // render at NaN coordinates (Playwright caught this on an API-made flow).
@@ -3726,6 +3739,7 @@ export class OrFlowBuilder extends LitElement {
   }
 
   private _selectEdge(id: string): void {
+    if (!id) return; // a missing id would select every edge (see _renderEdges)
     this._selectedEdgeId = id;
     this._selectedNodeId = null;
   }
@@ -4186,7 +4200,9 @@ export class OrFlowBuilder extends LitElement {
                        : 'default';
         const labelW = labelText ? Math.min(110, Math.max(24, labelText.length * 7 + 12)) : 0;
         const labelH = 16;
-        const selected = !isSim && e.id === this._selectedEdgeId;
+        // Require a truthy id so a stray undefined id can't make every edge
+        // match _selectedEdgeId (undefined === undefined) and paint all selected.
+        const selected = !isSim && !!e.id && e.id === this._selectedEdgeId;
         return svg`
           ${isSim ? nothing : svg`<path class="edge-hit" d=${d}
             @click=${(ev: Event) => { ev.stopPropagation(); this._selectEdge(e.id); }}></path>`}
