@@ -123,18 +123,27 @@ func (q *Queries) ClaimDueDeliveryCommands(ctx context.Context, arg ClaimDueDeli
 const markDeliveryDelivered = `-- name: MarkDeliveryDelivered :execrows
 UPDATE delivery_commands
 SET status = 'delivered', handle = $3, claim_expires_at = NULL, updated_at = NOW()
-WHERE id = $1 AND org_id = $2
+WHERE id = $1 AND org_id = $2 AND status = 'pending' AND claimed_by = $4
 `
 
 type MarkDeliveryDeliveredParams struct {
-	ID     pgtype.UUID `json:"id"`
-	OrgID  pgtype.UUID `json:"org_id"`
-	Handle *string     `json:"handle"`
+	ID        pgtype.UUID `json:"id"`
+	OrgID     pgtype.UUID `json:"org_id"`
+	Handle    *string     `json:"handle"`
+	ClaimedBy *string     `json:"claimed_by"`
 }
 
-// MarkDeliveryDelivered records the adapter handle + terminal-delivered state.
+// MarkDeliveryDelivered records the adapter handle + delivered state, FENCED on
+// claimed_by + still-pending: a worker whose lease expired and was re-claimed by
+// a peer gets 0 rows here, so it cannot overwrite the newer worker's handle or
+// finalize a row it no longer owns (cross-AI review BLOCK — multi-replica safety).
 func (q *Queries) MarkDeliveryDelivered(ctx context.Context, arg MarkDeliveryDeliveredParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markDeliveryDelivered, arg.ID, arg.OrgID, arg.Handle)
+	result, err := q.db.Exec(ctx, markDeliveryDelivered,
+		arg.ID,
+		arg.OrgID,
+		arg.Handle,
+		arg.ClaimedBy,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -144,20 +153,25 @@ func (q *Queries) MarkDeliveryDelivered(ctx context.Context, arg MarkDeliveryDel
 const markDeliveryFailed = `-- name: MarkDeliveryFailed :execrows
 UPDATE delivery_commands
 SET status = 'failed', last_error = $3, claim_expires_at = NULL, updated_at = NOW()
-WHERE id = $1 AND org_id = $2
+WHERE id = $1 AND org_id = $2 AND status = 'pending' AND claimed_by = $4
 `
 
 type MarkDeliveryFailedParams struct {
 	ID        pgtype.UUID `json:"id"`
 	OrgID     pgtype.UUID `json:"org_id"`
 	LastError *string     `json:"last_error"`
+	ClaimedBy *string     `json:"claimed_by"`
 }
 
-// MarkDeliveryFailed releases the claim (so it is NOT retried — a delivery fault
-// is terminal for this attempt; the engine handles the failed delivery) + records
-// the error.
+// MarkDeliveryFailed declares the delivery failed, same claimed_by fence. 0 rows ⇒
+// the claim was lost; the caller must NOT proceed to tear the route down.
 func (q *Queries) MarkDeliveryFailed(ctx context.Context, arg MarkDeliveryFailedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markDeliveryFailed, arg.ID, arg.OrgID, arg.LastError)
+	result, err := q.db.Exec(ctx, markDeliveryFailed,
+		arg.ID,
+		arg.OrgID,
+		arg.LastError,
+		arg.ClaimedBy,
+	)
 	if err != nil {
 		return 0, err
 	}

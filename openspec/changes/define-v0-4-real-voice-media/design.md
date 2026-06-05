@@ -100,3 +100,29 @@ proof.
 ## Non-goals reaffirmed
 Open Routing never holds call audio, owns a PSTN trunk's media, or becomes an
 agent-desktop product. v0.4 bridges and observes; LiveKit/sip hold the media.
+
+## v0.4 implementation cross-review (W0–W2) — outcome
+
+codex + gemini reviewed the W0–W2 code. Fixed:
+- BLOCK (codex): delivery finalize is now lease-fenced (MarkDelivery* fenced on
+  claimed_by + status) and atomic (mark + handle-bind in one tx) — a stale worker
+  whose lease was re-claimed gets 0 rows and releases its orphan room instead of
+  clobbering the peer's handle (multi-replica safety).
+- BLOCK (codex): adapter.Assignment now carries IdempotencyKey (the delivery-attempt
+  id) so a real adapter dedupes Deliver to one media session across retries.
+- HIGH (codex): a missing adapter for the channel now fails + tears down (was
+  silently marked delivered → media-less stranded call).
+- HIGH (codex) / MED (gemini): finalize errors propagate (retry) instead of being
+  swallowed; cap-failure tears down BEFORE marking failed (no 'failed'-command /
+  'accepted'-route split-brain); lost-claim + reservation-terminal orphans Release.
+- MED (codex): webhook uses MaxBytesReader (413, no HMAC-over-truncated-prefix) +
+  rejects future-dated timestamps beyond a small skew.
+
+Deferred (documented, not bugs):
+- FSM wiring + CorrelationID dedup + rejected→reoffer / disconnected→reassign
+  (codex HIGH) → **Wave 4** (reassignment is the wave that consumes the FSM's
+  ActionReassign/ActionReoffer; until then the v0.3 terminal-teardown + state-based
+  idempotency hold).
+- Per-adapter/org webhook secret (codex MED) → **Wave 3** hardening when the real,
+  externally-operated adapter lands (one global secret is fine for the in-repo mock;
+  the sink's handle ownership-fence already bounds blast radius).

@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	maxBody      = 1 << 16        // 64 KiB — an assignment event is tiny
+	maxBody      = 1 << 16         // 64 KiB — an assignment event is tiny
 	replayWindow = 5 * time.Minute // reject a signature older than this (replay guard)
+	futureSkew   = 1 * time.Minute // tolerate this much forward clock skew, no more
 	sigHeader    = "X-Or-Signature"
 	tsHeader     = "X-Or-Timestamp"
 )
@@ -53,9 +54,12 @@ func Handler(sink adapter.EventSink, secret string, logger *slog.Logger, now fun
 	}
 	key := []byte(secret)
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+		// MaxBytesReader REJECTS an oversized body (it doesn't truncate) — so we never
+		// verify the HMAC over a truncated prefix of a larger real body (review MED).
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "read body", http.StatusBadRequest)
+			http.Error(w, "body too large or unreadable", http.StatusRequestEntityTooLarge)
 			return
 		}
 		tsStr := r.Header.Get(tsHeader)
@@ -64,14 +68,12 @@ func Handler(sink adapter.EventSink, secret string, logger *slog.Logger, now fun
 			http.Error(w, "bad timestamp", http.StatusBadRequest)
 			return
 		}
-		// Replay window: a stale (or future-dated) timestamp is rejected even with a
-		// valid signature, bounding replay of a captured request.
-		skew := now().Unix() - tsec
-		if skew < 0 {
-			skew = -skew
-		}
-		if time.Duration(skew)*time.Second > replayWindow {
-			http.Error(w, "stale timestamp", http.StatusUnauthorized)
+		// Reject a stale OR a meaningfully future-dated timestamp (only a small clock
+		// skew is tolerated forward), bounding replay of a captured request even with
+		// a valid signature (review MED).
+		delta := now().Unix() - tsec // >0 = past, <0 = future
+		if delta > int64(replayWindow.Seconds()) || delta < -int64(futureSkew.Seconds()) {
+			http.Error(w, "stale or future timestamp", http.StatusUnauthorized)
 			return
 		}
 		// HMAC over "timestamp.body" so the timestamp can't be tampered independently.

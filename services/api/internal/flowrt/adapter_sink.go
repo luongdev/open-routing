@@ -76,22 +76,27 @@ func (e *Endpoints) deliverAssignment(ctx context.Context, orgID, resID, routeID
 }
 
 // failDelivery tears a route down when its adapter delivery could not be set up.
-// Its own tx; an already-terminal route (raced teardown) is a benign no-op.
-func (e *Endpoints) failDelivery(ctx context.Context, orgID, routeID uuid.UUID) {
+// Its own tx; an already-terminal route (raced teardown) is a benign no-op. Returns
+// an error so the durable-delivery worker can avoid marking a command failed when
+// the teardown itself failed (else the route would be stranded 'accepted' while the
+// command is 'failed' — cross-AI review MED split-brain). The v3 inline caller
+// ignores the error (its accept already committed; a retry is not available there).
+func (e *Endpoints) failDelivery(ctx context.Context, orgID, routeID uuid.UUID) error {
 	octx := orgkey.SetOrgID(ctx, orgID)
 	tx, err := e.deps.OrgDB.BeginTx(octx)
 	if err != nil {
 		e.deps.Logger.ErrorContext(octx, "fail-delivery begin tx", "route_id", routeID, "err", err)
-		return
+		return err
 	}
 	defer func() { _ = tx.Rollback(octx) }()
 	if _, _, err := e.teardownRouteTx(octx, generated.New(tx), orgID, routeID, "route.delivery_failed"); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			e.deps.Logger.ErrorContext(octx, "fail-delivery teardown", "route_id", routeID, "err", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // route already terminal — nothing to tear down
 		}
-		return
+		e.deps.Logger.ErrorContext(octx, "fail-delivery teardown", "route_id", routeID, "err", err)
+		return err
 	}
-	_ = tx.Commit(octx)
+	return tx.Commit(octx)
 }
 
 // releaseAssignments tells the adapter to end each delivery the engine is tearing

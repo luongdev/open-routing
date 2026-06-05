@@ -27,16 +27,18 @@ WHERE id IN (
 )
 RETURNING id, org_id, reservation_id, route_request_id, agent_id, channel, interaction, attempt_count;
 
--- MarkDeliveryDelivered records the adapter handle + terminal-delivered state.
+-- MarkDeliveryDelivered records the adapter handle + delivered state, FENCED on
+-- claimed_by + still-pending: a worker whose lease expired and was re-claimed by
+-- a peer gets 0 rows here, so it cannot overwrite the newer worker's handle or
+-- finalize a row it no longer owns (cross-AI review BLOCK — multi-replica safety).
 -- name: MarkDeliveryDelivered :execrows
 UPDATE delivery_commands
 SET status = 'delivered', handle = $3, claim_expires_at = NULL, updated_at = NOW()
-WHERE id = $1 AND org_id = $2;
+WHERE id = $1 AND org_id = $2 AND status = 'pending' AND claimed_by = $4;
 
--- MarkDeliveryFailed releases the claim (so it is NOT retried — a delivery fault
--- is terminal for this attempt; the engine handles the failed delivery) + records
--- the error.
+-- MarkDeliveryFailed declares the delivery failed, same claimed_by fence. 0 rows ⇒
+-- the claim was lost; the caller must NOT proceed to tear the route down.
 -- name: MarkDeliveryFailed :execrows
 UPDATE delivery_commands
 SET status = 'failed', last_error = $3, claim_expires_at = NULL, updated_at = NOW()
-WHERE id = $1 AND org_id = $2;
+WHERE id = $1 AND org_id = $2 AND status = 'pending' AND claimed_by = $4;

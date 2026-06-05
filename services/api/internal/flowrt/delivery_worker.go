@@ -52,69 +52,106 @@ func (e *Endpoints) DrainDeliveries(ctx context.Context, pool *pgxpool.Pool, wor
 	}
 	delivered := 0
 	for _, r := range rows {
-		if e.dispatchDelivery(ctx, r) {
+		if e.dispatchDelivery(ctx, r, workerID) {
 			delivered++
 		}
 	}
 	return delivered, nil
 }
 
-// dispatchDelivery runs ONE claimed command: Deliver → bind handle + mark
-// delivered; on a Deliver fault, mark failed + tear the route down (the agent +
-// caller would otherwise be stranded on a dead call). Mirrors deliverAssignment's
-// handling but is driven by the durable row instead of an inline post-commit call.
-func (e *Endpoints) dispatchDelivery(ctx context.Context, cmd generated.ClaimDueDeliveryCommandsRow) bool {
+// dispatchDelivery runs ONE claimed command: Deliver → (atomically, lease-fenced)
+// bind the handle + mark delivered. workerID is the claim owner — the finalize
+// fences on it so a worker whose lease was re-claimed by a peer cannot clobber the
+// newer handle (cross-AI review BLOCK, multi-replica). On a Deliver fault it
+// retries up to the cap, then fails + tears the route down. Returns true on a
+// successful delivery this tick.
+func (e *Endpoints) dispatchDelivery(ctx context.Context, cmd generated.ClaimDueDeliveryCommandsRow, workerID string) bool {
 	orgID := apiUUID(cmd.OrgID)
 	resID := apiUUID(cmd.ReservationID)
 	routeID := apiUUID(cmd.RouteRequestID)
 	ad, ok := e.adapterFor(cmd.Channel)
 	if !ok {
-		// No adapter for the channel (e.g. the HTTP/WS test-double path) — nothing to
-		// deliver; mark it delivered so it isn't re-claimed forever.
-		_, _ = generated.New(e.deps.OrgDB).MarkDeliveryDelivered(orgkey.SetOrgID(ctx, orgID), generated.MarkDeliveryDeliveredParams{ID: cmd.ID, OrgID: cmd.OrgID})
+		// Outbox is on but no adapter serves this channel — a misconfiguration. Do NOT
+		// silently mark delivered (that strands the call with media-less + no signal):
+		// fail the delivery + tear the route down so it surfaces (cross-AI review HIGH).
+		octx := orgkey.SetOrgID(ctx, orgID)
+		msg := "no adapter for channel " + cmd.Channel
+		if rows, _ := generated.New(e.deps.OrgDB).MarkDeliveryFailed(octx, generated.MarkDeliveryFailedParams{ID: cmd.ID, OrgID: cmd.OrgID, LastError: &msg, ClaimedBy: &workerID}); rows > 0 {
+			_ = e.failDelivery(octx, orgID, routeID)
+		}
+		e.deps.Logger.ErrorContext(octx, "delivery has no adapter for channel", "channel", cmd.Channel, "reservation_id", resID)
 		return false
 	}
 	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), adapterOpTimeout)
 	defer cancel()
+	octx := orgkey.SetOrgID(dctx, orgID)
 	var interaction map[string]any
 	_ = json.Unmarshal(cmd.Interaction, &interaction)
 
 	h, err := ad.Deliver(dctx, adapter.Assignment{
 		ReservationID: resID.String(), RouteRequestID: routeID.String(),
-		AgentID: apiUUID(cmd.AgentID).String(), Channel: cmd.Channel, Interaction: interaction,
+		AgentID: apiUUID(cmd.AgentID).String(), Channel: cmd.Channel,
+		Interaction: interaction, IdempotencyKey: apiUUID(cmd.ID).String(),
 	}, e)
-	octx := orgkey.SetOrgID(dctx, orgID)
 	if err != nil {
 		// Retry-with-cap: a transient adapter outage shouldn't tear the route down on
 		// the first failure. Leave the row claimed so the lease expires and a later
-		// tick retries; only after maxDeliveryAttempts give up + tear down. (Deliver is
-		// idempotent by the command id, so a retry maps to the same room.)
+		// tick retries (Deliver is idempotent by IdempotencyKey). Only past the cap
+		// fail — and tear down FIRST, marking failed only if the teardown succeeded, so
+		// a teardown failure can't strand the route 'accepted' (review MED).
 		if cmd.AttemptCount < maxDeliveryAttempts {
 			e.deps.Logger.WarnContext(octx, "delivery deliver failed → will retry", "reservation_id", resID, "channel", cmd.Channel, "attempt", cmd.AttemptCount, "err", err)
 			return false
 		}
+		if tErr := e.failDelivery(octx, orgID, routeID); tErr != nil {
+			return false // teardown failed → leave pending; retry both next tick
+		}
 		errMsg := err.Error()
-		_, _ = generated.New(e.deps.OrgDB).MarkDeliveryFailed(octx, generated.MarkDeliveryFailedParams{ID: cmd.ID, OrgID: cmd.OrgID, LastError: &errMsg})
-		e.deps.Logger.ErrorContext(octx, "delivery deliver failed past retry cap → tearing down route", "reservation_id", resID, "channel", cmd.Channel, "attempts", cmd.AttemptCount, "err", err)
-		e.failDelivery(octx, orgID, routeID)
+		_, _ = generated.New(e.deps.OrgDB).MarkDeliveryFailed(octx, generated.MarkDeliveryFailedParams{ID: cmd.ID, OrgID: cmd.OrgID, LastError: &errMsg, ClaimedBy: &workerID})
+		e.deps.Logger.ErrorContext(octx, "delivery deliver failed past retry cap → route torn down", "reservation_id", resID, "channel", cmd.Channel, "attempts", cmd.AttemptCount, "err", err)
 		return false
 	}
 	handle := string(h)
-	q := generated.New(e.deps.OrgDB)
-	bound, err := q.SetReservationAdapterHandle(octx, generated.SetReservationAdapterHandleParams{ID: pgUUID(resID), OrgID: cmd.OrgID, AdapterHandle: &handle})
-	if err != nil {
-		// Leave the command claimed; the lease expires and a later tick retries the
-		// bind. Deliver is idempotent by the command id, so a redeliver maps to the
-		// same handle.
-		e.deps.Logger.ErrorContext(octx, "bind adapter handle failed", "reservation_id", resID, "err", err)
+
+	// Finalize atomically + lease-fenced in ONE tx: mark delivered (fenced on
+	// claimed_by) THEN bind the handle. A stale worker gets 0 rows on the mark and
+	// releases its orphan room instead of clobbering the peer's handle.
+	tx, terr := e.deps.OrgDB.BeginTx(octx)
+	if terr != nil {
+		e.deps.Logger.ErrorContext(octx, "delivery finalize begin tx", "err", terr)
+		return false
+	}
+	defer func() { _ = tx.Rollback(octx) }()
+	qtx := generated.New(tx)
+	marked, merr := qtx.MarkDeliveryDelivered(octx, generated.MarkDeliveryDeliveredParams{ID: cmd.ID, OrgID: cmd.OrgID, Handle: &handle, ClaimedBy: &workerID})
+	if merr != nil {
+		e.deps.Logger.ErrorContext(octx, "mark delivered failed", "reservation_id", resID, "err", merr)
+		return false // retry; Deliver is idempotent by key
+	}
+	if marked == 0 {
+		// Lost the claim (a peer re-claimed + finalized): our Deliver created an orphan
+		// room → release it best-effort; the peer owns the binding.
+		if relErr := ad.Release(octx, h, adapter.ReleaseCancelled); relErr != nil {
+			e.deps.Logger.ErrorContext(octx, "release orphan (lost claim)", "handle", handle, "err", relErr)
+		}
+		return false
+	}
+	bound, berr := qtx.SetReservationAdapterHandle(octx, generated.SetReservationAdapterHandleParams{ID: pgUUID(resID), OrgID: cmd.OrgID, AdapterHandle: &handle})
+	if berr != nil {
+		e.deps.Logger.ErrorContext(octx, "bind adapter handle failed", "reservation_id", resID, "err", berr)
+		return false // rollback (mark undone) → retry
+	}
+	if cErr := tx.Commit(octx); cErr != nil {
+		e.deps.Logger.ErrorContext(octx, "delivery finalize commit", "err", cErr)
 		return false
 	}
 	if bound == 0 {
-		// The reservation went terminal during Deliver (raced abandon/timeout): the
-		// handle was never bound, so release the orphan now or it leaks forever.
-		e.releaseAssignments(octx, cmd.Channel, []string{handle}, adapter.ReleaseCancelled)
+		// Reservation went terminal during Deliver → the handle is an orphan the
+		// teardown didn't know about; release it best-effort.
+		if relErr := ad.Release(octx, h, adapter.ReleaseCancelled); relErr != nil {
+			e.deps.Logger.ErrorContext(octx, "release orphan (reservation terminal)", "handle", handle, "err", relErr)
+		}
 	}
-	_, _ = q.MarkDeliveryDelivered(octx, generated.MarkDeliveryDeliveredParams{ID: cmd.ID, OrgID: cmd.OrgID, Handle: &handle})
 	return true
 }
 
