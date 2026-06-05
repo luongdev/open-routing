@@ -296,8 +296,11 @@ func TestGateway_ConnSlotCapPerOrg(t *testing.T) {
 	orgA := uuid.Must(uuid.NewV7())
 	orgB := uuid.Must(uuid.NewV7())
 
-	if !g.acquireSlot(orgA) || !g.acquireSlot(orgA) {
-		t.Fatal("first two slots for orgA must be granted")
+	if !g.acquireSlot(orgA) {
+		t.Fatal("first slot for orgA must be granted")
+	}
+	if !g.acquireSlot(orgA) {
+		t.Fatal("second slot for orgA must be granted")
 	}
 	if g.acquireSlot(orgA) {
 		t.Fatal("third slot for orgA must be rejected (cap=2)")

@@ -1322,7 +1322,6 @@ components:
         route_request_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
         source:
           type: string
           description: Plane that emitted the event (e.g. "runtime", "matcher").
@@ -1332,7 +1331,6 @@ components:
         correlation_id:
           allOf:
             - $ref: "#/components/schemas/UUIDv7"
-          nullable: true
         payload:
           type: object
           additionalProperties: true

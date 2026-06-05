@@ -2023,12 +2023,12 @@ export interface components {
         /** @description One entry in a route request's runtime event log — the ordered record of what the engine did (route.created, route.queued, reservation.offered, reservation.accepted, agent.engaged, route.completed, …). Read-only; appended by the runtime as a route progresses. */
         RuntimeEvent: {
             id: components["schemas"]["UUIDv7"];
-            route_request_id?: components["schemas"]["UUIDv7"] | null;
+            route_request_id?: components["schemas"]["UUIDv7"];
             /** @description Plane that emitted the event (e.g. "runtime", "matcher"). */
             source: string;
             /** @description Dotted event name (e.g. "reservation.offered"). */
             type: string;
-            correlation_id?: components["schemas"]["UUIDv7"] | null;
+            correlation_id?: components["schemas"]["UUIDv7"];
             /** @description Event-specific detail (reservation_id, agent_id, …). */
             payload?: {
                 [key: string]: unknown;
