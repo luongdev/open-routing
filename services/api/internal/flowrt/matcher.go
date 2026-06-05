@@ -240,6 +240,15 @@ func (e *Endpoints) reassignRoute(ctx context.Context, orgID, routeID, resID uui
 	defer func() { _ = tx.Rollback(octx) }()
 	qtx := generated.New(tx)
 
+	// Lock the parent route row FIRST (top-down order: route → reservation) so a
+	// concurrent caller-abandon teardown on the same route can't AB-BA deadlock us.
+	if _, err := qtx.LockRouteForReclaim(octx, generated.LockRouteForReclaimParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // route vanished
+		}
+		return err
+	}
+
 	// Fence + cancel the dropped reservation (still 'accepted' → the live call). 0
 	// rows ⇒ it already resolved (raced complete) → no-op.
 	rec, err := qtx.ReassignStaleReservation(octx, generated.ReassignStaleReservationParams{ID: pgUUID(resID), OrgID: pgUUID(orgID)})
@@ -268,20 +277,38 @@ func (e *Endpoints) reassignRoute(ctx context.Context, orgID, routeID, resID uui
 	if err != nil {
 		return err
 	}
-	event := "route.reassigned"
-	if route.ReassignCount >= maxReassignHops {
-		// Exhausted: give up — abandon the route (the slot is already freed above).
+	// A route can only be re-queued if it is a LIVE (non-terminal) call that carries
+	// matcher metadata — required_skills set, i.e. it was matched through the queue
+	// (cross-AI BLOCK). An interaction whose flow already completed must NOT be
+	// resurrected, and an inline-offered route (no required_skills) can't be safely
+	// re-matched (it would ring unqualified agents / collide attempt seq) — that path
+	// lands with the W3 real-media flow (reservation-node cursor reset + skill
+	// re-derivation). Either non-reassignable case just keeps the slot freed above;
+	// a still-live route is abandoned so it doesn't hang.
+	terminal := route.Status == "completed" || route.Status == "failed" || route.Status == "cancelled"
+	reassignable := !terminal && len(route.RequiredSkills) > 0 && int(route.ReassignCount) < maxReassignHops
+	reassigned := false
+	switch {
+	case reassignable:
+		if _, rErr := qtx.ReassignRouteForMatch(octx, generated.ReassignRouteForMatchParams{
+			RouteRequestID: pgUUID(routeID), OrgID: pgUUID(orgID), MatchDeadline: ts(time.Now().Add(reassignMatchTimeout)),
+		}); rErr != nil && !errors.Is(rErr, pgx.ErrNoRows) {
+			return rErr
+		}
+		reassigned = true
+	case !terminal:
+		// Hop cap reached, or no matcher metadata to re-match on → give up: abandon the
+		// still-live route (the dropped reservation + slot are already cleaned up).
 		if _, aErr := qtx.AbandonRoute(octx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); aErr != nil && !errors.Is(aErr, pgx.ErrNoRows) {
 			return aErr
 		}
-		event = "route.reassign_exhausted"
-	} else if _, rErr := qtx.ReassignRouteForMatch(octx, generated.ReassignRouteForMatchParams{
-		RouteRequestID: pgUUID(routeID), OrgID: pgUUID(orgID), MatchDeadline: ts(time.Now().Add(reassignMatchTimeout)),
-	}); rErr != nil && !errors.Is(rErr, pgx.ErrNoRows) {
-		return rErr
+	}
+	event := "route.reassigned"
+	if !reassigned {
+		event = "route.reassign_ended" // exhausted / not reassignable / already-terminal
 	}
 	e.appendEvent(octx, qtx, orgID, routeID, event, map[string]any{
-		"agent_id": apiUUID(rec.AgentID).String(), "reassign_count": int(route.ReassignCount),
+		"agent_id": apiUUID(rec.AgentID).String(), "reassign_count": int(route.ReassignCount) + 1, "reassigned": reassigned,
 	})
 	if err := tx.Commit(octx); err != nil {
 		return err
@@ -289,7 +316,9 @@ func (e *Endpoints) reassignRoute(ctx context.Context, orgID, routeID, resID uui
 	if rec.AdapterHandle != nil && *rec.AdapterHandle != "" {
 		e.releaseAssignments(octx, route.Channel, []string{*rec.AdapterHandle}, adapter.ReleaseCancelled)
 	}
-	metrics.MatcherReassigns.Inc()
+	if reassigned {
+		metrics.MatcherReassigns.Inc() // count only an actual re-queue, not a give-up
+	}
 	return nil
 }
 

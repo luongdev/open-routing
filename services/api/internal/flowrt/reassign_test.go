@@ -135,10 +135,10 @@ func TestReassign_ExhaustedAbandons(t *testing.T) {
 		t.Fatalf("OnAssignmentEvent: %v", err)
 	}
 	if st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID); st != "cancelled" {
-		t.Fatalf("route = %q, want cancelled (reassign exhausted)", st)
+		t.Fatalf("route = %q, want cancelled (reassign exhausted → abandon)", st)
 	}
-	if !routeHasEvent(t, lf.orgID, routeID, "route.reassign_exhausted") {
-		t.Fatal("missing route.reassign_exhausted event")
+	if !routeHasEvent(t, lf.orgID, routeID, "route.reassign_ended") {
+		t.Fatal("missing route.reassign_ended event")
 	}
 }
 

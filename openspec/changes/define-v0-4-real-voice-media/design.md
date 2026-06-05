@@ -126,3 +126,34 @@ Deferred (documented, not bugs):
 - Per-adapter/org webhook secret (codex MED) → **Wave 3** hardening when the real,
   externally-operated adapter lands (one global secret is fine for the in-repo mock;
   the sink's handle ownership-fence already bounds blast radius).
+
+## W4 cross-review (codex + gemini) — outcome
+
+Fixed:
+- BLOCK (codex): ReassignRouteForMatch no longer resurrects a terminal route —
+  reassign is gated on a non-terminal (live) route in reassignRoute.
+- BLOCK (codex): an inline-offered route (no matcher metadata → empty
+  required_skills, un-bumped attempt seq) is NOT re-matched (it would ring
+  unqualified agents / collide the reservation attempt unique) — gated on
+  required_skills present; such a drop abandons instead.
+- HIGH (both): reassignRoute locks the route FIRST (LockRouteForReclaim) — same
+  top-down order as teardown/reclaim, no AB-BA deadlock. This also makes the
+  read-count → ReassignRouteForMatch hop-cap check atomic (MED).
+- HIGH (both): EnqueueRouteForMatch's excluded_agent_ids now includes 'cancelled'
+  so a re-parked reassigned route won't re-ring the dropped agent.
+- LOW (codex): route.reassigned reports reassign_count+1; or_matcher_reassigns_total
+  counts only an actual re-queue, not a give-up.
+
+Deferred to Wave 3 (real-media flow), documented:
+- HIGH (codex): a reassigned route's resume_cursor still points at the post-accept
+  call/wait node, so (a) the re-matched agent resumes that node rather than
+  re-entering the reservation/bridge node, and (b) an SLA-expired reassign resumes
+  no_candidate at a wait node (taken as elapsed) instead of the reservation's
+  no_candidate fallback. Correct re-bridge needs a real-media "bridge" flow node +
+  a cursor reset to it — that lands with W3. Until then reassignment frees the slot
+  + re-queues + re-matches (slot accounting + a fresh offer are correct); the mock
+  has no media to re-bridge.
+- MED (codex): a handle rebind between the sink's pre-tx handle-match and
+  ReassignStaleReservation's state fence — minor; the real fix is the cursor/
+  bridge rework above.
+- Inline-route reassignment (skill re-derivation from the graph) → W3.

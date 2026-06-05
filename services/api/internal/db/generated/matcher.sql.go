@@ -258,7 +258,7 @@ SET status = 'waiting_match',
     -- HIGH). Authoritative recompute (empty on the first enqueue).
     excluded_agent_ids = COALESCE(
         (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
-         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout')),
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
         '{}'),
     match_offer_token = NULL,
     offering_started_at = NULL,
