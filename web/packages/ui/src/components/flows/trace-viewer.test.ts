@@ -32,13 +32,13 @@ describe('OrTraceViewer', () => {
     await (el as any).updateComplete;
   }
 
-  it('shows the sample banner + preview when the trace endpoint is a stub', async () => {
+  it('shows the sample banner + preview when no live trace exists', async () => {
     (el as any).orgId = 'test-org';
     (el as any).traceId = 'trace-1';
     (el as any).client = { GET: vi.fn().mockResolvedValue(NOT_IMPL) };
     await settle();
     const sr = el.shadowRoot!;
-    expect(sr.querySelector('.trace-banner')?.textContent).toContain('Layer 3');
+    expect(sr.querySelector('.trace-banner')?.textContent).toContain('Sample trace');
     expect(sr.textContent).toContain('Trace viewer');
   });
 

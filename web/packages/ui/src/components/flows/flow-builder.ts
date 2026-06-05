@@ -4,10 +4,9 @@
 // opaque `graph` JSONB; Save draft is a real optimistic-version PATCH (POST on
 // create).
 //
-// Validate / Publish / Rollback and live Simulate are 501 stubs until Layer 3,
-// so those actions surface "lands in Layer 3" instead of faking success. The
-// rich sim panel stays a sample-trace PREVIEW (mock playback) — kept visible on
-// purpose to surface layout/wiring bugs early (review choice "b").
+// Validate / Publish / Rollback call the real runtime API. The rich sim panel
+// stays a sample-trace PREVIEW (mock playback) — kept visible on purpose to
+// surface layout/wiring bugs early (review choice "b").
 
 import { LitElement, html, css, svg, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -2539,8 +2538,8 @@ export class OrFlowBuilder extends LitElement {
   // derives the header (name/code/version/enabled) from it.
   @state() private accessor _loaded: Flow | null = null;
   @state() private accessor _saving = false;
-  // Transient action feedback: Save result, the 501 "lands in Layer 3" notice,
-  // and PATCH conflict/error surfacing.
+  // Transient action feedback: Save result, action notices, and PATCH
+  // conflict/error surfacing.
   // Latest validation result (from Validate, or a 422 publish). null until the
   // user validates; cleared when the graph changes so stale issues don't linger.
   @state() private accessor _validation: FlowValidationResult | null = null;
@@ -4999,11 +4998,6 @@ export class OrFlowBuilder extends LitElement {
                 @click=${() => this._doAutoArrange()}>
                 <uk-icon icon="layout-grid" height="14" width="14"></uk-icon>
                 Arrange
-              </button>
-              <button class="toolbar-btn" title="Compare draft against the published version (Layer 3)"
-                @click=${() => this._flashAction('Diff vs published lands in Layer 3.', 'warn')}>
-                <uk-icon icon="history" height="14" width="14"></uk-icon>
-                Diff vs published
               </button>
               <button class="toolbar-btn" ?disabled=${this._saving} @click=${this._saveDraft}>
                 <uk-icon icon="save" height="14" width="14"></uk-icon>
