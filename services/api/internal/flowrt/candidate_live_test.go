@@ -359,6 +359,53 @@ func TestLive_InlineOfferWritesDecision(t *testing.T) {
 	}
 }
 
+// TestLive_AdapterForgedTerminalIgnored: an adapter terminal whose handle does NOT
+// match the reservation's bound handle is ignored — a reservation id alone can't
+// authorize a teardown (review HIGH: event authority).
+func TestLive_AdapterForgedTerminalIgnored(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	mv := adapter.NewMockVoice(nil)
+	me := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(),
+		Adapters: map[string]adapter.ChannelAdapter{"voice": mv},
+	})
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_wait", simGraphWithWait(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+	resp, _ := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"}})
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+	rs, _ := me.ListRouteRequestReservations(lf.ctx, api.ListRouteRequestReservationsRequestObject{Id: api.EntityIdPath(routeID)})
+	resID := uuid.UUID(rs.(api.ListRouteRequestReservations200JSONResponse).Items[0].Id)
+	if _, err := me.AcceptReservation(lf.ctx, api.AcceptReservationRequestObject{Id: api.EntityIdPath(resID)}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	// A caller_abandoned for the right reservation but a BOGUS handle → ignored.
+	if err := me.OnAssignmentEvent(context.Background(), adapter.AssignmentEvent{
+		Type: adapter.EventCallerLeft, ReservationID: resID.String(), Handle: adapter.Handle("bogus"), CorrelationID: "x",
+	}); err != nil {
+		t.Fatalf("OnAssignmentEvent: %v", err)
+	}
+	if st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID); st != "waiting" {
+		t.Fatalf("route = %q after forged terminal, want waiting (ignored)", st)
+	}
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("held=%d after forged terminal, want 1 (untouched)", held)
+	}
+}
+
 // TestLive_AbandonReleasesAndCancels: a caller hang-up tears the route down —
 // the outstanding offer is cancelled, its capacity slot freed, the route goes
 // cancelled, and a second abandon is a 409 (already terminal).

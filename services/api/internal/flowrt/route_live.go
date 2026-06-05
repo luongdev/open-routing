@@ -332,6 +332,12 @@ func (e *Endpoints) teardownRouteTx(ctx context.Context, qtx *generated.Queries,
 	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
 	var handles []string
 	for _, r := range live {
+		// Only the offered/accepted reservations are the ones CancelLiveReservations
+		// just terminated — collect adapter handles from those, never from a prior
+		// completed/rejected reservation (which must not get a ReleaseCancelled).
+		if r.State != "offered" && r.State != "accepted" {
+			continue
+		}
 		if r.AdapterHandle != nil && *r.AdapterHandle != "" {
 			handles = append(handles, *r.AdapterHandle)
 		}

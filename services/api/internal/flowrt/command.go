@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
@@ -36,15 +37,25 @@ const (
 type AgentCommandResult struct {
 	Status        string `json:"status"` // accepted|rejected|completed|conflict|not_found|not_owner|session_revoked|reused_id|lease_mismatch
 	ReservationID string `json:"reservation_id"`
-	// deliver carries the post-commit adapter handoff for a successful accept
-	// (unexported ⇒ not serialized; only the first, non-replayed execution sets it).
+	// deliver / release carry the post-commit adapter side effects for a successful
+	// accept / complete (unexported ⇒ not serialized; only the first, non-replayed
+	// execution sets them).
 	deliver *adapterDeliver
+	release *adapterRelease
 }
 
 // adapterDeliver is the post-commit Deliver payload captured during an accept.
 type adapterDeliver struct {
 	orgID, resID, routeID, agentID uuid.UUID
 	channel                        string
+}
+
+// adapterRelease is the post-commit Release payload captured during a complete:
+// the engine tells the adapter the call ended normally so the delivery handle goes
+// terminal and can't later emit a spurious teardown.
+type adapterRelease struct {
+	channel string
+	handle  string
 }
 
 // ExecuteAgentCommand runs one agent command at-most-once. A redelivered
@@ -114,6 +125,9 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 		d := res.deliver
 		e.deliverAssignment(ctx, d.orgID, d.resID, d.routeID, d.agentID, d.channel)
 	}
+	if res.release != nil {
+		e.releaseAssignments(ctx, res.release.channel, []string{res.release.handle}, adapter.ReleaseCompleted)
+	}
 	return res, nil
 }
 
@@ -172,6 +186,13 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 		routeID := apiUUID(comp.RouteRequestID)
 		e.appendEvent(ctx, qtx, orgID, routeID, "reservation.completed", map[string]any{"reservation_id": resID.String()})
 		e.appendEvent(ctx, qtx, orgID, routeID, "agent.wrapup", map[string]any{"agent_id": agentID.String()})
+		// Tell the adapter the call ended normally (post-commit), so its delivery
+		// handle goes terminal and can't later emit a spurious caller_abandoned.
+		if resv.AdapterHandle != nil && *resv.AdapterHandle != "" {
+			if rt, rErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: comp.RouteRequestID, OrgID: pgUUID(orgID)}); rErr == nil {
+				out.release = &adapterRelease{channel: rt.Channel, handle: *resv.AdapterHandle}
+			}
+		}
 		out.Status = "completed"
 		return out, nil
 	case CmdAccept, CmdReject:
