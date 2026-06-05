@@ -3,6 +3,26 @@
 Waves land runnable slices, each proven with the in-process/remote mock BEFORE
 real LiveKit, so the engine plumbing is validated without media infrastructure.
 
+Cross-AI round 1 (codex + gemini) reshaped this: a Wave 0 to formalize identities
++ the state machine BEFORE any outbox/media work (both flagged "lifecycle identity
+confusion" as the #1 risk), explicit adapter health/backpressure, and a chaos
+suite. See discussion.md.
+
+## Wave 0 — Identity & state model (foundation; before any media)
+
+- [ ] Formalize the distinct identities: `interaction_id` (stable across hops),
+      `reservation_attempt_id` (new per hop), `delivery_attempt_id` (the outbox
+      idempotency key), `media_session_id`/room handle. No code reuses one for
+      another.
+- [ ] Inbound-interaction contract: the opentts/phone stack notifies Open Routing
+      of an inbound caller leg (reference, not ownership) → routing begins.
+- [ ] Deterministic assignment/media state-transition table (the adapter's
+      anti-corruption mapping) + a late-event QUARANTINE rule: out-of-order,
+      skipped, duplicated, and post-terminal events are tolerated and never leak
+      capacity or deadlock.
+- [ ] Tests: the transition table as table-driven tests incl. every out-of-order /
+      late / duplicate path.
+
 ## Wave 1 — Durable delivery outbox (prove with the mock)
 
 - [ ] `delivery_command` durable rows (model on `agent_outbox`): accept commits a
@@ -10,8 +30,9 @@ real LiveKit, so the engine plumbing is validated without media infrastructure.
 - [ ] Delivery drain worker (cmd/runtime tick): claim due delivery commands
       (FOR UPDATE SKIP LOCKED), call adapter `Deliver`, persist the returned handle
       on the reservation, mark the command done. At-least-once + idempotent.
-- [ ] Idempotent Deliver: a redelivered command for the same reservation maps to
-      the same handle (no double room). Dedupe key = reservation id.
+- [ ] Idempotent Deliver: a redelivered command maps to the same handle (no double
+      room). Dedupe key = `delivery_attempt_id` (NOT reservation_id — a reclaimed/
+      reassigned call must never create-or-get the stale room).
 - [ ] Route the EXISTING in-process MockVoice through the outbox so the mechanism
       is proven before real media; crash-between-accept-and-deliver redelivers.
 - [ ] Tests: accept→durable command→drain→handle persisted; crash/replay redelivers
@@ -22,10 +43,19 @@ real LiveKit, so the engine plumbing is validated without media infrastructure.
 - [ ] Authenticated, org-scoped HTTP endpoint the bridge calls to report lifecycle
       events; maps to `EventSink.OnAssignmentEvent`, idempotent by CorrelationID,
       terminal-final (later events for a terminal handle ignored).
+- [ ] Webhook auth: HMAC-SHA256 signed payloads (per-env/org secret, timestamp +
+      nonce replay window) PLUS an ownership fence — a terminal is applied only if
+      `org + interaction/attempt + media_session/handle` matches current ownership
+      (correlation alone is too weak; a forged caller_abandoned could kill a live
+      call).
+- [ ] Adapter health / backpressure: if `cmd/voiceadapter` is down, the outbox
+      worker must NOT endlessly claim+fail — short-circuit routing (fail/queue) via
+      a circuit-breaker or adapter-registration heartbeat.
 - [ ] A "remote mock" adapter that drives the lifecycle OVER the webhook (so CI/e2e
       never needs real LiveKit) — the network-shaped twin of MockVoice.
 - [ ] Tests: golden webhook schema; duplicate correlation deduped; out-of-order /
-      post-terminal events rejected; cross-org event rejected.
+      post-terminal events quarantined (not errored); cross-org / wrong-handle
+      event rejected; adapter-down short-circuits.
 
 ## Wave 3 — Real voice adapter service (LiveKit/SIP bridge)
 
@@ -57,6 +87,10 @@ real LiveKit, so the engine plumbing is validated without media infrastructure.
 ## Wave 6 — Closure
 
 - [ ] Real-media e2e in a soak env (inbound call → bridged → hang-up → WrapUp).
+- [ ] Chaos suite: outbox worker crash mid-flight; adapter killed immediately after
+      Deliver; out-of-order / duplicate LiveKit webhooks; a late `room_finished`
+      from an OLD room during a new reassignment hop (first-terminal-wins, fenced
+      to the handle).
 - [ ] Load/soak: many concurrent bridged calls; reassignment under churn.
 - [ ] OpenAPI/webhook schema + migrations folded; drift gates; org-scoping audit.
 - [ ] Full cross-AI review; fix findings.

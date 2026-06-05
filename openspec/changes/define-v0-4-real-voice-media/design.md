@@ -7,7 +7,21 @@ Reference patterns to reuse (do NOT reinvent):
   is reclaim WITHOUT the abandon — re-queue instead.
 - Webhook auth → mirror the trusted-host org model; events carry org + correlation.
 
-## Open questions (seed for the codex/agy discussion)
+## Resolved by cross-AI discussion round 1 (see discussion.md)
+
+- **Q2** caller leg → external stack owns the trunk; OR receives an inbound ref.
+- **Q3** idempotency key → `delivery_attempt_id`, not reservation_id.
+- **Q4** reassignment → new reservation per hop; interaction carries context; 2–3 hops.
+- **Q5** webhook → HMAC + replay window + ownership fence (org+attempt+handle).
+- **Q6** deployment → in-repo `cmd/voiceadapter`, run as a separate container.
+- **Q7** events → adapter is the anti-corruption layer; emits coarse contract events.
+- **Q8** terminal race → optimistic `UPDATE ... WHERE state != terminal`, handle-fenced.
+- **NEW Wave 0** → formalize identities + state-transition table + late-event
+  quarantine BEFORE the outbox (both flagged identity confusion as the #1 risk).
+- **NEW** adapter health/backpressure + a chaos wave.
+- **Q1 (console scope)** → still OPEN; product decision escalated to the user.
+
+## Open questions (original seed; Q1 still open)
 
 ### Q1 — Agent desktop: in v0.4 or v0.5?
 The minimal console (Wave 5) needs a LiveKit *client* audio integration, which is
