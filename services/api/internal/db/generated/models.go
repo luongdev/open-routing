@@ -144,6 +144,25 @@ type Continuation struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type DeliveryCommand struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	ReservationID  pgtype.UUID        `json:"reservation_id"`
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	Channel        string             `json:"channel"`
+	Interaction    []byte             `json:"interaction"`
+	Status         string             `json:"status"`
+	Handle         *string            `json:"handle"`
+	ClaimedAt      pgtype.Timestamptz `json:"claimed_at"`
+	ClaimExpiresAt pgtype.Timestamptz `json:"claim_expires_at"`
+	ClaimedBy      *string            `json:"claimed_by"`
+	AttemptCount   int32              `json:"attempt_count"`
+	LastError      *string            `json:"last_error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Flow struct {
 	ID        pgtype.UUID        `json:"id"`
 	OrgID     pgtype.UUID        `json:"org_id"`
@@ -222,6 +241,7 @@ type Reservation struct {
 	Reason         *string            `json:"reason"`
 	LeaseToken     pgtype.UUID        `json:"lease_token"`
 	AgentSessionID pgtype.UUID        `json:"agent_session_id"`
+	AdapterHandle  *string            `json:"adapter_handle"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -268,6 +288,7 @@ type RouteRequest struct {
 	ResumeCursor         []byte             `json:"resume_cursor"`
 	CurrentReservationID pgtype.UUID        `json:"current_reservation_id"`
 	RunSeq               int32              `json:"run_seq"`
+	ReassignCount        int32              `json:"reassign_count"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }

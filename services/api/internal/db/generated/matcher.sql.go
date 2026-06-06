@@ -17,7 +17,7 @@ SET status = 'running',
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'waiting_match'
   AND match_deadline IS NOT NULL AND match_deadline <= now()
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type AcquireExpiredMatchRouteForRunParams struct {
@@ -58,6 +58,7 @@ func (q *Queries) AcquireExpiredMatchRouteForRun(ctx context.Context, arg Acquir
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -92,7 +93,7 @@ SET status = 'offering',
     updated_at = now()
 FROM picked p
 WHERE rr.id = p.id AND rr.org_id = $1
-RETURNING rr.id, rr.org_id, rr.channel, rr.entry_code, rr.flow_version_id, rr.flow_code, rr.interaction_input, rr.status, rr.failure_code, rr.read_set_snapshot, rr.queue_id, rr.priority, rr.required_skills, rr.waiting_since, rr.next_match_at, rr.match_deadline, rr.match_attempt_seq, rr.match_offer_token, rr.offering_started_at, rr.active_reservation_id, rr.excluded_agent_ids, rr.resume_cursor, rr.current_reservation_id, rr.run_seq, rr.created_at, rr.updated_at
+RETURNING rr.id, rr.org_id, rr.channel, rr.entry_code, rr.flow_version_id, rr.flow_code, rr.interaction_input, rr.status, rr.failure_code, rr.read_set_snapshot, rr.queue_id, rr.priority, rr.required_skills, rr.waiting_since, rr.next_match_at, rr.match_deadline, rr.match_attempt_seq, rr.match_offer_token, rr.offering_started_at, rr.active_reservation_id, rr.excluded_agent_ids, rr.resume_cursor, rr.current_reservation_id, rr.run_seq, rr.reassign_count, rr.created_at, rr.updated_at
 `
 
 type ClaimWaitingRouteParams struct {
@@ -149,6 +150,7 @@ func (q *Queries) ClaimWaitingRoute(ctx context.Context, arg ClaimWaitingRoutePa
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -163,7 +165,7 @@ SET status = 'waiting', active_reservation_id = $4,
     match_attempt_seq = match_attempt_seq + 1,
     match_offer_token = NULL, offering_started_at = NULL, updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'offering' AND match_offer_token = $3
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type CommitMatchOfferParams struct {
@@ -216,10 +218,26 @@ func (q *Queries) CommitMatchOffer(ctx context.Context, arg CommitMatchOfferPara
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const countHeldSlotsForOrg = `-- name: CountHeldSlotsForOrg :one
+SELECT count(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND reservation_id IS NOT NULL
+`
+
+// CountHeldSlotsForOrg is occupancy: capacity slots currently held (a pending
+// offer hold or a confirmed live call) across the org.
+func (q *Queries) CountHeldSlotsForOrg(ctx context.Context, orgID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countHeldSlotsForOrg, orgID)
+	var held int32
+	err := row.Scan(&held)
+	return held, err
 }
 
 const enqueueRouteForMatch = `-- name: EnqueueRouteForMatch :one
@@ -240,13 +258,13 @@ SET status = 'waiting_match',
     -- HIGH). Authoritative recompute (empty on the first enqueue).
     excluded_agent_ids = COALESCE(
         (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
-         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout')),
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
         '{}'),
     match_offer_token = NULL,
     offering_started_at = NULL,
     updated_at = now()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type EnqueueRouteForMatchParams struct {
@@ -302,8 +320,45 @@ func (q *Queries) EnqueueRouteForMatch(ctx context.Context, arg EnqueueRouteForM
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRoutingQueueStats = `-- name: GetRoutingQueueStats :one
+SELECT
+  count(*) FILTER (WHERE status = 'waiting_match')::int AS waiting_match,
+  count(*) FILTER (WHERE status = 'offering')::int AS offering,
+  count(*) FILTER (WHERE status = 'waiting' AND current_reservation_id IS NOT NULL)::int AS waiting_offer,
+  -- min() across ALL live-queued rows (not just waiting_match): a route that began
+  -- offering still retains waiting_since, so the oldest-caller SLA age doesn't drop
+  -- to 0 the moment the head-of-queue starts being matched (cross-AI review MED).
+  GREATEST(COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since)), 0), 0)::int AS oldest_waiting_seconds
+FROM route_requests
+WHERE org_id = $1 AND status IN ('waiting_match', 'offering', 'waiting')
+`
+
+type GetRoutingQueueStatsRow struct {
+	WaitingMatch         int32 `json:"waiting_match"`
+	Offering             int32 `json:"offering"`
+	WaitingOffer         int32 `json:"waiting_offer"`
+	OldestWaitingSeconds int32 `json:"oldest_waiting_seconds"`
+}
+
+// GetRoutingQueueStats is the live ops snapshot for an org: queue depth, the
+// transient offering count, outstanding offers, and the oldest queued route's SLA
+// age. Scoped to LIVE statuses so it scans the small working set, not terminal
+// history.
+func (q *Queries) GetRoutingQueueStats(ctx context.Context, orgID pgtype.UUID) (GetRoutingQueueStatsRow, error) {
+	row := q.db.QueryRow(ctx, getRoutingQueueStats, orgID)
+	var i GetRoutingQueueStatsRow
+	err := row.Scan(
+		&i.WaitingMatch,
+		&i.Offering,
+		&i.WaitingOffer,
+		&i.OldestWaitingSeconds,
 	)
 	return i, err
 }
@@ -370,8 +425,8 @@ WHERE a.org_id = $1
   AND (ars.agent_id IS NULL
        OR ars.routing_state = 'routable'
        OR (ars.state_expires_at IS NOT NULL AND ars.state_expires_at <= now()))
-GROUP BY a.id, a.code
-ORDER BY random()
+GROUP BY a.id, a.code, ars.last_ready_at, ast.updated_at
+ORDER BY COALESCE(ars.last_ready_at, ast.updated_at) ASC
 LIMIT $2
 `
 
@@ -397,9 +452,10 @@ type ListAvailableAgentsForMatchRow struct {
 // AND in the top-level WHERE: the ON keeps the join itself org-correct, the WHERE
 // ColumnRef satisfies SQLChecker (which ignores ON-clause org refs). agent_id /
 // skill_id are org-unique so this is belt-and-suspenders, not a behavior change.
-// random() (not a.code) so successive ticks SAMPLE different agents: a fixed
-// alphabetical LIMIT would let the first N at-capacity agents starve the N+1th who
-// actually has a free slot (capacity is gated in Go, not this query — review HIGH).
+// Longest-idle first (goal 3 tie-break): the agent who has been Ready/idle the
+// longest is offered first, so work spreads fairly instead of by code/insertion
+// order. last_ready_at is the precise Ready instant; ast.updated_at is the
+// fallback for agents predating the routing-state write.
 func (q *Queries) ListAvailableAgentsForMatch(ctx context.Context, arg ListAvailableAgentsForMatchParams) ([]ListAvailableAgentsForMatchRow, error) {
 	rows, err := q.db.Query(ctx, listAvailableAgentsForMatch, arg.OrgID, arg.Limit)
 	if err != nil {
@@ -494,8 +550,9 @@ INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_
 VALUES ($1, $2, 'missed', $3, NULL)
 ON CONFLICT (org_id, agent_id) DO UPDATE
 SET routing_state = 'missed', state_expires_at = $3, updated_at = now()
-WHERE agent_routing_state.last_ready_at IS NULL
-   OR agent_routing_state.last_ready_at <= $4
+WHERE agent_routing_state.org_id = $1
+  AND (agent_routing_state.last_ready_at IS NULL
+       OR agent_routing_state.last_ready_at <= $4)
 `
 
 type MarkAgentMissedParams struct {
@@ -525,6 +582,125 @@ func (q *Queries) MarkAgentMissed(ctx context.Context, arg MarkAgentMissedParams
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const markAgentReady = `-- name: MarkAgentReady :exec
+INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_at, last_ready_at)
+VALUES ($1, $2, 'routable', NULL, now())
+ON CONFLICT (org_id, agent_id) DO UPDATE
+SET routing_state = 'routable', state_expires_at = NULL, last_ready_at = now(), updated_at = now()
+WHERE agent_routing_state.org_id = $1
+`
+
+type MarkAgentReadyParams struct {
+	OrgID   pgtype.UUID `json:"org_id"`
+	AgentID pgtype.UUID `json:"agent_id"`
+}
+
+// MarkAgentReady stamps last_ready_at and clears any RONA cooldown when an agent
+// becomes Ready. last_ready_at is the Ready-race fence MarkAgentMissed reads: a
+// stale missed-offer timeout that fires AFTER this Ready won't re-sideline the
+// agent (its offered_at is older than last_ready_at). Idempotent upsert.
+func (q *Queries) MarkAgentReady(ctx context.Context, arg MarkAgentReadyParams) error {
+	_, err := q.db.Exec(ctx, markAgentReady, arg.OrgID, arg.AgentID)
+	return err
+}
+
+const reassignRouteForMatch = `-- name: ReassignRouteForMatch :one
+UPDATE route_requests
+SET status = 'waiting_match',
+    reassign_count = reassign_count + 1,
+    waiting_since = now(),
+    next_match_at = now(),
+    match_deadline = $3,
+    match_offer_token = NULL,
+    offering_started_at = NULL,
+    active_reservation_id = NULL,
+    current_reservation_id = NULL,
+    excluded_agent_ids = COALESCE(
+        (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
+        '{}'),
+    updated_at = now()
+WHERE id = $1 AND org_id = $2 AND status NOT IN ('completed', 'cancelled', 'failed')
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
+`
+
+type ReassignRouteForMatchParams struct {
+	RouteRequestID pgtype.UUID        `json:"route_request_id"`
+	OrgID          pgtype.UUID        `json:"org_id"`
+	MatchDeadline  pgtype.Timestamptz `json:"match_deadline"`
+}
+
+// ReassignRouteForMatch (v0.4 W4) re-queues an interaction whose agent dropped
+// mid-call back to waiting_match for a fresh match to ANOTHER agent. Reuses the
+// queue/skills already on the route from its first enqueue; bumps reassign_count;
+// re-derives the exclusion set from every resolved-non-accepting reservation
+// (rejected/timeout/cancelled — the dropped reservation is cancelled before this)
+// so the matcher won't re-ring an agent who already failed this interaction.
+// Fenced on non-terminal status; the caller enforces the hop cap. $3 = new
+// match_deadline.
+func (q *Queries) ReassignRouteForMatch(ctx context.Context, arg ReassignRouteForMatchParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, reassignRouteForMatch, arg.RouteRequestID, arg.OrgID, arg.MatchDeadline)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.ReassignCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const reassignStaleReservation = `-- name: ReassignStaleReservation :one
+UPDATE reservations
+SET state = 'cancelled', reason = 'reassigned', resolved_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'accepted'
+RETURNING agent_id, adapter_handle
+`
+
+type ReassignStaleReservationParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+type ReassignStaleReservationRow struct {
+	AgentID       pgtype.UUID `json:"agent_id"`
+	AdapterHandle *string     `json:"adapter_handle"`
+}
+
+// ReassignStaleReservation cancels the dropped accepted reservation (reason
+// 'reassigned') so its slot can be freed and the interaction re-matched. Fenced on
+// still-accepted so it can't race a concurrent complete. Returns the adapter handle
+// to release post-commit.
+func (q *Queries) ReassignStaleReservation(ctx context.Context, arg ReassignStaleReservationParams) (ReassignStaleReservationRow, error) {
+	row := q.db.QueryRow(ctx, reassignStaleReservation, arg.ID, arg.OrgID)
+	var i ReassignStaleReservationRow
+	err := row.Scan(&i.AgentID, &i.AdapterHandle)
+	return i, err
 }
 
 const returnRouteToQueue = `-- name: ReturnRouteToQueue :execrows

@@ -305,12 +305,14 @@ func (e ReservationState) Valid() bool {
 
 // Defines values for RouteRequestStatus.
 const (
-	RouteRequestStatusCancelled RouteRequestStatus = "cancelled"
-	RouteRequestStatusCompleted RouteRequestStatus = "completed"
-	RouteRequestStatusFailed    RouteRequestStatus = "failed"
-	RouteRequestStatusPending   RouteRequestStatus = "pending"
-	RouteRequestStatusRunning   RouteRequestStatus = "running"
-	RouteRequestStatusWaiting   RouteRequestStatus = "waiting"
+	RouteRequestStatusCancelled    RouteRequestStatus = "cancelled"
+	RouteRequestStatusCompleted    RouteRequestStatus = "completed"
+	RouteRequestStatusFailed       RouteRequestStatus = "failed"
+	RouteRequestStatusOffering     RouteRequestStatus = "offering"
+	RouteRequestStatusPending      RouteRequestStatus = "pending"
+	RouteRequestStatusRunning      RouteRequestStatus = "running"
+	RouteRequestStatusWaiting      RouteRequestStatus = "waiting"
+	RouteRequestStatusWaitingMatch RouteRequestStatus = "waiting_match"
 )
 
 // Valid indicates whether the value is a known member of the RouteRequestStatus enum.
@@ -322,11 +324,15 @@ func (e RouteRequestStatus) Valid() bool {
 		return true
 	case RouteRequestStatusFailed:
 		return true
+	case RouteRequestStatusOffering:
+		return true
 	case RouteRequestStatusPending:
 		return true
 	case RouteRequestStatusRunning:
 		return true
 	case RouteRequestStatusWaiting:
+		return true
+	case RouteRequestStatusWaitingMatch:
 		return true
 	default:
 		return false
@@ -1537,6 +1543,50 @@ type RouteRequestStatus string
 
 // RoutingFailureCode Typed taxonomy of routing failures recorded on a route request and its trace.
 type RoutingFailureCode string
+
+// RoutingStats Live matcher/queue snapshot for an org — for the ops view.
+type RoutingStats struct {
+	// HeldSlots Capacity slots currently held (pending offers + confirmed live calls).
+	HeldSlots int `json:"held_slots"`
+
+	// Offering Routes the matcher has claimed and is building an offer for (transient).
+	Offering int `json:"offering"`
+
+	// OldestWaitingSeconds SLA age (seconds) of the oldest queued route; 0 when the queue is empty.
+	OldestWaitingSeconds int `json:"oldest_waiting_seconds"`
+
+	// WaitingMatch Routes parked in the queue waiting for an available agent.
+	WaitingMatch int `json:"waiting_match"`
+
+	// WaitingOffer Routes with an outstanding offer awaiting an agent accept/reject.
+	WaitingOffer int `json:"waiting_offer"`
+}
+
+// RuntimeEvent One entry in a route request's runtime event log — the ordered record of what the engine did (route.created, route.queued, reservation.offered, reservation.accepted, agent.engaged, route.completed, …). Read-only; appended by the runtime as a route progresses.
+type RuntimeEvent struct {
+	CorrelationId *UUIDv7    `json:"correlation_id,omitempty"`
+	CreatedAt     *time.Time `json:"created_at,omitempty"`
+
+	// Id A UUIDv7 (RFC 9562 §5.7) time-ordered unique identifier.
+	// Version must be 7 or higher; UUIDv4 and lower are rejected.
+	// Example: `01901b2c-7f3a-7abc-8d4e-5f6a7b8c9d0e`
+	Id UUIDv7 `json:"id"`
+
+	// Payload Event-specific detail (reservation_id, agent_id, …).
+	Payload        *map[string]interface{} `json:"payload,omitempty"`
+	RouteRequestId *UUIDv7                 `json:"route_request_id,omitempty"`
+
+	// Source Plane that emitted the event (e.g. "runtime", "matcher").
+	Source string `json:"source"`
+
+	// Type Dotted event name (e.g. "reservation.offered").
+	Type string `json:"type"`
+}
+
+// RuntimeEventList defines model for RuntimeEventList.
+type RuntimeEventList struct {
+	Items []RuntimeEvent `json:"items"`
+}
 
 // SimulateFlowRequest Deterministic simulation of the draft graph against synthetic input. Does not mutate live reservations or agent state.
 type SimulateFlowRequest struct {

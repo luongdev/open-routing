@@ -25,10 +25,17 @@ const RESERVATION = {
   expires_at: '2026-06-04T00:00:30Z',
 };
 const TRACE = { id: ROUTE.trace_id, outcome: null, steps: [{ index: 0, node_id: 'n1', node_kind: 'reservation', status: 'suspended', port: null }] };
+const EVENTS = {
+  items: [
+    { id: 'e1', source: 'runtime', type: 'route.created', payload: null, created_at: '2026-06-04T00:00:00Z' },
+    { id: 'e2', source: 'runtime', type: 'reservation.offered', payload: { reservation_id: RESERVATION.id }, created_at: '2026-06-04T00:00:01Z' },
+  ],
+};
 
 function routeGet(path: string) {
   if (path.includes('/bindings')) return Promise.resolve({ data: { items: [BINDING] }, error: null });
   if (path.endsWith('/reservations')) return Promise.resolve({ data: { items: [RESERVATION] }, error: null });
+  if (path.endsWith('/events')) return Promise.resolve({ data: EVENTS, error: null });
   if (path.endsWith('/trace')) return Promise.resolve({ data: TRACE, error: null });
   return Promise.resolve({ data: ROUTE, error: null }); // GET route-requests/{id}
 }
@@ -76,6 +83,38 @@ describe('OrRouteTester', () => {
     expect(opts.body).toMatchObject({ channel: 'voice', entry_code: 'main', interaction_input: { customer: { tier: 'gold' } } });
     expect((el as any)._route?.status).toBe('waiting');
     expect((el as any)._reservations[0]?.state).toBe('offered');
+    (el as any)._stopPolling?.();
+  });
+
+  it('loads the trace by route id even when the route DTO has no trace_id', async () => {
+    // Regression: the API always leaves route.trace_id null (the trace references
+    // the route). Gating the trace fetch on route.trace_id meant it never loaded.
+    const noTraceId = { ...ROUTE, trace_id: undefined };
+    const get = vi.fn().mockImplementation((p: string) =>
+      p.endsWith('/trace') ? Promise.resolve({ data: TRACE, error: null })
+        : p.endsWith('/reservations') ? Promise.resolve({ data: { items: [] }, error: null })
+          : p.includes('/bindings') ? Promise.resolve({ data: { items: [BINDING] }, error: null })
+            : Promise.resolve({ data: noTraceId, error: null }));
+    (el as any).orgId = 'test-org';
+    (el as any).client = { GET: get, POST: vi.fn().mockResolvedValue({ data: noTraceId, error: null }) };
+    await settle();
+    await (el as any)._createRoute();
+    await settle();
+    expect((el as any)._route?.trace_id).toBeUndefined();
+    expect((el as any)._trace?.steps?.length).toBeGreaterThan(0);
+    (el as any)._stopPolling?.();
+  });
+
+  it('fetches and renders the runtime event timeline', async () => {
+    (el as any).orgId = 'test-org';
+    (el as any).client = { GET: vi.fn().mockImplementation(routeGet), POST: vi.fn().mockResolvedValue({ data: ROUTE, error: null }) };
+    await settle();
+    await (el as any)._createRoute();
+    await settle();
+    expect((el as any)._events).toHaveLength(2);
+    expect((el as any)._events[0].type).toBe('route.created');
+    const text = (el as any).shadowRoot.textContent as string;
+    expect(text).toContain('reservation.offered');
     (el as any)._stopPolling?.();
   });
 

@@ -32,7 +32,13 @@ type fakeAgent struct {
 func newCache(t *testing.T) (*cache.Cache, *miniredis.Miniredis) {
 	t.Helper()
 	s := miniredis.RunT(t)
-	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})
+	// PoolSize caps simultaneous dials so a burst of concurrent callers (the
+	// singleflight test fires 32 at once) can't overrun miniredis's small accept
+	// backlog and get "connection refused" — which previously made some callers slow
+	// enough to miss the singleflight window and flake the dedup count. Pre-warm one
+	// connection so first-dial latency is out of the hot path.
+	rdb := redis.NewClient(&redis.Options{Addr: s.Addr(), PoolSize: 8})
+	_ = rdb.Ping(context.Background()).Err()
 	t.Cleanup(func() { _ = rdb.Close() })
 	return cache.New(rdb, slog.New(slog.NewTextHandler(io.Discard, nil))), s
 }
@@ -150,9 +156,10 @@ func TestGetOrSet_RefreshAhead(t *testing.T) {
 
 // TestGetOrSet_Singleflight_Dedups pins D-52: 32 concurrent goroutines
 // calling GetOrSet for the same cold key must dedup to ONE loader
-// invocation. The loader sleeps 20ms to hold the singleflight Do() call
-// open long enough for concurrent callers to join. After WaitGroup, the
-// loader counter must read exactly 1.
+// invocation. The loader sleeps 150ms to hold the singleflight Do() call
+// open long enough for ALL concurrent callers to join even under CI
+// scheduler/connection jitter (a tight 20ms window flaked when a slow dial
+// pushed a caller past it). After WaitGroup, the loader counter must read 1.
 func TestGetOrSet_Singleflight_Dedups(t *testing.T) {
 	c, _ := newCache(t)
 	ctx := context.Background()
@@ -161,7 +168,7 @@ func TestGetOrSet_Singleflight_Dedups(t *testing.T) {
 	loads := atomic.Int32{}
 	loader := func(ctx context.Context) (fakeAgent, error) {
 		loads.Add(1)
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
 		return fakeAgent{ID: "ag-x", Name: "alice"}, nil
 	}
 

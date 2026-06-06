@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
@@ -135,6 +136,62 @@ func (e *Endpoints) ListRouteRequestReservations(ctx context.Context, req api.Li
 	return api.ListRouteRequestReservations200JSONResponse{Items: items}, nil
 }
 
+func (e *Endpoints) ListAgentReservations(ctx context.Context, req api.ListAgentReservationsRequestObject) (api.ListAgentReservationsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.ListAgentReservations500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	rows, err := generated.New(e.deps.OrgDB).ListAgentLiveReservations(ctx, generated.ListAgentLiveReservationsParams{OrgID: pgUUID(orgID), AgentID: pgUUID(uuid.UUID(req.Id))})
+	if err != nil {
+		return api.ListAgentReservations500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_failed"}}, nil
+	}
+	items := make([]api.Reservation, len(rows))
+	for i, r := range rows {
+		items[i] = mapReservation(r)
+	}
+	return api.ListAgentReservations200JSONResponse{Items: items}, nil
+}
+
+func mapRuntimeEvent(r generated.RuntimeEvent) api.RuntimeEvent {
+	out := api.RuntimeEvent{
+		Id:        api.UUIDv7(apiUUID(r.ID)),
+		Source:    r.Source,
+		Type:      r.Type,
+		CreatedAt: ptrTime(r.CreatedAt),
+	}
+	if r.RouteRequestID.Valid {
+		v := api.UUIDv7(apiUUID(r.RouteRequestID))
+		out.RouteRequestId = &v
+	}
+	if r.CorrelationID.Valid {
+		v := api.UUIDv7(apiUUID(r.CorrelationID))
+		out.CorrelationId = &v
+	}
+	if len(r.Payload) > 0 {
+		var p map[string]any
+		if json.Unmarshal(r.Payload, &p) == nil {
+			out.Payload = &p
+		}
+	}
+	return out
+}
+
+func (e *Endpoints) ListRouteRequestEvents(ctx context.Context, req api.ListRouteRequestEventsRequestObject) (api.ListRouteRequestEventsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.ListRouteRequestEvents500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	rows, err := generated.New(e.deps.OrgDB).ListRuntimeEventsByRoute(ctx, generated.ListRuntimeEventsByRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(uuid.UUID(req.Id))})
+	if err != nil {
+		return api.ListRouteRequestEvents500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "list_failed"}}, nil
+	}
+	items := make([]api.RuntimeEvent, len(rows))
+	for i, r := range rows {
+		items[i] = mapRuntimeEvent(r)
+	}
+	return api.ListRouteRequestEvents200JSONResponse{Items: items}, nil
+}
+
 func (e *Endpoints) GetRouteRequestTrace(ctx context.Context, req api.GetRouteRequestTraceRequestObject) (api.GetRouteRequestTraceResponseObject, error) {
 	orgID, ok := orgkey.OrgIDFromContext(ctx)
 	if !ok {
@@ -181,8 +238,8 @@ type liveOfferer struct {
 	tx       *db.OrgTx
 	orgID    uuid.UUID
 	routeID  uuid.UUID
-	channel  string           // for capacity (voice=1, chat=N)
-	cap      *CapacityService // nil ⇒ simulation mode (no capacity holds)
+	channel  string             // for capacity (voice=1, chat=N)
+	cap      *CapacityService   // nil ⇒ simulation mode (no capacity holds)
 	excluded map[uuid.UUID]bool // agents already offered on this route (resume re-offer)
 	attempt  int
 	lastRes  uuid.UUID
@@ -201,65 +258,168 @@ func (o *liveOfferer) Offer(agentCode string, timeout time.Duration) (string, bo
 	if o.excluded[apiUUID(agent.ID)] {
 		return "", false, nil // already offered this agent on this route → skip
 	}
-	resID := uuid.Must(uuid.NewV7())
 	exp := time.Now().Add(timeout)
-	// Provision the agent's slot rows outside the per-offer savepoint so they
-	// persist across a skipped candidate (idempotent). The authoritative capacity
-	// gate is the acquire below — the candidate-source hint may be stale.
-	if o.cap != nil {
-		if err := o.cap.ProvisionInTx(o.ctx, generated.New(o.tx), o.orgID, apiUUID(agent.ID), o.channel); err != nil {
-			return "", false, err
-		}
-	}
+	// Each candidate's offer is wrapped in a savepoint so a capacity skip or a
+	// unique-violation (agent busy) rolls back just this attempt and the reservation
+	// node moves to the next candidate — the parent route tx survives.
 	sp, err := o.tx.BeginSavepoint(o.ctx)
 	if err != nil {
 		return "", false, err
 	}
-	// Acquire a capacity slot for THIS reservation inside the offer savepoint so
-	// the hold and the offer commit/roll back together. At capacity ⇒ skip the
-	// candidate (same control flow as a busy unique-violation).
-	if o.cap != nil {
-		_, ok, aErr := o.cap.AcquireInTx(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), o.channel, resID, exp)
-		if aErr != nil {
-			_ = sp.Rollback(o.ctx)
-			return "", false, aErr
-		}
-		if !ok {
-			_ = sp.Rollback(o.ctx)
+	spq := generated.New(sp)
+	att, capOK, aErr := attachOffer(o.ctx, spq, o.cap, o.orgID, o.routeID, apiUUID(agent.ID), o.channel, int32(o.attempt+1), exp) //nolint:gosec // attempt bounded by max_attempts
+	if aErr != nil {
+		_ = sp.Rollback(o.ctx)
+		// Agent busy on this route, or a vanished agent → skip this candidate, not a
+		// route failure; any other error aborts.
+		if errors.Is(aErr, errOfferBusy) || errors.Is(aErr, errAgentVanished) {
 			return "", false, nil
 		}
+		return "", false, aErr
 	}
-	leaseToken, sessionID, lErr := bindOfferLease(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID))
-	if lErr != nil {
+	if !capOK {
+		// Roll back the savepoint FIRST, THEN write the capacity_lost audit on the
+		// parent tx: sp and o.tx share one connection, so ROLLBACK TO SAVEPOINT would
+		// also revert a row inserted before it — recording after the rollback is what
+		// actually persists the decision (cross-AI strict review HIGH).
 		_ = sp.Rollback(o.ctx)
-		return "", false, lErr
-	}
-	_, err = generated.New(sp).InsertReservationOffer(o.ctx, generated.InsertReservationOfferParams{
-		ID: pgUUID(resID), OrgID: pgUUID(o.orgID), RouteRequestID: pgUUID(o.routeID),
-		AgentID: agent.ID, Attempt: int32(o.attempt + 1), //nolint:gosec // attempt is bounded (<=10) by max_attempts
-		ExpiresAt:  pgtype.Timestamptz{Time: exp, Valid: true},
-		LeaseToken: pgUUID(leaseToken), AgentSessionID: sessionID,
-	})
-	if isUniqueViolation(err) {
-		_ = sp.Rollback(o.ctx) // busy/ineligible → undo this offer (and its slot hold), try next candidate
+		recordInlineDecision(o.ctx, generated.New(o.tx), o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "capacity_lost")
 		return "", false, nil
 	}
-	if err != nil {
-		_ = sp.Rollback(o.ctx)
-		return "", false, err
-	}
-	// Deliver the durable offer frame (reservation id + lease_token to echo back)
-	// inside the same savepoint so a rolled-back offer doesn't leak an outbox row.
-	if fErr := enqueueOfferFrame(o.ctx, generated.New(sp), o.orgID, apiUUID(agent.ID), resID, leaseToken, exp); fErr != nil {
-		_ = sp.Rollback(o.ctx)
-		return "", false, fErr
-	}
+	recordInlineDecision(o.ctx, spq, o.orgID, o.routeID, o.channel, agentCode, apiUUID(agent.ID), "offered")
 	if err := sp.Commit(o.ctx); err != nil {
 		return "", false, err
 	}
 	o.attempt++
-	o.lastRes, o.lastExp, o.offered = resID, exp, true
-	return resID.String(), true, nil
+	o.lastRes, o.lastExp, o.offered = att.resID, exp, true
+	return att.resID.String(), true, nil
+}
+
+// GetRoutingStats returns the org's live matcher/queue snapshot for the ops view.
+func (e *Endpoints) GetRoutingStats(ctx context.Context, _ api.GetRoutingStatsRequestObject) (api.GetRoutingStatsResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.GetRoutingStats500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	q := generated.New(e.deps.OrgDB)
+	qs, err := q.GetRoutingQueueStats(ctx, pgUUID(orgID))
+	if err != nil {
+		return api.GetRoutingStats500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "stats_failed"}}, nil
+	}
+	held, err := q.CountHeldSlotsForOrg(ctx, pgUUID(orgID))
+	if err != nil {
+		return api.GetRoutingStats500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "occupancy_failed"}}, nil
+	}
+	return api.GetRoutingStats200JSONResponse{
+		WaitingMatch:         int(qs.WaitingMatch),
+		Offering:             int(qs.Offering),
+		WaitingOffer:         int(qs.WaitingOffer),
+		OldestWaitingSeconds: int(qs.OldestWaitingSeconds),
+		HeldSlots:            int(held),
+	}, nil
+}
+
+// AbandonRouteRequest tears down a route whose caller hung up: cancel the route
+// (any non-terminal state) + cancel its outstanding offered reservations, freeing
+// each agent's capacity hold. One tx so the route terminates and slots free
+// atomically. 409 if the route is already terminal.
+func (e *Endpoints) AbandonRouteRequest(ctx context.Context, req api.AbandonRouteRequestRequestObject) (api.AbandonRouteRequestResponseObject, error) {
+	orgID, ok := orgkey.OrgIDFromContext(ctx)
+	if !ok {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "missing_org_id_in_context"}}, nil
+	}
+	routeID := uuid.UUID(req.Id)
+	tx, err := e.deps.OrgDB.BeginTx(ctx)
+	if err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "tx_begin_failed"}}, nil
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := generated.New(tx)
+
+	row, handles, err := e.teardownRouteTx(ctx, qtx, orgID, routeID, "route.abandoned")
+	if errors.Is(err, pgx.ErrNoRows) {
+		// 0 rows: not found vs already-terminal.
+		if _, gErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)}); errors.Is(gErr, pgx.ErrNoRows) {
+			return api.AbandonRouteRequest404JSONResponse{NotFoundJSONResponse: api.NotFoundJSONResponse{Error: api.ErrorCodeNotFound, Reason: "route_request_not_found"}}, nil
+		}
+		return api.AbandonRouteRequest409JSONResponse(api.ErrorResponse{Error: api.ErrorCodeInvalidTransition, Reason: "route_already_terminal"}), nil
+	}
+	if err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "abandon_failed"}}, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return api.AbandonRouteRequest500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
+	}
+	// Post-commit: tell the adapter to tear down each live delivery (idempotent —
+	// a no-op if the adapter already ended it, e.g. this abandon WAS adapter-driven).
+	e.releaseAssignments(ctx, row.Channel, handles, adapter.ReleaseCancelled)
+	return api.AbandonRouteRequest200JSONResponse(mapRouteRequest(row)), nil
+}
+
+// teardownRouteTx cancels a non-terminal route + its live (offered/accepted)
+// reservations, frees each capacity slot, moves accepted-call agents to WrapUp,
+// and emits eventType. Returns the cancelled route row and the adapter handles of
+// the cancelled deliveries (for the caller to Release post-commit). ErrNoRows ⇒
+// the route was already terminal (caller maps to 409/no-op) — naturally idempotent,
+// which is why an adapter terminal can re-drive it harmlessly.
+func (e *Endpoints) teardownRouteTx(ctx context.Context, qtx *generated.Queries, orgID, routeID uuid.UUID, eventType string) (generated.RouteRequest, []string, error) {
+	row, err := qtx.AbandonRoute(ctx, generated.AbandonRouteParams{ID: pgUUID(routeID), OrgID: pgUUID(orgID)})
+	if err != nil {
+		return generated.RouteRequest{}, nil, err
+	}
+	// Read live reservations BEFORE cancelling so we know which were 'accepted' (a
+	// live call → the agent goes to WrapUp) and capture their adapter handles.
+	live, err := qtx.ListReservationsByRoute(ctx, generated.ListReservationsByRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
+	if err != nil {
+		return generated.RouteRequest{}, nil, err
+	}
+	cancelled, err := qtx.CancelLiveReservationsForRoute(ctx, generated.CancelLiveReservationsForRouteParams{OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID)})
+	if err != nil {
+		return generated.RouteRequest{}, nil, err
+	}
+	if e.deps.Capacity != nil {
+		for _, r := range cancelled {
+			if rErr := e.deps.Capacity.ReleaseInTx(ctx, qtx, orgID, apiUUID(r.ID)); rErr != nil {
+				return generated.RouteRequest{}, nil, rErr
+			}
+		}
+	}
+	wrapUp := string(api.AgentStatusWrapUp)
+	until := pgtype.Timestamptz{Time: time.Now().Add(wrapUpSeconds * time.Second), Valid: true}
+	var handles []string
+	for _, r := range live {
+		// Only the offered/accepted reservations are the ones CancelLiveReservations
+		// just terminated — collect adapter handles from those, never from a prior
+		// completed/rejected reservation (which must not get a ReleaseCancelled).
+		if r.State != "offered" && r.State != "accepted" {
+			continue
+		}
+		if r.AdapterHandle != nil && *r.AdapterHandle != "" {
+			handles = append(handles, *r.AdapterHandle)
+		}
+		if r.State != "accepted" {
+			continue
+		}
+		if _, err := qtx.UpdateAgentStateStatus(ctx, generated.UpdateAgentStateStatusParams{
+			AgentID: r.AgentID, OrgID: pgUUID(orgID), ToStatus: &wrapUp, ExpectedFrom: string(api.AgentStatusEngaged), WrapupUntil: until,
+		}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return generated.RouteRequest{}, nil, err
+		}
+	}
+	e.appendEvent(ctx, qtx, orgID, routeID, eventType, map[string]any{"cancelled_reservations": len(cancelled)})
+	return row, handles, nil
+}
+
+// recordInlineDecision writes an interaction_offer route_decisions row for the
+// inline (interaction-driven) offer path, mirroring the matcher's availability_pull
+// audit. Best-effort: a missing audit row must not fail the offer.
+func recordInlineDecision(ctx context.Context, q *generated.Queries, orgID, routeID uuid.UUID, channel, agentCode string, agentID uuid.UUID, outcome string) {
+	detail, _ := json.Marshal(map[string]any{"agent_code": agentCode, "channel": channel, "source": "inline"})
+	_ = q.InsertRouteDecision(ctx, generated.InsertRouteDecisionParams{
+		ID: pgUUID(uuid.Must(uuid.NewV7())), OrgID: pgUUID(orgID), RouteRequestID: pgUUID(routeID),
+		DecisionType: "interaction_offer", MatcherInstance: "inline", Channel: channel,
+		SelectedAgentID: pgUUID(agentID), Outcome: outcome, Detail: detail,
+	})
 }
 
 func (e *Endpoints) appendEvent(ctx context.Context, q *generated.Queries, orgID, routeID uuid.UUID, typ string, payload map[string]any) {

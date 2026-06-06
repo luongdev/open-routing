@@ -1212,7 +1212,7 @@ components:
           nullable: true
         status:
           type: string
-          enum: [pending, running, waiting, completed, failed, cancelled]
+          enum: [pending, running, waiting, waiting_match, offering, completed, failed, cancelled]
         failure_code:
           allOf:
             - $ref: "#/components/schemas/RoutingFailureCode"
@@ -1228,6 +1228,32 @@ components:
           type: string
           format: date-time
           readOnly: true
+
+    RoutingStats:
+      type: object
+      description: Live matcher/queue snapshot for an org — for the ops view.
+      required:
+        - waiting_match
+        - offering
+        - waiting_offer
+        - oldest_waiting_seconds
+        - held_slots
+      properties:
+        waiting_match:
+          type: integer
+          description: Routes parked in the queue waiting for an available agent.
+        offering:
+          type: integer
+          description: Routes the matcher has claimed and is building an offer for (transient).
+        waiting_offer:
+          type: integer
+          description: Routes with an outstanding offer awaiting an agent accept/reject.
+        oldest_waiting_seconds:
+          type: integer
+          description: SLA age (seconds) of the oldest queued route; 0 when the queue is empty.
+        held_slots:
+          type: integer
+          description: Capacity slots currently held (pending offers + confirmed live calls).
 
     Reservation:
       type: object
@@ -1277,6 +1303,51 @@ components:
           type: string
           format: date-time
           readOnly: true
+
+    RuntimeEvent:
+      type: object
+      description: >
+        One entry in a route request's runtime event log — the ordered record of
+        what the engine did (route.created, route.queued, reservation.offered,
+        reservation.accepted, agent.engaged, route.completed, …). Read-only;
+        appended by the runtime as a route progresses.
+      required:
+        - id
+        - source
+        - type
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/UUIDv7"
+        route_request_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+        source:
+          type: string
+          description: Plane that emitted the event (e.g. "runtime", "matcher").
+        type:
+          type: string
+          description: Dotted event name (e.g. "reservation.offered").
+        correlation_id:
+          allOf:
+            - $ref: "#/components/schemas/UUIDv7"
+        payload:
+          type: object
+          additionalProperties: true
+          description: Event-specific detail (reservation_id, agent_id, …).
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    RuntimeEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeEvent"
 
     Queue:
       type: object
@@ -2928,6 +2999,37 @@ paths:
 
   # ── Agent State (STATE-01 through STATE-09) ──────────────────────────────────
 
+  /v1/orgs/{org_id}/agents/{id}/reservations:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: ListAgentReservations
+      summary: List an agent's live reservations (ringing offers + the on-call one)
+      description: >
+        Returns the agent's currently actionable reservations — `offered`
+        (ringing) and `accepted` (on a call) — newest first. The REST/poll path a
+        browser agent console uses to see its offers; the WS gateway is the
+        real-time push path.
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: The agent's live reservations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Reservation"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /v1/orgs/{org_id}/agents/{id}/status:
     parameters:
       - $ref: "#/components/parameters/OrgIdPath"
@@ -3573,6 +3675,28 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /v1/orgs/{org_id}/routing/stats:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+    get:
+      tags: [Runtime]
+      operationId: GetRoutingStats
+      summary: Live matcher/queue snapshot for the ops view
+      description: >
+        A point-in-time snapshot of the org's live routing state — queue depth,
+        the oldest queued route's SLA age, outstanding offers, and held capacity.
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Routing stats.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingStats"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /v1/orgs/{org_id}/route-requests:
     parameters:
       - $ref: "#/components/parameters/OrgIdPath"
@@ -3800,6 +3924,39 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /v1/orgs/{org_id}/route-requests/{id}/abandon:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    post:
+      tags: [Runtime]
+      operationId: AbandonRouteRequest
+      summary: Tear down a route whose interaction ended (caller hung up)
+      description: >
+        The caller abandoned the interaction: cancel any outstanding offered
+        reservation (freeing the agent's capacity hold), then terminate the route
+        as `cancelled`. A route already in a terminal state returns 409. Used by
+        the channel adapter on a caller-disconnect signal.
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Route torn down (cancelled); any outstanding offer released.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Route is already terminal (completed/failed/cancelled).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /v1/orgs/{org_id}/traces/{id}:
     parameters:
       - $ref: "#/components/parameters/OrgIdPath"
@@ -3847,6 +4004,26 @@ paths:
                       $ref: "#/components/schemas/Reservation"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v1/orgs/{org_id}/route-requests/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/OrgIdPath"
+      - $ref: "#/components/parameters/EntityIdPath"
+    get:
+      tags: [Runtime]
+      operationId: ListRouteRequestEvents
+      summary: List a route request's runtime event log (oldest first)
+      security:
+        - OrgHeader: []
+      responses:
+        "200":
+          description: Runtime events for the route request, in occurrence order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEventList"
         "500":
           $ref: "#/components/responses/InternalServerError"
 

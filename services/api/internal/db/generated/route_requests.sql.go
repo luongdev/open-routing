@@ -11,11 +11,65 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const abandonRoute = `-- name: AbandonRoute :one
+UPDATE route_requests
+SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
+    match_offer_token = NULL, offering_started_at = NULL, active_reservation_id = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND org_id = $2
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
+`
+
+type AbandonRouteParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+// AbandonRoute terminates a route from ANY non-terminal state (the caller hung up
+// mid-IVR, mid-queue, or mid-offer) — broader than CancelRouteRequest, which only
+// covers idle pending/waiting. Clears all live/matcher context so no continuation
+// or sweep can resurrect it. 0 rows ⇒ already terminal (caller maps to 409).
+func (q *Queries) AbandonRoute(ctx context.Context, arg AbandonRouteParams) (RouteRequest, error) {
+	row := q.db.QueryRow(ctx, abandonRoute, arg.ID, arg.OrgID)
+	var i RouteRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Channel,
+		&i.EntryCode,
+		&i.FlowVersionID,
+		&i.FlowCode,
+		&i.InteractionInput,
+		&i.Status,
+		&i.FailureCode,
+		&i.ReadSetSnapshot,
+		&i.QueueID,
+		&i.Priority,
+		&i.RequiredSkills,
+		&i.WaitingSince,
+		&i.NextMatchAt,
+		&i.MatchDeadline,
+		&i.MatchAttemptSeq,
+		&i.MatchOfferToken,
+		&i.OfferingStartedAt,
+		&i.ActiveReservationID,
+		&i.ExcludedAgentIds,
+		&i.ResumeCursor,
+		&i.CurrentReservationID,
+		&i.RunSeq,
+		&i.ReassignCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const acquireRouteForRun = `-- name: AcquireRouteForRun :one
 UPDATE route_requests
 SET status = 'running', updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type AcquireRouteForRunParams struct {
@@ -55,6 +109,7 @@ func (q *Queries) AcquireRouteForRun(ctx context.Context, arg AcquireRouteForRun
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -65,7 +120,7 @@ const acquireRouteForRunAtSeq = `-- name: AcquireRouteForRunAtSeq :one
 UPDATE route_requests
 SET status = 'running', updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting') AND run_seq = $3
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type AcquireRouteForRunAtSeqParams struct {
@@ -106,6 +161,7 @@ func (q *Queries) AcquireRouteForRunAtSeq(ctx context.Context, arg AcquireRouteF
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -115,9 +171,9 @@ func (q *Queries) AcquireRouteForRunAtSeq(ctx context.Context, arg AcquireRouteF
 const cancelRouteRequest = `-- name: CancelRouteRequest :one
 UPDATE route_requests
 SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
-    updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+    match_offer_token = NULL, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting', 'waiting_match')
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type CancelRouteRequestParams struct {
@@ -125,6 +181,9 @@ type CancelRouteRequestParams struct {
 	OrgID pgtype.UUID `json:"org_id"`
 }
 
+// Cancels an idle route — pending/waiting plus waiting_match (a queued route is
+// idle: no active worker holds it, so a standard cancel must reach it too —
+// cross-AI review MED). 'offering' is excluded: the matcher transiently owns it.
 func (q *Queries) CancelRouteRequest(ctx context.Context, arg CancelRouteRequestParams) (RouteRequest, error) {
 	row := q.db.QueryRow(ctx, cancelRouteRequest, arg.ID, arg.OrgID)
 	var i RouteRequest
@@ -153,6 +212,7 @@ func (q *Queries) CancelRouteRequest(ctx context.Context, arg CancelRouteRequest
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -164,7 +224,7 @@ UPDATE route_requests
 SET status = $3, failure_code = $4, resume_cursor = NULL,
     current_reservation_id = NULL, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type FinishRouteParams struct {
@@ -208,6 +268,7 @@ func (q *Queries) FinishRoute(ctx context.Context, arg FinishRouteParams) (Route
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -215,7 +276,7 @@ func (q *Queries) FinishRoute(ctx context.Context, arg FinishRouteParams) (Route
 }
 
 const getRouteRequest = `-- name: GetRouteRequest :one
-SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at FROM route_requests WHERE id = $1 AND org_id = $2
+SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at FROM route_requests WHERE id = $1 AND org_id = $2
 `
 
 type GetRouteRequestParams struct {
@@ -251,6 +312,7 @@ func (q *Queries) GetRouteRequest(ctx context.Context, arg GetRouteRequestParams
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -262,7 +324,7 @@ INSERT INTO route_requests (
     id, org_id, channel, entry_code, flow_version_id, flow_code,
     interaction_input, status, failure_code, read_set_snapshot
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type InsertRouteRequestParams struct {
@@ -317,6 +379,7 @@ func (q *Queries) InsertRouteRequest(ctx context.Context, arg InsertRouteRequest
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -324,7 +387,7 @@ func (q *Queries) InsertRouteRequest(ctx context.Context, arg InsertRouteRequest
 }
 
 const listRouteRequests = `-- name: ListRouteRequests :many
-SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at FROM route_requests
+SELECT id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at FROM route_requests
 WHERE org_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2
@@ -369,6 +432,7 @@ func (q *Queries) ListRouteRequests(ctx context.Context, arg ListRouteRequestsPa
 			&i.ResumeCursor,
 			&i.CurrentReservationID,
 			&i.RunSeq,
+			&i.ReassignCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -380,6 +444,35 @@ func (q *Queries) ListRouteRequests(ctx context.Context, arg ListRouteRequestsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockRouteForReclaim = `-- name: LockRouteForReclaim :one
+SELECT id, channel, status FROM route_requests
+WHERE id = $1 AND org_id = $2
+FOR UPDATE
+`
+
+type LockRouteForReclaimParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+type LockRouteForReclaimRow struct {
+	ID      pgtype.UUID `json:"id"`
+	Channel string      `json:"channel"`
+	Status  string      `json:"status"`
+}
+
+// LockRouteForReclaim takes the route-row lock WITHOUT mutating it, so the
+// confirmed-slot reclaim acquires the parent (route) before the child
+// (reservation) — matching teardownRouteTx's top-down lock order and avoiding an
+// AB-BA deadlock with a concurrent caller-abandon on the same route. Returns the
+// channel (for the post-commit adapter release) regardless of terminal state.
+func (q *Queries) LockRouteForReclaim(ctx context.Context, arg LockRouteForReclaimParams) (LockRouteForReclaimRow, error) {
+	row := q.db.QueryRow(ctx, lockRouteForReclaim, arg.ID, arg.OrgID)
+	var i LockRouteForReclaimRow
+	err := row.Scan(&i.ID, &i.Channel, &i.Status)
+	return i, err
 }
 
 const releaseRoute = `-- name: ReleaseRoute :exec
@@ -406,7 +499,7 @@ UPDATE route_requests
 SET status = 'waiting', resume_cursor = $3, current_reservation_id = $4,
     run_seq = run_seq + 1, updated_at = NOW()
 WHERE id = $1 AND org_id = $2 AND status = 'running'
-RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, created_at, updated_at
+RETURNING id, org_id, channel, entry_code, flow_version_id, flow_code, interaction_input, status, failure_code, read_set_snapshot, queue_id, priority, required_skills, waiting_since, next_match_at, match_deadline, match_attempt_seq, match_offer_token, offering_started_at, active_reservation_id, excluded_agent_ids, resume_cursor, current_reservation_id, run_seq, reassign_count, created_at, updated_at
 `
 
 type SuspendRouteParams struct {
@@ -450,6 +543,7 @@ func (q *Queries) SuspendRoute(ctx context.Context, arg SuspendRouteParams) (Rou
 		&i.ResumeCursor,
 		&i.CurrentReservationID,
 		&i.RunSeq,
+		&i.ReassignCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

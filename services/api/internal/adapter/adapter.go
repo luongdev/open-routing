@@ -88,6 +88,11 @@ type Assignment struct {
 	AgentID        string
 	Channel        string
 	Interaction    map[string]any
+	// IdempotencyKey is the durable delivery-attempt id. Deliver MUST be idempotent
+	// on it (a redelivered command with the same key maps to the SAME media session,
+	// never a second room) so the at-least-once delivery outbox can't leak sessions
+	// across retries/crashes (cross-AI review BLOCK).
+	IdempotencyKey string
 }
 
 // AssignmentEvent is one lifecycle transition reported by an adapter. CorrelationID

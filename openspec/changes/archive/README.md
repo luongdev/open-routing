@@ -5,6 +5,8 @@ This directory indexes completed `.planning` phases that were migrated into curr
 Milestone 1 / v0.1 Catalog Foundation is archived as of 2026-06-02.
 Milestone 2 / v0.2 Core Routing Runtime Foundation is archived as of 2026-06-04
 (`2026-06-04-define-v0-2-core-routing-runtime-foundation`).
+Milestone 3 / v0.3 Live Routing Engine is archived as of 2026-06-05
+(`2026-06-05-define-v0-3-live-routing-engine`).
 
 ## Completed Phases
 
@@ -24,3 +26,9 @@ Milestone 2 / v0.2 Core Routing Runtime Foundation is archived as of 2026-06-04
 | Change | OpenSpec destinations |
 | --- | --- |
 | `2026-06-04-define-v0-2-core-routing-runtime-foundation` | `openspec/specs/routing-runtime/spec.md` (new), `openspec/specs/flow-authoring/spec.md` (new), `openspec/specs/admin-ui/spec.md`, `openspec/specs/delivery-foundation/spec.md`, `openspec/specs/agent-state/spec.md`, `openspec/specs/project-boundary/spec.md` |
+
+## Milestone 3 — v0.3 Live Routing Engine (archived 2026-06-05)
+
+| Change | OpenSpec destinations |
+| --- | --- |
+| `2026-06-05-define-v0-3-live-routing-engine` | `openspec/specs/routing-engine/spec.md` (new), `openspec/specs/channel-adapters/spec.md` (new), `openspec/specs/agent-connectivity/spec.md` (new), `openspec/specs/routing-runtime/spec.md`, `openspec/specs/delivery-foundation/spec.md` |

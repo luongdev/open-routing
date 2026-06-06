@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/db"
@@ -51,7 +52,35 @@ type Deps struct {
 	// Off until the matcher loop (cmd/runtime, W4 Stage 3) is wired, else parked
 	// routes would never be pulled.
 	MatcherEnabled bool
+	// MatcherBatch bounds how many agents/orgs/expired routes one matcher tick
+	// processes. 0 ⇒ matcherBatchDefault. A full batch is logged (no silent caps);
+	// the remainder is picked up next tick.
+	MatcherBatch int
+	// Adapters is the channel→ChannelAdapter registry. On accept the engine hands
+	// the assignment to the matching adapter (Deliver) and maps its lifecycle events
+	// back onto the reservation; nil/absent ⇒ no media delivery (the WS/HTTP
+	// test-double path still drives accept/complete directly).
+	Adapters map[string]adapter.ChannelAdapter
+	// DeliveryOutbox routes accept→deliver through the v0.4 durable delivery outbox
+	// (enqueue in the accept tx; the cmd/runtime drain worker calls the adapter)
+	// instead of the v0.3 post-commit in-process Deliver. Off by default so the
+	// deployed behavior is unchanged until flipped (mirrors MatcherEnabled). Needs
+	// DrainDeliveries running on the runtime tick to actually deliver.
+	DeliveryOutbox bool
 	Logger         *slog.Logger
+}
+
+// deliveryOutboxMode reports whether accept should enqueue a durable delivery
+// command for THIS channel instead of delivering in-process post-commit. Gated on
+// an adapter existing for the route's channel so a no-adapter channel keeps the
+// v0.3 "no media, no-op" behavior instead of enqueueing a command that can only
+// fail + tear the route down (cross-AI review MED).
+func (e *Endpoints) deliveryOutboxMode(channel string) bool {
+	if !e.deps.DeliveryOutbox {
+		return false
+	}
+	_, ok := e.adapterFor(channel)
+	return ok
 }
 
 // matcherMode reports whether to run reservations in W4 queue mode.

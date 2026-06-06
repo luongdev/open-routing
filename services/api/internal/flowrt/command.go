@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
@@ -34,8 +35,27 @@ const (
 // AgentCommandResult is the canonical, idempotently-stored outcome of a command.
 // Status is a stable string the gateway maps to an ack frame.
 type AgentCommandResult struct {
-	Status        string `json:"status"` // accepted|rejected|completed|conflict|not_found|not_owner|session_revoked|reused_id
+	Status        string `json:"status"` // accepted|rejected|completed|conflict|not_found|not_owner|session_revoked|reused_id|lease_mismatch
 	ReservationID string `json:"reservation_id"`
+	// deliver / release carry the post-commit adapter side effects for a successful
+	// accept / complete (unexported ⇒ not serialized; only the first, non-replayed
+	// execution sets them).
+	deliver *adapterDeliver
+	release *adapterRelease
+}
+
+// adapterDeliver is the post-commit Deliver payload captured during an accept.
+type adapterDeliver struct {
+	orgID, resID, routeID, agentID uuid.UUID
+	channel                        string
+}
+
+// adapterRelease is the post-commit Release payload captured during a complete:
+// the engine tells the adapter the call ended normally so the delivery handle goes
+// terminal and can't later emit a spurious teardown.
+type adapterRelease struct {
+	channel string
+	handle  string
 }
 
 // ExecuteAgentCommand runs one agent command at-most-once. A redelivered
@@ -97,6 +117,17 @@ func (e *Endpoints) ExecuteAgentCommand(ctx context.Context, orgID, agentID, ses
 	if err := tx.Commit(ctx); err != nil {
 		return AgentCommandResult{}, err
 	}
+	// Post-commit (so the synchronous mock adapter's delivered→established sink
+	// callbacks each open their own tx, not nest in this one): hand the accepted
+	// assignment to the channel adapter. Only the first execution sets res.deliver
+	// — a cached replay returned earlier, so Deliver fires at most once.
+	if res.deliver != nil {
+		d := res.deliver
+		e.deliverAssignment(ctx, d.orgID, d.resID, d.routeID, d.agentID, d.channel)
+	}
+	if res.release != nil {
+		e.releaseAssignments(ctx, res.release.channel, []string{res.release.handle}, adapter.ReleaseCompleted)
+	}
 	return res, nil
 }
 
@@ -120,14 +151,14 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 	}
 	// Lease fence (D5): a command must echo the offer's lease_token. A stale command
 	// for a superseded offer — a reconnect replaying an old frame, or a different
-	// agent connection — fails closed. Skipped only when the offer bound no token
-	// (the HTTP test-double path, which never reaches this WS command handler).
-	if resv.LeaseToken.Valid {
-		lt, perr := uuid.Parse(leaseToken)
-		if perr != nil || lt != uuid.UUID(resv.LeaseToken.Bytes) {
-			out.Status = "lease_mismatch"
-			return out, nil
-		}
+	// agent connection — fails closed. Every real offer binds a token, so a
+	// token-less reservation reaching the WS command path is malformed → also fail
+	// closed (cross-AI review MED: don't fail open on NULL). The HTTP test-double
+	// path never reaches runTransition, so it is unaffected.
+	lt, perr := uuid.Parse(leaseToken)
+	if !resv.LeaseToken.Valid || perr != nil || lt != uuid.UUID(resv.LeaseToken.Bytes) {
+		out.Status = "lease_mismatch"
+		return out, nil
 	}
 
 	switch kind {
@@ -155,6 +186,13 @@ func (e *Endpoints) runTransition(ctx context.Context, tx *db.OrgTx, qtx *genera
 		routeID := apiUUID(comp.RouteRequestID)
 		e.appendEvent(ctx, qtx, orgID, routeID, "reservation.completed", map[string]any{"reservation_id": resID.String()})
 		e.appendEvent(ctx, qtx, orgID, routeID, "agent.wrapup", map[string]any{"agent_id": agentID.String()})
+		// Tell the adapter the call ended normally (post-commit), so its delivery
+		// handle goes terminal and can't later emit a spurious caller_abandoned.
+		if resv.AdapterHandle != nil && *resv.AdapterHandle != "" {
+			if rt, rErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: comp.RouteRequestID, OrgID: pgUUID(orgID)}); rErr == nil {
+				out.release = &adapterRelease{channel: rt.Channel, handle: *resv.AdapterHandle}
+			}
+		}
 		out.Status = "completed"
 		return out, nil
 	case CmdAccept, CmdReject:
@@ -247,6 +285,16 @@ func (e *Endpoints) applyAccept(ctx context.Context, tx *db.OrgTx, qtx *generate
 		return out, err
 	}
 	out.Status = "accepted"
+	if e.deliveryOutboxMode(route.Channel) {
+		// Durable: commit the delivery intent in THIS tx (the accept). The runtime
+		// drain worker hands it to the adapter — survives a crash before delivery.
+		if err := e.enqueueDelivery(ctx, qtx, orgID, resID, routeID, agentID, route.Channel, route.InteractionInput); err != nil {
+			return out, err
+		}
+	} else {
+		// v0.3 path: post-commit in-process Deliver (set on the result).
+		out.deliver = &adapterDeliver{orgID: orgID, resID: resID, routeID: routeID, agentID: agentID, channel: route.Channel}
+	}
 	return out, nil
 }
 

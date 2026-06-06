@@ -22,10 +22,14 @@ import (
 
 // fakeCmd records the last command and returns a canned result (the real
 // dedupe/transition is covered by flowrt's command_test).
-type fakeCmd struct{ last string }
+type fakeCmd struct {
+	last      string
+	lastLease string
+}
 
-func (f *fakeCmd) ExecuteAgentCommand(_ context.Context, _, _, _, _, resID uuid.UUID, _ string, kind flowrt.AgentCommandKind, _ string) (flowrt.AgentCommandResult, error) {
+func (f *fakeCmd) ExecuteAgentCommand(_ context.Context, _, _, _, _, resID uuid.UUID, leaseToken string, kind flowrt.AgentCommandKind, _ string) (flowrt.AgentCommandResult, error) {
 	f.last = string(kind)
+	f.lastLease = leaseToken
 	return flowrt.AgentCommandResult{Status: "accepted", ReservationID: resID.String()}, nil
 }
 
@@ -122,6 +126,118 @@ func TestGateway_WelcomeRelayAndCommand(t *testing.T) {
 	}
 }
 
+// TestGateway_OfferLeaseRoundTrips proves the full transport loop the reference
+// client relies on: a durable 'reservation.offer' frame carries the lease_token in
+// its payload, the agent echoes it on accept, and the gateway forwards exactly
+// that token to the command service (the D5 fence input).
+func TestGateway_OfferLeaseRoundTrips(t *testing.T) {
+	if sharedPool == nil {
+		t.Skip("no testcontainer pool")
+	}
+	org, agent := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	fc := &fakeCmd{}
+	conn, done := dialGateway(t, org, agent, fc)
+	defer done()
+	if w := readFrame(t, conn); w.Type != TypeWelcome {
+		t.Fatalf("welcome = %+v", w)
+	}
+	writeFrame(t, conn, Inbound{Type: TypeHello, LastSeq: 0})
+
+	ctx := context.Background()
+	if _, err := generated.New(sharedPool).InsertAgent(ctx, generated.InsertAgentParams{
+		ID: pg(agent), OrgID: pg(org), Code: "a-" + agent.String()[:8], Name: "t", Email: "t@t", Enabled: true,
+	}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	// A durable offer frame carrying the lease_token (as the offer paths produce it).
+	resID := uuid.Must(uuid.NewV7())
+	lease := uuid.Must(uuid.NewV7()).String()
+	tx, _ := sharedPool.Begin(ctx)
+	q := generated.New(tx)
+	if _, err := q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pg(org), ID: pg(agent)}); err != nil {
+		t.Fatalf("lock seq: %v", err)
+	}
+	if _, err := q.AppendAgentOutbox(ctx, generated.AppendAgentOutboxParams{
+		OrgID: pg(org), AgentID: pg(agent), EventKey: "offer:" + resID.String(), Type: "reservation.offer",
+		ReservationID: pg(resID), Payload: []byte(`{"reservation_id":"` + resID.String() + `","lease_token":"` + lease + `"}`),
+	}); err != nil {
+		t.Fatalf("append offer: %v", err)
+	}
+	_ = tx.Commit(ctx)
+
+	f := readFrame(t, conn)
+	if f.Type != "reservation.offer" || f.Payload["lease_token"] != lease {
+		t.Fatalf("offer frame = %+v, want lease_token %s", f, lease)
+	}
+	// The agent echoes the lease from the payload on accept.
+	cmdID := uuid.Must(uuid.NewV7())
+	writeFrame(t, conn, Inbound{ID: cmdID.String(), Type: TypeAccept, Reservation: resID.String(), LeaseToken: f.Payload["lease_token"].(string)})
+	if ack := readFrame(t, conn); ack.Type != TypeAck || ack.Status != "accepted" {
+		t.Fatalf("ack = %+v", ack)
+	}
+	if fc.lastLease != lease {
+		t.Fatalf("command saw lease %q, want the offered %q (gateway must forward the echoed token)", fc.lastLease, lease)
+	}
+}
+
+// TestGateway_ReconnectReplaysOffer: an agent that drops mid-offer and reconnects
+// re-receives the still-pending offer from the durable outbox (hello replays from
+// seq 0) — the blip-reconnect-keeps-offer guarantee. A hello past the seq skips it.
+func TestGateway_ReconnectReplaysOffer(t *testing.T) {
+	if sharedPool == nil {
+		t.Skip("no testcontainer pool")
+	}
+	org, agent := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	g := New(Deps{OrgDB: db.NewOrgDB(sharedPool, db.NewSQLChecker(), db.ValidationPanic), Cmd: &fakeCmd{}})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.Handler()(w, r.WithContext(orgkey.SetOrgID(r.Context(), org)))
+	}))
+	defer srv.Close()
+	dial := func() *websocket.Conn {
+		c, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http")+"/v1/agent/ws",
+			&websocket.DialOptions{HTTPHeader: http.Header{"X-Agent-Id": {agent.String()}}})
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		return c
+	}
+
+	ctx := context.Background()
+	if _, err := generated.New(sharedPool).InsertAgent(ctx, generated.InsertAgentParams{
+		ID: pg(agent), OrgID: pg(org), Code: "a-" + agent.String()[:8], Name: "t", Email: "t@t", Enabled: true,
+	}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	resID := uuid.Must(uuid.NewV7())
+	tx, _ := sharedPool.Begin(ctx)
+	q := generated.New(tx)
+	_, _ = q.LockAgentOutboxSeq(ctx, generated.LockAgentOutboxSeqParams{OrgID: pg(org), ID: pg(agent)})
+	if _, err := q.AppendAgentOutbox(ctx, generated.AppendAgentOutboxParams{
+		OrgID: pg(org), AgentID: pg(agent), EventKey: "offer:" + resID.String(), Type: "reservation.offer", ReservationID: pg(resID), Payload: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	_ = tx.Commit(ctx)
+
+	// First connection receives the offer, then "drops".
+	c1 := dial()
+	_ = readFrame(t, c1) // welcome
+	writeFrame(t, c1, Inbound{Type: TypeHello, LastSeq: 0})
+	if f := readFrame(t, c1); f.Type != "reservation.offer" || f.Reservation != resID.String() {
+		t.Fatalf("first delivery = %+v", f)
+	}
+	_ = c1.Close(websocket.StatusAbnormalClosure, "blip")
+
+	// Reconnect, replay from 0 → the still-pending offer is re-delivered.
+	c2 := dial()
+	defer func() { _ = c2.Close(websocket.StatusNormalClosure, "") }()
+	_ = readFrame(t, c2) // welcome
+	writeFrame(t, c2, Inbound{Type: TypeHello, LastSeq: 0})
+	if f := readFrame(t, c2); f.Type != "reservation.offer" || f.Reservation != resID.String() {
+		t.Fatalf("reconnect replay = %+v, want the pending offer re-delivered", f)
+	}
+}
+
 func TestGateway_DrivesPresence(t *testing.T) {
 	if sharedPool == nil {
 		t.Skip("no testcontainer pool")
@@ -172,5 +288,49 @@ func TestGateway_RejectsMissingAgent(t *testing.T) {
 	_, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http")+"/v1/agent/ws", nil)
 	if err == nil {
 		t.Fatal("dial without X-Agent-Id should fail")
+	}
+}
+
+func TestGateway_ConnSlotCapPerOrg(t *testing.T) {
+	g := New(Deps{MaxConnsPerOrg: 2})
+	orgA := uuid.Must(uuid.NewV7())
+	orgB := uuid.Must(uuid.NewV7())
+
+	if !g.acquireSlot(orgA) {
+		t.Fatal("first slot for orgA must be granted")
+	}
+	if !g.acquireSlot(orgA) {
+		t.Fatal("second slot for orgA must be granted")
+	}
+	if g.acquireSlot(orgA) {
+		t.Fatal("third slot for orgA must be rejected (cap=2)")
+	}
+	// A different org has its own budget.
+	if !g.acquireSlot(orgB) {
+		t.Fatal("orgB must not be affected by orgA's cap")
+	}
+	// Releasing frees a slot; the map entry is dropped at zero.
+	g.releaseSlot(orgA)
+	if !g.acquireSlot(orgA) {
+		t.Fatal("a released slot must be reusable")
+	}
+	g.releaseSlot(orgA)
+	g.releaseSlot(orgA)
+	g.releaseSlot(orgA) // extra release must not underflow
+	g.mu.Lock()
+	_, present := g.conns[orgA]
+	g.mu.Unlock()
+	if present {
+		t.Fatal("orgA entry must be deleted once it returns to zero")
+	}
+}
+
+func TestGateway_ConnCapUnlimitedWhenZero(t *testing.T) {
+	g := New(Deps{MaxConnsPerOrg: 0})
+	org := uuid.Must(uuid.NewV7())
+	for i := 0; i < 1000; i++ {
+		if !g.acquireSlot(org) {
+			t.Fatalf("cap=0 means unlimited; rejected at %d", i)
+		}
 	}
 }

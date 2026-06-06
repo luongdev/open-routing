@@ -23,7 +23,7 @@ SET status = 'waiting_match',
     -- HIGH). Authoritative recompute (empty on the first enqueue).
     excluded_agent_ids = COALESCE(
         (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
-         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout')),
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
         '{}'),
     match_offer_token = NULL,
     offering_started_at = NULL,
@@ -149,11 +149,12 @@ WHERE a.org_id = $1
   AND (ars.agent_id IS NULL
        OR ars.routing_state = 'routable'
        OR (ars.state_expires_at IS NOT NULL AND ars.state_expires_at <= now()))
-GROUP BY a.id, a.code
--- random() (not a.code) so successive ticks SAMPLE different agents: a fixed
--- alphabetical LIMIT would let the first N at-capacity agents starve the N+1th who
--- actually has a free slot (capacity is gated in Go, not this query — review HIGH).
-ORDER BY random()
+GROUP BY a.id, a.code, ars.last_ready_at, ast.updated_at
+-- Longest-idle first (goal 3 tie-break): the agent who has been Ready/idle the
+-- longest is offered first, so work spreads fairly instead of by code/insertion
+-- order. last_ready_at is the precise Ready instant; ast.updated_at is the
+-- fallback for agents predating the routing-state write.
+ORDER BY COALESCE(ars.last_ready_at, ast.updated_at) ASC
 LIMIT $2;
 
 -- MarkAgentMissed puts an agent into a short RONA cooldown after an offer to them
@@ -170,8 +171,43 @@ INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_
 VALUES ($1, $2, 'missed', $3, NULL)
 ON CONFLICT (org_id, agent_id) DO UPDATE
 SET routing_state = 'missed', state_expires_at = $3, updated_at = now()
-WHERE agent_routing_state.last_ready_at IS NULL
-   OR agent_routing_state.last_ready_at <= $4;
+WHERE agent_routing_state.org_id = $1
+  AND (agent_routing_state.last_ready_at IS NULL
+       OR agent_routing_state.last_ready_at <= $4);
+
+-- GetRoutingQueueStats is the live ops snapshot for an org: queue depth, the
+-- transient offering count, outstanding offers, and the oldest queued route's SLA
+-- age. Scoped to LIVE statuses so it scans the small working set, not terminal
+-- history.
+-- name: GetRoutingQueueStats :one
+SELECT
+  count(*) FILTER (WHERE status = 'waiting_match')::int AS waiting_match,
+  count(*) FILTER (WHERE status = 'offering')::int AS offering,
+  count(*) FILTER (WHERE status = 'waiting' AND current_reservation_id IS NOT NULL)::int AS waiting_offer,
+  -- min() across ALL live-queued rows (not just waiting_match): a route that began
+  -- offering still retains waiting_since, so the oldest-caller SLA age doesn't drop
+  -- to 0 the moment the head-of-queue starts being matched (cross-AI review MED).
+  GREATEST(COALESCE(EXTRACT(EPOCH FROM now() - min(waiting_since)), 0), 0)::int AS oldest_waiting_seconds
+FROM route_requests
+WHERE org_id = $1 AND status IN ('waiting_match', 'offering', 'waiting');
+
+-- CountHeldSlotsForOrg is occupancy: capacity slots currently held (a pending
+-- offer hold or a confirmed live call) across the org.
+-- name: CountHeldSlotsForOrg :one
+SELECT count(*)::int AS held
+FROM agent_capacity_slots
+WHERE org_id = $1 AND reservation_id IS NOT NULL;
+
+-- MarkAgentReady stamps last_ready_at and clears any RONA cooldown when an agent
+-- becomes Ready. last_ready_at is the Ready-race fence MarkAgentMissed reads: a
+-- stale missed-offer timeout that fires AFTER this Ready won't re-sideline the
+-- agent (its offered_at is older than last_ready_at). Idempotent upsert.
+-- name: MarkAgentReady :exec
+INSERT INTO agent_routing_state (org_id, agent_id, routing_state, state_expires_at, last_ready_at)
+VALUES ($1, $2, 'routable', NULL, now())
+ON CONFLICT (org_id, agent_id) DO UPDATE
+SET routing_state = 'routable', state_expires_at = NULL, last_ready_at = now(), updated_at = now()
+WHERE agent_routing_state.org_id = $1;
 
 -- InsertRouteDecision records one matcher decision (the D9 audit trail): who was
 -- selected/considered, the outcome, and a JSONB detail blob (ranking, excluded,
@@ -206,3 +242,40 @@ SET status = 'running',
 WHERE id = $1 AND org_id = $2 AND status = 'waiting_match'
   AND match_deadline IS NOT NULL AND match_deadline <= now()
 RETURNING *;
+
+-- ReassignRouteForMatch (v0.4 W4) re-queues an interaction whose agent dropped
+-- mid-call back to waiting_match for a fresh match to ANOTHER agent. Reuses the
+-- queue/skills already on the route from its first enqueue; bumps reassign_count;
+-- re-derives the exclusion set from every resolved-non-accepting reservation
+-- (rejected/timeout/cancelled — the dropped reservation is cancelled before this)
+-- so the matcher won't re-ring an agent who already failed this interaction.
+-- Fenced on non-terminal status; the caller enforces the hop cap. $3 = new
+-- match_deadline.
+-- name: ReassignRouteForMatch :one
+UPDATE route_requests
+SET status = 'waiting_match',
+    reassign_count = reassign_count + 1,
+    waiting_since = now(),
+    next_match_at = now(),
+    match_deadline = $3,
+    match_offer_token = NULL,
+    offering_started_at = NULL,
+    active_reservation_id = NULL,
+    current_reservation_id = NULL,
+    excluded_agent_ids = COALESCE(
+        (SELECT array_agg(DISTINCT r.agent_id) FROM reservations r
+         WHERE r.org_id = $2 AND r.route_request_id = $1 AND r.state IN ('rejected', 'timeout', 'cancelled')),
+        '{}'),
+    updated_at = now()
+WHERE id = $1 AND org_id = $2 AND status NOT IN ('completed', 'cancelled', 'failed')
+RETURNING *;
+
+-- ReassignStaleReservation cancels the dropped accepted reservation (reason
+-- 'reassigned') so its slot can be freed and the interaction re-matched. Fenced on
+-- still-accepted so it can't race a concurrent complete. Returns the adapter handle
+-- to release post-commit.
+-- name: ReassignStaleReservation :one
+UPDATE reservations
+SET state = 'cancelled', reason = 'reassigned', resolved_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND state = 'accepted'
+RETURNING agent_id, adapter_handle;

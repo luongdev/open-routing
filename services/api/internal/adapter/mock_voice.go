@@ -61,23 +61,23 @@ func (m *MockVoice) Deliver(ctx context.Context, a Assignment, sink EventSink) (
 // and emits the matching terminal. Idempotent: an already-terminal or unknown
 // handle is a no-op.
 func (m *MockVoice) Release(ctx context.Context, h Handle, cause ReleaseCause) error {
-	m.fireTerminal(ctx, h, cause.event(), "")
-	return nil
+	return m.fireTerminal(ctx, h, cause.event(), "")
 }
 
 // Fail / Disconnect / Abandon / Reject simulate ADAPTER-ORIGINATED terminals (the
-// outside world) for tests. All idempotent no-ops on an already-terminal handle.
+// outside world) for tests. All idempotent no-ops on an already-terminal handle;
+// a sink error leaves the handle live so the next call re-fires (retry contract).
 func (m *MockVoice) Fail(ctx context.Context, h Handle, reason string) {
-	m.fireTerminal(ctx, h, EventFailed, reason)
+	_ = m.fireTerminal(ctx, h, EventFailed, reason)
 }
 func (m *MockVoice) Disconnect(ctx context.Context, h Handle) {
-	m.fireTerminal(ctx, h, EventDisconnected, "agent_disconnected")
+	_ = m.fireTerminal(ctx, h, EventDisconnected, "agent_disconnected")
 }
 func (m *MockVoice) Abandon(ctx context.Context, h Handle) {
-	m.fireTerminal(ctx, h, EventCallerLeft, "caller_hung_up")
+	_ = m.fireTerminal(ctx, h, EventCallerLeft, "caller_hung_up")
 }
 func (m *MockVoice) Reject(ctx context.Context, h Handle) {
-	m.fireTerminal(ctx, h, EventRejected, "declined_by_device")
+	_ = m.fireTerminal(ctx, h, EventRejected, "declined_by_device")
 }
 
 func (m *MockVoice) isLive(h Handle) bool {
@@ -91,17 +91,28 @@ func (m *MockVoice) isLive(h Handle) bool {
 // one caller wins, then emits the terminal event OUTSIDE the lock (the sink may
 // re-enter the adapter — e.g. the engine calling Release — so holding the lock
 // across emit would deadlock).
-func (m *MockVoice) fireTerminal(ctx context.Context, h Handle, t EventType, reason string) {
+func (m *MockVoice) fireTerminal(ctx context.Context, h Handle, t EventType, reason string) error {
 	m.mu.Lock()
 	s, ok := m.live[h]
 	if !ok || s.terminated {
 		m.mu.Unlock()
-		return
+		return nil
 	}
 	s.terminated = true
 	sink := s.sink
 	m.mu.Unlock()
-	_ = m.emit(ctx, sink, strings.TrimPrefix(string(h), mockVoicePrefix), h, t, reason)
+	if err := m.emit(ctx, sink, strings.TrimPrefix(string(h), mockVoicePrefix), h, t, reason); err != nil {
+		// The engine did not durably accept the terminal → roll back the tombstone
+		// so a retry re-fires it (adapter retry contract). The CAS still prevents a
+		// double-fire on success.
+		m.mu.Lock()
+		if s2, ok := m.live[h]; ok {
+			s2.terminated = false
+		}
+		m.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 func (m *MockVoice) emit(ctx context.Context, sink EventSink, resID string, h Handle, t EventType, reason string) error {

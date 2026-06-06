@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/config"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/flowrt"
@@ -99,6 +100,14 @@ func run() int {
 		Capacity:       flowrt.NewCapacityService(),
 		Logger:         slog.Default(),
 		MatcherEnabled: cfg.MatcherEnabled,
+		DeliveryOutbox: cfg.DeliveryOutbox,
+		// The matcher tick (here) reclaims a slot when an agent vanishes mid-call,
+		// which must Release the channel adapter delivery — so the runtime needs the
+		// same adapter wiring as cmd/api (cross-AI review MED). NOTE: the in-process
+		// MockVoice keeps handles per-process, so a runtime reclaim of a handle the
+		// api process created is a graceful no-op until real (out-of-process) media
+		// lands in v0.4; the contract call is correct either way.
+		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
 	})
 	workerID := "runtime-" + uuid.Must(uuid.NewV7()).String()
 	slog.InfoContext(ctx, "open-routing runtime starting (continuation worker)",
@@ -136,6 +145,16 @@ func run() int {
 					slog.ErrorContext(ctx, "matcher tick failed", "err", mErr)
 				} else if offered > 0 {
 					slog.InfoContext(ctx, "matcher offered routes", "count", offered)
+				}
+			}
+			// v0.4 W1: drain the durable delivery outbox — hand accepted assignments
+			// to the channel adapter. Gated; the in-process post-commit Deliver path
+			// stays the default until DELIVERY_OUTBOX_ENABLED is flipped.
+			if cfg.DeliveryOutbox {
+				if delivered, dErr := endpoints.DrainDeliveries(ctx, pool, workerID, time.Now()); dErr != nil {
+					slog.ErrorContext(ctx, "delivery drain failed", "err", dErr)
+				} else if delivered > 0 {
+					slog.InfoContext(ctx, "drained deliveries", "count", delivered)
 				}
 			}
 		}

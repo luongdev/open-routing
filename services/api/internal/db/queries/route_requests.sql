@@ -5,6 +5,16 @@ INSERT INTO route_requests (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
+-- LockRouteForReclaim takes the route-row lock WITHOUT mutating it, so the
+-- confirmed-slot reclaim acquires the parent (route) before the child
+-- (reservation) — matching teardownRouteTx's top-down lock order and avoiding an
+-- AB-BA deadlock with a concurrent caller-abandon on the same route. Returns the
+-- channel (for the post-commit adapter release) regardless of terminal state.
+-- name: LockRouteForReclaim :one
+SELECT id, channel, status FROM route_requests
+WHERE id = $1 AND org_id = $2
+FOR UPDATE;
+
 -- AcquireRouteForRun is the route-level exclusive lock: it flips an idle route
 -- to 'running' so exactly one process (API handler or worker) executes the flow
 -- at a time. 0 rows returned ⇒ another process owns it or it was cancelled —
@@ -42,10 +52,26 @@ WHERE id = $1 AND org_id = $2 AND status = 'running'
 RETURNING *;
 
 -- name: CancelRouteRequest :one
+-- Cancels an idle route — pending/waiting plus waiting_match (a queued route is
+-- idle: no active worker holds it, so a standard cancel must reach it too —
+-- cross-AI review MED). 'offering' is excluded: the matcher transiently owns it.
 UPDATE route_requests
 SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
+    match_offer_token = NULL, updated_at = NOW()
+WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting', 'waiting_match')
+RETURNING *;
+
+-- AbandonRoute terminates a route from ANY non-terminal state (the caller hung up
+-- mid-IVR, mid-queue, or mid-offer) — broader than CancelRouteRequest, which only
+-- covers idle pending/waiting. Clears all live/matcher context so no continuation
+-- or sweep can resurrect it. 0 rows ⇒ already terminal (caller maps to 409).
+-- name: AbandonRoute :one
+UPDATE route_requests
+SET status = 'cancelled', resume_cursor = NULL, current_reservation_id = NULL,
+    match_offer_token = NULL, offering_started_at = NULL, active_reservation_id = NULL,
     updated_at = NOW()
-WHERE id = $1 AND org_id = $2 AND status IN ('pending', 'waiting')
+WHERE id = $1 AND org_id = $2
+  AND status NOT IN ('completed', 'failed', 'cancelled')
 RETURNING *;
 
 -- name: GetRouteRequest :one

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
@@ -338,8 +339,19 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	if err := e.resumeRoute(ctx, tx, qtx, orgID, route, "accepted"); err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "resume_failed"}}, nil
 	}
+	// Durable delivery (gated): enqueue in the accept tx so it commits atomically.
+	if e.deliveryOutboxMode(route.Channel) {
+		if err := e.enqueueDelivery(ctx, qtx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel, route.InteractionInput); err != nil {
+			return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "enqueue_delivery_failed"}}, nil
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
+	}
+	// Post-commit in-process Deliver (v0.3 path); the outbox path delivers via the
+	// runtime drain worker instead.
+	if !e.deliveryOutboxMode(route.Channel) {
+		e.deliverAssignment(ctx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel)
 	}
 	return api.AcceptReservation200JSONResponse(mapReservation(acc)), nil
 }
@@ -441,8 +453,20 @@ func (e *Endpoints) CompleteReservation(ctx context.Context, req api.CompleteRes
 	routeID := apiUUID(comp.RouteRequestID)
 	e.appendEvent(ctx, qtx, orgID, routeID, "reservation.completed", map[string]any{"reservation_id": resID.String()})
 	e.appendEvent(ctx, qtx, orgID, routeID, "agent.wrapup", map[string]any{"agent_id": apiUUID(comp.AgentID).String()})
+	// Capture the adapter handle + channel to Release post-commit (the call ended
+	// normally → the delivery handle must go terminal so it can't later emit a
+	// spurious teardown). Mirrors the WS complete path.
+	var relHandle, relChannel string
+	if comp.AdapterHandle != nil && *comp.AdapterHandle != "" {
+		if rt, rErr := qtx.GetRouteRequest(ctx, generated.GetRouteRequestParams{ID: comp.RouteRequestID, OrgID: pgUUID(orgID)}); rErr == nil {
+			relHandle, relChannel = *comp.AdapterHandle, rt.Channel
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return api.CompleteReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "commit_failed"}}, nil
+	}
+	if relHandle != "" {
+		e.releaseAssignments(ctx, relChannel, []string{relHandle}, adapter.ReleaseCompleted)
 	}
 	return api.CompleteReservation200JSONResponse(mapReservation(comp)), nil
 }

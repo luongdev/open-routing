@@ -238,6 +238,36 @@ func TestMatcher_RONAMissedAgentExcluded(t *testing.T) {
 	}
 }
 
+// TestMatcher_RONAReadyRaceFence: once an agent goes Ready (last_ready_at stamped),
+// a STALE missed-offer timeout — whose offer predates that Ready — must NOT
+// re-sideline them. This is the W5 last_ready_at write activating the fence.
+func TestMatcher_RONAReadyRaceFence(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	q := generated.New(sharedPool)
+
+	// The agent becomes Ready now (last_ready_at = now).
+	if err := q.MarkAgentReady(lf.ctx, generated.MarkAgentReadyParams{OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID)}); err != nil {
+		t.Fatalf("mark ready: %v", err)
+	}
+	// A timeout for an offer made BEFORE that Ready tries to mark them missed.
+	n, err := q.MarkAgentMissed(lf.ctx, generated.MarkAgentMissedParams{
+		OrgID: pgUUID(lf.orgID), AgentID: pgUUID(agentID),
+		StateExpiresAt: ts(time.Now().Add(time.Minute)), LastReadyAt: ts(time.Now().Add(-time.Minute)), // offered_at in the past
+	})
+	if err != nil {
+		t.Fatalf("mark missed: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("stale-offer timeout marked a re-readied agent missed (%d rows) — Ready-race fence failed", n)
+	}
+}
+
 // TestMatcher_RunMatcherPullsPerOrg drives the full cmd/runtime tick (RunMatcher):
 // a parked route + a connected Ready agent → the per-org pull offers it.
 func TestMatcher_RunMatcherPullsPerOrg(t *testing.T) {
@@ -269,6 +299,52 @@ func TestMatcher_RunMatcherPullsPerOrg(t *testing.T) {
 	}
 	if rs := lf.reservations(t, routeID); len(rs) != 1 {
 		t.Fatalf("after RunMatcher route got %d reservations, want 1 (per-org pull)", len(rs))
+	}
+}
+
+// TestMatcher_RoutingStats: the ops snapshot reflects the queue as a route moves
+// from parked (waiting_match) to offered (waiting + a held slot).
+func TestMatcher_RoutingStats(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	me := newMatcherEndpoints(lf)
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_q", simGraph(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if _, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{
+		Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"},
+	}); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	stats := func() api.GetRoutingStats200JSONResponse {
+		resp, err := me.GetRoutingStats(lf.ctx, api.GetRoutingStatsRequestObject{})
+		if err != nil {
+			t.Fatalf("stats: %v", err)
+		}
+		return resp.(api.GetRoutingStats200JSONResponse)
+	}
+
+	s := stats()
+	if s.WaitingMatch != 1 || s.HeldSlots != 0 {
+		t.Fatalf("parked stats = %+v, want waiting_match=1 held=0", s)
+	}
+
+	_ = lf.mem.Renew(context.Background(), lf.orgID, lf.agentID(t, "agent_a"), "sess-1")
+	if _, err := me.RunMatchCycle(lf.ctx, lf.orgID, "matcher-1"); err != nil {
+		t.Fatalf("cycle: %v", err)
+	}
+	s = stats()
+	if s.WaitingMatch != 0 || s.WaitingOffer != 1 || s.HeldSlots != 1 {
+		t.Fatalf("offered stats = %+v, want waiting_match=0 waiting_offer=1 held=1", s)
 	}
 }
 

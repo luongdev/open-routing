@@ -348,8 +348,8 @@ export class OrTraceViewer extends LitElement {
   // live Trace or null. The Layer-1 stub answers 500 { reason: 'not_implemented' }
   // (or a future 501), so the task value is null and the render falls back to the
   // sample preview + banner. `client` is in the deps so a late-arriving client
-  // (set in a separate update than orgId) reruns the probe. Live Trace->viewer
-  // mapping lands in Layer 3.
+  // (set in a separate update than orgId) reruns the probe. The viewer maps a
+  // live runtime Trace when one exists, else shows the sample.
   private _loadTask = new Task(this, {
     task: async ([client, orgId, traceId], { signal }) => {
       if (!client || !traceId) return null;
@@ -469,15 +469,15 @@ export class OrTraceViewer extends LitElement {
     const steps = MOCK_TRACE_STEPS;
     const selectedStep = steps[this._selectedStepIndex] ?? steps[0]!;
     const hitNodeIds = new Set(steps.slice(0, this._selectedStepIndex + 1).map(s => s.node_id));
-    // Until the runtime records traces (Layer 3) the probe yields no live trace,
-    // so we render the sample preview and say so. A real Trace hides the banner.
+    // No trace recorded for this flow yet → render the sample preview and say so.
+    // A real Trace (the runtime records one when the flow runs) hides the banner.
     const live = this._loadTask.value;
 
     return html`
       ${live ? nothing : html`
         <div class="trace-banner" role="status">
           <uk-icon icon="info" height="13" width="13"></uk-icon>
-          Sample trace — live trace data (GET /traces/{id}) lands in Layer 3.
+          Sample trace — run this flow to record a live trace.
         </div>
       `}
       <div class="trace-header">

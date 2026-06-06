@@ -7,10 +7,106 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/db/generated"
 	"github.com/luongdev/open-routing/services/api/internal/presence"
+	"github.com/luongdev/open-routing/services/api/internal/runtime"
 )
+
+// simGraphWithWait is simGraph with a wait node AFTER the accepted port, so the
+// route stays 'waiting' (non-terminal) post-accept — the window where an
+// adapter-driven mid-call teardown (caller hangup) is meaningful.
+func simGraphWithWait(t *testing.T) runtime.Graph {
+	return runtime.Graph{
+		Nodes: []runtime.GraphNode{
+			{ID: "t", Kind: runtime.NodeTrigger},
+			{ID: "q", Kind: runtime.NodeRouteQueue, Config: cfg(t, map[string]string{"queue": "queue_vip"})},
+			{ID: "s", Kind: runtime.NodeMatchSkill, Config: cfg(t, map[string]any{"skill": "skill_es", "min_proficiency": 1})},
+			{ID: "r", Kind: runtime.NodeReservation, Config: cfg(t, map[string]any{"timeout_sec": 5, "max_attempts": 2})},
+			{ID: "w", Kind: runtime.NodeWait, Config: cfg(t, map[string]any{"duration_ms": 60000})},
+			{ID: "fb", Kind: runtime.NodeFallback},
+			{ID: "end", Kind: runtime.NodeEnd},
+		},
+		Edges: []runtime.GraphEdge{
+			{ID: "e1", From: "t", To: "q"}, {ID: "e2", From: "q", To: "s"}, {ID: "e3", From: "s", To: "r"},
+			{ID: "e4", From: "r", To: "w", Label: "accepted"},
+			{ID: "e5", From: "r", To: "fb", Label: "timeout"},
+			{ID: "e6", From: "r", To: "fb", Label: "no_candidate"},
+			{ID: "e7", From: "w", To: "end"}, {ID: "e8", From: "fb", To: "end"},
+		},
+	}
+}
+
+// TestLive_AdapterCallerAbandonTearsDown: after an accept hands the assignment to
+// the channel adapter, an ADAPTER-ORIGINATED caller hangup (MockVoice.Abandon →
+// caller_abandoned event) drives the engine to tear the route down — cancel the
+// reservation, free the slot, move the agent to WrapUp. This is goal-5's "adapter
+// events drive the reservation lifecycle".
+func TestLive_AdapterCallerAbandonTearsDown(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	mv := adapter.NewMockVoice(nil)
+	me := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(),
+		Adapters: map[string]adapter.ChannelAdapter{"voice": mv},
+	})
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_wait", simGraphWithWait(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+
+	resp, err := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+	rs, _ := me.ListRouteRequestReservations(lf.ctx, api.ListRouteRequestReservationsRequestObject{Id: api.EntityIdPath(routeID)})
+	items := rs.(api.ListRouteRequestReservations200JSONResponse).Items
+	if len(items) != 1 {
+		t.Fatalf("reservations = %d, want 1 offered", len(items))
+	}
+	resID := uuid.UUID(items[0].Id)
+
+	if _, err := me.AcceptReservation(lf.ctx, api.AcceptReservationRequestObject{Id: api.EntityIdPath(resID)}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("after accept held=%d, want 1", held)
+	}
+	// The adapter handle was bound on accept (Deliver).
+	var handle string
+	if err := sharedPool.QueryRow(lf.ctx, "SELECT adapter_handle FROM reservations WHERE id=$1", resID).Scan(&handle); err != nil || handle == "" {
+		t.Fatalf("adapter_handle=%q err=%v, want a bound handle", handle, err)
+	}
+
+	// Caller hangs up — the adapter fires caller_abandoned into the engine sink.
+	mv.Abandon(context.Background(), adapter.Handle(handle))
+
+	st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID)
+	if st != "cancelled" {
+		t.Fatalf("route after caller_abandoned = %q, want cancelled", st)
+	}
+	if held := lf.heldVoice(t, agentID); held != 0 {
+		t.Fatalf("after caller_abandoned held=%d, want 0 (slot freed)", held)
+	}
+	var resState, agentStatus string
+	_ = sharedPool.QueryRow(lf.ctx, "SELECT state FROM reservations WHERE id=$1", resID).Scan(&resState)
+	_ = sharedPool.QueryRow(lf.ctx, "SELECT status FROM agent_states WHERE agent_id=$1 AND org_id=$2", agentID, lf.orgID).Scan(&agentStatus)
+	if resState != "cancelled" || agentStatus != "WrapUp" {
+		t.Fatalf("after teardown reservation=%q agent=%q, want cancelled + WrapUp", resState, agentStatus)
+	}
+}
 
 // liveFixture wraps the base fixture with a live Endpoints (presence + capacity)
 // sharing the same OrgDB/org so seeding via f.q is visible to the live path.
@@ -238,6 +334,217 @@ func TestLive_NoAgentParksWaitingMatch(t *testing.T) {
 	}
 	if len(skills) != 1 || skills[0] != "skill_es" {
 		t.Fatalf("required_skills = %v, want [skill_es]", skills)
+	}
+}
+
+// TestLive_InlineOfferWritesDecision: the interaction-driven (inline) offer path
+// writes an interaction_offer route_decisions row, matching the matcher's audit.
+func TestLive_InlineOfferWritesDecision(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	lf.seedLiveFlow(t)
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+	routeID := lf.createRoute(t)
+	var n int
+	if err := sharedPool.QueryRow(lf.ctx,
+		"SELECT count(*) FROM route_decisions WHERE org_id=$1 AND route_request_id=$2 AND decision_type='interaction_offer' AND outcome='offered'",
+		lf.orgID, routeID).Scan(&n); err != nil {
+		t.Fatalf("count decisions: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("interaction_offer decisions = %d, want 1 (inline audit parity)", n)
+	}
+}
+
+// TestLive_AdapterForgedTerminalIgnored: an adapter terminal whose handle does NOT
+// match the reservation's bound handle is ignored — a reservation id alone can't
+// authorize a teardown (review HIGH: event authority).
+func TestLive_AdapterForgedTerminalIgnored(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	mv := adapter.NewMockVoice(nil)
+	me := New(Deps{
+		OrgDB: lf.e.deps.OrgDB, Cache: lf.e.deps.Cache, Logger: lf.e.deps.Logger,
+		Presence: lf.mem, Capacity: NewCapacityService(),
+		Adapters: map[string]adapter.ChannelAdapter{"voice": mv},
+	})
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedQueue(t, "queue_vip")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	flowID := lf.seedFlow(t, "flow_wait", simGraphWithWait(t))
+	if _, err := me.PublishFlow(lf.ctx, api.PublishFlowRequestObject{
+		Id: api.EntityIdPath(flowID), Body: &api.PublishFlowRequest{Channel: "voice", EntryCode: "main", Version: 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+	resp, _ := me.CreateRouteRequest(lf.ctx, api.CreateRouteRequestRequestObject{Body: &api.CreateRouteRequest{Channel: "voice", EntryCode: "main"}})
+	routeID := uuid.UUID(resp.(api.CreateRouteRequest201JSONResponse).Id)
+	rs, _ := me.ListRouteRequestReservations(lf.ctx, api.ListRouteRequestReservationsRequestObject{Id: api.EntityIdPath(routeID)})
+	resID := uuid.UUID(rs.(api.ListRouteRequestReservations200JSONResponse).Items[0].Id)
+	if _, err := me.AcceptReservation(lf.ctx, api.AcceptReservationRequestObject{Id: api.EntityIdPath(resID)}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	// A caller_abandoned for the right reservation but a BOGUS handle → ignored.
+	if err := me.OnAssignmentEvent(context.Background(), adapter.AssignmentEvent{
+		Type: adapter.EventCallerLeft, ReservationID: resID.String(), Handle: adapter.Handle("bogus"), CorrelationID: "x",
+	}); err != nil {
+		t.Fatalf("OnAssignmentEvent: %v", err)
+	}
+	if st, _ := routeStatus(lf.ctx, t, lf.orgID, routeID); st != "waiting" {
+		t.Fatalf("route = %q after forged terminal, want waiting (ignored)", st)
+	}
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("held=%d after forged terminal, want 1 (untouched)", held)
+	}
+}
+
+// TestLive_AbandonReleasesAndCancels: a caller hang-up tears the route down —
+// the outstanding offer is cancelled, its capacity slot freed, the route goes
+// cancelled, and a second abandon is a 409 (already terminal).
+func TestLive_AbandonReleasesAndCancels(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	lf.seedLiveFlow(t)
+	agentID := lf.agentID(t, "agent_a")
+	_ = lf.mem.Renew(context.Background(), lf.orgID, agentID, "sess-1")
+	routeID := lf.createRoute(t)
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("pre-abandon held=%d, want 1", held)
+	}
+
+	resp, err := lf.e.AbandonRouteRequest(lf.ctx, api.AbandonRouteRequestRequestObject{Id: api.EntityIdPath(routeID)})
+	if err != nil {
+		t.Fatalf("abandon: %v", err)
+	}
+	ok, is := resp.(api.AbandonRouteRequest200JSONResponse)
+	if !is || ok.Status != api.RouteRequestStatus("cancelled") {
+		t.Fatalf("abandon resp = %T status, want 200 cancelled", resp)
+	}
+	if held := lf.heldVoice(t, agentID); held != 0 {
+		t.Fatalf("post-abandon held=%d, want 0 (slot freed)", held)
+	}
+	if rs := lf.reservations(t, routeID); len(rs) != 1 || rs[0].State != api.ReservationStateCancelled {
+		t.Fatalf("reservation = %+v, want 1 cancelled", rs)
+	}
+	// Second abandon → 409 (terminal).
+	resp2, _ := lf.e.AbandonRouteRequest(lf.ctx, api.AbandonRouteRequestRequestObject{Id: api.EntityIdPath(routeID)})
+	if _, is := resp2.(api.AbandonRouteRequest409JSONResponse); !is {
+		t.Fatalf("second abandon = %T, want 409", resp2)
+	}
+}
+
+// TestLive_AbandonEndsAcceptedCall: abandoning a route with an in-progress
+// ACCEPTED call cancels the reservation, releases its confirmed slot, and moves
+// the agent to WrapUp — no capacity leak, no stranded-Engaged agent.
+func TestLive_AbandonEndsAcceptedCall(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	ctx := lf.ctx
+	// Agent on a live call (Engaged); a 'waiting' route with an accepted reservation
+	// and a confirmed slot (reservation_id set, hold_expires_at NULL).
+	if _, err := sharedPool.Exec(ctx, "UPDATE agent_states SET status='Engaged' WHERE agent_id=$1 AND org_id=$2", agentID, lf.orgID); err != nil {
+		t.Fatalf("engage: %v", err)
+	}
+	routeID := uuid.Must(uuid.NewV7())
+	if _, err := sharedPool.Exec(ctx,
+		"INSERT INTO route_requests (id,org_id,channel,entry_code,status,flow_version_id,flow_code) VALUES ($1,$2,'voice','main','waiting',$3,'f')",
+		routeID, lf.orgID, uuid.Must(uuid.NewV7())); err != nil {
+		t.Fatalf("seed route: %v", err)
+	}
+	resID := uuid.Must(uuid.NewV7())
+	if _, err := sharedPool.Exec(ctx,
+		"INSERT INTO reservations (id,org_id,route_request_id,agent_id,state,expires_at) VALUES ($1,$2,$3,$4,'accepted',now()+interval '1 hour')",
+		resID, lf.orgID, routeID, agentID); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+	if _, err := sharedPool.Exec(ctx,
+		"INSERT INTO agent_capacity_slots (org_id,agent_id,channel,slot_no,reservation_id,hold_expires_at) VALUES ($1,$2,'voice',1,$3,NULL)",
+		lf.orgID, agentID, resID); err != nil {
+		t.Fatalf("seed slot: %v", err)
+	}
+	if held := lf.heldVoice(t, agentID); held != 1 {
+		t.Fatalf("pre-abandon held=%d, want 1 (confirmed slot)", held)
+	}
+
+	resp, err := lf.e.AbandonRouteRequest(ctx, api.AbandonRouteRequestRequestObject{Id: api.EntityIdPath(routeID)})
+	if err != nil {
+		t.Fatalf("abandon: %v", err)
+	}
+	if _, is := resp.(api.AbandonRouteRequest200JSONResponse); !is {
+		t.Fatalf("abandon resp = %T, want 200", resp)
+	}
+	if held := lf.heldVoice(t, agentID); held != 0 {
+		t.Fatalf("post-abandon held=%d, want 0 (confirmed slot released)", held)
+	}
+	var resState, agentStatus string
+	_ = sharedPool.QueryRow(ctx, "SELECT state FROM reservations WHERE id=$1", resID).Scan(&resState)
+	_ = sharedPool.QueryRow(ctx, "SELECT status FROM agent_states WHERE agent_id=$1 AND org_id=$2", agentID, lf.orgID).Scan(&agentStatus)
+	if resState != "cancelled" {
+		t.Fatalf("reservation state=%q, want cancelled", resState)
+	}
+	if agentStatus != "WrapUp" {
+		t.Fatalf("agent status=%q, want WrapUp (after-call work, not stranded Engaged)", agentStatus)
+	}
+}
+
+// TestLive_InlineCapacityLostAuditPersists drives liveOfferer directly against an
+// at-capacity agent (the snapshot pre-filter normally hides them; this is the
+// TOCTOU-race branch) and asserts the capacity_lost decision SURVIVES the per-offer
+// savepoint rollback — the audit must be recorded on the parent tx AFTER the
+// rollback, not before (strict review HIGH: sp + parent share one connection).
+func TestLive_InlineCapacityLostAuditPersists(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	sid := lf.seedSkillID(t, "skill_es")
+	lf.seedReadyAgent(t, "agent_a", sid, 3)
+	agentID := lf.agentID(t, "agent_a")
+	// Occupy agent_a's only voice slot (confirmed) → at capacity.
+	if _, err := sharedPool.Exec(lf.ctx,
+		"INSERT INTO agent_capacity_slots (org_id,agent_id,channel,slot_no,reservation_id,hold_expires_at) VALUES ($1,$2,'voice',1,$3,NULL)",
+		lf.orgID, agentID, uuid.Must(uuid.NewV7())); err != nil {
+		t.Fatalf("seed held slot: %v", err)
+	}
+	routeID := seedRunningRoute(lf.ctx, t, lf.orgID)
+
+	tx, err := lf.e.deps.OrgDB.BeginTx(lf.ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	off := &liveOfferer{ctx: lf.ctx, tx: tx, orgID: lf.orgID, routeID: routeID, channel: "voice", cap: NewCapacityService()}
+	resID, ok, oErr := off.Offer("agent_a", 30*time.Second)
+	if oErr != nil || ok || resID != "" {
+		_ = tx.Rollback(lf.ctx)
+		t.Fatalf("offer to at-capacity agent = (%q,%v,%v), want ('',false,nil)", resID, ok, oErr)
+	}
+	if err := tx.Commit(lf.ctx); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	var n int
+	if err := sharedPool.QueryRow(lf.ctx,
+		"SELECT count(*) FROM route_decisions WHERE org_id=$1 AND route_request_id=$2 AND decision_type='interaction_offer' AND outcome='capacity_lost'",
+		lf.orgID, routeID).Scan(&n); err != nil {
+		t.Fatalf("count decisions: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("capacity_lost decisions = %d, want 1 (must survive the savepoint rollback)", n)
 	}
 }
 

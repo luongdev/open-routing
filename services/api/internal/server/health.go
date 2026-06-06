@@ -1,19 +1,23 @@
-// Package server: health.go currently owns only the Phase 1 /metrics
-// placeholder. Liveness (/healthz) and readiness (/readyz) bodies are now
-// served by catalog.Handlers's strict-server bypass methods (D-69) — the
-// chi root no longer hangs raw handlers for those paths.
+// Package server: health.go owns the /metrics route. Liveness (/healthz) and
+// readiness (/readyz) bodies are served by catalog.Handlers's strict-server
+// bypass methods (D-69) — the chi root no longer hangs raw handlers for those.
 package server
 
-import "net/http"
+import (
+	"net/http"
 
-// MetricsHandler is the Phase 1 placeholder for /metrics (D-17 + Research
-// Open Question #4). Mounted as a bare chi route at root because /metrics
-// is NOT in the OpenAPI spec and therefore never reaches the strict-server
-// pipeline. Phase 4+ may replace this with a real otelhttp / Prometheus
-// exporter registration; the route signature is stable.
+	"github.com/luongdev/open-routing/services/api/internal/metrics"
+)
+
+// MetricsHandler serves the process metric registry in Prometheus text format
+// (v0.3 W6). Mounted as a bare chi route at root because /metrics is NOT in the
+// OpenAPI spec and therefore never reaches the strict-server pipeline. A real
+// otelhttp / Prometheus exporter remains an additive swap; the route signature
+// is stable.
 func MetricsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(""))
+		metrics.Default.WritePrometheus(w)
 	}
 }

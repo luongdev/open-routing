@@ -73,6 +73,11 @@ type Deps struct {
 	// NOT a spec route (WS upgrade), so it is mounted as a bare chi route under
 	// OrgContext.
 	WSHandler http.Handler
+	// AdapterWebhook is the v0.4 inbound assignment-event webhook (HMAC-authed, not
+	// org-header). Optional; nil when ADAPTER_WEBHOOK_SECRET is unset. Mounted as a
+	// bare chi route WITHOUT OrgContext (the event carries no org; the sink resolves
+	// org from the reservation).
+	AdapterWebhook http.Handler
 }
 
 // NewMux constructs the chi router with the LOCKED middleware chain order.
@@ -109,6 +114,13 @@ func NewMux(deps *Deps) http.Handler {
 	// it resolves X-Org-Id; the gateway reads the agent from X-Agent-Id.
 	if deps.WSHandler != nil {
 		r.With(appmw.OrgContext).Get("/v1/agent/ws", deps.WSHandler.ServeHTTP)
+	}
+
+	// v0.4 adapter assignment-event webhook — a bare chi route (HMAC-authed, not in
+	// the spec, no OrgContext: the event carries no org header; auth is the
+	// signature and the sink resolves org from the reservation).
+	if deps.AdapterWebhook != nil {
+		r.Post("/v1/adapter/assignment-events", deps.AdapterWebhook.ServeHTTP)
 	}
 
 	// (4) Generated strict-server pipeline. All spec routes (bypass paths

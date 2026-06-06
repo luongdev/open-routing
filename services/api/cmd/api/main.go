@@ -43,6 +43,8 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/luongdev/open-routing/services/api/internal/adapter"
+	"github.com/luongdev/open-routing/services/api/internal/adapterwebhook"
 	"github.com/luongdev/open-routing/services/api/internal/api"
 	"github.com/luongdev/open-routing/services/api/internal/cache"
 	"github.com/luongdev/open-routing/services/api/internal/catalog"
@@ -229,6 +231,10 @@ func run() int {
 		Capacity:       capacitySvc,
 		Logger:         slog.Default(),
 		MatcherEnabled: cfg.MatcherEnabled,
+		DeliveryOutbox: cfg.DeliveryOutbox,
+		// v0.3 mock voice adapter (real LiveKit/SIP media = v0.4 behind this contract):
+		// accept hands the assignment here; adapter terminals drive reservation teardown.
+		Adapters: map[string]adapter.ChannelAdapter{"voice": adapter.NewMockVoice(nil)},
 	})
 	type ApiHandlers struct {
 		*catalog.Handlers
@@ -255,11 +261,19 @@ func run() int {
 	// v0.3 W2/W3: agent WebSocket gateway (transport over the runtime command
 	// service) + W3 connection-lease presence (Redis-primary).
 	wsGateway := wsgateway.New(wsgateway.Deps{
-		OrgDB:    orgDB,
-		Cmd:      flowrtEndpoints,
-		Presence: presenceStore,
-		Logger:   slog.Default(),
+		OrgDB:          orgDB,
+		Cmd:            flowrtEndpoints,
+		Presence:       presenceStore,
+		Logger:         slog.Default(),
+		MaxConnsPerOrg: cfg.WSMaxConnsPerOrg,
 	})
+
+	// v0.4 inbound assignment-event webhook (HMAC-authed). Mounted only when the
+	// secret is configured; the engine (flowrtEndpoints) is the EventSink.
+	var adapterWebhook http.Handler
+	if cfg.AdapterWebhookSecret != "" {
+		adapterWebhook = adapterwebhook.Handler(flowrtEndpoints, cfg.AdapterWebhookSecret, slog.Default(), nil)
+	}
 
 	// (9) chi mux with locked chain (D-44 strict-server wiring).
 	mux := server.NewMux(&server.Deps{
@@ -270,6 +284,7 @@ func run() int {
 		StrictHandlers: apiHandlers,
 		SpecBytes:      specBytes,
 		WSHandler:      wsGateway.Handler(),
+		AdapterWebhook: adapterWebhook,
 	})
 
 	// (10) OTel HTTP wrap AFTER NewMux returns (Pattern S6 — wrap is after
