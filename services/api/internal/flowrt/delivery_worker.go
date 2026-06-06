@@ -71,14 +71,17 @@ func (e *Endpoints) dispatchDelivery(ctx context.Context, cmd generated.ClaimDue
 	routeID := apiUUID(cmd.RouteRequestID)
 	ad, ok := e.adapterFor(cmd.Channel)
 	if !ok {
-		// Outbox is on but no adapter serves this channel — a misconfiguration. Do NOT
-		// silently mark delivered (that strands the call with media-less + no signal):
-		// fail the delivery + tear the route down so it surfaces (cross-AI review HIGH).
+		// Outbox is on but no adapter serves this channel (the accept gate normally
+		// prevents enqueueing such a command — defensive for an adapter removed between
+		// enqueue and drain). Tear the route down FIRST, then mark failed only if the
+		// teardown succeeded, so a teardown failure can't strand the route 'accepted'
+		// while the command is 'failed' (cross-AI review MED).
 		octx := orgkey.SetOrgID(ctx, orgID)
-		msg := "no adapter for channel " + cmd.Channel
-		if rows, _ := generated.New(e.deps.OrgDB).MarkDeliveryFailed(octx, generated.MarkDeliveryFailedParams{ID: cmd.ID, OrgID: cmd.OrgID, LastError: &msg, ClaimedBy: &workerID}); rows > 0 {
-			_ = e.failDelivery(octx, orgID, routeID)
+		if tErr := e.failDelivery(octx, orgID, routeID); tErr != nil {
+			return false // leave pending; retry both next tick
 		}
+		msg := "no adapter for channel " + cmd.Channel
+		_, _ = generated.New(e.deps.OrgDB).MarkDeliveryFailed(octx, generated.MarkDeliveryFailedParams{ID: cmd.ID, OrgID: cmd.OrgID, LastError: &msg, ClaimedBy: &workerID})
 		e.deps.Logger.ErrorContext(octx, "delivery has no adapter for channel", "channel", cmd.Channel, "reservation_id", resID)
 		return false
 	}

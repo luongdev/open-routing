@@ -340,7 +340,7 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 		return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "resume_failed"}}, nil
 	}
 	// Durable delivery (gated): enqueue in the accept tx so it commits atomically.
-	if e.deliveryOutboxMode() {
+	if e.deliveryOutboxMode(route.Channel) {
 		if err := e.enqueueDelivery(ctx, qtx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel, route.InteractionInput); err != nil {
 			return api.AcceptReservation500JSONResponse{InternalServerErrorJSONResponse: api.InternalServerErrorJSONResponse{Error: api.ErrorCodeInternal, Reason: "enqueue_delivery_failed"}}, nil
 		}
@@ -350,7 +350,7 @@ func (e *Endpoints) AcceptReservation(ctx context.Context, req api.AcceptReserva
 	}
 	// Post-commit in-process Deliver (v0.3 path); the outbox path delivers via the
 	// runtime drain worker instead.
-	if !e.deliveryOutboxMode() {
+	if !e.deliveryOutboxMode(route.Channel) {
 		e.deliverAssignment(ctx, orgID, resID, routeID, apiUUID(resv.AgentID), route.Channel)
 	}
 	return api.AcceptReservation200JSONResponse(mapReservation(acc)), nil

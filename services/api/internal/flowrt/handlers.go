@@ -71,9 +71,16 @@ type Deps struct {
 }
 
 // deliveryOutboxMode reports whether accept should enqueue a durable delivery
-// command instead of delivering in-process post-commit.
-func (e *Endpoints) deliveryOutboxMode() bool {
-	return e.deps.DeliveryOutbox && len(e.deps.Adapters) > 0
+// command for THIS channel instead of delivering in-process post-commit. Gated on
+// an adapter existing for the route's channel so a no-adapter channel keeps the
+// v0.3 "no media, no-op" behavior instead of enqueueing a command that can only
+// fail + tear the route down (cross-AI review MED).
+func (e *Endpoints) deliveryOutboxMode(channel string) bool {
+	if !e.deps.DeliveryOutbox {
+		return false
+	}
+	_, ok := e.adapterFor(channel)
+	return ok
 }
 
 // matcherMode reports whether to run reservations in W4 queue mode.

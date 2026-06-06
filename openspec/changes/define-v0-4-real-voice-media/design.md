@@ -181,3 +181,37 @@ gemini: clean. codex (stricter):
   the trusted-host X-Org-Id model) but not self-agent-scoped — any org caller can
   read any agent's offers. Per-agent identity enforcement is the same browser-auth
   decision deferred with the WS browser path.
+
+## Holistic full-v0.4 cross-review (W6 closure gate) — outcome
+
+Both reviewers: architecture sound; gated paths (DELIVERY_OUTBOX_ENABLED off,
+no ADAPTER_WEBHOOK_SECRET) preserve v0.3. Fixed:
+- BLOCK (both): a terminal arriving before the delivery handle binds
+  (AdapterHandle==nil) was ACK'd 200 + swallowed, stranding the reservation
+  'accepted'. OnAssignmentEvent now errors (→ webhook 500 → adapter retries) for
+  accepted+unbound, and no-ops only for a mismatched handle. Test added.
+- HIGH (codex): ClaimDueDeliveryCommands now fences on the reservation still being
+  'accepted' (EXISTS) — a command whose reservation was cancelled/reassigned/
+  completed before delivery is NOT Deliver'd (real media would ring/bridge the
+  wrong agent); the stale row is left pending (harmless — its slot is already freed).
+- MED (codex): deliveryOutboxMode now gates on adapterFor(route.Channel), so a
+  no-adapter channel keeps the v0.3 no-op instead of enqueue→teardown.
+- MED (codex): the no-adapter drain path tears down BEFORE marking failed (no
+  failed-command/accepted-route split-brain).
+
+Acknowledged / deferred (documented):
+- HIGH (codex) + MED (gemini): the agent console uses the org-trusted REST
+  accept/reject/complete path (route_lifecycle), which — unlike the WS
+  ExecuteAgentCommand path — has NO agent-ownership/session/lease fence. So within
+  an org, knowing a reservation id lets any caller act on another agent's offer.
+  The v0.4 console is therefore an ADMIN/DEV tool under the trusted-host X-Org-Id
+  model (consistent with the admin UI). A real per-agent self-service console
+  requires agent-scoped auth (the deferred browser-WS-auth decision) or an
+  embedding BFF that enforces agent identity — same gate as real-time WS-push for
+  browsers. MUST be enforced before exposing the console to non-admin agents.
+- HIGH (gemini, acknowledged): inline-offered routes (match_attempt_seq==0) are
+  abandoned, not reassigned, on a mid-call drop — correct (no queue/skill context)
+  but a feature gap until inline routes carry matcher metadata (W3+).
+- LOW (gemini): OnAssignmentEvent feeds the FSM a fixed StateEstablished, so the
+  FSM's progress checks are unused — safe (the DB accepted-state is the quarantine);
+  full FSM state tracking lands if/when progress-event validation is needed.

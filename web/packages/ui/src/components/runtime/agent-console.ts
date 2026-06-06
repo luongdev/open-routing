@@ -7,6 +7,13 @@
 // X-Org-Id/X-Agent-Id headers it authenticates on — real-time WS-push for browsers
 // needs a gateway browser-auth mechanism (deferred). Call AUDIO (LiveKit client)
 // is stubbed here; it lands with the real-media adapter + a media environment.
+//
+// AUTH SCOPE (cross-AI review HIGH): this console acts via the org-trusted REST
+// accept/reject/complete endpoints, which have NO agent-ownership/lease fence (that
+// lives on the WS command path). So it is an ADMIN/DEV tool under the trusted-host
+// X-Org-Id model. A real per-agent self-service console MUST enforce agent-scoped
+// auth (the deferred browser-auth) or sit behind an embedding BFF — do NOT expose
+// this directly to non-admin agents as-is.
 
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';

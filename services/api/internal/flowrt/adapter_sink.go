@@ -21,6 +21,10 @@ import (
 // hangup, agent disconnect) drive the reservation/route teardown. v0.3 ships a mock
 // voice adapter; real LiveKit/SIP media lands behind the same contract in v0.4.
 
+// errHandleNotBound tells the webhook to 500 so the adapter retries a terminal
+// that raced ahead of the delivery handle binding (cross-AI BLOCK).
+var errHandleNotBound = errors.New("flowrt: adapter handle not bound yet")
+
 func (e *Endpoints) adapterFor(channel string) (adapter.ChannelAdapter, bool) {
 	a, ok := e.deps.Adapters[channel]
 	return a, ok && a != nil // an explicit nil map value is "no adapter", not a panic
@@ -154,13 +158,20 @@ func (e *Endpoints) OnAssignmentEvent(ctx context.Context, ev adapter.Assignment
 	if err != nil {
 		return err // transient — the adapter retries
 	}
-	// Authority + staleness fence: act only on a terminal whose handle matches the
-	// reservation's CURRENT bound handle AND whose reservation is still 'accepted'.
-	// A superseded/forged terminal (wrong or empty handle) or one for a reservation
-	// that already resolved (completed/cancelled/timeout) is ignored — a reservation
-	// id alone does not authorize tearing a route down (review HIGH).
-	if resv.State != "accepted" || resv.AdapterHandle == nil || *resv.AdapterHandle != string(ev.Handle) {
-		return nil
+	// Authority + staleness fence:
+	if resv.State != "accepted" {
+		return nil // already resolved (completed/cancelled/timeout) — idempotent no-op
+	}
+	if resv.AdapterHandle == nil {
+		// The handle isn't bound yet: a real adapter can fire a terminal (rejected/
+		// failed) DURING Deliver, before dispatchDelivery commits SetReservationAdapter-
+		// Handle. Don't swallow it (a 200 would lose it and strand the reservation) —
+		// error so the webhook returns 500 and the adapter retries until the bind lands
+		// (or the reservation goes terminal, which ends the retry) — cross-AI BLOCK.
+		return errHandleNotBound
+	}
+	if *resv.AdapterHandle != string(ev.Handle) {
+		return nil // superseded/forged terminal for a different handle — ignore
 	}
 	orgID := apiUUID(resv.OrgID)
 	routeID := apiUUID(resv.RouteRequestID)

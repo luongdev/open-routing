@@ -156,6 +156,24 @@ func TestReassign_RematchesToAnotherAgent(t *testing.T) {
 	}
 }
 
+// TestOnAssignmentEvent_TerminalBeforeHandleBound: a terminal that arrives before
+// the delivery handle is bound (accepted reservation, adapter_handle still NULL)
+// must NOT be swallowed — OnAssignmentEvent errors so the webhook 500s and the
+// adapter retries until the bind lands (cross-AI BLOCK).
+func TestOnAssignmentEvent_TerminalBeforeHandleBound(t *testing.T) {
+	lf := newLiveFixture(t)
+	if lf == nil {
+		return
+	}
+	me := newMatcherEndpoints(lf)
+	_, resID, _, _ := driveToParkedCall(t, lf, me) // accepted, handle NOT bound
+	if err := me.OnAssignmentEvent(lf.ctx, adapter.AssignmentEvent{
+		Type: adapter.EventFailed, Handle: "room-q", ReservationID: resID.String(),
+	}); err == nil {
+		t.Fatal("want a retryable error when the handle isn't bound yet, got nil (would swallow the terminal)")
+	}
+}
+
 // TestReassign_ExhaustedAbandons: once the hop cap is hit, a further drop abandons
 // the route instead of re-queueing forever.
 func TestReassign_ExhaustedAbandons(t *testing.T) {

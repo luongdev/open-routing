@@ -19,9 +19,17 @@ UPDATE delivery_commands
 SET status = 'pending', claimed_at = $1, claim_expires_at = $2, claimed_by = $3,
     attempt_count = attempt_count + 1, updated_at = $1
 WHERE id IN (
-    SELECT id FROM delivery_commands
-    WHERE status = 'pending' AND (claim_expires_at IS NULL OR claim_expires_at < $1)
-    ORDER BY created_at
+    SELECT dc.id FROM delivery_commands dc
+    WHERE dc.status = 'pending' AND (dc.claim_expires_at IS NULL OR dc.claim_expires_at < $1)
+      -- Fence on the reservation still being 'accepted': a command whose reservation
+      -- was cancelled/reassigned/completed before delivery must NOT be Deliver'd (real
+      -- media would ring/bridge the wrong agent). Such a row is left pending (harmless;
+      -- the cancel path already freed its slot) — cross-AI review HIGH.
+      AND EXISTS (
+        SELECT 1 FROM reservations r
+        WHERE r.id = dc.reservation_id AND r.org_id = dc.org_id AND r.state = 'accepted'
+      )
+    ORDER BY dc.created_at
     LIMIT $4
     FOR UPDATE SKIP LOCKED
 )

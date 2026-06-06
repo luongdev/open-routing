@@ -285,7 +285,7 @@ func (e *Endpoints) applyAccept(ctx context.Context, tx *db.OrgTx, qtx *generate
 		return out, err
 	}
 	out.Status = "accepted"
-	if e.deliveryOutboxMode() {
+	if e.deliveryOutboxMode(route.Channel) {
 		// Durable: commit the delivery intent in THIS tx (the accept). The runtime
 		// drain worker hands it to the adapter — survives a crash before delivery.
 		if err := e.enqueueDelivery(ctx, qtx, orgID, resID, routeID, agentID, route.Channel, route.InteractionInput); err != nil {
